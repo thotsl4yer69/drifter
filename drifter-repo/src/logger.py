@@ -8,8 +8,9 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import time
-import os
 import gzip
+import shutil
+import signal
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -67,19 +68,38 @@ def flush_buffer():
     log.debug(f"Flushed {count} records (total: {message_count})")
 
 
+def compress_log(path: Path) -> Path:
+    """Gzip-compress a log file and remove the original."""
+    gz_path = Path(str(path) + '.gz')
+    with open(path, 'rb') as f_in, gzip.open(gz_path, 'wb') as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    path.unlink()
+    log.info(f"Compressed: {path.name} → {gz_path.name}")
+    return gz_path
+
+
 def cleanup_old_logs():
-    """Remove oldest logs if we exceed storage limit."""
-    total_size = sum(f.stat().st_size for f in LOG_DIR.glob("*.jsonl"))
+    """Compress yesterday's logs; remove oldest compressed logs if over storage limit."""
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Compress any uncompressed log files that aren't today's
+    for f in LOG_DIR.glob("*.jsonl"):
+        if today not in f.name:
+            compress_log(f)
+
+    # If still over storage limit, remove oldest compressed logs
+    all_logs = sorted(
+        LOG_DIR.glob("*.jsonl.gz"), key=lambda f: f.stat().st_mtime
+    )
+    total_size = sum(f.stat().st_size for f in all_logs)
     total_mb = total_size / (1024 * 1024)
 
-    if total_mb > MAX_LOG_SIZE_MB:
-        files = sorted(LOG_DIR.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
-        while total_mb > MAX_LOG_SIZE_MB * 0.8 and files:
-            oldest = files.pop(0)
-            size = oldest.stat().st_size / (1024 * 1024)
-            oldest.unlink()
-            total_mb -= size
-            log.info(f"Cleaned old log: {oldest.name} ({size:.1f}MB)")
+    while total_mb > MAX_LOG_SIZE_MB * 0.8 and all_logs:
+        oldest = all_logs.pop(0)
+        size = oldest.stat().st_size / (1024 * 1024)
+        oldest.unlink()
+        total_mb -= size
+        log.info(f"Removed old log: {oldest.name} ({size:.1f} MB)")
 
 
 def on_message(client, userdata, msg):
@@ -98,6 +118,15 @@ def on_message(client, userdata, msg):
 def main():
     log.info("DRIFTER Telemetry Logger starting...")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    running = True
+
+    def _handle_signal(sig, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-logger")
     client.on_message = on_message
@@ -121,24 +150,21 @@ def main():
     last_flush = time.monotonic()
     last_cleanup = time.monotonic()
 
-    try:
-        while True:
-            now = time.monotonic()
+    while running:
+        now = time.monotonic()
 
-            if now - last_flush >= BUFFER_FLUSH_INTERVAL:
-                flush_buffer()
-                last_flush = now
+        if now - last_flush >= BUFFER_FLUSH_INTERVAL:
+            flush_buffer()
+            last_flush = now
 
-            # Cleanup check every hour
-            if now - last_cleanup >= 3600:
-                cleanup_old_logs()
-                last_cleanup = now
+        # Cleanup check every hour
+        if now - last_cleanup >= 3600:
+            cleanup_old_logs()
+            last_cleanup = now
 
-            time.sleep(1)
+        time.sleep(1)
 
-    except KeyboardInterrupt:
-        flush_buffer()
-
+    flush_buffer()
     if current_file:
         current_file.close()
     client.loop_stop()

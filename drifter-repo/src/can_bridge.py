@@ -8,7 +8,7 @@ UNCAGED TECHNOLOGY — EST 1991
 import can
 import json
 import time
-import struct
+import signal
 import logging
 import paho.mqtt.client as mqtt
 from collections import deque
@@ -44,6 +44,16 @@ MQTT_PORT = 1883
 # ── State ──
 latest_values = {}
 running = True
+
+
+def _handle_signal(sig, frame):
+    """Handle SIGTERM and SIGINT for clean systemd shutdown."""
+    global running
+    running = False
+
+
+signal.signal(signal.SIGTERM, _handle_signal)
+signal.signal(signal.SIGINT, _handle_signal)
 
 
 def find_can_interface():
@@ -179,7 +189,7 @@ def main():
     log.info(f"Polling {len(schedule)} PIDs from Jaguar X-Type...")
     log.info("DRIFTER CAN Bridge is LIVE")
 
-    poll_index = 0
+    last_snapshot = 0.0
     while running:
         try:
             now = time.monotonic()
@@ -209,11 +219,12 @@ def main():
                     break  # Only poll one PID per loop iteration
 
             # Publish combined snapshot every second
-            if latest_values and int(now) % 1 == 0:
+            if latest_values and now - last_snapshot >= 1.0:
                 mqtt_client.publish("drifter/snapshot", json.dumps({
                     **latest_values,
                     'ts': time.time()
                 }))
+                last_snapshot = now
 
             # Small sleep to prevent CPU spin
             time.sleep(0.005)
@@ -221,8 +232,6 @@ def main():
         except can.CanError as e:
             log.error(f"CAN bus error: {e}")
             time.sleep(1)
-        except KeyboardInterrupt:
-            running = False
 
     # ── Cleanup ──
     log.info("Shutting down CAN Bridge...")
