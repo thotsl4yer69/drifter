@@ -179,10 +179,10 @@ drifter/
 
 ```bash
 # Human-readable status (services + live telemetry + current alert)
-python3 /opt/drifter/status.py
+/opt/drifter/venv/bin/python3 /opt/drifter/status.py
 
 # JSON output for scripting
-python3 /opt/drifter/status.py --json
+/opt/drifter/venv/bin/python3 /opt/drifter/status.py --json
 
 # Follow alert log
 journalctl -u drifter-alerts -f
