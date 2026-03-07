@@ -8,6 +8,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import time
+import signal
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -305,6 +306,15 @@ def main():
     log.info("DRIFTER Alert Engine starting...")
     log.info(f"Loaded {len(ALL_RULES)} diagnostic rules for Jaguar X-Type 2.5L V6")
 
+    running = True
+
+    def _handle_signal(sig, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     # ── MQTT ──
     client = mqtt.Client(client_id="drifter-alerts")
     client.on_message = on_message
@@ -326,12 +336,9 @@ def main():
 
     log.info("Alert Engine is LIVE — monitoring telemetry")
 
-    try:
-        while True:
-            evaluate_rules(client)
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        pass
+    while running:
+        evaluate_rules(client)
+        time.sleep(0.5)
 
     client.loop_stop()
     client.disconnect()

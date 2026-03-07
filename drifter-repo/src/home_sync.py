@@ -7,6 +7,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import time
+import signal
 import subprocess
 import logging
 import paho.mqtt.client as mqtt
@@ -85,6 +86,15 @@ def main():
 
     log.info("DRIFTER Home Sync starting...")
 
+    running = True
+
+    def _handle_signal(sig, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     # Connect to local broker
     local = mqtt.Client(client_id="drifter-homesync")
     local.on_message = on_local_message
@@ -103,31 +113,27 @@ def main():
 
     log.info("Home Sync is LIVE — checking for home network")
 
-    try:
-        while True:
-            reachable = check_home_network()
+    while running:
+        reachable = check_home_network()
 
-            if reachable and not is_home:
-                log.info("Home network detected — connecting to nanob")
-                if connect_home():
-                    is_home = True
-                    # Announce presence
-                    if home_client:
-                        home_client.publish(
-                            "sentient/vehicle/drifter/status",
-                            json.dumps({"state": "home", "ts": time.time()}),
-                            retain=True
-                        )
+        if reachable and not is_home:
+            log.info("Home network detected — connecting to nanob")
+            if connect_home():
+                is_home = True
+                # Announce presence
+                if home_client:
+                    home_client.publish(
+                        "sentient/vehicle/drifter/status",
+                        json.dumps({"state": "home", "ts": time.time()}),
+                        retain=True
+                    )
 
-            elif not reachable and is_home:
-                log.info("Home network lost — switching to autonomous mode")
-                disconnect_home()
-                is_home = False
+        elif not reachable and is_home:
+            log.info("Home network lost — switching to autonomous mode")
+            disconnect_home()
+            is_home = False
 
-            time.sleep(HOME_CHECK_INTERVAL)
-
-    except KeyboardInterrupt:
-        pass
+        time.sleep(HOME_CHECK_INTERVAL)
 
     disconnect_home()
     local.loop_stop()

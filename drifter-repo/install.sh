@@ -108,7 +108,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-for f in can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py; do
+for f in can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py; do
     cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
     chmod +x "${DRIFTER_DIR}/${f}"
 done
@@ -214,8 +214,8 @@ echo -e "  2. Open RealDash → MQTT → ${CYAN}10.42.0.1:1883${NC}"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
 echo -e "  4. Screw OBD-II pigtail into USB2CANFD terminals"
 echo ""
-echo -e "  Check status: ${CYAN}sudo systemctl status drifter-canbridge${NC}"
-echo -e "  View logs:    ${CYAN}journalctl -u drifter-alerts -f${NC}"
+echo -e "  Check status: ${CYAN}python3 ${DRIFTER_DIR}/status.py${NC}"
+echo -e "  Service logs: ${CYAN}journalctl -u drifter-alerts -f${NC}"
 echo -e "  Bench test:   ${CYAN}sudo ./scripts/test-bench.sh${NC}"
 echo ""
 echo -e "  ${RED}1312${NC} — LOCAL PROCESSING — ZERO CLOUD — TOTAL SOVEREIGNTY"

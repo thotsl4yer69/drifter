@@ -149,9 +149,12 @@ drifter/
 ├── src/
 │   ├── can_bridge.py       # CAN → MQTT bridge
 │   ├── alert_engine.py     # Diagnostic rules
-│   ├── logger.py           # Telemetry logger
+│   ├── logger.py           # Telemetry logger (gzip-compresses old logs)
 │   ├── voice_alerts.py     # TTS voice alerts
-│   └── home_sync.py        # Home network sync
+│   ├── home_sync.py        # Home network sync
+│   └── status.py           # CLI status / health check
+├── tests/
+│   └── test_alert_engine.py # Unit tests for all diagnostic rules
 ├── services/
 │   ├── drifter-canbridge.service
 │   ├── drifter-alerts.service
@@ -172,14 +175,104 @@ drifter/
     └── test-bench.sh       # Bench test without a car
 ```
 
+## Checking System Status
+
+```bash
+# Human-readable status (services + live telemetry + current alert)
+python3 /opt/drifter/status.py
+
+# JSON output for scripting
+python3 /opt/drifter/status.py --json
+
+# Follow alert log
+journalctl -u drifter-alerts -f
+
+# Raw MQTT telemetry
+mosquitto_sub -h localhost -t "drifter/#" -v
+```
+
 ## Bench Testing (No Car Needed)
 
 ```bash
-# Create a virtual CAN interface
+# Create a virtual CAN interface and replay diagnostic scenarios
 sudo ./scripts/test-bench.sh
 
 # This simulates a Jaguar with a vacuum leak so you can test
 # the full pipeline: CAN → MQTT → Alerts → Voice → RealDash
+```
+
+## Running Tests
+
+```bash
+cd drifter-repo
+pip install pytest paho-mqtt
+python -m pytest tests/ -v
+```
+
+## Troubleshooting
+
+### CAN bridge won't start / no data
+
+```bash
+# Check if the interface exists
+ip link show can0
+
+# Bring it up manually (replace can0 with your interface)
+sudo ip link set can0 type can bitrate 500000
+sudo ip link set up can0
+
+# Verify the adapter is seen by the kernel
+lsusb | grep -i can
+dmesg | grep -i 'gs_usb\|can'
+```
+
+### No MQTT data in RealDash
+
+```bash
+# Confirm broker is running
+systemctl status nanomq || systemctl status mosquitto
+
+# Check canbridge is publishing
+mosquitto_sub -h localhost -t "drifter/engine/rpm" -v
+
+# Is the Pi's hotspot up?
+nmcli con show "MZ1312_DRIFTER"
+nmcli con up "MZ1312_DRIFTER"
+```
+
+### Voice alerts not working
+
+```bash
+# Test audio directly
+aplay /usr/share/sounds/alsa/Front_Left.wav
+
+# Test espeak fallback
+espeak-ng "Drifter test" -v en-gb
+
+# Check mixer levels (ALSA)
+alsamixer
+```
+
+### Log files
+
+```bash
+# Service logs
+journalctl -u drifter-canbridge -n 50
+journalctl -u drifter-alerts -n 50
+
+# Drive logs (stored as JSONL, compressed to .jsonl.gz after each day)
+ls -lh /opt/drifter/logs/
+zcat /opt/drifter/logs/drive_2026-01-01.jsonl.gz | tail -20
+```
+
+### Service won't stop cleanly
+
+All Python services handle `SIGTERM` properly so `systemctl stop` will trigger
+a clean shutdown with MQTT disconnect and log flush. If a service hangs, check:
+
+```bash
+systemctl status drifter-canbridge
+journalctl -u drifter-canbridge --since "1 min ago"
 ```
 
 ## 1312 — Local Processing — Zero Cloud — Total Sovereignty

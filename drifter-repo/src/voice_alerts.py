@@ -8,6 +8,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import time
+import signal
 import subprocess
 import logging
 import os
@@ -123,6 +124,15 @@ def on_message(client, userdata, msg):
 def main():
     log.info("DRIFTER Voice Alert System starting...")
 
+    running = True
+
+    def _handle_signal(sig, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     if not check_piper():
         log.warning("Continuing without voice — will retry on alert")
 
@@ -147,11 +157,8 @@ def main():
 
     log.info("Voice Alert System is LIVE")
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
+    while running:
+        time.sleep(1)
 
     client.loop_stop()
     client.disconnect()
