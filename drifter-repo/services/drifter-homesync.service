@@ -1,0 +1,14 @@
+[Unit]
+Description=MZ1312 DRIFTER Home Network Sync
+After=nanomq.service network-online.target
+Wants=nanomq.service
+
+[Service]
+Type=simple
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/home_sync.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=MZ1312 DRIFTER CAN Bridge
+After=network.target nanomq.service
+Wants=nanomq.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/local/bin/drifter-setup-can
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/can_bridge.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

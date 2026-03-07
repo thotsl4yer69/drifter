@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MZ1312 DRIFTER — RealDash Channel Map
+  Import this in RealDash: Connections → Add → MQTT
+  Broker: 10.42.0.1:1883
+  UNCAGED TECHNOLOGY — EST 1991
+-->
+<RealDashCAN version="2">
+  <frames>
+    <!-- Engine vitals (published by can_bridge.py) -->
+    <frame id="0x110">
+      <value name="Jaguar: RPM"
+             targetId="12"
+             offset="0" length="2"
+             units="rpm"
+             conversion="V*0.25"/>
+      <value name="Jaguar: Coolant Temp"
+             targetId="14"
+             offset="2" length="2"
+             units="°C"
+             conversion="V*0.1"/>
+      <value name="Jaguar: STFT Bank 1"
+             offset="4" length="2"
+             units="%"
+             conversion="(V-32768)*0.01"/>
+      <value name="Jaguar: STFT Bank 2"
+             offset="6" length="2"
+             units="%"
+             conversion="(V-32768)*0.01"/>
+    </frame>
+
+    <!-- Vehicle data -->
+    <frame id="0x120">
+      <value name="Jaguar: Speed"
+             targetId="13"
+             offset="0" length="2"
+             units="km/h"
+             conversion="V"/>
+      <value name="Jaguar: Throttle"
+             offset="2" length="2"
+             units="%"
+             conversion="V*0.1"/>
+      <value name="Jaguar: Engine Load"
+             offset="4" length="2"
+             units="%"
+             conversion="V*0.1"/>
+      <value name="Jaguar: Voltage"
+             offset="6" length="2"
+             units="V"
+             conversion="V*0.01"/>
+    </frame>
+
+    <!-- AI diagnostic text (published by alert_engine.py) -->
+    <frame id="0x200" size="64">
+      <value name="Sentient: Diagnostic"
+             offset="0" length="64"
+             type="text"/>
+    </frame>
+
+    <!-- Alert level (0=OK, 1=INFO, 2=AMBER, 3=RED) -->
+    <frame id="0x300">
+      <value name="Sentient: Alert Level"
+             offset="0" length="1"/>
+    </frame>
+  </frames>
+</RealDashCAN>

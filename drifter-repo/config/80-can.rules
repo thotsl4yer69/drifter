@@ -1,0 +1,8 @@
+# MZ1312 DRIFTER — USB CAN adapter udev rules
+# Auto-setup CAN interface when USB2CANFD is plugged in
+
+# Generic USB-CAN adapters (gs_usb driver — covers most USB2CANFD devices)
+ACTION=="add", SUBSYSTEM=="net", ATTR{type}=="280", RUN+="/usr/local/bin/setup-can.sh"
+
+# Fallback for serial-based CAN adapters
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="1d6b", RUN+="/usr/local/bin/setup-can.sh"

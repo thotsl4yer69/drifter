@@ -1,0 +1,15 @@
+# ── MZ1312 DRIFTER ──
+# Append these lines to /boot/firmware/config.txt
+
+# Enable SPI (for MCP2515 CAN HAT fallback)
+dtparam=spi=on
+
+# MCP2515 CAN overlay (fallback if not using USB2CANFD)
+# Uncomment the line below if using an SPI CAN HAT instead of USB adapter
+#dtoverlay=mcp2515-can0,oscillator=8000000,interrupt=25
+
+# NVMe Gen 3 speed
+dtparam=pciex1_gen=3
+
+# Audio output (force 3.5mm jack)
+dtparam=audio=on

@@ -1,0 +1,14 @@
+[Unit]
+Description=MZ1312 DRIFTER Alert Engine
+After=nanomq.service drifter-canbridge.service
+Wants=nanomq.service
+
+[Service]
+Type=simple
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/alert_engine.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
