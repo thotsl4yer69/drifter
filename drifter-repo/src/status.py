@@ -6,7 +6,6 @@ Usage: python3 src/status.py [--json]
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import sys
 import json
 import time
 import argparse
