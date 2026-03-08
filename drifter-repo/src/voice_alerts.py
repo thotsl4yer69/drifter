@@ -14,7 +14,8 @@ import logging
 import os
 from pathlib import Path
 import paho.mqtt.client as mqtt
-from config import MQTT_HOST, MQTT_PORT, TOPICS, VOICE_COOLDOWN, PIPER_MODEL, DRIFTER_DIR
+from config import (MQTT_HOST, MQTT_PORT, TOPICS, VOICE_COOLDOWN, PIPER_MODEL, DRIFTER_DIR,
+                   VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,17 +111,25 @@ def speak(text):
 
 
 def on_message(client, userdata, msg):
-    """Handle alert messages."""
+    """Handle alert messages with X-Type aware speech."""
     try:
         data = json.loads(msg.payload)
         level = data.get('level', 0)
         message = data.get('message', '')
 
-        # Only speak AMBER and RED alerts
-        if level >= 2 and message:
-            # Prefix with severity
-            prefix = "Warning. " if level == 2 else "Critical alert. "
-            speak(prefix + message)
+        if not message:
+            return
+
+        # RED (3) — Critical: immediate speech
+        if level >= 3:
+            speak("Critical alert. " + message)
+        # AMBER (2) — Warning: standard speech
+        elif level == 2:
+            speak("Warning. " + message)
+        # INFO (1) — Only speak warmup/X-Type status messages
+        elif level == 1 and any(kw in message.lower() for kw in (
+                'warmup complete', 'cold start', 'cold idle')):
+            speak(message)
 
     except (json.JSONDecodeError, KeyError) as e:
         log.warning(f"Bad alert message: {e}")
@@ -159,9 +168,10 @@ def main():
     client.subscribe(TOPICS['alert_message'])
     client.loop_start()
 
-    # Startup announcement
+    # Startup announcement — X-Type specific
     time.sleep(2)
-    speak("Drifter online. Monitoring Jaguar vitals.")
+    speak(f"Drifter online. {VEHICLE_YEAR} {VEHICLE_MODEL} {VEHICLE_ENGINE}. "
+          f"All diagnostic rules loaded. Monitoring your Jag.")
 
     log.info("Voice Alert System is LIVE")
 

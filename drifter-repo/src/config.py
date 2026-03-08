@@ -22,10 +22,59 @@ OBD_REQUEST_ID = 0x7DF
 OBD_RESPONSE_BASE = 0x7E8
 OBD_RESPONSE_END = 0x7EF
 
-# ── Vehicle: 2004 Jaguar X-Type 2.5L V6 ──
+# ═══════════════════════════════════════════════════════════════════
+#  Vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6 / Duratec)
+# ═══════════════════════════════════════════════════════════════════
 VEHICLE = "2004 Jaguar X-Type 2.5L V6"
+VEHICLE_YEAR = 2004
+VEHICLE_MODEL = "X-Type"
+VEHICLE_ENGINE = "2.5 V6"
+
+# Engine — Ford/Jaguar AJ-V6 (Duratec-derived)
+ENGINE_CODE = "AJ-V6"
+DISPLACEMENT_CC = 2495
+BORE_MM = 82.4
+STROKE_MM = 79.5
+COMPRESSION_RATIO = 10.0
+PEAK_HP = 194          # bhp @ 6800 RPM
+PEAK_TORQUE_NM = 245   # Nm @ 3500 RPM
+FIRING_ORDER = [1, 4, 2, 5, 3, 6]
+CYLINDER_COUNT = 6
+COIL_TYPE = "COP"      # Coil-on-plug, 6 individual coils
+
+# RPM
 REDLINE_RPM = 6500
 IDLE_RPM_MAX = 1000
+IDLE_RPM_WARM_LOW = 650    # Normal warm idle floor
+IDLE_RPM_WARM_HIGH = 780   # Normal warm idle ceiling
+FAST_IDLE_COLD_MAX = 1400  # Cold-start fast idle ceiling
+
+# Thermostat — plastic housing behind timing cover (known failure)
+THERMOSTAT_OPEN_C = 88      # Starts opening
+THERMOSTAT_FULL_C = 97      # Fully open
+COOLANT_NORMAL_LOW = 86     # Normal operating range low
+COOLANT_NORMAL_HIGH = 98    # Normal operating range high
+
+# Warmup — suppress lean alerts during cold start
+WARMUP_COOLANT_THRESHOLD = 60   # °C — below this, STFT lean is expected
+WARMUP_TIME_MAX = 600           # 10 min — if not at 80°C by then, thermostat issue
+WARMUP_COOLANT_TARGET = 80      # °C — should reach this within WARMUP_TIME_MAX
+
+# MAF — expected ranges for the AJ-V6
+MAF_IDLE_MIN = 2.5     # g/s — below this at warm idle = dirty/failing MAF
+MAF_IDLE_MAX = 6.0     # g/s — above this at idle = implausible
+MAF_CRUISE_MIN = 8.0   # g/s — cruising 60-70 km/h typical minimum
+
+# Drivetrain
+DRIVETRAIN = "AWD"     # Haldex coupling to rear axle
+TRANSMISSION = "5AT"   # Jatco 5-speed auto (JF506E)
+FUEL_TYPE = "petrol"
+FUEL_OCTANE = 95       # RON — UK spec
+
+# Tire spec — factory 205/55R16
+TIRE_SIZE = "205/55R16"
+TIRE_PRESSURE_FRONT = 30   # PSI factory spec
+TIRE_PRESSURE_REAR = 30    # PSI factory spec
 
 # ── Alert Levels ──
 LEVEL_OK = 0
@@ -69,13 +118,269 @@ THRESHOLDS = {
     'iat_high': 50,               # °C — hot soak warning
     'iat_critical': 65,           # °C — heat soak critical
 
-    # TPMS
-    'tpms_pressure_low': 28.0,    # PSI — low pressure warning
-    'tpms_pressure_crit': 22.0,   # PSI — critically low
-    'tpms_pressure_high': 42.0,   # PSI — overinflated
+    # TPMS (tuned for 205/55R16, factory 30 PSI)
+    'tpms_pressure_low': 26.0,    # PSI — X-Type factory min is 30, warn at -4
+    'tpms_pressure_crit': 20.0,   # PSI — critically low
+    'tpms_pressure_high': 38.0,   # PSI — overinflated for this size
     'tpms_temp_warn': 80,         # °C — tire temp warning
     'tpms_temp_crit': 100,        # °C — tire temp critical
     'tpms_rapid_loss': 3.0,       # PSI drop in 5 min = rapid loss
+
+    # X-Type Specific
+    'thermostat_oscillation': 8.0,     # °C swing in 2 min = failing thermostat
+    'thermostat_stuck_open_temp': 78,  # °C — below this after 10 min = stuck open
+    'maf_idle_low': 2.5,               # g/s — MAF too low at warm idle
+    'coil_rpm_drop_threshold': 150,    # RPM — sudden drop under load = misfire
+    'throttle_load_mismatch': 15.0,    # % — throttle open but load too low
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  DTC Lookup — 2004 Jaguar X-Type / AJ-V6 Specific
+#  Plain-English diagnosis with X-Type known causes
+# ═══════════════════════════════════════════════════════════════════
+XTYPE_DTC_LOOKUP = {
+    # Fuel system
+    'P0171': {
+        'desc': 'System Too Lean — Bank 1',
+        'cause': 'Intake manifold gasket leak, cracked PCV valve diaphragm, '
+                 'dirty MAF sensor, or vacuum hose off the brake booster.',
+        'action': 'Smoke test intake, clean MAF with electronics cleaner, '
+                  'check PCV valve on top of valve cover Bank 1.',
+        'severity': 'AMBER',
+    },
+    'P0174': {
+        'desc': 'System Too Lean — Bank 2',
+        'cause': 'Same as P0171 but Bank 2 side. On the X-Type the Bank 2 '
+                 'intake runner seals are harder to access.',
+        'action': 'Smoke test intake. If both P0171+P0174 appear together, '
+                  'suspect the upper intake plenum gasket or large shared vacuum leak.',
+        'severity': 'AMBER',
+    },
+    'P0172': {
+        'desc': 'System Too Rich — Bank 1',
+        'cause': 'Leaking fuel injector, stuck-open purge valve (common on X-Type), '
+                 'or failing upstream O2 sensor Bank 1.',
+        'action': 'Check purge valve on firewall side. Pull injector rail and '
+                  'look for drippers. Test O2 sensor heater resistance.',
+        'severity': 'AMBER',
+    },
+    'P0175': {
+        'desc': 'System Too Rich — Bank 2',
+        'cause': 'Same as P0172 but Bank 2. Also check for coolant leaking '
+                 'into cylinder (head gasket weep) on the rear bank.',
+        'action': 'Inspect spark plugs for fouling. White/steam residue = coolant leak.',
+        'severity': 'AMBER',
+    },
+
+    # Misfires — often coil packs on this engine
+    'P0300': {
+        'desc': 'Random/Multiple Cylinder Misfire',
+        'cause': 'On the AJ-V6 this is usually failing coil packs (COP), worn plugs, '
+                 'or a vacuum leak affecting multiple cylinders.',
+        'action': 'Swap coil packs between cylinders and see if misfire follows. '
+                  'Replace all 6 plugs if over 30k miles. Check for vacuum leaks.',
+        'severity': 'AMBER',
+    },
+    'P0301': {
+        'desc': 'Cylinder 1 Misfire',
+        'cause': 'Coil pack failure is the #1 cause on X-Type. Cylinder 1 is '
+                 'front-left (Bank 1, nearest radiator).',
+        'action': 'Swap coil from Cyl 1 to Cyl 4. If misfire moves → replace coil. '
+                  'If not → check plug, compression, injector.',
+        'severity': 'AMBER',
+    },
+    'P0302': {
+        'desc': 'Cylinder 2 Misfire',
+        'cause': 'Coil pack or spark plug. Cyl 2 is mid Bank 1.',
+        'action': 'Swap coil to another cylinder and retest.',
+        'severity': 'AMBER',
+    },
+    'P0303': {
+        'desc': 'Cylinder 3 Misfire',
+        'cause': 'Coil pack or spark plug. Cyl 3 is rear Bank 1.',
+        'action': 'Swap coil to another cylinder and retest.',
+        'severity': 'AMBER',
+    },
+    'P0304': {
+        'desc': 'Cylinder 4 Misfire',
+        'cause': 'Coil pack or spark plug. Cyl 4 is front Bank 2 (nearest alternator).',
+        'action': 'Swap coil to another cylinder and retest.',
+        'severity': 'AMBER',
+    },
+    'P0305': {
+        'desc': 'Cylinder 5 Misfire',
+        'cause': 'Coil pack or spark plug. Cyl 5 is mid Bank 2.',
+        'action': 'Swap coil to another cylinder and retest.',
+        'severity': 'AMBER',
+    },
+    'P0306': {
+        'desc': 'Cylinder 6 Misfire',
+        'cause': 'Coil pack or spark plug. Cyl 6 is rear Bank 2 (hardest to access).',
+        'action': 'Swap coil to another cylinder and retest.',
+        'severity': 'AMBER',
+    },
+
+    # Sensors
+    'P0340': {
+        'desc': 'Camshaft Position Sensor A — Bank 1',
+        'cause': 'CMP sensor failure or wiring corrosion. Common on ageing X-Types. '
+                 'Located behind the timing cover on Bank 1 side.',
+        'action': 'Replace CMP sensor (cheap part). Check connector for green corrosion.',
+        'severity': 'RED',
+    },
+    'P0345': {
+        'desc': 'Camshaft Position Sensor A — Bank 2',
+        'cause': 'Same as P0340 but Bank 2 side.',
+        'action': 'Replace CMP sensor Bank 2. Check for coolant contamination '
+                  'from thermostat housing leak (they are close together).',
+        'severity': 'RED',
+    },
+
+    # Catalyst
+    'P0420': {
+        'desc': 'Catalyst Efficiency Below Threshold — Bank 1',
+        'cause': 'Catalytic converter degraded, or downstream O2 sensor lazy. '
+                 'UK MOT relevant. On X-Type often caused by prolonged rich running '
+                 'from a bad coil pack fouling the cat.',
+        'action': 'Fix any upstream fuel trim or misfire codes FIRST. '
+                  'Then clear and retest. If cat is truly dead, budget £200-400 for replacement.',
+        'severity': 'AMBER',
+    },
+    'P0430': {
+        'desc': 'Catalyst Efficiency Below Threshold — Bank 2',
+        'cause': 'Same as P0420 but Bank 2. The X-Type has 2 pre-cats and 1 main cat.',
+        'action': 'Same approach — fix fuel/ignition first, then re-evaluate cat health.',
+        'severity': 'AMBER',
+    },
+
+    # EGR / Purge
+    'P0401': {
+        'desc': 'EGR Flow Insufficient',
+        'cause': 'Carbon buildup in EGR passages (very common on X-Type). '
+                 'EGR valve sticking or vacuum actuator leaking.',
+        'action': 'Remove and clean EGR valve. Clean EGR passages with carb cleaner. '
+                  'Check vacuum hoses to EGR actuator.',
+        'severity': 'AMBER',
+    },
+    'P0443': {
+        'desc': 'EVAP Purge Control Valve Circuit',
+        'cause': 'Purge valve solenoid failed or wiring fault. Located on the '
+                 'firewall side of the engine bay.',
+        'action': 'Test purge valve with 12V — should click. Replace if stuck open '
+                  '(causes rich condition) or stuck closed (fuel tank pressure).',
+        'severity': 'AMBER',
+    },
+
+    # Idle / Throttle — X-Type uses electronic throttle body (drive-by-wire)
+    'P0507': {
+        'desc': 'Idle Air Control RPM Higher Than Expected',
+        'cause': 'Vacuum leak, dirty throttle body, or sticking IAC. On X-Type '
+                 'the electronic throttle body gets carbon buildup inside.',
+        'action': 'Clean throttle body with carb cleaner (remove to clean properly). '
+                  'Then do idle relearn: key on 30s, start, idle 2 min, drive 10 min.',
+        'severity': 'AMBER',
+    },
+    'P1000': {
+        'desc': 'OBD-II System Readiness Not Complete',
+        'cause': 'Not a fault — monitors have not run since last battery disconnect '
+                 'or code clear. Normal after work.',
+        'action': 'Drive a mixed cycle: cold start, idle 2 min, accelerate to 60 mph, '
+                  'cruise 5 min, decelerate with foot off gas. Monitors will complete.',
+        'severity': 'INFO',
+    },
+
+    # O2 Sensors
+    'P0131': {
+        'desc': 'O2 Sensor Low Voltage — Bank 1 Sensor 1 (upstream)',
+        'cause': 'Upstream O2 sensor degraded or exhaust leak before sensor. '
+                 'On X-Type, check the flex joint near the manifold for cracks.',
+        'action': 'Check exhaust for leaks at manifold-to-flex joint. '
+                  'Test O2 heater fuse. Replace sensor if >80k miles.',
+        'severity': 'AMBER',
+    },
+    'P1131': {
+        'desc': 'O2 Sensor Lack of Switching — Bank 1',
+        'cause': 'Upstream O2 sensor stuck lean. Common on ageing X-Types. '
+                 'Can also be triggered by persistent vacuum leak.',
+        'action': 'Fix vacuum leaks first. If still present, replace Bank 1 sensor 1.',
+        'severity': 'AMBER',
+    },
+    'P1151': {
+        'desc': 'O2 Sensor Lack of Switching — Bank 2',
+        'cause': 'Same as P1131 but Bank 2 side.',
+        'action': 'Fix vacuum leaks first, then replace Bank 2 sensor 1 if needed.',
+        'severity': 'AMBER',
+    },
+
+    # Fuel pump
+    'P1235': {
+        'desc': 'Fuel Pump Control Out of Range',
+        'cause': 'Fuel pump relay failing, wiring fault, or fuel pump itself wearing out. '
+                 'On X-Type the pump is in the tank, access via rear seat.',
+        'action': 'Check fuel pump relay in engine bay fuse box first (swap with identical relay). '
+                  'Listen for pump prime when turning key to ON. '
+                  'Check fuel pressure at rail (spec: 3.0-3.5 bar).',
+        'severity': 'RED',
+    },
+
+    # Throttle body (drive-by-wire specific to X-Type)
+    'P1518': {
+        'desc': 'Intake Manifold Runner Control Stuck Open',
+        'cause': 'IMRC actuator failure or vacuum leak to the runner control. '
+                 'Affects power band above 3500 RPM.',
+        'action': 'Check vacuum hose to IMRC actuator. Test actuator with vacuum pump. '
+                  'Common on high-mileage X-Types.',
+        'severity': 'AMBER',
+    },
+    'P2106': {
+        'desc': 'Throttle Actuator — Forced Limited Power',
+        'cause': 'PCM has put the engine in limp mode. Usually triggered by another '
+                 'fault code. The X-Type throttle body motor can fail internally.',
+        'action': 'LIMP MODE. Read ALL codes — fix the root cause. '
+                  'If throttle body related, try cleaning first before replacing (£150+ part).',
+        'severity': 'RED',
+    },
+    'P2111': {
+        'desc': 'Throttle Actuator Stuck Open',
+        'cause': 'Throttle plate sticking or motor failure. Carbon buildup is '
+                 'the usual cause on X-Type.',
+        'action': 'Remove and clean throttle body. Check for scored bore. '
+                  'After refitting: idle relearn procedure required.',
+        'severity': 'RED',
+    },
+    'P2112': {
+        'desc': 'Throttle Actuator Stuck Closed',
+        'cause': 'Throttle plate jammed shut. Will cause loss of power or no-start.',
+        'action': 'Emergency: key off/on may reset. Clean or replace throttle body. '
+                  'Do NOT force the plate open with tools.',
+        'severity': 'RED',
+    },
+    'P2135': {
+        'desc': 'Throttle Position Sensor Correlation',
+        'cause': 'The two TPS signals inside the throttle body disagree. '
+                 'Wiring fault or internal throttle body failure.',
+        'action': 'Check TPS connector for corrosion. Wiggle-test wiring. '
+                  'If intermittent, throttle body replacement likely needed.',
+        'severity': 'RED',
+    },
+
+    # Communication
+    'U0100': {
+        'desc': 'Lost Communication with ECM/PCM',
+        'cause': 'CAN bus wiring fault, ECM power supply issue, or ECM failure. '
+                 'On X-Type, check the main engine fuse box and ECM connector.',
+        'action': 'Check battery voltage. Inspect ECM connector (behind glovebox). '
+                  'Check CAN bus termination with multimeter (should be ~60 ohms).',
+        'severity': 'RED',
+    },
+    'U0121': {
+        'desc': 'Lost Communication with ABS Module',
+        'cause': 'ABS module failure or CAN bus fault. The X-Type ABS module '
+                 'is known to fail internally (common issue).',
+        'action': 'Check ABS fuse first. If module dead, specialist rebuild '
+                  '(BBA Reman, ECU Testing) typically £150-200.',
+        'severity': 'AMBER',
+    },
 }
 
 # ── Calibration Defaults ──
@@ -84,9 +389,10 @@ CALIBRATION_DEFAULTS = {
     'stft2_baseline': 0.0,
     'ltft1_baseline': 0.0,
     'ltft2_baseline': 0.0,
-    'idle_rpm_baseline': 750.0,
+    'idle_rpm_baseline': 720.0,   # AJ-V6 typical warm idle
     'voltage_baseline': 14.2,
-    'coolant_normal': 92.0,
+    'coolant_normal': 92.0,       # Mid-range for AJ-V6 thermostat
+    'maf_idle_baseline': 3.8,     # g/s typical for 2.5L at idle
     'calibrated': False,
     'calibration_date': None,
     'drive_km': 0.0,

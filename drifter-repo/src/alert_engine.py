@@ -18,7 +18,10 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_HOST, MQTT_PORT, CALIBRATION_FILE,
     LEVEL_OK, LEVEL_INFO, LEVEL_AMBER, LEVEL_RED, LEVEL_NAMES,
-    THRESHOLDS, CALIBRATION_DEFAULTS, TOPICS
+    THRESHOLDS, CALIBRATION_DEFAULTS, TOPICS, XTYPE_DTC_LOOKUP,
+    WARMUP_COOLANT_THRESHOLD, WARMUP_TIME_MAX, WARMUP_COOLANT_TARGET,
+    THERMOSTAT_OPEN_C, COOLANT_NORMAL_LOW, COOLANT_NORMAL_HIGH,
+    MAF_IDLE_MIN, MAF_IDLE_MAX, IDLE_RPM_WARM_LOW, IDLE_RPM_WARM_HIGH,
 )
 
 logging.basicConfig(
@@ -30,6 +33,10 @@ log = logging.getLogger(__name__)
 
 # ── Calibration Baselines (loaded in main(), used by rules) ──
 calibration = dict(CALIBRATION_DEFAULTS)
+
+# ── Engine Run State (cold start awareness) ──
+engine_start_time = 0.0     # When RPM first went above 300
+warmup_complete = False       # Set True when coolant reaches WARMUP_COOLANT_TARGET
 
 # ── Rolling Buffer (60 seconds of data at ~10Hz) ──
 BUFFER_SIZE = 600
@@ -97,12 +104,20 @@ class VehicleState:
 # Each rule returns (level, message) or None
 
 def rule_vacuum_leak_bank1(state: VehicleState):
-    """Bank 1 lean at idle = physical vacuum leak on Bank 1 side."""
+    """Bank 1 lean at idle = physical vacuum leak on Bank 1 side.
+    X-Type: Check brake booster valve, PCV hose on Bank 1 valve cover,
+    and intake gaskets on the near side of the V6.
+    """
     stft1 = state.avg(state.stft1, 30)
     stft2 = state.avg(state.stft2, 30)
     rpm = state.avg(state.rpm, 30)
+    coolant = state.latest(state.coolant)
 
     if stft1 is None or stft2 is None or rpm is None:
+        return None
+
+    # Suppress during cold start — lean STFTs are normal until warm
+    if coolant is not None and coolant < WARMUP_COOLANT_THRESHOLD:
         return None
 
     # Subtract baseline so calibrated engines don't false-trigger
@@ -118,12 +133,19 @@ def rule_vacuum_leak_bank1(state: VehicleState):
 
 
 def rule_vacuum_leak_both(state: VehicleState):
-    """Both banks lean at idle = shared vacuum leak."""
+    """Both banks lean at idle = shared vacuum leak.
+    X-Type: Upper intake plenum gasket or PCV valve diaphragm torn.
+    """
     stft1 = state.avg(state.stft1, 30)
     stft2 = state.avg(state.stft2, 30)
     rpm = state.avg(state.rpm, 30)
+    coolant = state.latest(state.coolant)
 
     if stft1 is None or stft2 is None or rpm is None:
+        return None
+
+    # Suppress during cold start
+    if coolant is not None and coolant < WARMUP_COOLANT_THRESHOLD:
         return None
 
     adj1 = stft1 - calibration.get('stft1_baseline', 0)
@@ -326,22 +348,42 @@ def rule_voltage_overcharge(state: VehicleState):
 
 
 def rule_active_dtcs(state: VehicleState):
-    """Report active DTCs read from ECU."""
+    """Report active DTCs with X-Type specific diagnosis."""
     if not state.active_dtcs and not state.pending_dtcs:
         return None
 
     if state.active_dtcs:
-        codes = ', '.join(state.active_dtcs[:5])
-        extra = f" (+{len(state.active_dtcs) - 5} more)" if len(state.active_dtcs) > 5 else ""
-        return (LEVEL_AMBER,
-                f"Active DTCs: {codes}{extra}. "
-                f"ECU has logged fault codes. Check with full scanner for details.")
+        # Use X-Type DTC lookup for richer diagnosis
+        first_code = state.active_dtcs[0]
+        lookup = XTYPE_DTC_LOOKUP.get(first_code)
+
+        if lookup:
+            severity = LEVEL_RED if lookup['severity'] == 'RED' else LEVEL_AMBER
+            extra = f" (+{len(state.active_dtcs) - 1} more)" if len(state.active_dtcs) > 1 else ""
+            return (severity,
+                    f"{first_code}: {lookup['desc']}{extra}. "
+                    f"{lookup['cause'][:120]} "
+                    f"Action: {lookup['action'][:100]}")
+        else:
+            codes = ', '.join(state.active_dtcs[:5])
+            extra = f" (+{len(state.active_dtcs) - 5} more)" if len(state.active_dtcs) > 5 else ""
+            return (LEVEL_AMBER,
+                    f"Active DTCs: {codes}{extra}. "
+                    f"ECU has logged fault codes. Check with full scanner for details.")
 
     if state.pending_dtcs:
-        codes = ', '.join(state.pending_dtcs[:3])
-        return (LEVEL_INFO,
-                f"Pending DTCs: {codes}. "
-                f"Intermittent faults detected — may self-clear or escalate.")
+        first_code = state.pending_dtcs[0]
+        lookup = XTYPE_DTC_LOOKUP.get(first_code)
+        if lookup:
+            return (LEVEL_INFO,
+                    f"Pending {first_code}: {lookup['desc']}. "
+                    f"Intermittent — may self-clear or escalate. "
+                    f"Watch for: {lookup['cause'][:100]}")
+        else:
+            codes = ', '.join(state.pending_dtcs[:3])
+            return (LEVEL_INFO,
+                    f"Pending DTCs: {codes}. "
+                    f"Intermittent faults detected — may self-clear or escalate.")
     return None
 
 
@@ -444,8 +486,279 @@ def rule_tpms_temp(state: VehicleState):
     return None
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  X-Type Specific Rules — 2004 Jaguar X-Type 2.5L V6 (AJ-V6)
+# ═══════════════════════════════════════════════════════════════════
+
+def rule_xtype_thermostat(state: VehicleState):
+    """Thermostat housing failure detection.
+    The X-Type plastic thermostat housing (behind timing cover) is a known
+    failure point. Detects two patterns:
+      1. Coolant oscillation >8°C in 2 minutes while driving
+      2. Coolant stuck low (<78°C) after extended driving
+    """
+    if len(state.coolant) < 50:
+        return None
+
+    coolant = state.latest(state.coolant)
+    rpm = state.avg(state.rpm, 20)
+    if coolant is None or rpm is None:
+        return None
+
+    # Pattern 1: Oscillation — thermostat repeatedly opening/closing
+    if len(state.coolant) >= 200:
+        recent = list(state.coolant)[-200:]  # ~20s of readings at 10Hz
+        c_min = min(recent)
+        c_max = max(recent)
+        swing = c_max - c_min
+
+        if swing > THRESHOLDS['thermostat_oscillation'] and coolant > 70:
+            return (LEVEL_AMBER,
+                    f"Thermostat cycling: coolant swinging {c_min:.0f}-{c_max:.0f}°C "
+                    f"(±{swing/2:.0f}°C). X-Type plastic thermostat housing may be "
+                    f"cracking. Inspect behind timing cover for coolant weeping.")
+
+    # Pattern 2: Stuck open — never reaches full temp
+    if not warmup_complete and engine_start_time > 0:
+        run_time = time.time() - engine_start_time
+        if run_time > WARMUP_TIME_MAX and coolant < WARMUP_COOLANT_TARGET and rpm > 500:
+            return (LEVEL_AMBER,
+                    f"Slow warmup: {coolant:.0f}°C after {run_time/60:.0f} min running. "
+                    f"Thermostat may be stuck open. X-Type thermostat opens at "
+                    f"{THERMOSTAT_OPEN_C}°C — check housing and stat.")
+
+    # Pattern 3: Stuck closed — above normal range at cruise (not in the alarm zone yet)
+    if coolant > COOLANT_NORMAL_HIGH and coolant < THRESHOLDS['coolant_amber']:
+        speed = state.latest(state.speed)
+        if speed and speed > 40:  # At road speed, airflow should cool
+            return (LEVEL_INFO,
+                    f"Coolant {coolant:.0f}°C at {speed:.0f} km/h — running warm. "
+                    f"Normal range for X-Type is {COOLANT_NORMAL_LOW}-{COOLANT_NORMAL_HIGH}°C. "
+                    f"Monitor. Check coolant level and fan operation.")
+
+    return None
+
+
+def rule_xtype_coil_pack(state: VehicleState):
+    """Coil pack degradation detection.
+    The AJ-V6 uses 6 individual coil-on-plug packs which are a common failure.
+    Detects: RPM instability specifically under load (throttle >15%, 1000-4500 RPM)
+    with one bank STFT spiking — suggests a cylinder dropping out momentarily.
+    """
+    if len(state.rpm) < 100:
+        return None
+
+    rpm = state.avg(state.rpm, 20)
+    throttle = state.avg(state.throttle, 20)
+    coolant = state.latest(state.coolant)
+
+    if rpm is None or throttle is None:
+        return None
+
+    # Suppress during cold start — cold misfires are different
+    if coolant is not None and coolant < WARMUP_COOLANT_THRESHOLD:
+        return None
+
+    # Only check under load, not at idle (idle instability is a separate rule)
+    if rpm < 1000 or throttle < 15:
+        return None
+
+    # Look for RPM drops under load — a classic coil pack symptom
+    recent_rpm = list(state.rpm)[-100:]
+    rpm_max = max(recent_rpm)
+    rpm_min = min(recent_rpm)
+    drop = rpm_max - rpm_min
+
+    if drop > THRESHOLDS['coil_rpm_drop_threshold'] and rpm < 4500:
+        # Check if one bank's STFT is spiking (single-cylinder misfire enrichment)
+        stft1 = state.avg(state.stft1, 20)
+        stft2 = state.avg(state.stft2, 20)
+        bank_hint = ""
+        if stft1 is not None and stft2 is not None:
+            if abs(stft1 - stft2) > 5:
+                bank = "Bank 1" if stft1 > stft2 else "Bank 2"
+                bank_hint = f" {bank} STFT higher — misfire likely on that bank."
+
+        return (LEVEL_AMBER,
+                f"RPM stumble under load: ±{drop/2:.0f} RPM at {throttle:.0f}% throttle. "
+                f"Possible coil pack breaking down on the AJ-V6.{bank_hint} "
+                f"Swap coils between cylinders to isolate the faulty unit.")
+
+    return None
+
+
+def rule_xtype_maf_degradation(state: VehicleState):
+    """MAF sensor health check.
+    The AJ-V6 MAF sensor (hot-film type) gets contaminated over time, causing
+    underreporting of airflow. This makes the ECU command lean, compensated by
+    positive LTFT. Detects: MAF too low at warm idle.
+    """
+    maf = state.avg(state.maf, 30)
+    rpm = state.avg(state.rpm, 30)
+    coolant = state.latest(state.coolant)
+
+    if maf is None or rpm is None or coolant is None:
+        return None
+
+    # Only check after warmup and at idle
+    if coolant < WARMUP_COOLANT_TARGET or rpm > IDLE_RPM_WARM_HIGH + 100:
+        return None
+
+    if maf < THRESHOLDS['maf_idle_low'] and rpm > 400:
+        ltft1 = state.avg(state.ltft1, 20)
+        ltft2 = state.avg(state.ltft2, 20)
+        ltft_hint = ""
+        if ltft1 is not None and ltft2 is not None:
+            avg_ltft = (ltft1 + ltft2) / 2
+            if avg_ltft > 8:
+                ltft_hint = (f" LTFT averaging +{avg_ltft:.1f}% confirms "
+                             f"ECU compensating for underreported air.")
+
+        return (LEVEL_AMBER,
+                f"MAF reading low: {maf:.1f} g/s at idle (expect ≥{MAF_IDLE_MIN} g/s "
+                f"for 2.5L V6).{ltft_hint} Clean MAF with electronics cleaner "
+                f"(CRC MAF cleaner spray). Do NOT touch the hot-film element.")
+
+    if maf > MAF_IDLE_MAX and rpm < 900:
+        return (LEVEL_INFO,
+                f"MAF reading high at idle: {maf:.1f} g/s (expect <{MAF_IDLE_MAX} g/s). "
+                f"Possible air leak after MAF, or MAF sensor drift.")
+
+    return None
+
+
+def rule_xtype_throttle_body(state: VehicleState):
+    """Throttle body carbon buildup / sticking detection.
+    The X-Type's electronic throttle body (drive-by-wire) accumulates carbon deposits
+    causing sticky operation. Detects: throttle open significantly but engine load
+    stays near zero, or load oscillation at steady throttle.
+    """
+    throttle = state.avg(state.throttle, 20)
+    load = state.avg(state.load, 20)
+    rpm = state.avg(state.rpm, 20)
+    coolant = state.latest(state.coolant)
+
+    if throttle is None or load is None or rpm is None:
+        return None
+
+    # Only check after warmup
+    if coolant is not None and coolant < WARMUP_COOLANT_TARGET:
+        return None
+
+    # Throttle open but load not responding
+    if throttle > 20 and load < (throttle - THRESHOLDS['throttle_load_mismatch']):
+        if rpm > 500 and rpm < 3000:
+            return (LEVEL_AMBER,
+                    f"Throttle mismatch: {throttle:.0f}% throttle but only "
+                    f"{load:.0f}% load at {rpm:.0f} RPM. X-Type throttle body "
+                    f"may be sticking from carbon buildup. "
+                    f"Clean with carb cleaner, then do idle relearn: "
+                    f"key ON 30s → start → idle 2 min → drive 10 min.")
+
+    return None
+
+
+def rule_xtype_cold_start(state: VehicleState):
+    """Cold start monitoring — report status, not alarm.
+    The AJ-V6 runs deliberately rich/fast idle on cold start.
+    RPM 1000-1400 and lean STFTs are NORMAL until 60°C+.
+    """
+    coolant = state.latest(state.coolant)
+    rpm = state.avg(state.rpm, 10)
+
+    if coolant is None or rpm is None:
+        return None
+
+    # Only relevant during cold start
+    if coolant >= WARMUP_COOLANT_THRESHOLD:
+        return None
+
+    # If cold and RPM is high, that's expected fast idle — just inform
+    if rpm > 1000 and rpm < 1500 and coolant < 40:
+        return (LEVEL_INFO,
+                f"Cold start: {coolant:.0f}°C, fast idle {rpm:.0f} RPM. "
+                f"Normal for AJ-V6. Will settle to {IDLE_RPM_WARM_LOW}-"
+                f"{IDLE_RPM_WARM_HIGH} RPM when warm.")
+
+    # If cold and RPM is suspiciously low, idle control may be failing
+    if rpm < 500 and rpm > 100 and coolant < 30:
+        return (LEVEL_AMBER,
+                f"Cold idle too low: {rpm:.0f} RPM at {coolant:.0f}°C. "
+                f"AJ-V6 should fast-idle at 1000-1400 RPM when cold. "
+                f"Check throttle body and IAC valve. Risk of cold stall.")
+
+    return None
+
+
+def rule_xtype_alternator_age(state: VehicleState):
+    """X-Type alternator pattern — detect subtle failure onset.
+    The alternator on X-Type is known to fail gradually. Detects
+    voltage sagging at higher electrical loads (lights, heated screen)
+    even when RPM is adequate. NOT the same as the generic voltage rule —
+    this catches the pattern earlier.
+    """
+    if len(state.voltage) < 100:
+        return None
+
+    voltage = state.avg(state.voltage, 50)
+    rpm = state.avg(state.rpm, 50)
+
+    if voltage is None or rpm is None:
+        return None
+
+    # If RPM is good and voltage is in the 'sag' zone (13.2-13.5V), it's a warning
+    # that the alternator is working harder than it should. A healthy X-Type alternator
+    # should hold 13.8-14.4V easily at 1500+ RPM.
+    if rpm > 1500 and 12.8 < voltage < 13.5:
+        # Check for voltage trend — is it dropping over time?
+        trend = state.trend(state.voltage, 200)
+        if trend < -0.001:  # Falling voltage over time
+            return (LEVEL_INFO,
+                    f"Alternator output marginal: {voltage:.1f}V at {rpm:.0f} RPM "
+                    f"(healthy AJ-V6 should hold 13.8-14.4V). Trending down. "
+                    f"X-Type alternator bearing or brush wear developing. "
+                    f"Check belt tension first, budget for replacement if worsening.")
+
+    return None
+
+
+def rule_xtype_warmup_progress(state: VehicleState):
+    """Track warmup progression and inform the driver.
+    After warm-up completes, report normal operating status once.
+    """
+    global warmup_complete, engine_start_time
+
+    coolant = state.latest(state.coolant)
+    rpm = state.latest(state.rpm)
+
+    if coolant is None or rpm is None:
+        return None
+
+    # Track engine start
+    if rpm > 300 and engine_start_time == 0:
+        engine_start_time = time.time()
+
+    # Track engine stop
+    if rpm < 100 and engine_start_time > 0:
+        engine_start_time = 0
+        warmup_complete = False
+        return None
+
+    # Detect warmup completion
+    if not warmup_complete and coolant >= WARMUP_COOLANT_TARGET and engine_start_time > 0:
+        warmup_complete = True
+        run_time = time.time() - engine_start_time
+        return (LEVEL_INFO,
+                f"Warmup complete: {coolant:.0f}°C reached in {run_time/60:.1f} min. "
+                f"All diagnostic rules now active. Normal range: "
+                f"{COOLANT_NORMAL_LOW}-{COOLANT_NORMAL_HIGH}°C.")
+
+    return None
+
+
 # ── All Rules ──
 ALL_RULES = [
+    # Core OBD-II rules
     rule_vacuum_leak_bank1,
     rule_vacuum_leak_both,
     rule_coolant_critical,
@@ -459,9 +772,18 @@ ALL_RULES = [
     rule_voltage_overcharge,
     rule_active_dtcs,
     rule_stalled,
+    # TPMS
     rule_tpms_low_pressure,
     rule_tpms_rapid_loss,
     rule_tpms_temp,
+    # X-Type 2.5L V6 specific
+    rule_xtype_thermostat,
+    rule_xtype_coil_pack,
+    rule_xtype_maf_degradation,
+    rule_xtype_throttle_body,
+    rule_xtype_cold_start,
+    rule_xtype_alternator_age,
+    rule_xtype_warmup_progress,
 ]
 
 
