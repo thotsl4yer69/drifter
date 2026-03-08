@@ -14,12 +14,14 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 
 ## What It Does
 
-- **Reads** the Jaguar's CAN bus via USB2CANFD adapter and OBD-II
-- **Diagnoses** mechanical issues in real-time using deterministic rules (vacuum leaks, coolant, alternator, misfires, rich/lean conditions)
-- **Displays** live telemetry on your Pioneer head unit via RealDash + Android Auto
+- **Reads** the Jaguar's CAN bus via USB2CANFD adapter and OBD-II (Mode 01 live data + Mode 03/07 DTCs)
+- **Diagnoses** mechanical issues in real-time using 13 deterministic rules (vacuum leaks, fuel trim drift, coolant, alternator, intake heat soak, DTC detection, stall detection, and more)
+- **Displays** live telemetry on your Pioneer head unit via RealDash TCP CAN bridge + Android Auto
 - **Speaks** diagnostic alerts through your car speakers via Piper TTS
-- **Logs** all telemetry to NVMe for post-drive analysis
-- **Syncs** to the Sentient Core home network (nanob) when in range
+- **Logs** all telemetry to NVMe with drive session detection and per-drive summaries
+- **Calibrates** to your specific engine's baselines after warm-up
+- **Monitors** its own health — watchdog restarts failed services automatically
+- **Syncs** logs and calibration data to the Sentient Core home network (nanob) when in range
 
 ## Hardware
 
@@ -49,10 +51,13 @@ sudo ./install.sh
 sudo reboot
 
 # 5. Connect phone to Wi-Fi: MZ1312_DRIFTER / uncaged1312
-# 6. Open RealDash → MQTT → 10.42.0.1:1883
+# 6. Open RealDash → TCP CAN → 10.42.0.1:35000
+#    (or MQTT → 10.42.0.1:1883)
 # 7. Plug phone into Pioneer via USB
 # 8. Screw OBD-II pigtail CAN-H/CAN-L into USB2CANFD terminals
-# 9. Done.
+# 9. After first warm-up drive, run calibration:
+#    sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
+# 10. Done.
 ```
 
 ## Architecture
@@ -73,16 +78,20 @@ sudo reboot
 │                                                          │
 │  can_bridge.py ──→ MQTT (NanoMQ :1883)                  │
 │                       │                                  │
-│              ┌────────┼────────┐                         │
-│              ▼        ▼        ▼                         │
-│        alert_engine  logger  voice_alerts                │
-│              │        │        │                         │
-│              ▼        ▼        ▼                         │
-│         MQTT pub   JSON logs  Piper TTS                  │
-│              │     (NVMe)    (3.5mm out)                 │
-│              │                                           │
-│         home_sync ──→ nanob (192.168.1.159)             │
-│                      (when home)                         │
+│         ┌─────────────┼─────────────────┐                │
+│         ▼             ▼                 ▼                │
+│   alert_engine    logger          voice_alerts           │
+│   (13 rules)    (sessions)       (Piper TTS)            │
+│         │             │                 │                │
+│         ▼             ▼                 ▼                │
+│    MQTT pub      JSON logs        3.5mm audio            │
+│         │        (NVMe)                                  │
+│         │                                                │
+│   realdash_bridge ──→ TCP :35000 (RealDash 0x44)        │
+│   watchdog.py ──→ auto-restarts failed services          │
+│   calibrate.py ──→ learns engine baselines               │
+│   home_sync ──→ nanob (192.168.1.159) when home          │
+│                 (MQTT bridge + rsync logs)                │
 │                                                          │
 │  Wi-Fi Hotspot: MZ1312_DRIFTER (10.42.0.1)             │
 └──────────────────────┬──────────────────────────────────┘
@@ -103,41 +112,78 @@ sudo reboot
 | Service | What It Does | Auto-starts |
 |---------|-------------|-------------|
 | `nanomq` | MQTT message broker | Yes |
-| `drifter-canbridge` | CAN bus → MQTT translator | Yes |
-| `drifter-alerts` | Diagnostic rule engine (7 rules) | Yes |
-| `drifter-logger` | Telemetry → JSON log files | Yes |
+| `drifter-canbridge` | CAN bus → MQTT translator (Mode 01 + DTC reads) | Yes |
+| `drifter-alerts` | Diagnostic rule engine (13 rules) | Yes |
+| `drifter-logger` | Telemetry → JSON logs with drive session detection | Yes |
 | `drifter-voice` | Piper TTS voice alerts | Yes |
 | `drifter-hotspot` | Wi-Fi AP for phone | Yes |
-| `drifter-homesync` | MQTT bridge to nanob | Yes |
+| `drifter-homesync` | MQTT bridge + rsync log sync to nanob | Yes |
+| `drifter-watchdog` | Service health monitor + auto-restart | Yes |
+| `drifter-realdash` | MQTT → TCP CAN frame bridge for RealDash | Yes |
 
 ## MQTT Topics
 
 ```
+# ── Engine Telemetry ──
 drifter/engine/rpm          # Engine RPM
 drifter/engine/coolant      # Coolant temp (°C)
 drifter/engine/stft1        # Short-term fuel trim Bank 1 (%)
 drifter/engine/stft2        # Short-term fuel trim Bank 2 (%)
+drifter/engine/ltft1        # Long-term fuel trim Bank 1 (%)
+drifter/engine/ltft2        # Long-term fuel trim Bank 2 (%)
 drifter/engine/load         # Calculated engine load (%)
 drifter/engine/throttle     # Throttle position (%)
+drifter/engine/iat          # Intake air temperature (°C)
+drifter/engine/maf          # Mass air flow (g/s)
+
+# ── Vehicle ──
 drifter/vehicle/speed       # Vehicle speed (km/h)
 drifter/power/voltage       # Battery/alternator voltage (V)
+
+# ── Diagnostics ──
 drifter/alert/level         # Alert level (0=OK, 1=INFO, 2=AMBER, 3=RED)
 drifter/alert/message       # Diagnostic message (plain English)
+drifter/diag/dtc            # JSON: {stored: [...], pending: [...]}
+
+# ── System ──
 drifter/snapshot            # Combined snapshot (all values)
 drifter/system/status       # Node status (online/offline)
+drifter/system/watchdog     # JSON: service health + system metrics
+drifter/session             # JSON: drive session start/stop events
+drifter/calibration         # JSON: calibration results
 ```
 
 ## Diagnostic Rules
 
-| Rule | Trigger | Alert |
-|------|---------|-------|
-| Vacuum leak (Bank 1) | STFT1 >12%, RPM <900, STFT2 <5% | AMBER |
-| Vacuum leak (Both) | STFT1 >12%, STFT2 >12%, RPM <900 | AMBER |
-| Coolant critical | Temp ≥108°C or rising >2°C/min over 100°C | RED |
-| Running rich | STFT <-12% sustained 30s+ | AMBER |
-| Alternator failing | Voltage <13.2V at RPM >1500 | AMBER |
-| Idle instability | RPM spread >200 at idle | INFO |
-| Over-rev | RPM >6500 | RED |
+| # | Rule | Trigger | Alert |
+|---|------|---------|-------|
+| 1 | Vacuum leak (Bank 1) | STFT1 >12%, RPM <900, STFT2 <5% | AMBER |
+| 2 | Vacuum leak (Both) | STFT1 >12%, STFT2 >12%, RPM <900 | AMBER |
+| 3 | Coolant critical | Temp ≥108°C or rising >2°C/min over 100°C | RED |
+| 4 | Running rich | STFT <-12% sustained 30s+ | AMBER |
+| 5 | Alternator failing | Voltage <13.2V at RPM >1500 | AMBER |
+| 6 | Idle instability | RPM spread >200 at idle | INFO |
+| 7 | Over-rev | RPM >6500 | RED |
+| 8 | LTFT drift | LTFT >±20% (maxed) or >±12% (drifted) | RED/AMBER |
+| 9 | Bank imbalance | STFT1 vs STFT2 divergence >15% | AMBER |
+| 10 | Intake heat soak | IAT >65°C at speed, or >50°C at idle | AMBER |
+| 11 | Voltage overcharge | Voltage >15.5V (regulator failure) | RED |
+| 12 | Active DTCs | ECU reports stored/pending fault codes | AMBER/RED |
+| 13 | Engine stalled | RPM drops to 0 from >300 unexpectedly | RED |
+
+## Calibration
+
+The alert engine uses configurable thresholds from `src/config.py`. For per-vehicle precision, run the calibration tool after a warm-up drive:
+
+```bash
+# Auto-calibrate (waits for warm engine, samples 5 minutes at idle)
+sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
+
+# Check calibration status
+/opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --status
+```
+
+Calibration learns: baseline STFT, LTFT, idle RPM, and voltage for your specific engine. The alert engine automatically uses these learned baselines if a calibration file exists.
 
 ## Repo Structure
 
@@ -147,21 +193,25 @@ drifter/
 ├── README.md               # This file
 ├── LICENSE                  # MIT
 ├── src/
-│   ├── can_bridge.py       # CAN → MQTT bridge
-│   ├── alert_engine.py     # Diagnostic rules
-│   ├── logger.py           # Telemetry logger (gzip-compresses old logs)
+│   ├── config.py           # Central configuration (thresholds, paths, topics)
+│   ├── can_bridge.py       # CAN → MQTT bridge (Mode 01 + DTC reads)
+│   ├── alert_engine.py     # Diagnostic rules (13 rules)
+│   ├── logger.py           # Telemetry logger (drive sessions, gzip compression)
 │   ├── voice_alerts.py     # TTS voice alerts
-│   ├── home_sync.py        # Home network sync
-│   └── status.py           # CLI status / health check
-├── tests/
-│   └── test_alert_engine.py # Unit tests for all diagnostic rules
+│   ├── home_sync.py        # Home network sync (MQTT bridge + rsync)
+│   ├── status.py           # CLI status / health check dashboard
+│   ├── calibrate.py        # Auto-calibration tool (learns engine baselines)
+│   ├── watchdog.py         # Service health monitor + auto-restart
+│   └── realdash_bridge.py  # MQTT → RealDash TCP CAN frame bridge
 ├── services/
 │   ├── drifter-canbridge.service
 │   ├── drifter-alerts.service
 │   ├── drifter-logger.service
 │   ├── drifter-voice.service
 │   ├── drifter-hotspot.service
-│   └── drifter-homesync.service
+│   ├── drifter-homesync.service
+│   ├── drifter-watchdog.service
+│   └── drifter-realdash.service
 ├── config/
 │   ├── nanomq.conf         # MQTT broker config
 │   ├── setup-can.sh        # CAN interface auto-setup
@@ -169,10 +219,8 @@ drifter/
 │   └── boot-config.txt     # Lines to add to /boot/firmware/config.txt
 ├── realdash/
 │   └── drifter_channels.xml # RealDash channel map
-├── docs/
-│   └── WIRING.md           # Physical wiring guide
-└── scripts/
-    └── test-bench.sh       # Bench test without a car
+└── docs/
+    └── WIRING.md           # Physical wiring guide
 ```
 
 ## Checking System Status
@@ -191,23 +239,22 @@ journalctl -u drifter-alerts -f
 mosquitto_sub -h localhost -t "drifter/#" -v
 ```
 
-## Bench Testing (No Car Needed)
+## Drive Sessions
+
+The logger automatically detects engine-on/engine-off transitions and records per-drive summaries:
 
 ```bash
-# Create a virtual CAN interface and replay diagnostic scenarios
-sudo ./scripts/test-bench.sh
+# View session summaries
+ls /opt/drifter/logs/sessions/
 
-# This simulates a Jaguar with a vacuum leak so you can test
-# the full pipeline: CAN → MQTT → Alerts → Voice → RealDash
+# Example session JSON includes:
+# - session_id, start/end time, duration
+# - max RPM, max speed, max coolant, min voltage
+# - alert count, highest alert level
+# - estimated distance
 ```
 
-## Running Tests
-
-```bash
-cd drifter-repo
-pip install pytest paho-mqtt
-python -m pytest tests/ -v
-```
+Sessions are published to `drifter/session` via MQTT and synced to nanob via rsync.
 
 ## Troubleshooting
 
@@ -259,10 +306,17 @@ alsamixer
 # Service logs
 journalctl -u drifter-canbridge -n 50
 journalctl -u drifter-alerts -n 50
+journalctl -u drifter-watchdog -n 50
 
 # Drive logs (stored as JSONL, compressed to .jsonl.gz after each day)
 ls -lh /opt/drifter/logs/
 zcat /opt/drifter/logs/drive_2026-01-01.jsonl.gz | tail -20
+
+# Drive session summaries
+cat /opt/drifter/logs/sessions/session_*.json | python3 -m json.tool
+
+# System health (from watchdog)
+mosquitto_sub -h localhost -t "drifter/system/watchdog" -C 1 | python3 -m json.tool
 ```
 
 ### Service won't stop cleanly

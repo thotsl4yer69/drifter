@@ -39,7 +39,7 @@ banner
 # ── Preflight ──
 if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./install.sh"; fi
 
-TOTAL=9
+TOTAL=10
 
 # ── 1. System Update ──
 step 1 "Updating system packages"
@@ -108,7 +108,8 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-for f in can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py; do
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py"
+for f in $SRC_FILES; do
     cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
     chmod +x "${DRIFTER_DIR}/${f}"
 done
@@ -119,9 +120,9 @@ mkdir -p ${DRIFTER_DIR}/realdash
 cp ${REPO_DIR}/realdash/drifter_channels.xml ${DRIFTER_DIR}/realdash/
 ok "RealDash channel map deployed"
 
-# Log directory
-mkdir -p ${DRIFTER_DIR}/logs
-ok "Log directory created"
+# Log & session directories
+mkdir -p ${DRIFTER_DIR}/logs/sessions
+ok "Log directories created"
 
 # ── 7. CAN Interface Setup ──
 step 7 "Configuring CAN interface"
@@ -186,7 +187,7 @@ done
 systemctl daemon-reload
 
 # Enable all services
-SERVICES="drifter-canbridge drifter-alerts drifter-logger drifter-voice drifter-hotspot drifter-homesync"
+SERVICES="drifter-canbridge drifter-alerts drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
@@ -199,6 +200,12 @@ for svc in $SERVICES; do
     ok "Enabled: $svc"
 done
 
+# ── 10. Initial Calibration Hint ──
+step 10 "Post-install calibration"
+echo -e "  After first warm-up drive, run calibration to learn baselines:"
+echo -e "  ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
+ok "Calibration tool ready"
+
 # ── Done ──
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════${NC}"
@@ -210,13 +217,14 @@ echo ""
 echo -e "  After reboot:"
 echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC}"
 echo -e "     Password: ${CYAN}uncaged1312${NC}"
-echo -e "  2. Open RealDash → MQTT → ${CYAN}10.42.0.1:1883${NC}"
+echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
+echo -e "     (or MQTT → ${CYAN}10.42.0.1:1883${NC})"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
 echo -e "  4. Screw OBD-II pigtail into USB2CANFD terminals"
+echo -e "  5. After first warm-up: ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
 echo ""
 echo -e "  Check status: ${CYAN}python3 ${DRIFTER_DIR}/status.py${NC}"
 echo -e "  Service logs: ${CYAN}journalctl -u drifter-alerts -f${NC}"
-echo -e "  Bench test:   ${CYAN}sudo ./scripts/test-bench.sh${NC}"
 echo ""
 echo -e "  ${RED}1312${NC} — LOCAL PROCESSING — ZERO CLOUD — TOTAL SOVEREIGNTY"
 echo ""

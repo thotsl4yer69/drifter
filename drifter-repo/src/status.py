@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — Status CLI
-Quick one-shot view of current telemetry and system health.
+Quick one-shot view of current telemetry, diagnostics, and system health.
 Usage: python3 src/status.py [--json]
 UNCAGED TECHNOLOGY — EST 1991
 """
@@ -12,8 +12,11 @@ import argparse
 import subprocess
 import paho.mqtt.client as mqtt
 
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+from config import (
+    MQTT_HOST, MQTT_PORT, SERVICES as ALL_SERVICES,
+    LEVEL_NAMES, LOG_DIR, CALIBRATION_FILE
+)
+
 COLLECT_SECONDS = 2
 
 TOPICS = [
@@ -21,23 +24,23 @@ TOPICS = [
     "drifter/engine/coolant",
     "drifter/engine/stft1",
     "drifter/engine/stft2",
+    "drifter/engine/ltft1",
+    "drifter/engine/ltft2",
     "drifter/engine/load",
     "drifter/engine/throttle",
+    "drifter/engine/iat",
+    "drifter/engine/maf",
     "drifter/vehicle/speed",
     "drifter/power/voltage",
     "drifter/alert/level",
     "drifter/alert/message",
+    "drifter/diag/dtc",
     "drifter/system/status",
+    "drifter/system/watchdog",
+    "drifter/session",
 ]
 
-SERVICES = [
-    "drifter-canbridge",
-    "drifter-alerts",
-    "drifter-logger",
-    "drifter-voice",
-    "drifter-hotspot",
-    "drifter-homesync",
-]
+SERVICES = ALL_SERVICES
 
 CYAN  = "\033[0;36m"
 GREEN = "\033[0;32m"
@@ -129,6 +132,21 @@ def fmt_value(topic, data):
         colour = RED if value < 12.0 else AMBER if value < 13.2 else GREEN
         return "Battery", f"{value:.2f} V", colour
 
+    if key == "ltft1":
+        colour = AMBER if abs(value) > 15 else GREEN
+        return "LTFT Bank 1", f"{value:+.1f} %", colour
+
+    if key == "ltft2":
+        colour = AMBER if abs(value) > 15 else GREEN
+        return "LTFT Bank 2", f"{value:+.1f} %", colour
+
+    if key == "iat":
+        colour = AMBER if value > 50 else GREEN
+        return "Intake Air", f"{value:.0f} °C", colour
+
+    if key == "maf":
+        return "MAF", f"{value:.1f} g/s", GREEN
+
     return key, f"{value} {unit}".strip(), GREEN
 
 
@@ -170,6 +188,52 @@ def print_status():
         state = get_service_status(svc)
         colour = GREEN if state == "active" else AMBER if state == "activating" else RED
         print(f"    {svc:<26} {colour}{state}{NC}")
+
+    # ── DTCs ──
+    if "drifter/diag/dtc" in collected:
+        dtc_data = collected["drifter/diag/dtc"]
+        stored = dtc_data.get("stored", [])
+        pending = dtc_data.get("pending", [])
+        print(f"\n{BOLD}  Diagnostic Trouble Codes{NC}")
+        if stored:
+            print(f"    {'Stored DTCs':<18} {RED}{', '.join(stored)}{NC}")
+        if pending:
+            print(f"    {'Pending DTCs':<18} {AMBER}{', '.join(pending)}{NC}")
+        if not stored and not pending:
+            print(f"    {'DTCs':<18} {GREEN}None{NC}")
+
+    # ── System Health ──
+    if "drifter/system/watchdog" in collected:
+        wd = collected["drifter/system/watchdog"]
+        sys_info = wd.get("system", {})
+        overall = wd.get("overall", "unknown")
+        overall_colour = GREEN if overall == "healthy" else AMBER
+        print(f"\n{BOLD}  System Health{NC}")
+        print(f"    {'Status':<18} {overall_colour}{overall}{NC}")
+        if sys_info.get("cpu_temp"):
+            temp_c = GREEN if sys_info["cpu_temp"] < 70 else AMBER
+            print(f"    {'CPU Temp':<18} {temp_c}{sys_info['cpu_temp']:.0f}°C{NC}")
+        if sys_info.get("disk_percent"):
+            disk_c = GREEN if sys_info["disk_percent"] < 80 else AMBER
+            print(f"    {'Disk Usage':<18} {disk_c}{sys_info['disk_percent']:.0f}% "
+                  f"({sys_info.get('disk_free_gb', '?')} GB free){NC}")
+        issues = wd.get("issues", [])
+        if issues:
+            for issue in issues:
+                print(f"    {AMBER}! {issue}{NC}")
+
+    # ── Calibration ──
+    try:
+        if CALIBRATION_FILE.exists():
+            with open(CALIBRATION_FILE) as f:
+                cal = json.load(f)
+            if cal.get("calibrated"):
+                print(f"\n{BOLD}  Calibration{NC}")
+                print(f"    {'Date':<18} {cal.get('calibration_date', 'unknown')}")
+                print(f"    {'STFT Baselines':<18} B1: {cal['stft1_baseline']:+.1f}%  "
+                      f"B2: {cal['stft2_baseline']:+.1f}%")
+    except Exception:
+        pass
 
     # ── Connection ──
     if not ok:

@@ -2,6 +2,7 @@
 """
 MZ1312 DRIFTER — CAN Bridge
 Reads OBD-II data from USB2CANFD and publishes to MQTT.
+Supports Mode 01 (live data), Mode 03 (stored DTCs), Mode 07 (pending DTCs).
 UNCAGED TECHNOLOGY — EST 1991
 """
 
@@ -12,6 +13,11 @@ import signal
 import logging
 import paho.mqtt.client as mqtt
 from collections import deque
+
+from config import (
+    MQTT_HOST, MQTT_PORT, CAN_BITRATE,
+    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END, TOPICS
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,23 +32,29 @@ PIDS = {
     0x0C: {'name': 'rpm',      'topic': 'drifter/engine/rpm',      'decode': lambda a, b: ((a * 256) + b) / 4.0,      'unit': 'rpm',  'hz': 10},
     0x05: {'name': 'coolant',  'topic': 'drifter/engine/coolant',  'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
     0x06: {'name': 'stft1',    'topic': 'drifter/engine/stft1',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
+    0x07: {'name': 'ltft1',    'topic': 'drifter/engine/ltft1',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
     0x08: {'name': 'stft2',    'topic': 'drifter/engine/stft2',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
+    0x09: {'name': 'ltft2',    'topic': 'drifter/engine/ltft2',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
     0x04: {'name': 'load',     'topic': 'drifter/engine/load',     'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 5},
     0x0D: {'name': 'speed',    'topic': 'drifter/vehicle/speed',   'decode': lambda a, b=0: a,                         'unit': 'km/h', 'hz': 5},
+    0x0F: {'name': 'iat',      'topic': 'drifter/engine/iat',      'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
+    0x10: {'name': 'maf',      'topic': 'drifter/engine/maf',      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
     0x11: {'name': 'throttle', 'topic': 'drifter/engine/throttle', 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
     0x42: {'name': 'voltage',  'topic': 'drifter/power/voltage',   'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
 }
 
-# OBD-II CAN IDs
-OBD_REQUEST_ID = 0x7DF   # Broadcast request
-OBD_RESPONSE_BASE = 0x7E8  # ECU response range 0x7E8-0x7EF
+# Two-byte PID set (need both A and B bytes for decode)
+TWO_BYTE_PIDS = {0x0C, 0x10, 0x42}
 
-# ── MQTT Setup ──
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+# ── DTC Decoding ──
+DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
+
+DTC_CHECK_INTERVAL = 60  # Check DTCs every 60 seconds
 
 # ── State ──
 latest_values = {}
+active_dtcs = []
+pending_dtcs = []
 running = True
 
 
@@ -59,7 +71,7 @@ signal.signal(signal.SIGINT, _handle_signal)
 def find_can_interface():
     """Auto-detect the USB2CANFD interface."""
     # Try common interface names
-    for iface in ['can0', 'can1', 'slcan0', 'vcan0']:
+    for iface in ['can0', 'can1', 'slcan0']:
         try:
             bus = can.Bus(interface='socketcan', channel=iface, bitrate=500000)
             bus.shutdown()
@@ -111,7 +123,7 @@ def send_obd_request(bus, pid):
 
 def decode_obd_response(msg):
     """Decode an OBD-II response message."""
-    if msg.arbitration_id < OBD_RESPONSE_BASE or msg.arbitration_id > 0x7EF:
+    if msg.arbitration_id < OBD_RESPONSE_BASE or msg.arbitration_id > OBD_RESPONSE_END:
         return None
 
     data = msg.data
@@ -128,14 +140,63 @@ def decode_obd_response(msg):
 
     pid_def = PIDS[pid]
     try:
-        if pid in (0x0C, 0x42):  # Two-byte values
+        if pid in TWO_BYTE_PIDS:
             value = pid_def['decode'](data[3], data[4])
-        else:  # Single-byte values
+        else:
             value = pid_def['decode'](data[3])
         return pid, value
     except (IndexError, ValueError) as e:
         log.warning(f"Decode error for PID 0x{pid:02X}: {e}")
         return None
+
+
+def decode_dtc(byte1, byte2):
+    """Decode a 2-byte DTC into standard format (e.g., P0301)."""
+    if byte1 == 0 and byte2 == 0:
+        return None
+    prefix = DTC_PREFIXES.get((byte1 >> 6) & 0x03, 'P')
+    digit2 = (byte1 >> 4) & 0x03
+    digit3 = byte1 & 0x0F
+    digit4 = (byte2 >> 4) & 0x0F
+    digit5 = byte2 & 0x0F
+    return f"{prefix}{digit2}{digit3:X}{digit4:X}{digit5:X}"
+
+
+def request_dtcs(bus, mode=0x03):
+    """Request DTCs using Mode 03 (stored) or Mode 07 (pending).
+    Returns list of DTC strings."""
+    data = [0x01, mode, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    msg = can.Message(
+        arbitration_id=OBD_REQUEST_ID,
+        data=data,
+        is_extended_id=False
+    )
+    try:
+        bus.send(msg)
+    except can.CanError as e:
+        log.warning(f"DTC request error (mode 0x{mode:02X}): {e}")
+        return []
+
+    dtcs = []
+    # Collect responses (may be multi-frame)
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        response = bus.recv(timeout=0.1)
+        if response is None:
+            break
+        if response.arbitration_id < OBD_RESPONSE_BASE or response.arbitration_id > OBD_RESPONSE_END:
+            continue
+
+        rd = response.data
+        response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
+        if len(rd) >= 2 and rd[1] == response_mode:
+            # Parse DTC pairs starting at byte 3
+            for i in range(3, len(rd) - 1, 2):
+                dtc = decode_dtc(rd[i], rd[i + 1])
+                if dtc:
+                    dtcs.append(dtc)
+
+    return dtcs
 
 
 def main():
@@ -190,6 +251,7 @@ def main():
     log.info("DRIFTER CAN Bridge is LIVE")
 
     last_snapshot = 0.0
+    last_dtc_check = 0.0
     while running:
         try:
             now = time.monotonic()
@@ -225,6 +287,31 @@ def main():
                     'ts': time.time()
                 }))
                 last_snapshot = now
+
+            # Check DTCs periodically
+            if now - last_dtc_check >= DTC_CHECK_INTERVAL:
+                stored = request_dtcs(bus, mode=0x03)
+                pending = request_dtcs(bus, mode=0x07)
+
+                if stored != active_dtcs or pending != pending_dtcs:
+                    active_dtcs.clear()
+                    active_dtcs.extend(stored)
+                    pending_dtcs.clear()
+                    pending_dtcs.extend(pending)
+
+                    mqtt_client.publish(TOPICS['dtc'], json.dumps({
+                        'stored': stored,
+                        'pending': pending,
+                        'count': len(stored) + len(pending),
+                        'ts': time.time()
+                    }), retain=True)
+
+                    if stored:
+                        log.warning(f"Stored DTCs: {', '.join(stored)}")
+                    if pending:
+                        log.info(f"Pending DTCs: {', '.join(pending)}")
+
+                last_dtc_check = now
 
             # Small sleep to prevent CPU spin
             time.sleep(0.005)

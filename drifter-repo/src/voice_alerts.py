@@ -14,6 +14,7 @@ import logging
 import os
 from pathlib import Path
 import paho.mqtt.client as mqtt
+from config import MQTT_HOST, MQTT_PORT, TOPICS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -142,13 +143,13 @@ def main():
     connected = False
     while not connected:
         try:
-            client.connect("localhost", 1883, 60)
+            client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
 
-    client.subscribe("drifter/alert/message")
+    client.subscribe(TOPICS['alert_message'])
     client.loop_start()
 
     # Startup announcement

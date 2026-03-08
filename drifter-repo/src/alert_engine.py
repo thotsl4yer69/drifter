@@ -15,20 +15,18 @@ from dataclasses import dataclass, field
 from typing import Optional
 import paho.mqtt.client as mqtt
 
+from config import (
+    MQTT_HOST, MQTT_PORT, CALIBRATION_FILE,
+    LEVEL_OK, LEVEL_INFO, LEVEL_AMBER, LEVEL_RED, LEVEL_NAMES,
+    THRESHOLDS, CALIBRATION_DEFAULTS, TOPICS
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [ALERTS] %(message)s',
     datefmt='%H:%M:%S'
 )
 log = logging.getLogger(__name__)
-
-# ── Alert Levels ──
-LEVEL_OK = 0
-LEVEL_INFO = 1
-LEVEL_AMBER = 2
-LEVEL_RED = 3
-
-LEVEL_NAMES = {0: 'OK', 1: 'INFO', 2: 'AMBER', 3: 'RED'}
 
 # ── Rolling Buffer (60 seconds of data at ~10Hz) ──
 BUFFER_SIZE = 600
@@ -40,11 +38,17 @@ class VehicleState:
     coolant: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     stft1: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     stft2: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    ltft1: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    ltft2: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     load: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     speed: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     throttle: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     voltage: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    iat: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    maf: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     timestamps: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    active_dtcs: list = field(default_factory=list)
+    pending_dtcs: list = field(default_factory=list)
 
     def avg(self, buf, n=50):
         """Average of last n readings."""
@@ -203,8 +207,128 @@ def rule_overrev(state: VehicleState):
     if rpm is None:
         return None
 
-    if rpm > 6500:
+    if rpm > THRESHOLDS['overrev_rpm']:
         return (LEVEL_RED, f"HIGH RPM WARNING: {rpm:.0f} RPM. Redline risk.")
+    return None
+
+
+def rule_ltft_drift(state: VehicleState):
+    """Long-term fuel trim too far from zero = chronic fueling issue."""
+    ltft1 = state.avg(state.ltft1, 20)
+    ltft2 = state.avg(state.ltft2, 20)
+
+    if ltft1 is None and ltft2 is None:
+        return None
+
+    # Check for maxed-out LTFT (ECU can't compensate further)
+    for label, val, threshold_warn, threshold_crit in [
+        ("Bank 1", ltft1, THRESHOLDS['ltft_lean_warn'], THRESHOLDS['ltft_lean_crit']),
+        ("Bank 2", ltft2, THRESHOLDS['ltft_lean_warn'], THRESHOLDS['ltft_lean_crit']),
+    ]:
+        if val is None:
+            continue
+        if abs(val) >= abs(threshold_crit):
+            return (LEVEL_RED,
+                    f"LTFT {label} maxed at {val:+.1f}%. ECU can't compensate. "
+                    f"Major fueling fault — likely large vacuum leak or failing injector.")
+        if abs(val) >= abs(threshold_warn):
+            direction = "lean" if val > 0 else "rich"
+            return (LEVEL_AMBER,
+                    f"LTFT {label} drifted {direction}: {val:+.1f}%. "
+                    f"Chronic fuel trim issue developing. Check O2 sensors, "
+                    f"injectors, vacuum lines.")
+    return None
+
+
+def rule_bank_imbalance(state: VehicleState):
+    """Large STFT difference between banks = bank-specific issue."""
+    stft1 = state.avg(state.stft1, 30)
+    stft2 = state.avg(state.stft2, 30)
+    rpm = state.avg(state.rpm, 30)
+
+    if stft1 is None or stft2 is None or rpm is None:
+        return None
+
+    divergence = abs(stft1 - stft2)
+    if divergence > THRESHOLDS['catalyst_stft_divergence'] and rpm < 2000:
+        leaner = "Bank 1" if stft1 > stft2 else "Bank 2"
+        return (LEVEL_AMBER,
+                f"Fuel trim imbalance: {divergence:.1f}% between banks. "
+                f"{leaner} running leaner. Check {leaner.lower()} vacuum lines, "
+                f"injector balance, or O2 sensor.")
+    return None
+
+
+def rule_intake_temp(state: VehicleState):
+    """Intake air temperature too high = heat soak."""
+    iat = state.latest(state.iat)
+    if iat is None:
+        return None
+
+    if iat >= THRESHOLDS['iat_critical']:
+        return (LEVEL_AMBER,
+                f"Intake air temp CRITICAL: {iat}°C. Severe heat soak — "
+                f"power loss likely. Check intake ducting, hood vents.")
+    if iat >= THRESHOLDS['iat_high']:
+        return (LEVEL_INFO,
+                f"Intake air temp elevated: {iat}°C. Under-hood heat soak "
+                f"may reduce power. Consider letting engine bay cool.")
+    return None
+
+
+def rule_voltage_overcharge(state: VehicleState):
+    """Voltage too high = regulator failure."""
+    voltage = state.avg(state.voltage, 20)
+    rpm = state.avg(state.rpm, 20)
+
+    if voltage is None or rpm is None:
+        return None
+
+    if voltage > THRESHOLDS['voltage_overcharge'] and rpm > 1000:
+        return (LEVEL_RED,
+                f"OVERCHARGING: {voltage:.1f}V. Voltage regulator failure. "
+                f"Risk of battery damage and electrical component failure. "
+                f"Drive to a safe stop.")
+    return None
+
+
+def rule_active_dtcs(state: VehicleState):
+    """Report active DTCs read from ECU."""
+    if not state.active_dtcs and not state.pending_dtcs:
+        return None
+
+    if state.active_dtcs:
+        codes = ', '.join(state.active_dtcs[:5])
+        extra = f" (+{len(state.active_dtcs) - 5} more)" if len(state.active_dtcs) > 5 else ""
+        return (LEVEL_AMBER,
+                f"Active DTCs: {codes}{extra}. "
+                f"ECU has logged fault codes. Check with full scanner for details.")
+
+    if state.pending_dtcs:
+        codes = ', '.join(state.pending_dtcs[:3])
+        return (LEVEL_INFO,
+                f"Pending DTCs: {codes}. "
+                f"Intermittent faults detected — may self-clear or escalate.")
+    return None
+
+
+def rule_stalled(state: VehicleState):
+    """Engine stall detection (RPM drops to 0 while voltage present)."""
+    rpm = state.latest(state.rpm)
+    voltage = state.latest(state.voltage)
+
+    if rpm is None or voltage is None:
+        return None
+
+    if rpm == 0 and voltage > 10:
+        # Check if RPM was recently > 0 (stall vs key-off)
+        if len(state.rpm) >= 10:
+            recent = list(state.rpm)[-10:]
+            if any(r > 200 for r in recent[:-3]):
+                return (LEVEL_RED,
+                        f"ENGINE STALL DETECTED. RPM dropped to 0. "
+                        f"Battery voltage: {voltage:.1f}V. "
+                        f"Check for fuel delivery, ignition, or sensor fault.")
     return None
 
 
@@ -217,6 +341,12 @@ ALL_RULES = [
     rule_alternator,
     rule_idle_instability,
     rule_overrev,
+    rule_ltft_drift,
+    rule_bank_imbalance,
+    rule_intake_temp,
+    rule_voltage_overcharge,
+    rule_active_dtcs,
+    rule_stalled,
 ]
 
 
@@ -233,10 +363,19 @@ def on_message(client, userdata, msg):
     global state
     try:
         data = json.loads(msg.payload)
+        topic = msg.topic
+
+        # DTC messages have a different structure
+        if topic.endswith('/dtc'):
+            state.active_dtcs = data.get('stored', [])
+            state.pending_dtcs = data.get('pending', [])
+            return
+
         value = data.get('value')
+        if value is None:
+            return
         ts = data.get('ts', time.time())
 
-        topic = msg.topic
         if topic.endswith('/rpm'):
             state.rpm.append(value)
         elif topic.endswith('/coolant'):
@@ -245,6 +384,10 @@ def on_message(client, userdata, msg):
             state.stft1.append(value)
         elif topic.endswith('/stft2'):
             state.stft2.append(value)
+        elif topic.endswith('/ltft1'):
+            state.ltft1.append(value)
+        elif topic.endswith('/ltft2'):
+            state.ltft2.append(value)
         elif topic.endswith('/load'):
             state.load.append(value)
         elif topic.endswith('/speed'):
@@ -253,6 +396,10 @@ def on_message(client, userdata, msg):
             state.throttle.append(value)
         elif topic.endswith('/voltage'):
             state.voltage.append(value)
+        elif topic.endswith('/iat'):
+            state.iat.append(value)
+        elif topic.endswith('/maf'):
+            state.maf.append(value)
 
         state.timestamps.append(ts)
 
@@ -283,13 +430,13 @@ def evaluate_rules(mqtt_client):
         current_alert_msg = highest_msg
         last_alert_time = now
 
-        mqtt_client.publish("drifter/alert/level", json.dumps({
+        mqtt_client.publish(TOPICS['alert_level'], json.dumps({
             'level': highest_level,
             'name': LEVEL_NAMES[highest_level],
             'ts': now
         }), retain=True)
 
-        mqtt_client.publish("drifter/alert/message", json.dumps({
+        mqtt_client.publish(TOPICS['alert_message'], json.dumps({
             'level': highest_level,
             'name': LEVEL_NAMES[highest_level],
             'message': highest_msg,
@@ -305,6 +452,17 @@ def evaluate_rules(mqtt_client):
 def main():
     log.info("DRIFTER Alert Engine starting...")
     log.info(f"Loaded {len(ALL_RULES)} diagnostic rules for Jaguar X-Type 2.5L V6")
+
+    # Load calibration if available
+    try:
+        if CALIBRATION_FILE.exists():
+            with open(CALIBRATION_FILE) as f:
+                cal = json.load(f)
+            if cal.get('calibrated'):
+                log.info(f"Calibration loaded from {cal.get('calibration_date', 'unknown')}")
+                log.info(f"  STFT baselines: B1={cal['stft1_baseline']:+.1f}%, B2={cal['stft2_baseline']:+.1f}%")
+    except Exception as e:
+        log.warning(f"Could not load calibration: {e}")
 
     running = True
 
@@ -322,16 +480,17 @@ def main():
     connected = False
     while not connected:
         try:
-            client.connect("localhost", 1883, 60)
+            client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
 
-    # Subscribe to all engine telemetry
+    # Subscribe to all telemetry
     client.subscribe("drifter/engine/#")
     client.subscribe("drifter/vehicle/#")
     client.subscribe("drifter/power/#")
+    client.subscribe("drifter/diag/#")
     client.loop_start()
 
     log.info("Alert Engine is LIVE — monitoring telemetry")

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — Telemetry Logger
-Logs all vehicle data to timestamped JSON files on NVMe.
-Syncs to nanob when home network is available.
+Logs all vehicle data to timestamped JSONL files.
+Detects drive sessions (ignition on/off) and generates per-drive summaries.
+Compresses old logs and manages storage.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
@@ -14,7 +15,13 @@ import signal
 import logging
 from datetime import datetime
 from pathlib import Path
+from collections import deque
 import paho.mqtt.client as mqtt
+
+from config import (
+    MQTT_HOST, MQTT_PORT, LOG_DIR, TOPICS,
+    BUFFER_FLUSH_INTERVAL, MAX_LOG_SIZE_MB
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,14 +30,121 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-LOG_DIR = Path("/opt/drifter/logs")
-BUFFER_FLUSH_INTERVAL = 30  # Write to disk every 30 seconds
-MAX_LOG_SIZE_MB = 500       # Max total log storage
-
 buffer = []
 current_file = None
 current_date = None
 message_count = 0
+
+# ── Drive Session Detection ──
+SESSION_DIR = LOG_DIR / "sessions"
+
+class DriveSession:
+    """Tracks a single drive session from ignition-on to ignition-off."""
+
+    def __init__(self):
+        self.active = False
+        self.start_time = None
+        self.end_time = None
+        self.session_id = None
+        self.max_rpm = 0
+        self.max_speed = 0
+        self.max_coolant = 0
+        self.min_voltage = 99.0
+        self.distance_km = 0.0
+        self.alert_count = 0
+        self.highest_alert = 0
+        self.last_speed = 0
+        self.last_speed_time = 0
+        self.rpm_history = deque(maxlen=60)  # Last 60 RPM readings
+
+    def start(self):
+        self.active = True
+        self.start_time = time.time()
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.max_rpm = 0
+        self.max_speed = 0
+        self.max_coolant = 0
+        self.min_voltage = 99.0
+        self.distance_km = 0.0
+        self.alert_count = 0
+        self.highest_alert = 0
+        self.last_speed = 0
+        self.last_speed_time = time.time()
+        log.info(f"Drive session started: {self.session_id}")
+
+    def stop(self):
+        self.active = False
+        self.end_time = time.time()
+        log.info(f"Drive session ended: {self.session_id} "
+                 f"({self.duration_str}, {self.distance_km:.1f} km)")
+
+    def update(self, topic, value, ts):
+        if not self.active:
+            return
+
+        if topic.endswith('/rpm'):
+            self.max_rpm = max(self.max_rpm, value)
+            self.rpm_history.append(value)
+        elif topic.endswith('/speed'):
+            self.max_speed = max(self.max_speed, value)
+            # Estimate distance: speed (km/h) × time (h)
+            now = time.time()
+            dt_hours = (now - self.last_speed_time) / 3600.0
+            avg_speed = (self.last_speed + value) / 2.0
+            self.distance_km += avg_speed * dt_hours
+            self.last_speed = value
+            self.last_speed_time = now
+        elif topic.endswith('/coolant'):
+            self.max_coolant = max(self.max_coolant, value)
+        elif topic.endswith('/voltage'):
+            if value > 0:
+                self.min_voltage = min(self.min_voltage, value)
+        elif topic.endswith('/alert/level'):
+            level = int(value) if isinstance(value, (int, float)) else 0
+            if level >= 2:
+                self.alert_count += 1
+            self.highest_alert = max(self.highest_alert, level)
+
+    @property
+    def duration_seconds(self):
+        end = self.end_time or time.time()
+        return end - (self.start_time or end)
+
+    @property
+    def duration_str(self):
+        s = int(self.duration_seconds)
+        h, m = divmod(s, 3600)
+        m, s = divmod(m, 60)
+        if h:
+            return f"{h}h{m:02d}m"
+        return f"{m}m{s:02d}s"
+
+    def summary(self):
+        return {
+            'session_id': self.session_id,
+            'start': self.start_time,
+            'end': self.end_time,
+            'duration_seconds': self.duration_seconds,
+            'distance_km': round(self.distance_km, 1),
+            'max_rpm': round(self.max_rpm),
+            'max_speed': round(self.max_speed),
+            'max_coolant': round(self.max_coolant, 1),
+            'min_voltage': round(self.min_voltage, 2),
+            'alert_count': self.alert_count,
+            'highest_alert': self.highest_alert,
+        }
+
+    def save_summary(self):
+        SESSION_DIR.mkdir(parents=True, exist_ok=True)
+        path = SESSION_DIR / f"session_{self.session_id}.json"
+        with open(path, 'w') as f:
+            json.dump(self.summary(), f, indent=2)
+        log.info(f"Session summary saved: {path.name}")
+
+
+session = DriveSession()
+ENGINE_ON_RPM = 300       # RPM above this = engine running
+ENGINE_OFF_SECONDS = 10   # RPM below threshold for this long = engine off
 
 
 def get_log_file():
@@ -103,7 +217,7 @@ def cleanup_old_logs():
 
 
 def on_message(client, userdata, msg):
-    """Buffer incoming telemetry."""
+    """Buffer incoming telemetry and update drive session."""
     try:
         data = json.loads(msg.payload)
         buffer.append({
@@ -111,13 +225,60 @@ def on_message(client, userdata, msg):
             'data': data,
             'ts': time.time()
         })
+
+        # Update drive session tracking
+        value = data.get('value')
+        if value is not None:
+            session.update(msg.topic, value, time.time())
+
+            # Drive session detection based on RPM
+            if msg.topic.endswith('/rpm'):
+                detect_session_change(value, client)
+
     except json.JSONDecodeError:
         pass
+
+
+def detect_session_change(rpm, mqtt_client):
+    """Detect engine on/off transitions."""
+    global session
+
+    if rpm > ENGINE_ON_RPM and not session.active:
+        session.start()
+        # Publish session start
+        try:
+            mqtt_client.publish(TOPICS.get('drive_session', 'drifter/session'),
+                                json.dumps({
+                                    'event': 'start',
+                                    'session_id': session.session_id,
+                                    'ts': time.time()
+                                }))
+        except Exception:
+            pass
+
+    elif rpm < ENGINE_ON_RPM and session.active:
+        # Check if RPM has been low for ENGINE_OFF_SECONDS
+        if session.rpm_history:
+            recent = list(session.rpm_history)[-ENGINE_OFF_SECONDS:]
+            if len(recent) >= ENGINE_OFF_SECONDS and all(r < ENGINE_ON_RPM for r in recent):
+                session.stop()
+                session.save_summary()
+                # Publish session end
+                try:
+                    mqtt_client.publish(
+                        TOPICS.get('drive_session', 'drifter/session'),
+                        json.dumps({
+                            'event': 'end',
+                            **session.summary()
+                        }))
+                except Exception:
+                    pass
 
 
 def main():
     log.info("DRIFTER Telemetry Logger starting...")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
     running = True
 
@@ -134,7 +295,7 @@ def main():
     connected = False
     while not connected:
         try:
-            client.connect("localhost", 1883, 60)
+            client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
@@ -145,6 +306,7 @@ def main():
     client.loop_start()
 
     log.info(f"Logging to {LOG_DIR}")
+    log.info(f"Drive sessions to {SESSION_DIR}")
     log.info("Telemetry Logger is LIVE")
 
     last_flush = time.monotonic()
@@ -164,7 +326,11 @@ def main():
 
         time.sleep(1)
 
+    # Final flush and session save
     flush_buffer()
+    if session.active:
+        session.stop()
+        session.save_summary()
     if current_file:
         current_file.close()
     client.loop_stop()

@@ -1,0 +1,14 @@
+[Unit]
+Description=MZ1312 DRIFTER RealDash TCP CAN Bridge
+After=nanomq.service drifter-canbridge.service
+Wants=nanomq.service
+
+[Service]
+Type=simple
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/realdash_bridge.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
