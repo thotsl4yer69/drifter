@@ -68,6 +68,14 @@ THRESHOLDS = {
     # Intake Air Temperature
     'iat_high': 50,               # °C — hot soak warning
     'iat_critical': 65,           # °C — heat soak critical
+
+    # TPMS
+    'tpms_pressure_low': 28.0,    # PSI — low pressure warning
+    'tpms_pressure_crit': 22.0,   # PSI — critically low
+    'tpms_pressure_high': 42.0,   # PSI — overinflated
+    'tpms_temp_warn': 80,         # °C — tire temp warning
+    'tpms_temp_crit': 100,        # °C — tire temp critical
+    'tpms_rapid_loss': 3.0,       # PSI drop in 5 min = rapid loss
 }
 
 # ── Calibration Defaults ──
@@ -105,6 +113,27 @@ WATCHDOG_MQTT_TIMEOUT = 60      # No MQTT data for 60s = stale
 # ── RealDash ──
 REALDASH_TCP_PORT = 35000       # TCP port for RealDash CAN connection
 
+# ── RTL-SDR / RF ──
+RTL433_BIN = '/usr/local/bin/rtl_433'
+TPMS_SENSOR_FILE = DRIFTER_DIR / 'tpms_sensors.json'
+TPMS_POSITIONS = ['fl', 'fr', 'rl', 'rr']  # Front-left, front-right, rear-left, rear-right
+TPMS_LEARN_TIMEOUT = 300        # 5 min to learn sensor IDs
+TPMS_STALE_TIMEOUT = 1800       # 30 min no reading = sensor offline
+SPECTRUM_SCAN_INTERVAL = 300    # Spectrum sweep every 5 min
+SPECTRUM_FREQ_START = 24        # MHz — rtl_power start
+SPECTRUM_FREQ_END = 1766        # MHz — rtl_power end
+EMERGENCY_SCAN_INTERVAL = 60    # Emergency band scan every 60s
+EMERGENCY_SCAN_DWELL = 5        # Seconds per frequency
+EMERGENCY_BANDS = [
+    # UK / EU emergency and utility bands
+    {'name': 'PMR446', 'freq_mhz': 446.0, 'desc': 'Licence-free PMR radios'},
+    {'name': 'Marine-VHF-16', 'freq_mhz': 156.8, 'desc': 'Marine distress ch16'},
+    {'name': 'Airband-Guard', 'freq_mhz': 121.5, 'desc': 'Aviation emergency'},
+    {'name': 'ISM-433', 'freq_mhz': 433.92, 'desc': 'ISM band (sensors, keyfobs)'},
+    {'name': 'TETRA-Control', 'freq_mhz': 390.0, 'desc': 'TETRA emergency (encrypted)'},
+    {'name': 'Rail-NRN', 'freq_mhz': 454.9, 'desc': 'National Rail Network'},
+]
+
 # ── MQTT Topics ──
 TOPICS = {
     'rpm': 'drifter/engine/rpm',
@@ -127,6 +156,16 @@ TOPICS = {
     'calibration': 'drifter/diag/calibration',
     'watchdog': 'drifter/system/watchdog',
     'drive_session': 'drifter/session',
+    # RF / TPMS
+    'tpms_fl': 'drifter/rf/tpms/fl',
+    'tpms_fr': 'drifter/rf/tpms/fr',
+    'tpms_rl': 'drifter/rf/tpms/rl',
+    'tpms_rr': 'drifter/rf/tpms/rr',
+    'tpms_snapshot': 'drifter/rf/tpms/snapshot',
+    'rf_signal': 'drifter/rf/signals',
+    'rf_spectrum': 'drifter/rf/spectrum',
+    'rf_emergency': 'drifter/rf/emergency',
+    'rf_status': 'drifter/rf/status',
 }
 
 # ── Services ──
@@ -139,4 +178,5 @@ SERVICES = [
     "drifter-homesync",
     "drifter-watchdog",
     "drifter-realdash",
+    "drifter-rf",
 ]

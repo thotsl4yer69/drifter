@@ -34,6 +34,8 @@ latest = {
     'speed': 0, 'throttle': 0, 'load': 0, 'voltage': 0,
     'ltft1': 0, 'ltft2': 0, 'iat': 0, 'maf': 0,
     'alert_level': 0,
+    'tpms_fl_psi': 0, 'tpms_fr_psi': 0, 'tpms_rl_psi': 0, 'tpms_rr_psi': 0,
+    'tpms_fl_temp': 0, 'tpms_fr_temp': 0, 'tpms_rl_temp': 0, 'tpms_rr_temp': 0,
 }
 alert_message = ""
 clients = []
@@ -119,6 +121,36 @@ def pack_alert_text_frame():
     return frame
 
 
+def pack_tpms_frame():
+    """Frame 0x140: TPMS — FL PSI, FR PSI, RL PSI, RR PSI (scaled ×10)."""
+    fl = int(latest['tpms_fl_psi'] * 10)
+    fr = int(latest['tpms_fr_psi'] * 10)
+    rl = int(latest['tpms_rl_psi'] * 10)
+    rr = int(latest['tpms_rr_psi'] * 10)
+
+    data = struct.pack('>HHHH',
+                       max(0, min(65535, fl)),
+                       max(0, min(65535, fr)),
+                       max(0, min(65535, rl)),
+                       max(0, min(65535, rr)))
+    return build_frame(0x140, data)
+
+
+def pack_tpms_temp_frame():
+    """Frame 0x150: TPMS temps — FL, FR, RL, RR (°C × 10, offset +40)."""
+    fl = int((latest['tpms_fl_temp'] + 40) * 10)
+    fr = int((latest['tpms_fr_temp'] + 40) * 10)
+    rl = int((latest['tpms_rl_temp'] + 40) * 10)
+    rr = int((latest['tpms_rr_temp'] + 40) * 10)
+
+    data = struct.pack('>HHHH',
+                       max(0, min(65535, fl)),
+                       max(0, min(65535, fr)),
+                       max(0, min(65535, rl)),
+                       max(0, min(65535, rr)))
+    return build_frame(0x150, data)
+
+
 def on_mqtt_message(client, userdata, msg):
     """Update latest values from MQTT."""
     global alert_message
@@ -154,6 +186,12 @@ def on_mqtt_message(client, userdata, msg):
             latest['alert_level'] = data.get('level', 0)
         elif topic.endswith('/alert/message'):
             alert_message = data.get('message', '')
+        # TPMS
+        elif '/rf/tpms/' in topic:
+            pos = topic.split('/')[-1]  # fl, fr, rl, rr
+            if pos in ('fl', 'fr', 'rl', 'rr'):
+                latest[f'tpms_{pos}_psi'] = data.get('pressure_psi', 0)
+                latest[f'tpms_{pos}_temp'] = data.get('temp_c', 0)
 
     except (json.JSONDecodeError, KeyError):
         pass
@@ -174,7 +212,9 @@ def handle_client(conn, addr):
                     pack_engine_frame() +
                     pack_vehicle_frame() +
                     pack_extended_frame() +
-                    pack_alert_frame()
+                    pack_alert_frame() +
+                    pack_tpms_frame() +
+                    pack_tpms_temp_frame()
                 )
                 conn.sendall(frames)
 
@@ -251,6 +291,7 @@ def main():
     mqtt_client.subscribe("drifter/vehicle/#")
     mqtt_client.subscribe("drifter/power/#")
     mqtt_client.subscribe("drifter/alert/#")
+    mqtt_client.subscribe("drifter/rf/tpms/#")
     mqtt_client.loop_start()
 
     # ── TCP Server ──

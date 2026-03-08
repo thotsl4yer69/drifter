@@ -52,6 +52,12 @@ class VehicleState:
     timestamps: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     active_dtcs: list = field(default_factory=list)
     pending_dtcs: list = field(default_factory=list)
+    # TPMS: {pos: {pressure_psi, temp_c, ts}}
+    tpms: dict = field(default_factory=dict)
+    tpms_history: dict = field(default_factory=lambda: {
+        'fl': deque(maxlen=60), 'fr': deque(maxlen=60),
+        'rl': deque(maxlen=60), 'rr': deque(maxlen=60),
+    })
 
     def avg(self, buf, n=50):
         """Average of last n readings."""
@@ -354,6 +360,85 @@ def rule_stalled(state: VehicleState):
     return None
 
 
+def rule_tpms_low_pressure(state: VehicleState):
+    """Tire pressure below safe threshold."""
+    if not state.tpms:
+        return None
+
+    names = {'fl': 'Front Left', 'fr': 'Front Right', 'rl': 'Rear Left', 'rr': 'Rear Right'}
+    now = time.time()
+
+    for pos, data in state.tpms.items():
+        if now - data.get('ts', 0) > 1800:  # Stale reading
+            continue
+        psi = data.get('pressure_psi')
+        if psi is None:
+            continue
+
+        if psi < THRESHOLDS['tpms_pressure_crit']:
+            return (LEVEL_RED,
+                    f"TIRE PRESSURE CRITICAL: {names.get(pos, pos)} at {psi:.0f} PSI. "
+                    f"Stop and inspect. Risk of tire failure.")
+        if psi < THRESHOLDS['tpms_pressure_low']:
+            return (LEVEL_AMBER,
+                    f"Low tire pressure: {names.get(pos, pos)} at {psi:.0f} PSI "
+                    f"(min {THRESHOLDS['tpms_pressure_low']:.0f}). Inflate when possible.")
+        if psi > THRESHOLDS['tpms_pressure_high']:
+            return (LEVEL_INFO,
+                    f"High tire pressure: {names.get(pos, pos)} at {psi:.0f} PSI. "
+                    f"May ride harsh and reduce traction.")
+    return None
+
+
+def rule_tpms_rapid_loss(state: VehicleState):
+    """Rapid pressure drop = possible puncture."""
+    if not state.tpms:
+        return None
+
+    names = {'fl': 'Front Left', 'fr': 'Front Right', 'rl': 'Rear Left', 'rr': 'Rear Right'}
+
+    for pos, history in state.tpms_history.items():
+        if len(history) < 2:
+            continue
+        now = time.time()
+        recent = [(t, p) for t, p in history if now - t < 300]
+        if len(recent) < 2:
+            continue
+        drop = recent[0][1] - recent[-1][1]
+        if drop >= THRESHOLDS['tpms_rapid_loss']:
+            return (LEVEL_RED,
+                    f"RAPID PRESSURE LOSS: {names.get(pos, pos)} dropped "
+                    f"{drop:.1f} PSI in {(recent[-1][0] - recent[0][0])/60:.0f} min. "
+                    f"Possible puncture. Pull over when safe.")
+    return None
+
+
+def rule_tpms_temp(state: VehicleState):
+    """Tire temperature too high."""
+    if not state.tpms:
+        return None
+
+    names = {'fl': 'Front Left', 'fr': 'Front Right', 'rl': 'Rear Left', 'rr': 'Rear Right'}
+    now = time.time()
+
+    for pos, data in state.tpms.items():
+        if now - data.get('ts', 0) > 1800:
+            continue
+        temp = data.get('temp_c')
+        if temp is None:
+            continue
+
+        if temp >= THRESHOLDS['tpms_temp_crit']:
+            return (LEVEL_RED,
+                    f"TIRE TEMP CRITICAL: {names.get(pos, pos)} at {temp:.0f}\u00b0C. "
+                    f"Stop immediately. Risk of blowout.")
+        if temp >= THRESHOLDS['tpms_temp_warn']:
+            return (LEVEL_AMBER,
+                    f"Tire temp high: {names.get(pos, pos)} at {temp:.0f}\u00b0C. "
+                    f"Reduce speed. Check for dragging brake or low pressure.")
+    return None
+
+
 # ── All Rules ──
 ALL_RULES = [
     rule_vacuum_leak_bank1,
@@ -369,6 +454,9 @@ ALL_RULES = [
     rule_voltage_overcharge,
     rule_active_dtcs,
     rule_stalled,
+    rule_tpms_low_pressure,
+    rule_tpms_rapid_loss,
+    rule_tpms_temp,
 ]
 
 
@@ -391,6 +479,16 @@ def on_message(client, userdata, msg):
         if topic.endswith('/dtc'):
             state.active_dtcs = data.get('stored', [])
             state.pending_dtcs = data.get('pending', [])
+            return
+
+        # TPMS tire data
+        if '/rf/tpms/' in topic and not topic.endswith('/snapshot'):
+            pos = topic.split('/')[-1]  # fl, fr, rl, rr
+            if pos in ('fl', 'fr', 'rl', 'rr'):
+                state.tpms[pos] = data
+                psi = data.get('pressure_psi')
+                if psi is not None:
+                    state.tpms_history[pos].append((data.get('ts', time.time()), psi))
             return
 
         value = data.get('value')
@@ -515,6 +613,7 @@ def main():
     client.subscribe("drifter/vehicle/#")
     client.subscribe("drifter/power/#")
     client.subscribe("drifter/diag/#")
+    client.subscribe("drifter/rf/tpms/#")
     client.loop_start()
 
     log.info("Alert Engine is LIVE — monitoring telemetry")

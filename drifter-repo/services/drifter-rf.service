@@ -1,0 +1,14 @@
+[Unit]
+Description=MZ1312 DRIFTER RF Monitor — RTL-SDR TPMS & Spectrum Scanner
+After=nanomq.service
+Wants=nanomq.service
+
+[Service]
+Type=simple
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/rf_monitor.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

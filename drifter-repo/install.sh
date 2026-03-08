@@ -39,7 +39,7 @@ banner
 # ── Preflight ──
 if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./install.sh"; fi
 
-TOTAL=10
+TOTAL=11
 
 # ── 1. System Update ──
 step 1 "Updating system packages"
@@ -59,8 +59,32 @@ apt-get install -y -qq \
     git \
     curl \
     jq \
+    librtlsdr-dev \
+    rtl-sdr \
     slcand 2>/dev/null
 ok "Core packages installed"
+
+# Install rtl_433 (433 MHz signal decoder)
+if command -v rtl_433 &>/dev/null; then
+    ok "rtl_433 already installed"
+else
+    apt-get install -y -qq rtl-433 2>/dev/null && ok "rtl_433 installed from repo" || {
+        # Build from source if not in package repos
+        if [ -d /tmp/rtl_433 ]; then rm -rf /tmp/rtl_433; fi
+        git clone --quiet --depth 1 https://github.com/merbanan/rtl_433.git /tmp/rtl_433 2>/dev/null
+        if [ -d /tmp/rtl_433 ]; then
+            apt-get install -y -qq cmake build-essential libusb-1.0-0-dev 2>/dev/null
+            mkdir -p /tmp/rtl_433/build && cd /tmp/rtl_433/build
+            cmake -DCMAKE_INSTALL_PREFIX=/usr/local .. -Wno-dev 2>/dev/null
+            make -j$(nproc) 2>/dev/null && make install 2>/dev/null
+            cd ${REPO_DIR}
+            rm -rf /tmp/rtl_433
+            ok "rtl_433 built from source"
+        else
+            warn "Could not install rtl_433 — RF features will be unavailable"
+        fi
+    }
+fi
 
 # ── 3. NanoMQ MQTT Broker ──
 step 3 "Installing NanoMQ MQTT broker"
@@ -108,7 +132,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py"
 for f in $SRC_FILES; do
     cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
     chmod +x "${DRIFTER_DIR}/${f}"
@@ -187,7 +211,7 @@ done
 systemctl daemon-reload
 
 # Enable all services
-SERVICES="drifter-canbridge drifter-alerts drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash"
+SERVICES="drifter-canbridge drifter-alerts drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
@@ -200,8 +224,24 @@ for svc in $SERVICES; do
     ok "Enabled: $svc"
 done
 
-# ── 10. Initial Calibration Hint ──
-step 10 "Post-install calibration"
+# ── 10. RTL-SDR Blacklist ──
+step 10 "Configuring RTL-SDR"
+
+# Blacklist the DVB-T kernel driver so rtl-sdr can use the device
+if [ ! -f /etc/modprobe.d/blacklist-rtlsdr.conf ]; then
+    cat > /etc/modprobe.d/blacklist-rtlsdr.conf << 'EOF'
+# MZ1312 DRIFTER — Blacklist DVB-T drivers so RTL-SDR can access the device
+blacklist dvb_usb_rtl28xxu
+blacklist rtl2832
+blacklist rtl2830
+EOF
+    ok "DVB-T kernel driver blacklisted for RTL-SDR"
+else
+    ok "RTL-SDR blacklist already configured"
+fi
+
+# ── 11. Initial Calibration Hint ──
+step 11 "Post-install calibration"
 echo -e "  After first warm-up drive, run calibration to learn baselines:"
 echo -e "  ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
 ok "Calibration tool ready"

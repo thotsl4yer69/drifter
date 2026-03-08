@@ -82,5 +82,45 @@
       <value name="Sentient: Alert Level"
              offset="0" length="1"/>
     </frame>
+
+    <!-- TPMS Pressures (published by rf_monitor.py) -->
+    <frame id="0x140">
+      <value name="Jaguar: TPMS FL PSI"
+             offset="0" length="2"
+             units="PSI"
+             conversion="V*0.1"/>
+      <value name="Jaguar: TPMS FR PSI"
+             offset="2" length="2"
+             units="PSI"
+             conversion="V*0.1"/>
+      <value name="Jaguar: TPMS RL PSI"
+             offset="4" length="2"
+             units="PSI"
+             conversion="V*0.1"/>
+      <value name="Jaguar: TPMS RR PSI"
+             offset="6" length="2"
+             units="PSI"
+             conversion="V*0.1"/>
+    </frame>
+
+    <!-- TPMS Temperatures -->
+    <frame id="0x150">
+      <value name="Jaguar: TPMS FL Temp"
+             offset="0" length="2"
+             units="°C"
+             conversion="V*0.1-40"/>
+      <value name="Jaguar: TPMS FR Temp"
+             offset="2" length="2"
+             units="°C"
+             conversion="V*0.1-40"/>
+      <value name="Jaguar: TPMS RL Temp"
+             offset="4" length="2"
+             units="°C"
+             conversion="V*0.1-40"/>
+      <value name="Jaguar: TPMS RR Temp"
+             offset="6" length="2"
+             units="°C"
+             conversion="V*0.1-40"/>
+    </frame>
   </frames>
 </RealDashCAN>
