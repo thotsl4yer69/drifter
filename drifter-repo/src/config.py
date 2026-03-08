@@ -101,6 +101,7 @@ HOME_CHECK_INTERVAL = 30
 # ── Voice ──
 VOICE_COOLDOWN = 15
 PIPER_MODEL = "en_GB-alan-medium"
+PIPER_MODEL_DIR = DRIFTER_DIR / "piper-models"
 
 # ── Logger ──
 BUFFER_FLUSH_INTERVAL = 30
@@ -166,6 +167,7 @@ TOPICS = {
     'rf_spectrum': 'drifter/rf/spectrum',
     'rf_emergency': 'drifter/rf/emergency',
     'rf_status': 'drifter/rf/status',
+    'rf_command': 'drifter/rf/command',
 }
 
 # ── Services ──

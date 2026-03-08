@@ -16,7 +16,7 @@ from collections import deque
 
 from config import (
     MQTT_HOST, MQTT_PORT, CAN_BITRATE, TOPICS,
-    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END, TOPICS
+    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END
 )
 
 logging.basicConfig(
@@ -29,18 +29,18 @@ log = logging.getLogger(__name__)
 # ── OBD-II PID Definitions ──
 # Standard OBD-II PIDs we poll via CAN (Mode 01)
 PIDS = {
-    0x0C: {'name': 'rpm',      'topic': 'drifter/engine/rpm',      'decode': lambda a, b: ((a * 256) + b) / 4.0,      'unit': 'rpm',  'hz': 10},
-    0x05: {'name': 'coolant',  'topic': 'drifter/engine/coolant',  'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x06: {'name': 'stft1',    'topic': 'drifter/engine/stft1',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x07: {'name': 'ltft1',    'topic': 'drifter/engine/ltft1',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x08: {'name': 'stft2',    'topic': 'drifter/engine/stft2',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x09: {'name': 'ltft2',    'topic': 'drifter/engine/ltft2',    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x04: {'name': 'load',     'topic': 'drifter/engine/load',     'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 5},
-    0x0D: {'name': 'speed',    'topic': 'drifter/vehicle/speed',   'decode': lambda a, b=0: a,                         'unit': 'km/h', 'hz': 5},
-    0x0F: {'name': 'iat',      'topic': 'drifter/engine/iat',      'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x10: {'name': 'maf',      'topic': 'drifter/engine/maf',      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
-    0x11: {'name': 'throttle', 'topic': 'drifter/engine/throttle', 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
-    0x42: {'name': 'voltage',  'topic': 'drifter/power/voltage',   'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
+    0x0C: {'name': 'rpm',      'topic': TOPICS['rpm'],      'decode': lambda a, b: ((a * 256) + b) / 4.0,      'unit': 'rpm',  'hz': 10},
+    0x05: {'name': 'coolant',  'topic': TOPICS['coolant'],  'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
+    0x06: {'name': 'stft1',    'topic': TOPICS['stft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
+    0x07: {'name': 'ltft1',    'topic': TOPICS['ltft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
+    0x08: {'name': 'stft2',    'topic': TOPICS['stft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
+    0x09: {'name': 'ltft2',    'topic': TOPICS['ltft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
+    0x04: {'name': 'load',     'topic': TOPICS['load'],     'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 5},
+    0x0D: {'name': 'speed',    'topic': TOPICS['speed'],    'decode': lambda a, b=0: a,                         'unit': 'km/h', 'hz': 5},
+    0x0F: {'name': 'iat',      'topic': TOPICS['iat'],      'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
+    0x10: {'name': 'maf',      'topic': TOPICS['maf'],      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
+    0x11: {'name': 'throttle', 'topic': TOPICS['throttle'], 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
+    0x42: {'name': 'voltage',  'topic': TOPICS['voltage'],  'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
 }
 
 # Two-byte PID set (need both A and B bytes for decode)
@@ -211,6 +211,10 @@ def main():
             log.warning("No CAN interface found. Retrying in 5s...")
             log.warning(f"Is USB2CANFD plugged in? Run: sudo ip link set can0 up type can bitrate {CAN_BITRATE}")
             time.sleep(5)
+
+    if not running or iface is None:
+        log.info("Shutting down — no CAN interface found")
+        return
 
     # ── Connect to CAN Bus ──
     log.info(f"Connecting to {iface} at {CAN_BITRATE} bps...")

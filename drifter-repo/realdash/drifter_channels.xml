@@ -18,15 +18,15 @@
              targetId="14"
              offset="2" length="2"
              units="°C"
-             conversion="V*0.1"/>
+             conversion="V*0.1-40"/>
       <value name="Jaguar: STFT Bank 1"
              offset="4" length="2"
              units="%"
-             conversion="(V-32768)*0.01"/>
+             conversion="(V-10000)*0.01"/>
       <value name="Jaguar: STFT Bank 2"
              offset="6" length="2"
              units="%"
-             conversion="(V-32768)*0.01"/>
+             conversion="(V-10000)*0.01"/>
     </frame>
 
     <!-- Vehicle data -->

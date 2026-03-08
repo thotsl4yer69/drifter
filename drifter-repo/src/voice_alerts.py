@@ -14,7 +14,7 @@ import logging
 import os
 from pathlib import Path
 import paho.mqtt.client as mqtt
-from config import MQTT_HOST, MQTT_PORT, TOPICS
+from config import MQTT_HOST, MQTT_PORT, TOPICS, VOICE_COOLDOWN, PIPER_MODEL, DRIFTER_DIR
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,8 +24,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Config ──
-VOICE_COOLDOWN = 15          # Min seconds between voice alerts
-PIPER_MODEL = "en_GB-alan-medium"  # British English, fits the Jag
+PIPER_MODEL_PATH = DRIFTER_DIR / "piper-models" / f"{PIPER_MODEL}.onnx"
 AUDIO_DIR = Path("/tmp/drifter-audio")
 
 last_voice_time = 0
@@ -38,6 +37,10 @@ def check_piper():
     global piper_available
     try:
         result = subprocess.run(['piper', '--help'], capture_output=True, timeout=5)
+        # Verify model file exists
+        if not PIPER_MODEL_PATH.exists():
+            log.warning(f"Piper model not found at {PIPER_MODEL_PATH}")
+            log.warning("Run install.sh to download, or place model manually")
         piper_available = True
         log.info("Piper TTS is available")
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -72,9 +75,10 @@ def speak(text):
 
     try:
         if piper_available:
-            # Piper TTS
+            # Piper TTS — use full model path if file exists, else just name
+            model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
             process = subprocess.Popen(
-                ['piper', '--model', PIPER_MODEL, '--output_file', str(wav_path)],
+                ['piper', '--model', model_arg, '--output_file', str(wav_path)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -141,13 +145,16 @@ def main():
     client.on_message = on_message
 
     connected = False
-    while not connected:
+    while not connected and running:
         try:
             client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
+
+    if not running:
+        return
 
     client.subscribe(TOPICS['alert_message'])
     client.loop_start()

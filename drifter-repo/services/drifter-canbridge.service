@@ -5,6 +5,7 @@ Wants=nanomq.service
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/drifter
 ExecStartPre=/usr/local/bin/drifter-setup-can
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/can_bridge.py
 Restart=always

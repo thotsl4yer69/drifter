@@ -186,13 +186,16 @@ def main():
     local.on_message = on_local_message
 
     connected = False
-    while not connected:
+    while not connected and running:
         try:
             local.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for local MQTT... ({e})")
             time.sleep(3)
+
+    if not running:
+        return
 
     local.subscribe("drifter/#")
     local.loop_start()

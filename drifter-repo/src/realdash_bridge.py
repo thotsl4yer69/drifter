@@ -19,7 +19,7 @@ import threading
 import logging
 import paho.mqtt.client as mqtt
 
-from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, LEVEL_NAMES
+from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, LEVEL_NAMES, TOPICS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,8 +111,9 @@ def pack_alert_frame():
 
 
 def pack_alert_text_frame():
-    """Frame 0x200: Alert text (up to 64 bytes)."""
-    text = alert_message[:64].encode('ascii', errors='replace')
+    """Frame 0x200: Alert text (up to 63 bytes + null terminator)."""
+    text = alert_message[:63].encode('ascii', errors='replace')
+    text += b'\x00'  # Null terminator
     # RealDash text frame uses 0x44 header but with full 64 bytes
     frame = REALDASH_HEADER
     frame += struct.pack('<I', 0x200)

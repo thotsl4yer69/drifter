@@ -5,6 +5,7 @@ Wants=nanomq.service
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/voice_alerts.py
 Restart=always
 RestartSec=10

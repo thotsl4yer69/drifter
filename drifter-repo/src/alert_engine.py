@@ -109,7 +109,7 @@ def rule_vacuum_leak_bank1(state: VehicleState):
     adj1 = stft1 - calibration.get('stft1_baseline', 0)
     adj2 = stft2 - calibration.get('stft2_baseline', 0)
 
-    if adj1 > 12 and rpm < 900 and adj2 < 5:
+    if adj1 > THRESHOLDS['stft_lean_idle'] and rpm < THRESHOLDS['idle_rpm_ceiling'] and adj2 < 5:
         return (LEVEL_AMBER,
                 f"Vacuum leak — Bank 1 lean at idle (STFT1: {stft1:+.1f}%, "
                 f"STFT2: {stft2:+.1f}%). Check brake booster valve, PCV hose, "
@@ -129,7 +129,7 @@ def rule_vacuum_leak_both(state: VehicleState):
     adj1 = stft1 - calibration.get('stft1_baseline', 0)
     adj2 = stft2 - calibration.get('stft2_baseline', 0)
 
-    if adj1 > 12 and adj2 > 12 and rpm < 900:
+    if adj1 > THRESHOLDS['stft_lean_idle'] and adj2 > THRESHOLDS['stft_lean_idle'] and rpm < THRESHOLDS['idle_rpm_ceiling']:
         return (LEVEL_AMBER,
                 f"Vacuum leak — BOTH banks lean at idle (B1: {stft1:+.1f}%, "
                 f"B2: {stft2:+.1f}%). Check intake plenum gaskets or large "
@@ -145,12 +145,17 @@ def rule_coolant_critical(state: VehicleState):
     if coolant is None:
         return None
 
-    if coolant >= 108:
+    if coolant >= THRESHOLDS['coolant_red']:
         return (LEVEL_RED,
                 f"COOLANT CRITICAL: {coolant}°C. Pull over when safe. "
                 f"Check thermostat, fan relay, coolant level.")
 
-    if coolant > 100 and trend > 2.0:
+    if coolant >= THRESHOLDS['coolant_amber']:
+        return (LEVEL_AMBER,
+                f"Coolant high: {coolant}°C. Monitor closely. "
+                f"Check thermostat, fan relay, coolant level.")
+
+    if coolant > 100 and trend > THRESHOLDS['coolant_rise_rate']:
         return (LEVEL_AMBER,
                 f"Coolant rising fast: {coolant}°C (+{trend:.1f}°C/min). "
                 f"Monitor closely. May indicate thermostat sticking or fan failure.")
@@ -600,13 +605,16 @@ def main():
     client.on_message = on_message
 
     connected = False
-    while not connected:
+    while not connected and running:
         try:
             client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
+
+    if not running:
+        return
 
     # Subscribe to all telemetry
     client.subscribe("drifter/engine/#")

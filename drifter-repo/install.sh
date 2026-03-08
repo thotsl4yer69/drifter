@@ -59,6 +59,7 @@ apt-get install -y -qq \
     git \
     curl \
     jq \
+    rsync \
     librtlsdr-dev \
     rtl-sdr \
     slcand 2>/dev/null
@@ -116,6 +117,23 @@ else
     }
 fi
 
+# Download Piper voice model
+PIPER_MODEL_DIR="${DRIFTER_DIR}/piper-models"
+PIPER_MODEL_NAME="en_GB-alan-medium"
+PIPER_MODEL_FILE="${PIPER_MODEL_DIR}/${PIPER_MODEL_NAME}.onnx"
+PIPER_JSON_FILE="${PIPER_MODEL_DIR}/${PIPER_MODEL_NAME}.onnx.json"
+
+if [ -f "$PIPER_MODEL_FILE" ]; then
+    ok "Piper voice model already present"
+else
+    mkdir -p "$PIPER_MODEL_DIR"
+    PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium"
+    curl -sL "${PIPER_BASE_URL}/${PIPER_MODEL_NAME}.onnx" -o "$PIPER_MODEL_FILE" 2>/dev/null && \
+    curl -sL "${PIPER_BASE_URL}/${PIPER_MODEL_NAME}.onnx.json" -o "$PIPER_JSON_FILE" 2>/dev/null && \
+    ok "Piper voice model downloaded (en_GB-alan-medium)" || \
+    warn "Could not download Piper model — voice will use espeak-ng fallback"
+fi
+
 # ── 5. Python Environment ──
 step 5 "Setting up Python environment"
 mkdir -p ${DRIFTER_DIR}
@@ -124,7 +142,7 @@ source ${DRIFTER_DIR}/venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet \
     python-can \
-    paho-mqtt \
+    "paho-mqtt<2.0" \
     psutil
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
@@ -180,7 +198,7 @@ nmcli con show "MZ1312_DRIFTER" &>/dev/null && nmcli con delete "MZ1312_DRIFTER"
 nmcli con add type wifi \
     ifname wlan0 \
     con-name "MZ1312_DRIFTER" \
-    autoconnect no \
+    autoconnect yes \
     ssid "MZ1312_DRIFTER" \
     -- \
     802-11-wireless.mode ap \

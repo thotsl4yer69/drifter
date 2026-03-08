@@ -193,7 +193,7 @@ def check_rtl_433():
             return False
 
 
-def run_rtl_433(mqtt_client, stop_event):
+def run_rtl_433(mqtt_client, stop_event, proc_ref=None):
     """Run rtl_433 as a subprocess with JSON output and process signals."""
     rtl_433_cmd = RTL433_BIN if Path(RTL433_BIN).exists() else 'rtl_433'
 
@@ -217,6 +217,8 @@ def run_rtl_433(mqtt_client, stop_event):
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1
         )
+        if proc_ref is not None:
+            proc_ref[0] = proc
 
         while not stop_event.is_set():
             line = proc.stdout.readline()
@@ -591,7 +593,7 @@ def main():
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
 
-    mqtt_client.subscribe("drifter/rf/command")
+    mqtt_client.subscribe(TOPICS['rf_command'])
     mqtt_client.loop_start()
 
     # Publish status
@@ -606,12 +608,46 @@ def main():
     # ── Start rtl_433 listener ──
     stop_event = threading.Event()
     rtl_thread = None
+    rtl_proc = [None]  # Mutable so inner thread can store the process
 
-    if has_sdr and has_rtl433:
+    def start_rtl_433():
+        """Start rtl_433 listener thread."""
+        nonlocal rtl_thread
+        stop_event.clear()
         rtl_thread = threading.Thread(
-            target=run_rtl_433, args=(mqtt_client, stop_event), daemon=True
+            target=run_rtl_433, args=(mqtt_client, stop_event, rtl_proc), daemon=True
         )
         rtl_thread.start()
+
+    def pause_rtl_433():
+        """Stop rtl_433 temporarily for a scan. Returns True if it was running."""
+        nonlocal rtl_thread
+        if rtl_thread and rtl_thread.is_alive():
+            stop_event.set()
+            # Kill the rtl_433 subprocess directly for fast release
+            if rtl_proc[0] and rtl_proc[0].poll() is None:
+                try:
+                    rtl_proc[0].terminate()
+                    rtl_proc[0].wait(timeout=3)
+                except Exception:
+                    try:
+                        rtl_proc[0].kill()
+                    except Exception:
+                        pass
+            rtl_thread.join(timeout=5)
+            rtl_thread = None
+            time.sleep(0.5)  # Let SDR hardware release
+            return True
+        return False
+
+    def resume_rtl_433():
+        """Restart rtl_433 after a scan."""
+        if has_sdr and has_rtl433:
+            start_rtl_433()
+            log.debug("rtl_433 resumed after scan")
+
+    if has_sdr and has_rtl433:
+        start_rtl_433()
         log.info("rtl_433 listener started — decoding 433 MHz signals")
 
     # ── Main loop: periodic scans ──
@@ -636,20 +672,24 @@ def main():
                                 json.dumps(snapshot), retain=True)
             last_tpms_snapshot = now
 
-        # Spectrum scan (pauses rtl_433 briefly)
+        # Spectrum scan (pauses rtl_433 briefly via time-division)
         if has_sdr and now - last_spectrum >= SPECTRUM_SCAN_INTERVAL:
-            # Only scan if rtl_433 is NOT running
-            # (they share the SDR — can't run simultaneously)
-            # For now, skip spectrum scan while rtl_433 is running
-            # Future: implement time-division multiplexing
-            if rtl_thread is None or not rtl_thread.is_alive():
+            was_running = pause_rtl_433()
+            try:
                 run_spectrum_scan(mqtt_client)
+            finally:
+                if was_running:
+                    resume_rtl_433()
             last_spectrum = now
 
-        # Emergency band scan
+        # Emergency band scan (pauses rtl_433 briefly)
         if has_sdr and now - last_emergency >= EMERGENCY_SCAN_INTERVAL:
-            if rtl_thread is None or not rtl_thread.is_alive():
+            was_running = pause_rtl_433()
+            try:
                 run_emergency_scan(mqtt_client)
+            finally:
+                if was_running:
+                    resume_rtl_433()
             last_emergency = now
 
         time.sleep(1)

@@ -55,7 +55,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = 0
-        self.rpm_history = deque(maxlen=60)  # Last 60 RPM readings
+        self.rpm_history = deque(maxlen=600)  # Last 600 RPM readings (~60s at 10Hz)
 
     def start(self):
         self.active = True
@@ -144,7 +144,7 @@ class DriveSession:
 
 session = DriveSession()
 ENGINE_ON_RPM = 300       # RPM above this = engine running
-ENGINE_OFF_SECONDS = 10   # RPM below threshold for this long = engine off
+ENGINE_OFF_SAMPLES = 600  # Samples below threshold = engine off (~60s at 10Hz)
 
 
 def get_log_file():
@@ -257,10 +257,10 @@ def detect_session_change(rpm, mqtt_client):
             pass
 
     elif rpm < ENGINE_ON_RPM and session.active:
-        # Check if RPM has been low for ENGINE_OFF_SECONDS
+        # Check if RPM has been low for ENGINE_OFF_SAMPLES
         if session.rpm_history:
-            recent = list(session.rpm_history)[-ENGINE_OFF_SECONDS:]
-            if len(recent) >= ENGINE_OFF_SECONDS and all(r < ENGINE_ON_RPM for r in recent):
+            recent = list(session.rpm_history)[-ENGINE_OFF_SAMPLES:]
+            if len(recent) >= ENGINE_OFF_SAMPLES and all(r < ENGINE_ON_RPM for r in recent):
                 session.stop()
                 session.save_summary()
                 # Publish session end
@@ -293,13 +293,16 @@ def main():
     client.on_message = on_message
 
     connected = False
-    while not connected:
+    while not connected and running:
         try:
             client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
         except Exception as e:
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
+
+    if not running:
+        return
 
     # Subscribe to everything from DRIFTER
     client.subscribe("drifter/#")

@@ -5,6 +5,7 @@ Wants=nanomq.service
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/logger.py
 Restart=always
 RestartSec=5
