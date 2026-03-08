@@ -50,7 +50,27 @@
              conversion="V*0.01"/>
     </frame>
 
-    <!-- AI diagnostic text (published by alert_engine.py) -->
+    <!-- Extended engine data -->
+    <frame id="0x130">
+      <value name="Jaguar: LTFT Bank 1"
+             offset="0" length="2"
+             units="%"
+             conversion="(V-10000)*0.01"/>
+      <value name="Jaguar: LTFT Bank 2"
+             offset="2" length="2"
+             units="%"
+             conversion="(V-10000)*0.01"/>
+      <value name="Jaguar: Intake Air Temp"
+             offset="4" length="2"
+             units="°C"
+             conversion="V*0.1-40"/>
+      <value name="Jaguar: MAF"
+             offset="6" length="2"
+             units="g/s"
+             conversion="V*0.01"/>
+    </frame>
+
+    <!-- Diagnostic text (published by alert_engine.py) -->
     <frame id="0x200" size="64">
       <value name="Sentient: Diagnostic"
              offset="0" length="64"
