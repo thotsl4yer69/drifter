@@ -5,7 +5,7 @@
 # logger, voice alerts, and RealDash bridge without a live CAN bus.
 #
 # Usage: ./scripts/test-bench.sh [scenario]
-#   Scenarios: idle | vacuum | overheat | alternator | all
+#   Scenarios: idle | vacuum | overheat | alternator | coldstart | thermostat | dtc | all
 #
 # Requires: mosquitto_pub (apt install mosquitto-clients)
 # UNCAGED TECHNOLOGY — EST 1991
@@ -208,6 +208,107 @@ scenario_alternator() {
     echo -e "\n${RED}  ✓ Alternator failure scenario complete — check voice alerts${NC}"
 }
 
+# ── Scenario 5: Cold Start (X-Type) ──
+scenario_coldstart() {
+    echo -e "\n${CYAN}[SCENARIO] X-Type Cold Start — low coolant, fast idle${NC}"
+    echo "  Duration: 15 seconds"
+    echo "  Expected: INFO — cold start monitoring, fast idle normal"
+    echo ""
+
+    for i in $(seq 1 30); do
+        # Cold engine: coolant 5-25°C, RPM 1100-1300 (fast idle)
+        coolant=$(( 5 + i / 2 ))
+        rpm=$(( 1200 + RANDOM % 100 ))
+        voltage="13.9"
+        stft1=$(echo "scale=1; 8 + ($RANDOM % 40) / 10" | bc)
+        stft2=$(echo "scale=1; 6 + ($RANDOM % 40) / 10" | bc)
+        speed=0
+        throttle="4.0"
+        load="28.0"
+
+        pub_value "drifter/engine/rpm" "$rpm" "rpm"
+        pub_value "drifter/engine/coolant" "$coolant" "C"
+        pub_value "drifter/power/voltage" "$voltage" "V"
+        pub_value "drifter/engine/stft1" "$stft1" "%"
+        pub_value "drifter/engine/stft2" "$stft2" "%"
+        pub_value "drifter/vehicle/speed" "$speed" "km/h"
+        pub_value "drifter/engine/throttle" "$throttle" "%"
+        pub_value "drifter/engine/load" "$load" "%"
+
+        pub "drifter/snapshot" "{\"rpm\": $rpm, \"coolant\": $coolant, \"voltage\": $voltage, \"stft1\": $stft1, \"stft2\": $stft2, \"speed\": $speed, \"ts\": $(date +%s.%N)}"
+
+        echo -ne "\r  Tick $i/30 — RPM: $rpm, Coolant: ${coolant}°C (cold start)"
+        sleep 0.5
+    done
+    echo -e "\n${CYAN}  ✓ Cold start scenario complete — check INFO messages${NC}"
+}
+
+# ── Scenario 6: Thermostat Failure (X-Type) ──
+scenario_thermostat() {
+    echo -e "\n${AMBER}[SCENARIO] X-Type Thermostat — coolant oscillation (failing housing)${NC}"
+    echo "  Duration: 20 seconds"
+    echo "  Expected: AMBER — thermostat cycling detected"
+    echo ""
+
+    for i in $(seq 1 40); do
+        rpm=$(( 2200 + RANDOM % 200 ))
+        # Oscillate coolant ±6°C around 88°C (thermostat open temp)
+        osc=$(echo "scale=1; s($i * 0.4) * 6" | bc -l)
+        coolant=$(echo "scale=1; 88 + $osc" | bc)
+        voltage="14.1"
+        stft1="1.5"
+        stft2="-0.5"
+        speed=$(( 50 + RANDOM % 10 ))
+        throttle="30.0"
+        load="40.0"
+
+        pub_value "drifter/engine/rpm" "$rpm" "rpm"
+        pub_value "drifter/engine/coolant" "$coolant" "C"
+        pub_value "drifter/power/voltage" "$voltage" "V"
+        pub_value "drifter/engine/stft1" "$stft1" "%"
+        pub_value "drifter/engine/stft2" "$stft2" "%"
+        pub_value "drifter/vehicle/speed" "$speed" "km/h"
+        pub_value "drifter/engine/throttle" "$throttle" "%"
+        pub_value "drifter/engine/load" "$load" "%"
+
+        pub "drifter/snapshot" "{\"rpm\": $rpm, \"coolant\": $coolant, \"voltage\": $voltage, \"speed\": $speed, \"ts\": $(date +%s.%N)}"
+
+        echo -ne "\r  Tick $i/40 — Coolant: ${coolant}°C at ${rpm} RPM (oscillating)"
+        sleep 0.5
+    done
+    echo -e "\n${AMBER}  ✓ Thermostat scenario complete — check for cycling alert${NC}"
+}
+
+# ── Scenario 7: DTC Injection (X-Type) ──
+scenario_dtc() {
+    echo -e "\n${AMBER}[SCENARIO] X-Type DTC — injecting P0301 cylinder 1 misfire${NC}"
+    echo "  Duration: 5 seconds"
+    echo "  Expected: AMBER — active DTC with X-Type diagnosis"
+    echo ""
+
+    # Inject a DTC message directly (simulating what can_bridge.py publishes)
+    pub "drifter/diag/dtc" "{\"stored\": [\"P0301\", \"P0420\"], \"pending\": [\"P0171\"], \"count\": 3, \"ts\": $(date +%s.%N)}"
+    echo "  Injected: stored=[P0301, P0420] pending=[P0171]"
+
+    # Send some normal engine data so alert engine has context
+    for i in $(seq 1 10); do
+        rpm=$(( 780 + RANDOM % 50 ))
+        pub_value "drifter/engine/rpm" "$rpm" "rpm"
+        pub_value "drifter/engine/coolant" "91" "C"
+        pub_value "drifter/power/voltage" "14.1" "V"
+        pub_value "drifter/engine/stft1" "2.0" "%"
+        pub_value "drifter/engine/stft2" "-1.0" "%"
+
+        echo -ne "\r  Tick $i/10 — RPM: $rpm (DTC active)"
+        sleep 0.5
+    done
+
+    # Clear DTCs
+    pub "drifter/diag/dtc" "{\"stored\": [], \"pending\": [], \"count\": 0, \"ts\": $(date +%s.%N)}"
+    echo -e "\n  DTCs cleared"
+    echo -e "${AMBER}  ✓ DTC scenario complete — check X-Type DTC lookup output${NC}"
+}
+
 # ── Main ──
 banner
 
@@ -240,6 +341,15 @@ case "$SCENARIO" in
     alternator)
         scenario_alternator
         ;;
+    coldstart)
+        scenario_coldstart
+        ;;
+    thermostat)
+        scenario_thermostat
+        ;;
+    dtc)
+        scenario_dtc
+        ;;
     all)
         scenario_idle
         echo ""
@@ -251,9 +361,18 @@ case "$SCENARIO" in
         echo ""
         sleep 2
         scenario_alternator
+        echo ""
+        sleep 2
+        scenario_coldstart
+        echo ""
+        sleep 2
+        scenario_thermostat
+        echo ""
+        sleep 2
+        scenario_dtc
         ;;
     *)
-        echo -e "${AMBER}Usage: $0 [idle|vacuum|overheat|alternator|all]${NC}"
+        echo -e "${AMBER}Usage: $0 [idle|vacuum|overheat|alternator|coldstart|thermostat|dtc|all]${NC}"
         exit 1
         ;;
 esac

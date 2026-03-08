@@ -15,7 +15,7 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 ## What It Does
 
 - **Reads** the Jaguar's CAN bus via USB2CANFD adapter and OBD-II (Mode 01 live data + Mode 03/07 DTCs)
-- **Diagnoses** mechanical issues in real-time using 16 deterministic rules (vacuum leaks, fuel trim drift, coolant, alternator, intake heat soak, TPMS, DTC detection, stall detection, and more)
+- **Diagnoses** mechanical issues in real-time using 23 deterministic rules (vacuum leaks, fuel trim drift, coolant, alternator, intake heat soak, TPMS, DTC detection, stall detection, thermostat failure, coil pack degradation, MAF health, throttle body carbon, cold start monitoring, and more)
 - **Scans** the RF spectrum with RTL-SDR — TPMS tire pressure monitoring, 433 MHz signal decoding, emergency band scanning
 - **Displays** live telemetry on your Pioneer head unit via RealDash TCP CAN bridge + Android Auto
 - **Speaks** diagnostic alerts through your car speakers via Piper TTS
@@ -83,7 +83,7 @@ sudo reboot
 │         ┌───────────────┼──────────────┐                 │
 │         ▼               ▼              ▼                 │
 │   alert_engine      logger       voice_alerts            │
-│   (16 rules)      (sessions)    (Piper TTS)             │
+│   (23 rules)      (sessions)    (Piper TTS)             │
 │         │               │              │                 │
 │         ▼               ▼              ▼                 │
 │    MQTT pub        JSON logs     3.5mm audio             │
@@ -116,7 +116,7 @@ sudo reboot
 |---------|-------------|-------------|
 | `nanomq` | MQTT message broker | Yes |
 | `drifter-canbridge` | CAN bus → MQTT translator (Mode 01 + DTC reads) | Yes |
-| `drifter-alerts` | Diagnostic rule engine (16 rules) | Yes |
+| `drifter-alerts` | Diagnostic rule engine (23 rules) | Yes |
 | `drifter-logger` | Telemetry → JSON logs with drive session detection | Yes |
 | `drifter-voice` | Piper TTS voice alerts | Yes |
 | `drifter-hotspot` | Wi-Fi AP for phone | Yes |
@@ -186,9 +186,16 @@ drifter/rf/command          # JSON: commands (tpms_learn, assign, scan)
 | 11 | Voltage overcharge | Voltage >15.5V (regulator failure) | RED |
 | 12 | Active DTCs | ECU reports stored/pending fault codes | AMBER/RED |
 | 13 | Engine stalled | RPM drops to 0 from >300 unexpectedly | RED |
-| 14 | TPMS low pressure | Tire <28 PSI (warn) or <22 PSI (critical) | AMBER/RED |
+| 14 | TPMS low pressure | Tire <26 PSI (warn) or <20 PSI (critical) | AMBER/RED |
 | 15 | TPMS rapid loss | Pressure drops >3 PSI in 5 min (puncture) | RED |
 | 16 | TPMS temp | Tire temp >80°C (warn) or >100°C (critical) | AMBER/RED |
+| 17 | X-Type thermostat | Coolant oscillation >8°C/2min or stuck <78°C after 10 min | AMBER |
+| 18 | X-Type coil pack | RPM stumble under load + bank STFT divergence | AMBER |
+| 19 | X-Type MAF degradation | MAF <2.5 g/s at warm idle (AJ-V6 underreporting) | AMBER |
+| 20 | X-Type throttle body | Throttle open but load mismatch (carbon buildup) | AMBER |
+| 21 | X-Type cold start | Cold idle monitoring (fast idle normal / too-low warning) | INFO/AMBER |
+| 22 | X-Type alternator age | Voltage 12.8-13.5V at >1500 RPM + declining trend | INFO |
+| 23 | X-Type warmup progress | Reports warmup completion, enables full diagnostics | INFO |
 
 ## Calibration
 
@@ -259,7 +266,7 @@ drifter/
 ├── src/
 │   ├── config.py           # Central configuration (thresholds, paths, topics)
 │   ├── can_bridge.py       # CAN → MQTT bridge (Mode 01 + DTC reads)
-│   ├── alert_engine.py     # Diagnostic rules (16 rules)
+│   ├── alert_engine.py     # Diagnostic rules (23 rules)
 │   ├── logger.py           # Telemetry logger (drive sessions, gzip compression)
 │   ├── voice_alerts.py     # TTS voice alerts
 │   ├── home_sync.py        # Home network sync (MQTT bridge + rsync)
@@ -284,8 +291,11 @@ drifter/
 │   ├── 80-can.rules        # udev rules for USB CAN
 │   └── boot-config.txt     # Lines to add to /boot/firmware/config.txt
 ├── realdash/
-│   └── drifter_channels.xml # RealDash channel map
-└── docs/
+│   └── drifter_channels.xml # RealDash channel map├── scripts/
+│   └── test-bench.sh       # MQTT test scenarios (idle, vacuum, overheat, alternator, X-Type)
+├── tests/
+│   └── test_alert_engine.py # Unit tests for diagnostic rules
+├── conftest.py             # pytest path config└── docs/
     └── WIRING.md           # Physical wiring guide
 ```
 
