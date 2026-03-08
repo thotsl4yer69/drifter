@@ -15,7 +15,7 @@ import paho.mqtt.client as mqtt
 from collections import deque
 
 from config import (
-    MQTT_HOST, MQTT_PORT, CAN_BITRATE,
+    MQTT_HOST, MQTT_PORT, CAN_BITRATE, TOPICS,
     OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END, TOPICS
 )
 
@@ -73,7 +73,7 @@ def find_can_interface():
     # Try common interface names
     for iface in ['can0', 'can1', 'slcan0']:
         try:
-            bus = can.Bus(interface='socketcan', channel=iface, bitrate=500000)
+            bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
             bus.shutdown()
             log.info(f"Found CAN interface: {iface}")
             return iface
@@ -94,7 +94,7 @@ def find_can_interface():
             subprocess.run(['ip', 'link', 'set', 'up', 'slcan0'],
                            timeout=5, capture_output=True)
             time.sleep(1)
-            bus = can.Bus(interface='socketcan', channel='slcan0', bitrate=500000)
+            bus = can.Bus(interface='socketcan', channel='slcan0', bitrate=CAN_BITRATE)
             bus.shutdown()
             log.info(f"Created slcan interface from {dev}")
             return 'slcan0'
@@ -209,12 +209,12 @@ def main():
         iface = find_can_interface()
         if iface is None:
             log.warning("No CAN interface found. Retrying in 5s...")
-            log.warning("Is USB2CANFD plugged in? Run: sudo ip link set can0 up type can bitrate 500000")
+            log.warning(f"Is USB2CANFD plugged in? Run: sudo ip link set can0 up type can bitrate {CAN_BITRATE}")
             time.sleep(5)
 
     # ── Connect to CAN Bus ──
-    log.info(f"Connecting to {iface} at 500 kbps...")
-    bus = can.Bus(interface='socketcan', channel=iface, bitrate=500000)
+    log.info(f"Connecting to {iface} at {CAN_BITRATE} bps...")
+    bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
 
     # ── Connect to MQTT ──
     mqtt_client = mqtt.Client(client_id="drifter-canbridge")
@@ -230,7 +230,7 @@ def main():
             time.sleep(3)
 
     # ── Publish system status ──
-    mqtt_client.publish("drifter/system/status", json.dumps({
+    mqtt_client.publish(TOPICS['system_status'], json.dumps({
         "state": "online",
         "can_interface": iface,
         "timestamp": time.time()
@@ -282,7 +282,7 @@ def main():
 
             # Publish combined snapshot every second
             if latest_values and now - last_snapshot >= 1.0:
-                mqtt_client.publish("drifter/snapshot", json.dumps({
+                mqtt_client.publish(TOPICS['snapshot'], json.dumps({
                     **latest_values,
                     'ts': time.time()
                 }))
@@ -322,7 +322,7 @@ def main():
 
     # ── Cleanup ──
     log.info("Shutting down CAN Bridge...")
-    mqtt_client.publish("drifter/system/status", json.dumps({
+    mqtt_client.publish(TOPICS['system_status'], json.dumps({
         "state": "offline",
         "timestamp": time.time()
     }), retain=True)

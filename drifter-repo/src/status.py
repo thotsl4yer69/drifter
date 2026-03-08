@@ -13,32 +13,14 @@ import subprocess
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, SERVICES as ALL_SERVICES,
+    MQTT_HOST, MQTT_PORT, TOPICS, SERVICES as ALL_SERVICES,
     LEVEL_NAMES, LOG_DIR, CALIBRATION_FILE
 )
 
 COLLECT_SECONDS = 2
 
-TOPICS = [
-    "drifter/engine/rpm",
-    "drifter/engine/coolant",
-    "drifter/engine/stft1",
-    "drifter/engine/stft2",
-    "drifter/engine/ltft1",
-    "drifter/engine/ltft2",
-    "drifter/engine/load",
-    "drifter/engine/throttle",
-    "drifter/engine/iat",
-    "drifter/engine/maf",
-    "drifter/vehicle/speed",
-    "drifter/power/voltage",
-    "drifter/alert/level",
-    "drifter/alert/message",
-    "drifter/diag/dtc",
-    "drifter/system/status",
-    "drifter/system/watchdog",
-    "drifter/session",
-]
+# Build subscribe list from the central TOPICS dict
+SUBSCRIBE_TOPICS = list(TOPICS.values())
 
 SERVICES = ALL_SERVICES
 
@@ -85,7 +67,7 @@ def collect_mqtt():
     except Exception as e:
         return False, str(e)
 
-    for topic in TOPICS:
+    for topic in SUBSCRIBE_TOPICS:
         client.subscribe(topic)
 
     client.loop_start()
@@ -157,7 +139,7 @@ def print_status():
     print(f"  {'─' * 38}")
 
     # ── Telemetry ──
-    TELEMETRY_TOPICS = [t for t in TOPICS if "/alert/" not in t and "/system/" not in t]
+    TELEMETRY_TOPICS = [t for t in SUBSCRIBE_TOPICS if "/alert/" not in t and "/system/" not in t]
     print(f"\n{BOLD}  Telemetry{NC}")
 
     for topic in TELEMETRY_TOPICS:

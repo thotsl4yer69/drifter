@@ -150,7 +150,7 @@ drifter/snapshot            # Combined snapshot (all values)
 drifter/system/status       # Node status (online/offline)
 drifter/system/watchdog     # JSON: service health + system metrics
 drifter/session             # JSON: drive session start/stop events
-drifter/calibration         # JSON: calibration results
+drifter/diag/calibration     # JSON: calibration results
 ```
 
 ## Diagnostic Rules

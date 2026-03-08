@@ -28,6 +28,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ── Calibration Baselines (loaded in main(), used by rules) ──
+calibration = dict(CALIBRATION_DEFAULTS)
+
 # ── Rolling Buffer (60 seconds of data at ~10Hz) ──
 BUFFER_SIZE = 600
 
@@ -96,7 +99,11 @@ def rule_vacuum_leak_bank1(state: VehicleState):
     if stft1 is None or stft2 is None or rpm is None:
         return None
 
-    if stft1 > 12 and rpm < 900 and stft2 < 5:
+    # Subtract baseline so calibrated engines don't false-trigger
+    adj1 = stft1 - calibration.get('stft1_baseline', 0)
+    adj2 = stft2 - calibration.get('stft2_baseline', 0)
+
+    if adj1 > 12 and rpm < 900 and adj2 < 5:
         return (LEVEL_AMBER,
                 f"Vacuum leak — Bank 1 lean at idle (STFT1: {stft1:+.1f}%, "
                 f"STFT2: {stft2:+.1f}%). Check brake booster valve, PCV hose, "
@@ -113,7 +120,10 @@ def rule_vacuum_leak_both(state: VehicleState):
     if stft1 is None or stft2 is None or rpm is None:
         return None
 
-    if stft1 > 12 and stft2 > 12 and rpm < 900:
+    adj1 = stft1 - calibration.get('stft1_baseline', 0)
+    adj2 = stft2 - calibration.get('stft2_baseline', 0)
+
+    if adj1 > 12 and adj2 > 12 and rpm < 900:
         return (LEVEL_AMBER,
                 f"Vacuum leak — BOTH banks lean at idle (B1: {stft1:+.1f}%, "
                 f"B2: {stft2:+.1f}%). Check intake plenum gaskets or large "
@@ -149,8 +159,13 @@ def rule_running_rich(state: VehicleState):
     if stft1 is None or stft2 is None:
         return None
 
-    if state.sustained_below(state.stft1, -12, 150) or \
-       state.sustained_below(state.stft2, -12, 150):
+    # Offset by baseline before checking sustained threshold
+    b1 = calibration.get('stft1_baseline', 0)
+    b2 = calibration.get('stft2_baseline', 0)
+    rich_threshold = THRESHOLDS['stft_rich_sustained']
+
+    if state.sustained_below(state.stft1, rich_threshold + b1, 150) or \
+       state.sustained_below(state.stft2, rich_threshold + b2, 150):
         bank = "Bank 1" if (stft1 or 0) < (stft2 or 0) else "Bank 2"
         return (LEVEL_AMBER,
                 f"Running rich on {bank} (STFT: {min(stft1, stft2):+.1f}%). "
@@ -220,19 +235,22 @@ def rule_ltft_drift(state: VehicleState):
     if ltft1 is None and ltft2 is None:
         return None
 
-    # Check for maxed-out LTFT (ECU can't compensate further)
-    for label, val, threshold_warn, threshold_crit in [
-        ("Bank 1", ltft1, THRESHOLDS['ltft_lean_warn'], THRESHOLDS['ltft_lean_crit']),
-        ("Bank 2", ltft2, THRESHOLDS['ltft_lean_warn'], THRESHOLDS['ltft_lean_crit']),
-    ]:
+    # Offset LTFT by learned baselines so calibrated deviation is removed
+    baselines = {
+        "Bank 1": (ltft1, calibration.get('ltft1_baseline', 0)),
+        "Bank 2": (ltft2, calibration.get('ltft2_baseline', 0)),
+    }
+
+    for label, (val, baseline) in baselines.items():
         if val is None:
             continue
-        if abs(val) >= abs(threshold_crit):
+        adj = val - baseline
+        if abs(adj) >= abs(THRESHOLDS['ltft_lean_crit']):
             return (LEVEL_RED,
                     f"LTFT {label} maxed at {val:+.1f}%. ECU can't compensate. "
                     f"Major fueling fault — likely large vacuum leak or failing injector.")
-        if abs(val) >= abs(threshold_warn):
-            direction = "lean" if val > 0 else "rich"
+        if abs(adj) >= abs(THRESHOLDS['ltft_lean_warn']):
+            direction = "lean" if adj > 0 else "rich"
             return (LEVEL_AMBER,
                     f"LTFT {label} drifted {direction}: {val:+.1f}%. "
                     f"Chronic fuel trim issue developing. Check O2 sensors, "
@@ -249,9 +267,13 @@ def rule_bank_imbalance(state: VehicleState):
     if stft1 is None or stft2 is None or rpm is None:
         return None
 
-    divergence = abs(stft1 - stft2)
+    # Use baseline-adjusted values for imbalance check
+    adj1 = stft1 - calibration.get('stft1_baseline', 0)
+    adj2 = stft2 - calibration.get('stft2_baseline', 0)
+    divergence = abs(adj1 - adj2)
+
     if divergence > THRESHOLDS['catalyst_stft_divergence'] and rpm < 2000:
-        leaner = "Bank 1" if stft1 > stft2 else "Bank 2"
+        leaner = "Bank 1" if adj1 > adj2 else "Bank 2"
         return (LEVEL_AMBER,
                 f"Fuel trim imbalance: {divergence:.1f}% between banks. "
                 f"{leaner} running leaner. Check {leaner.lower()} vacuum lines, "
@@ -459,8 +481,10 @@ def main():
             with open(CALIBRATION_FILE) as f:
                 cal = json.load(f)
             if cal.get('calibrated'):
+                calibration.update(cal)
                 log.info(f"Calibration loaded from {cal.get('calibration_date', 'unknown')}")
                 log.info(f"  STFT baselines: B1={cal['stft1_baseline']:+.1f}%, B2={cal['stft2_baseline']:+.1f}%")
+                log.info(f"  LTFT baselines: B1={cal.get('ltft1_baseline', 0):+.1f}%, B2={cal.get('ltft2_baseline', 0):+.1f}%")
     except Exception as e:
         log.warning(f"Could not load calibration: {e}")
 

@@ -116,8 +116,8 @@ done
 ok "Python services deployed to ${DRIFTER_DIR}"
 
 # RealDash config
-mkdir -p ${DRIFTER_DIR}/realdash
-cp ${REPO_DIR}/realdash/drifter_channels.xml ${DRIFTER_DIR}/realdash/
+mkdir -p "${DRIFTER_DIR}/realdash"
+cp "${REPO_DIR}/realdash/drifter_channels.xml" "${DRIFTER_DIR}/realdash/"
 ok "RealDash channel map deployed"
 
 # Log & session directories
@@ -127,9 +127,9 @@ ok "Log directories created"
 # ── 7. CAN Interface Setup ──
 step 7 "Configuring CAN interface"
 
-cp ${REPO_DIR}/config/setup-can.sh /usr/local/bin/drifter-setup-can
+cp "${REPO_DIR}/config/setup-can.sh" /usr/local/bin/drifter-setup-can
 chmod +x /usr/local/bin/drifter-setup-can
-cp ${REPO_DIR}/config/80-can.rules /etc/udev/rules.d/
+cp "${REPO_DIR}/config/80-can.rules" /etc/udev/rules.d/
 udevadm control --reload-rules 2>/dev/null || true
 ok "CAN auto-detection configured"
 
@@ -174,9 +174,9 @@ step 9 "Installing systemd services"
 
 # NanoMQ config
 if [ -d /etc/nanomq ]; then
-    cp ${REPO_DIR}/config/nanomq.conf /etc/nanomq/nanomq.conf
+    cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq/nanomq.conf
 elif command -v nanomq &>/dev/null; then
-    cp ${REPO_DIR}/config/nanomq.conf /etc/nanomq.conf
+    cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq.conf
 fi
 
 # Deploy all service files
