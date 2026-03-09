@@ -38,27 +38,53 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 
 ## Quick Start
 
+### Option A: One-command deploy from Windows (easiest)
+
+No git or internet needed on the Pi — just SSH access:
+
+```powershell
+# From your Windows machine (PowerShell)
+.\deploy.ps1 -PiHost 192.168.1.50
+```
+
+This copies everything to the Pi and runs the installer over SSH. Use `-PiUser kali` if your username differs, or `-CopyOnly` to just transfer files without installing.
+
+### Option B: Clone on the Pi
+
 ```bash
-# 1. Flash Kali ARM64 to your NVMe and boot the Pi
-
-# 2. Clone this repo
-git clone https://github.com/mz1312/drifter.git
+# On the Pi (needs internet)
+git clone https://github.com/thotsl4yer69/drifter.git
 cd drifter
-
-# 3. Run the installer
 sudo ./install.sh
+```
 
-# 4. Reboot
+### Option C: USB stick (no network at all)
+
+```bash
+# On any Linux/Mac machine with the repo
+./scripts/make-bundle.sh
+# Copy drifter-bundle.tar.gz to a USB stick
+
+# On the Pi
+mount /dev/sda1 /mnt
+tar xzf /mnt/drifter-bundle.tar.gz
+cd drifter && sudo ./install.sh
+```
+
+### After install
+
+```bash
+# 1. Reboot
 sudo reboot
 
-# 5. Connect phone to Wi-Fi: MZ1312_DRIFTER / uncaged1312
-# 6. Open RealDash → TCP CAN → 10.42.0.1:35000
+# 2. Connect phone to Wi-Fi: MZ1312_DRIFTER / uncaged1312
+# 3. Open RealDash → TCP CAN → 10.42.0.1:35000
 #    (or MQTT → 10.42.0.1:1883)
-# 7. Plug phone into Pioneer via USB
-# 8. Screw OBD-II pigtail CAN-H/CAN-L into USB2CANFD terminals
-# 9. After first warm-up drive, run calibration:
-#    sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
-# 10. Done.
+# 4. Plug phone into Pioneer via USB
+# 5. Screw OBD-II pigtail CAN-H/CAN-L into USB2CANFD terminals
+# 6. After first warm-up drive, run calibration:
+sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
+# 7. Done.
 ```
 
 ## Architecture
