@@ -2,12 +2,14 @@
 Description=MZ1312 DRIFTER Home Network Sync
 After=nanomq.service network-online.target
 Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/home_sync.py
-Restart=always
+Restart=on-failure
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1
 

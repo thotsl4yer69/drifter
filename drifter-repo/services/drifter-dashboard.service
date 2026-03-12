@@ -1,16 +1,16 @@
 [Unit]
-Description=MZ1312 DRIFTER Voice Alerts
-After=nanomq.service sound.target
-Wants=nanomq.service
+Description=MZ1312 DRIFTER Web Dashboard & Audio Bridge
+After=mosquitto.service
+Wants=mosquitto.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
-ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/voice_alerts.py
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/web_dashboard.py
 Restart=on-failure
-RestartSec=10
+RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

@@ -2,12 +2,14 @@
 Description=MZ1312 DRIFTER Alert Engine
 After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/alert_engine.py
-Restart=always
+Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 

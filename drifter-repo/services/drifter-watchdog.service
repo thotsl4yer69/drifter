@@ -2,12 +2,14 @@
 Description=MZ1312 DRIFTER Watchdog — Service & System Health Monitor
 After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/watchdog.py
-Restart=always
+Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
