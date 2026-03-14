@@ -57,8 +57,26 @@ def check_piper():
     return True
 
 
+def _has_audio_device():
+    """Check if any ALSA playback device is available and usable."""
+    try:
+        result = subprocess.run(
+            ['aplay', '-l'], capture_output=True, text=True, timeout=3
+        )
+        return 'card' in result.stdout.lower()
+    except Exception:
+        return False
+
+
+has_local_audio = False  # Set in main after check
+
+
 def speak(text):
-    """Speak text through audio output."""
+    """Speak text through audio output.
+    Tries local audio first (3.5mm/HDMI/USB).
+    Always generates WAV and publishes to MQTT for the web dashboard
+    audio bridge, so the phone can play it through its speaker / BT.
+    """
     global last_voice_time, last_spoken_msg
 
     now = time.time()
@@ -73,10 +91,10 @@ def speak(text):
 
     AUDIO_DIR.mkdir(exist_ok=True)
     wav_path = AUDIO_DIR / "alert.wav"
+    spoke = False
 
     try:
         if piper_available:
-            # Piper TTS — use full model path if file exists, else just name
             model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
             process = subprocess.Popen(
                 ['piper', '--model', model_arg, '--output_file', str(wav_path)],
@@ -86,23 +104,54 @@ def speak(text):
             )
             process.communicate(input=text.encode(), timeout=10)
 
-            if wav_path.exists():
+            if wav_path.exists() and has_local_audio:
                 subprocess.run(
                     ['aplay', '-q', str(wav_path)],
                     timeout=15,
                     capture_output=True
                 )
+                spoke = True
         else:
-            # espeak-ng fallback
-            subprocess.run(
-                ['espeak-ng', '-v', 'en-gb', '-s', '150', '-p', '40', text],
+            # espeak-ng — generate WAV to file
+            result = subprocess.run(
+                ['espeak-ng', '-v', 'en-gb', '-s', '150', '-p', '40',
+                 '-w', str(wav_path), text],
                 timeout=10,
                 capture_output=True
             )
+            if result.returncode == 0 and wav_path.exists():
+                if has_local_audio:
+                    subprocess.run(
+                        ['aplay', '-q', str(wav_path)],
+                        timeout=15,
+                        capture_output=True
+                    )
+                    spoke = True
 
-        last_voice_time = now
-        last_spoken_msg = text
-        log.info(f"Spoke: {text[:60]}...")
+        # Publish WAV via MQTT for web dashboard audio bridge
+        if wav_path.exists():
+            try:
+                import base64
+                wav_data = wav_path.read_bytes()
+                # Publish as base64 on a dedicated topic
+                voice_mqtt = mqtt.Client(client_id="drifter-voice-wav")
+                voice_mqtt.connect(MQTT_HOST, MQTT_PORT, 10)
+                voice_mqtt.publish('drifter/audio/wav', json.dumps({
+                    'text': text[:200],
+                    'wav_b64': base64.b64encode(wav_data).decode(),
+                    'ts': time.time()
+                }))
+                voice_mqtt.disconnect()
+                spoke = True
+            except Exception as e:
+                log.debug(f"WAV publish failed: {e}")
+
+        if spoke:
+            last_voice_time = now
+            last_spoken_msg = text
+            log.info(f"Spoke: {text[:60]}...")
+        else:
+            log.warning(f"TTS generated but no output available for: {text[:40]}...")
 
     except subprocess.TimeoutExpired:
         log.warning("TTS timeout")
@@ -149,6 +198,13 @@ def main():
 
     if not check_piper():
         log.warning("Continuing without voice — will retry on alert")
+
+    global has_local_audio
+    has_local_audio = _has_audio_device()
+    if has_local_audio:
+        log.info("Local audio device detected — voice will play through hardware")
+    else:
+        log.info("No local audio device — voice alerts routed to web dashboard")
 
     client = mqtt.Client(client_id="drifter-voice")
     client.on_message = on_message

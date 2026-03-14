@@ -2,9 +2,9 @@
 Description=MZ1312 DRIFTER Web Dashboard & Audio Bridge
 After=mosquitto.service
 Wants=mosquitto.service
+
 StartLimitIntervalSec=120
 StartLimitBurst=5
-
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter

@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>MZ1312</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --amber:#FF9500;--amber-dim:#33200a;--amber-glow:rgba(255,149,0,0.55);
+  --red:#FF2200;--red-dim:#331000;--red-glow:rgba(255,34,0,0.45);
+  --green:#00CC44;--green-dim:#003311;
+  --bg:#000;--panel:#0D0800;--border:#1A1000;
+}
+html,body{
+  width:100vw;height:100vh;overflow:hidden;
+  background:var(--bg);color:var(--amber);
+  font-family:'Courier New','Lucida Console',monospace;
+  cursor:none;user-select:none;-webkit-user-select:none;
+  -webkit-font-smoothing:none;
+}
+#hud-root{
+  width:480px;height:320px;position:absolute;top:0;left:0;
+  transform-origin:0 0;
+}
+
+/* ═══ CRT EFFECTS ═══ */
+.crt-lines{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:repeating-linear-gradient(
+    0deg,transparent 0px,transparent 1px,rgba(0,0,0,0.1) 1px,rgba(0,0,0,0.1) 2px
+  );
+  pointer-events:none;z-index:9999;
+}
+.crt-vignette{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,0.55) 100%);
+  pointer-events:none;z-index:9998;
+}
+
+/* ═══ TOP BAR ═══ */
+.topbar{
+  height:22px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 10px;border-bottom:1px solid var(--border);
+  font-size:10px;letter-spacing:2px;font-weight:bold;
+  background:linear-gradient(180deg,#0D0800 0%,#000 100%);
+  position:relative;z-index:10;
+}
+.topbar .id{color:var(--amber);text-shadow:0 0 6px var(--amber-glow)}
+.conn-dot{
+  width:6px;height:6px;border-radius:50%;display:inline-block;
+  margin-right:4px;background:#333;vertical-align:middle;
+}
+.conn-dot.live{background:var(--green);box-shadow:0 0 4px var(--green)}
+.conn-dot.off{background:#333}
+.topbar .conn{color:#555;font-size:9px}
+.topbar .conn.live{color:var(--green)}
+.alert-ind{
+  font-size:9px;padding:1px 6px;border-radius:2px;
+  border:1px solid var(--amber-dim);color:var(--amber-dim);
+  text-shadow:none;
+}
+.alert-ind.ok{border-color:var(--green-dim);color:var(--green);text-shadow:0 0 4px rgba(0,204,68,0.3)}
+.alert-ind.info{border-color:#003366;color:#2196f3}
+.alert-ind.amber{border-color:#332200;color:var(--amber);text-shadow:0 0 4px var(--amber-glow);animation:alert-pulse 1.5s infinite}
+.alert-ind.red{border-color:var(--red-dim);color:var(--red);text-shadow:0 0 6px var(--red-glow);animation:alert-pulse 0.6s infinite}
+@keyframes alert-pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
+/* ═══ PAGE CONTAINER ═══ */
+.pages{
+  position:relative;width:480px;height:276px;overflow:hidden;
+}
+.page{
+  position:absolute;top:0;left:0;width:480px;height:276px;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.25s ease,transform 0.25s ease;
+  transform:translateX(30px);
+}
+.page.active{opacity:1;pointer-events:auto;transform:translateX(0)}
+.page.exit-left{transform:translateX(-30px);opacity:0}
+
+/* ═══ BOTTOM BAR ═══ */
+.bottombar{
+  height:22px;display:flex;align-items:center;justify-content:center;
+  border-top:1px solid var(--border);gap:6px;
+  position:relative;z-index:10;
+}
+.page-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--amber-dim);transition:all 0.2s;
+}
+.page-dot.active{background:var(--amber);box-shadow:0 0 4px var(--amber-glow)}
+.page-label{
+  position:absolute;right:10px;font-size:8px;letter-spacing:2px;
+  color:var(--amber-dim);
+}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 0 — DRIVE                                */
+/* ═══════════════════════════════════════════════ */
+.drive-layout{display:flex;height:100%}
+.drive-left{
+  width:262px;height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;position:relative;
+}
+.tach-canvas{display:block}
+.speed-overlay{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-42%);
+  text-align:center;pointer-events:none;
+  /* offset left to account for drive-left position */
+  width:200px;
+}
+.speed-val{
+  font-size:72px;font-weight:bold;line-height:1;
+  color:var(--amber);
+  text-shadow:0 0 20px var(--amber-glow),0 0 40px rgba(255,149,0,0.2);
+  font-variant-numeric:tabular-nums;letter-spacing:-2px;
+}
+.speed-unit{font-size:10px;color:var(--amber-dim);letter-spacing:4px;margin-top:-2px}
+.rpm-readout{
+  position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+  font-size:13px;color:var(--amber);letter-spacing:1px;
+  text-shadow:0 0 8px var(--amber-glow);
+  font-variant-numeric:tabular-nums;
+}
+.rpm-readout span{font-size:8px;color:var(--amber-dim);margin-left:2px}
+
+.drive-right{
+  width:218px;height:100%;display:flex;flex-direction:column;
+  padding:8px 10px 8px 0;gap:6px;justify-content:center;
+}
+.gauge-card{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:6px 8px;
+}
+.gauge-card .g-header{
+  display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:4px;
+}
+.gauge-card .g-label{font-size:8px;color:var(--amber-dim);letter-spacing:2px}
+.gauge-card .g-value{
+  font-size:22px;font-weight:bold;line-height:1;
+  text-shadow:0 0 8px var(--amber-glow);
+  font-variant-numeric:tabular-nums;
+}
+.gauge-card .g-unit{font-size:9px;color:var(--amber-dim);margin-left:2px}
+.gauge-bar{
+  height:3px;background:var(--amber-dim);border-radius:1px;overflow:hidden;
+  margin-top:4px;
+}
+.gauge-bar-fill{height:100%;border-radius:1px;transition:width 0.2s;background:var(--amber)}
+.gauge-card.compact{padding:4px 8px}
+.gauge-card.compact .g-header{margin-bottom:2px}
+.gauge-card.compact .g-value{font-size:15px}
+
+/* Alert box on drive page */
+.drive-alert{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:5px 8px;font-size:9px;
+  color:var(--amber-dim);letter-spacing:1px;line-height:1.3;
+  min-height:32px;display:flex;align-items:center;
+  overflow:hidden;
+}
+.drive-alert.warn{border-color:#332200;color:var(--amber)}
+.drive-alert.crit{border-color:var(--red-dim);color:var(--red);animation:alert-pulse 0.6s infinite}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 1 — TYRES                                */
+/* ═══════════════════════════════════════════════ */
+.tyres-layout{
+  display:flex;align-items:center;justify-content:center;
+  height:100%;position:relative;
+}
+.car-body{
+  width:110px;height:190px;
+  border:2px solid var(--amber-dim);
+  border-radius:24px 24px 18px 18px;
+  position:relative;
+}
+/* Windshield line */
+.car-body::before{
+  content:'';position:absolute;top:42px;left:12%;right:12%;
+  height:1px;background:var(--amber-dim);
+}
+/* Rear line */
+.car-body::after{
+  content:'';position:absolute;bottom:38px;left:15%;right:15%;
+  height:1px;background:var(--amber-dim);
+}
+.tyre-box{
+  position:absolute;text-align:center;width:120px;
+}
+.tyre-box .t-pos{font-size:9px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:1px}
+.tyre-box .t-psi{
+  font-size:28px;font-weight:bold;line-height:1;
+  text-shadow:0 0 8px var(--amber-glow);
+  font-variant-numeric:tabular-nums;
+}
+.tyre-box .t-unit{font-size:9px;color:var(--amber-dim)}
+.tyre-box .t-temp{font-size:11px;color:var(--amber-dim);margin-top:1px}
+/* Positions */
+.tyre-fl{top:18px;right:calc(50% + 62px)}
+.tyre-fr{top:18px;left:calc(50% + 62px)}
+.tyre-rl{bottom:18px;right:calc(50% + 62px)}
+.tyre-rr{bottom:18px;left:calc(50% + 62px)}
+/* Wheel indicators on car body */
+.wheel{
+  position:absolute;width:20px;height:8px;
+  border:1px solid var(--amber-dim);border-radius:2px;
+  background:var(--panel);
+}
+.wheel-fl{top:30px;left:-11px}.wheel-fr{top:30px;right:-11px}
+.wheel-rl{bottom:30px;left:-11px}.wheel-rr{bottom:30px;right:-11px}
+.tyres-title{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  font-size:10px;letter-spacing:3px;color:var(--amber-dim);
+}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 2 — ENGINE                               */
+/* ═══════════════════════════════════════════════ */
+.engine-layout{padding:8px 10px;height:100%}
+.engine-title{
+  font-size:10px;letter-spacing:3px;color:var(--amber-dim);
+  margin-bottom:6px;text-align:center;
+}
+.engine-grid{
+  display:grid;grid-template-columns:1fr 1fr 1fr;
+  gap:6px;
+}
+.eng-cell{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:6px 8px;text-align:center;
+}
+.eng-cell .e-label{font-size:8px;color:var(--amber-dim);letter-spacing:1px;margin-bottom:3px}
+.eng-cell .e-value{
+  font-size:22px;font-weight:bold;line-height:1;
+  text-shadow:0 0 8px var(--amber-glow);
+  font-variant-numeric:tabular-nums;
+}
+.eng-cell .e-unit{font-size:9px;color:var(--amber-dim);margin-top:1px}
+.eng-cell .e-bar{
+  height:3px;background:var(--amber-dim);border-radius:1px;
+  overflow:hidden;margin-top:4px;
+}
+.eng-cell .e-bar-fill{height:100%;border-radius:1px;background:var(--amber);transition:width 0.2s}
+.engine-footer{
+  display:flex;justify-content:space-around;
+  margin-top:8px;padding:6px 0;
+  border-top:1px solid var(--border);
+}
+.engine-footer .ef-item{text-align:center}
+.engine-footer .ef-label{font-size:8px;color:var(--amber-dim);letter-spacing:1px}
+.engine-footer .ef-value{
+  font-size:18px;font-weight:bold;
+  text-shadow:0 0 6px var(--amber-glow);
+  font-variant-numeric:tabular-nums;
+}
+.engine-footer .ef-unit{font-size:8px;color:var(--amber-dim)}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 3 — STATUS                               */
+/* ═══════════════════════════════════════════════ */
+.status-layout{padding:8px 10px;height:100%}
+.status-title{
+  font-size:10px;letter-spacing:3px;color:var(--amber-dim);
+  margin-bottom:6px;text-align:center;
+}
+.status-alert-box{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:6px 10px;margin-bottom:6px;
+  font-size:11px;line-height:1.4;min-height:36px;
+}
+.dtc-section{margin-bottom:6px}
+.dtc-label{font-size:8px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:3px}
+.dtc-code{
+  display:inline-block;padding:2px 6px;border-radius:2px;
+  font-size:11px;font-weight:bold;margin:1px;
+  background:var(--red-dim);color:var(--red);
+}
+.dtc-code.pending{background:#1a1500;color:var(--amber)}
+.dtc-none{font-size:10px;color:var(--green-dim)}
+.sys-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:4px;
+  margin-top:6px;
+}
+.sys-cell{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:3px 8px;font-size:10px;
+  background:var(--panel);border:1px solid var(--border);border-radius:3px;
+}
+.sys-cell .s-label{color:var(--amber-dim);letter-spacing:1px}
+.sys-cell .s-value{color:var(--amber);font-weight:bold;font-variant-numeric:tabular-nums}
+
+/* ═══ BOOT SEQUENCE ═══ */
+.boot-overlay{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:#000;z-index:10000;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  transition:opacity 0.4s;
+}
+.boot-overlay.done{opacity:0;pointer-events:none}
+.boot-text{
+  font-size:14px;letter-spacing:6px;color:var(--amber);
+  text-shadow:0 0 12px var(--amber-glow);
+  opacity:0;animation:boot-fade 0.5s 0.2s forwards;
+}
+.boot-sub{
+  font-size:9px;letter-spacing:3px;color:var(--amber-dim);
+  margin-top:4px;opacity:0;animation:boot-fade 0.4s 0.6s forwards;
+}
+.boot-bar{
+  width:160px;height:2px;background:var(--amber-dim);
+  margin-top:12px;border-radius:1px;overflow:hidden;
+  opacity:0;animation:boot-fade 0.3s 0.4s forwards;
+}
+.boot-bar-fill{
+  height:100%;width:0;background:var(--amber);
+  box-shadow:0 0 6px var(--amber-glow);
+  animation:boot-fill 1s 0.5s forwards;
+}
+@keyframes boot-fade{to{opacity:1}}
+@keyframes boot-fill{to{width:100%}}
+
+/* ═══ RED ALERT BORDER ═══ */
+.red-alert-border{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  border:2px solid transparent;pointer-events:none;z-index:9997;
+  transition:border-color 0.2s;
+}
+.red-alert-border.active{
+  border-color:var(--red);
+  box-shadow:inset 0 0 20px var(--red-glow);
+  animation:border-pulse 0.6s infinite;
+}
+@keyframes border-pulse{
+  0%,100%{border-color:var(--red);box-shadow:inset 0 0 20px var(--red-glow)}
+  50%{border-color:var(--red-dim);box-shadow:inset 0 0 8px rgba(255,34,0,0.2)}
+}
+
+/* ═══ HARDWARE STATUS ═══ */
+.hw-overlay{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:#000;z-index:9999;
+  display:flex;flex-direction:column;
+  transition:opacity 0.5s;
+}
+.hw-overlay.done{opacity:0;pointer-events:none}
+.hw-top{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 14px;border-bottom:1px solid var(--border);
+}
+.hw-top .hw-title{font-size:12px;letter-spacing:4px;color:var(--amber);
+  text-shadow:0 0 8px var(--amber-glow)}
+.hw-top .hw-sub{font-size:8px;color:var(--amber-dim);letter-spacing:2px}
+.hw-items{flex:1;padding:8px 12px;overflow:hidden}
+.hw-row{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 10px;margin-bottom:5px;
+  background:var(--panel);border:1px solid var(--border);border-radius:4px;
+}
+.hw-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.hw-dot.ok{background:var(--green);box-shadow:0 0 4px var(--green)}
+.hw-dot.missing{background:var(--red);box-shadow:0 0 4px var(--red)}
+.hw-dot.waiting{background:var(--amber);box-shadow:0 0 4px var(--amber);animation:alert-pulse 1.5s infinite}
+.hw-dot.setup{background:#2196f3;box-shadow:0 0 4px #2196f3}
+.hw-dot.down{background:var(--red)}
+.hw-dot.error{background:var(--red)}
+.hw-name{font-size:11px;font-weight:bold;letter-spacing:1px;width:70px;flex-shrink:0}
+.hw-detail{font-size:9px;color:var(--amber-dim);flex:1}
+.hw-footer{
+  padding:4px 14px 6px;border-top:1px solid var(--border);
+  font-size:8px;color:var(--amber-dim);text-align:center;letter-spacing:1px;
+  display:flex;flex-wrap:wrap;gap:2px 8px;justify-content:center;
+}
+.hw-footer .svc-ok{color:var(--green)}
+.hw-footer .svc-fail{color:var(--red)}
+.hw-footer .svc-off{color:#333}
+</style>
+</head>
+<body>
+
+<!-- Hardware status overlay (shown until data flows) -->
+<div class="hw-overlay" id="hw-overlay">
+  <div class="hw-top">
+    <span class="hw-title">DRIFTER</span>
+    <span class="hw-sub">HARDWARE STATUS</span>
+  </div>
+  <div class="hw-items" id="hw-items"></div>
+  <div class="hw-footer" id="hw-footer"></div>
+</div>
+
+<!-- CRT effects -->
+<div class="crt-lines"></div>
+<div class="crt-vignette"></div>
+<div class="red-alert-border" id="red-border"></div>
+
+<!-- Scaled HUD root -->
+<div id="hud-root">
+
+<!-- Top bar -->
+<div class="topbar">
+  <span class="id">MZ1312</span>
+  <span class="conn" id="conn-status">
+    <span class="conn-dot" id="conn-dot"></span>
+    <span id="conn-text">WAIT</span>
+  </span>
+  <span class="alert-ind ok" id="alert-ind">OK</span>
+</div>
+
+<!-- Pages -->
+<div class="pages" id="pages">
+
+  <!-- PAGE 0: DRIVE -->
+  <div class="page active" id="page-0">
+    <div class="drive-layout">
+      <div class="drive-left">
+        <canvas class="tach-canvas" id="tach" width="250" height="250"></canvas>
+        <div class="speed-overlay">
+          <div class="speed-val" id="speed-val">--</div>
+          <div class="speed-unit">KM/H</div>
+        </div>
+        <div class="rpm-readout"><span id="rpm-readout">----</span><span> RPM</span></div>
+      </div>
+      <div class="drive-right">
+        <div class="gauge-card" id="gc-coolant">
+          <div class="g-header">
+            <span class="g-label">COOLANT</span>
+            <span><span class="g-value" id="gv-coolant">--</span><span class="g-unit">&deg;C</span></span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-bar-fill" id="gb-coolant"></div></div>
+        </div>
+        <div class="gauge-card" id="gc-voltage">
+          <div class="g-header">
+            <span class="g-label">BATTERY</span>
+            <span><span class="g-value" id="gv-voltage">--</span><span class="g-unit">V</span></span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-bar-fill" id="gb-voltage"></div></div>
+        </div>
+        <div class="gauge-card compact">
+          <div class="g-header">
+            <span class="g-label">LOAD</span>
+            <span><span class="g-value" id="gv-load">--</span><span class="g-unit">%</span></span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-bar-fill" id="gb-load"></div></div>
+        </div>
+        <div class="gauge-card compact">
+          <div class="g-header">
+            <span class="g-label">THROTTLE</span>
+            <span><span class="g-value" id="gv-throttle">--</span><span class="g-unit">%</span></span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-bar-fill" id="gb-throttle"></div></div>
+        </div>
+        <div class="drive-alert" id="drive-alert">WAITING FOR DATA</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 1: TYRES -->
+  <div class="page" id="page-1">
+    <div class="tyres-layout">
+      <div class="tyres-title">TYRES</div>
+      <div class="car-body">
+        <div class="wheel wheel-fl"></div>
+        <div class="wheel wheel-fr"></div>
+        <div class="wheel wheel-rl"></div>
+        <div class="wheel wheel-rr"></div>
+      </div>
+      <div class="tyre-box tyre-fl">
+        <div class="t-pos">FL</div>
+        <div class="t-psi" id="tp-fl-psi">--</div>
+        <div class="t-unit">PSI</div>
+        <div class="t-temp" id="tp-fl-temp">--</div>
+      </div>
+      <div class="tyre-box tyre-fr">
+        <div class="t-pos">FR</div>
+        <div class="t-psi" id="tp-fr-psi">--</div>
+        <div class="t-unit">PSI</div>
+        <div class="t-temp" id="tp-fr-temp">--</div>
+      </div>
+      <div class="tyre-box tyre-rl">
+        <div class="t-pos">RL</div>
+        <div class="t-psi" id="tp-rl-psi">--</div>
+        <div class="t-unit">PSI</div>
+        <div class="t-temp" id="tp-rl-temp">--</div>
+      </div>
+      <div class="tyre-box tyre-rr">
+        <div class="t-pos">RR</div>
+        <div class="t-psi" id="tp-rr-psi">--</div>
+        <div class="t-unit">PSI</div>
+        <div class="t-temp" id="tp-rr-temp">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 2: ENGINE -->
+  <div class="page" id="page-2">
+    <div class="engine-layout">
+      <div class="engine-title">ENGINE</div>
+      <div class="engine-grid">
+        <div class="eng-cell">
+          <div class="e-label">STFT B1</div>
+          <div class="e-value" id="ev-stft1">--</div>
+          <div class="e-unit">%</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-stft1" style="width:50%"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">STFT B2</div>
+          <div class="e-value" id="ev-stft2">--</div>
+          <div class="e-unit">%</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-stft2" style="width:50%"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">LOAD</div>
+          <div class="e-value" id="ev-load">--</div>
+          <div class="e-unit">%</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-load"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">LTFT B1</div>
+          <div class="e-value" id="ev-ltft1">--</div>
+          <div class="e-unit">%</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-ltft1" style="width:50%"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">LTFT B2</div>
+          <div class="e-value" id="ev-ltft2">--</div>
+          <div class="e-unit">%</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-ltft2" style="width:50%"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">MAF</div>
+          <div class="e-value" id="ev-maf">--</div>
+          <div class="e-unit">g/s</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-maf"></div></div>
+        </div>
+      </div>
+      <div class="engine-footer">
+        <div class="ef-item">
+          <div class="ef-label">THROTTLE</div>
+          <div><span class="ef-value" id="ev-throttle">--</span><span class="ef-unit">%</span></div>
+        </div>
+        <div class="ef-item">
+          <div class="ef-label">IAT</div>
+          <div><span class="ef-value" id="ev-iat">--</span><span class="ef-unit">&deg;C</span></div>
+        </div>
+        <div class="ef-item">
+          <div class="ef-label">RPM</div>
+          <div><span class="ef-value" id="ev-rpm">--</span></div>
+        </div>
+        <div class="ef-item">
+          <div class="ef-label">SPEED</div>
+          <div><span class="ef-value" id="ev-speed">--</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 3: STATUS -->
+  <div class="page" id="page-3">
+    <div class="status-layout">
+      <div class="status-title">STATUS</div>
+      <div class="status-alert-box" id="status-alert">WAITING FOR DATA</div>
+      <div class="dtc-section">
+        <div class="dtc-label">DIAGNOSTIC TROUBLE CODES</div>
+        <div id="dtc-list"><span class="dtc-none">NO DATA</span></div>
+      </div>
+      <div class="sys-grid">
+        <div class="sys-cell"><span class="s-label">CPU</span><span class="s-value" id="sv-cpu">--</span></div>
+        <div class="sys-cell"><span class="s-label">MEM</span><span class="s-value" id="sv-mem">--</span></div>
+        <div class="sys-cell"><span class="s-label">DISK</span><span class="s-value" id="sv-disk">--</span></div>
+        <div class="sys-cell"><span class="s-label">UP</span><span class="s-value" id="sv-up">--</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom bar -->
+<div class="bottombar">
+  <div class="page-dot active" id="dot-0"></div>
+  <div class="page-dot" id="dot-1"></div>
+  <div class="page-dot" id="dot-2"></div>
+  <div class="page-dot" id="dot-3"></div>
+  <span class="page-label" id="page-label">DRIVE</span>
+</div>
+
+</div><!-- /hud-root -->
+
+<!-- Boot overlay -->
+<div class="boot-overlay" id="boot">
+  <div class="boot-text">DRIFTER</div>
+  <div class="boot-sub">2004 JAGUAR X-TYPE 2.5L V6</div>
+  <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  VIEWPORT SCALING — scale 480×320 layout to fill screen
+// ═══════════════════════════════════════════════════
+function scaleHUD() {
+  const root = document.getElementById('hud-root');
+  const sw = window.innerWidth / 480;
+  const sh = window.innerHeight / 320;
+  const scale = Math.min(sw, sh);
+  root.style.transform = 'scale(' + scale + ')';
+  // Center if aspect ratio doesn't match exactly
+  const scaledW = 480 * scale;
+  const scaledH = 320 * scale;
+  root.style.left = ((window.innerWidth - scaledW) / 2) + 'px';
+  root.style.top = ((window.innerHeight - scaledH) / 2) + 'px';
+}
+scaleHUD();
+window.addEventListener('resize', scaleHUD);
+
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+const S = {
+  rpm:0, speed:0, coolant:0, voltage:0,
+  load:0, throttle:0, iat:0, maf:0,
+  stft1:0, stft2:0, ltft1:0, ltft2:0,
+  alertLevel:0, alertMsg:'',
+  tpms:{fl:{psi:null,temp:null},fr:{psi:null,temp:null},
+        rl:{psi:null,temp:null},rr:{psi:null,temp:null}},
+  dtcStored:[], dtcPending:[],
+  cpuTemp:0, diskPct:0, diskFree:'', memPct:0, uptime:'',
+  connected:false, lastUpdate:0
+};
+
+// Display state (smoothed)
+let dRpm = 0, dSpeed = 0;
+const PAGE_NAMES = ['DRIVE','TYRES','ENGINE','STATUS'];
+let currentPage = 0;
+const PAGES = 4;
+
+// ═══════════════════════════════════════════════════
+//  TACHOMETER (canvas)
+// ═══════════════════════════════════════════════════
+const tachCanvas = document.getElementById('tach');
+const ctx = tachCanvas.getContext('2d');
+const CX = 125, CY = 125;
+const R_OUTER = 108, R_INNER = 90;
+const ARC_WIDTH = R_OUTER - R_INNER;
+const START_A = Math.PI * 0.75;   // 135deg (7 o'clock)
+const SWEEP = Math.PI * 1.5;      // 270deg
+const SEGMENTS = 35;
+const SEG_ANGLE = SWEEP / SEGMENTS;
+const GAP = 0.025;
+const MAX_RPM = 7000;
+const REDLINE = 5500;
+
+function segColor(segIdx) {
+  const rpm = (segIdx / SEGMENTS) * MAX_RPM;
+  if (rpm >= 6200) return '#FF2200';
+  if (rpm >= REDLINE) return '#FF6600';
+  return '#FF9500';
+}
+
+function drawTach(rpm) {
+  ctx.clearRect(0, 0, 250, 250);
+  const filled = Math.round((Math.min(rpm, MAX_RPM) / MAX_RPM) * SEGMENTS);
+
+  // Segments
+  ctx.lineWidth = ARC_WIDTH;
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < SEGMENTS; i++) {
+    const a1 = START_A + i * SEG_ANGLE + GAP / 2;
+    const a2 = START_A + (i + 1) * SEG_ANGLE - GAP / 2;
+    const mid = (R_OUTER + R_INNER) / 2;
+
+    if (i < filled) {
+      ctx.strokeStyle = segColor(i);
+      ctx.shadowColor = segColor(i);
+      ctx.shadowBlur = 6;
+    } else {
+      ctx.strokeStyle = '#1A1000';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+    }
+    ctx.beginPath();
+    ctx.arc(CX, CY, mid, a1, a2);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  // Tick labels: 0-7 (thousands)
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let k = 0; k <= 7; k++) {
+    const frac = k / 7;
+    const angle = START_A + frac * SWEEP;
+    const lr = R_OUTER + 11;
+    const x = CX + lr * Math.cos(angle);
+    const y = CY + lr * Math.sin(angle);
+    const isRedline = k >= 6;
+    ctx.fillStyle = isRedline ? '#FF2200' : '#4D2D00';
+    ctx.fillText(k.toString(), x, y);
+  }
+
+  // Small tick marks
+  ctx.strokeStyle = '#2A1800';
+  ctx.lineWidth = 1;
+  for (let k = 0; k <= 7; k++) {
+    const frac = k / 7;
+    const angle = START_A + frac * SWEEP;
+    const x1 = CX + R_OUTER * Math.cos(angle);
+    const y1 = CY + R_OUTER * Math.sin(angle);
+    const x2 = CX + (R_OUTER + 4) * Math.cos(angle);
+    const y2 = CY + (R_OUTER + 4) * Math.sin(angle);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  COLOR HELPERS
+// ═══════════════════════════════════════════════════
+function coolantColor(v) {
+  if (v >= 108) return 'var(--red)';
+  if (v > 100) return 'var(--amber)';
+  return 'var(--amber)';
+}
+function voltColor(v) {
+  if (v < 12) return 'var(--red)';
+  if (v < 13.2) return 'var(--amber)';
+  return 'var(--green)';
+}
+function trimColor(v) {
+  if (Math.abs(v) > 12) return 'var(--red)';
+  if (Math.abs(v) > 8) return 'var(--amber)';
+  return 'var(--amber)';
+}
+function psiColor(v) {
+  if (v < 20) return 'var(--red)';
+  if (v < 26) return 'var(--amber)';
+  return 'var(--amber)';
+}
+
+// ═══════════════════════════════════════════════════
+//  DOM UPDATES
+// ═══════════════════════════════════════════════════
+function setEl(id, text, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  if (color) el.style.color = color;
+}
+function setBar(id, pct, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (color) el.style.background = color;
+}
+
+function updateDriveUI() {
+  // Speed
+  const sp = Math.round(dSpeed);
+  setEl('speed-val', sp > 0 ? sp.toString() : '--');
+
+  // RPM readout
+  const rp = Math.round(dRpm);
+  setEl('rpm-readout', rp > 0 ? rp.toString() : '----');
+
+  // Coolant
+  const cv = S.coolant;
+  const cc = coolantColor(cv);
+  setEl('gv-coolant', cv > 0 ? Math.round(cv).toString() : '--', cc);
+  setBar('gb-coolant', ((cv - 40) / 80) * 100, cc === 'var(--red)' ? 'var(--red)' : 'var(--amber)');
+
+  // Voltage
+  const vv = S.voltage;
+  const vc = voltColor(vv);
+  setEl('gv-voltage', vv > 0 ? vv.toFixed(1) : '--', vc);
+  setBar('gb-voltage', ((vv - 10) / 5) * 100, vc === 'var(--red)' ? 'var(--red)' : vc === 'var(--green)' ? 'var(--green)' : 'var(--amber)');
+
+  // Load
+  setEl('gv-load', S.load > 0 ? Math.round(S.load).toString() : '--');
+  setBar('gb-load', S.load);
+
+  // Throttle
+  setEl('gv-throttle', S.throttle >= 0 ? Math.round(S.throttle).toString() : '--');
+  setBar('gb-throttle', S.throttle);
+
+  // Alert
+  const alertEl = document.getElementById('drive-alert');
+  if (S.alertMsg) {
+    alertEl.textContent = S.alertMsg;
+    alertEl.className = 'drive-alert' +
+      (S.alertLevel >= 3 ? ' crit' : S.alertLevel >= 2 ? ' warn' : '');
+  } else {
+    alertEl.textContent = S.connected ? 'SYSTEMS NOMINAL' : 'WAITING FOR DATA';
+    alertEl.className = 'drive-alert';
+  }
+}
+
+function updateTyresUI() {
+  ['fl','fr','rl','rr'].forEach(pos => {
+    const t = S.tpms[pos];
+    if (t.psi !== null) {
+      const pc = psiColor(t.psi);
+      setEl('tp-' + pos + '-psi', Math.round(t.psi).toString(), pc);
+    }
+    if (t.temp !== null) {
+      setEl('tp-' + pos + '-temp', Math.round(t.temp) + '\u00B0C');
+    }
+  });
+}
+
+function updateEngineUI() {
+  // Fuel trims (bar: 50% = 0, maps -25% to +25% onto 0-100%)
+  const trimBar = v => 50 + (v / 25) * 50;
+  setEl('ev-stft1', S.stft1 !== 0 || S.connected ? (S.stft1 >= 0 ? '+' : '') + S.stft1.toFixed(1) : '--', trimColor(S.stft1));
+  setBar('eb-stft1', trimBar(S.stft1), trimColor(S.stft1) === 'var(--red)' ? 'var(--red)' : 'var(--amber)');
+  setEl('ev-stft2', S.stft2 !== 0 || S.connected ? (S.stft2 >= 0 ? '+' : '') + S.stft2.toFixed(1) : '--', trimColor(S.stft2));
+  setBar('eb-stft2', trimBar(S.stft2), trimColor(S.stft2) === 'var(--red)' ? 'var(--red)' : 'var(--amber)');
+  setEl('ev-ltft1', S.ltft1 !== 0 || S.connected ? (S.ltft1 >= 0 ? '+' : '') + S.ltft1.toFixed(1) : '--', trimColor(S.ltft1));
+  setBar('eb-ltft1', trimBar(S.ltft1), trimColor(S.ltft1) === 'var(--red)' ? 'var(--red)' : 'var(--amber)');
+  setEl('ev-ltft2', S.ltft2 !== 0 || S.connected ? (S.ltft2 >= 0 ? '+' : '') + S.ltft2.toFixed(1) : '--', trimColor(S.ltft2));
+  setBar('eb-ltft2', trimBar(S.ltft2), trimColor(S.ltft2) === 'var(--red)' ? 'var(--red)' : 'var(--amber)');
+
+  setEl('ev-load', S.load > 0 ? Math.round(S.load).toString() : '--');
+  setBar('eb-load', S.load);
+
+  setEl('ev-maf', S.maf > 0 ? S.maf.toFixed(1) : '--');
+  setBar('eb-maf', (S.maf / 25) * 100);
+
+  setEl('ev-throttle', S.throttle >= 0 ? Math.round(S.throttle).toString() : '--');
+  setEl('ev-iat', S.iat > 0 ? Math.round(S.iat).toString() : '--');
+  setEl('ev-rpm', S.rpm > 0 ? Math.round(S.rpm).toString() : '--');
+  setEl('ev-speed', S.speed > 0 ? Math.round(S.speed).toString() : '--');
+}
+
+function updateStatusUI() {
+  // Alert box
+  const sa = document.getElementById('status-alert');
+  const levelNames = {0:'SYSTEMS NOMINAL',1:'INFO',2:'AMBER ALERT',3:'RED ALERT'};
+  const levelColors = {0:'var(--green)',1:'#2196f3',2:'var(--amber)',3:'var(--red)'};
+  if (S.alertMsg) {
+    sa.textContent = (levelNames[S.alertLevel] || 'OK') + ' \u2014 ' + S.alertMsg;
+    sa.style.color = levelColors[S.alertLevel] || 'var(--amber)';
+    sa.style.borderColor = levelColors[S.alertLevel] || 'var(--border)';
+  } else {
+    sa.textContent = S.connected ? 'SYSTEMS NOMINAL' : 'WAITING FOR DATA';
+    sa.style.color = S.connected ? 'var(--green)' : 'var(--amber-dim)';
+    sa.style.borderColor = 'var(--border)';
+  }
+
+  // DTCs
+  const dtcEl = document.getElementById('dtc-list');
+  let html = '';
+  S.dtcStored.forEach(c => { html += '<span class="dtc-code">' + c + '</span> '; });
+  S.dtcPending.forEach(c => { html += '<span class="dtc-code pending">' + c + '</span> '; });
+  dtcEl.innerHTML = html || '<span class="dtc-none">NO CODES</span>';
+
+  // System
+  setEl('sv-cpu', S.cpuTemp > 0 ? Math.round(S.cpuTemp) + '\u00B0C' : '--');
+  setEl('sv-mem', S.memPct > 0 ? Math.round(S.memPct) + '%' : '--');
+  setEl('sv-disk', S.diskPct > 0 ? Math.round(S.diskPct) + '%' : '--');
+  setEl('sv-up', S.uptime || '--');
+}
+
+function updateAlertIndicator() {
+  const ind = document.getElementById('alert-ind');
+  const border = document.getElementById('red-border');
+  const cls = {0:'ok',1:'info',2:'amber',3:'red'};
+  const txt = {0:'OK',1:'INFO',2:'AMBER',3:'RED'};
+  ind.className = 'alert-ind ' + (cls[S.alertLevel] || 'ok');
+  ind.textContent = txt[S.alertLevel] || 'OK';
+  border.classList.toggle('active', S.alertLevel >= 3);
+}
+
+// ═══════════════════════════════════════════════════
+//  MESSAGE HANDLING
+// ═══════════════════════════════════════════════════
+function handleMsg(msg) {
+  const {topic, data} = msg;
+  S.lastUpdate = Date.now();
+  // Dismiss hardware overlay once engine data flows
+  if (!hwDismissed && topic.includes('/engine/')) {
+    hwDismissed = true;
+    const ol = document.getElementById('hw-overlay');
+    if (ol) { ol.classList.add('done'); setTimeout(() => { ol.style.display = 'none'; }, 600); }
+    if (hwTimer) { clearInterval(hwTimer); hwTimer = null; }
+  }
+  const v = data.value;
+
+  if (topic.endsWith('/rpm') && v !== undefined) { S.rpm = v; }
+  else if (topic.endsWith('/speed') && v !== undefined) { S.speed = v; }
+  else if (topic.endsWith('/coolant') && v !== undefined) { S.coolant = v; }
+  else if (topic.endsWith('/voltage') && v !== undefined) { S.voltage = v; }
+  else if (topic.endsWith('/load') && v !== undefined) { S.load = v; }
+  else if (topic.endsWith('/throttle') && v !== undefined) { S.throttle = v; }
+  else if (topic.endsWith('/iat') && v !== undefined) { S.iat = v; }
+  else if (topic.endsWith('/maf') && v !== undefined) { S.maf = v; }
+  else if (topic.endsWith('/stft1') && v !== undefined) { S.stft1 = v; }
+  else if (topic.endsWith('/stft2') && v !== undefined) { S.stft2 = v; }
+  else if (topic.endsWith('/ltft1') && v !== undefined) { S.ltft1 = v; }
+  else if (topic.endsWith('/ltft2') && v !== undefined) { S.ltft2 = v; }
+  else if (topic.endsWith('/alert/level')) {
+    S.alertLevel = data.level || 0;
+    updateAlertIndicator();
+  }
+  else if (topic.endsWith('/alert/message')) {
+    S.alertLevel = data.level || 0;
+    S.alertMsg = data.message || '';
+    updateAlertIndicator();
+  }
+  else if (topic.includes('/rf/tpms/') && !topic.endsWith('/snapshot')) {
+    const pos = topic.split('/').pop();
+    if (S.tpms[pos]) {
+      if (data.pressure_psi != null) S.tpms[pos].psi = data.pressure_psi;
+      if (data.temp_c != null) S.tpms[pos].temp = data.temp_c;
+    }
+  }
+  else if (topic.endsWith('/diag/dtc') || topic.endsWith('/dtc')) {
+    S.dtcStored = data.stored || [];
+    S.dtcPending = data.pending || [];
+  }
+  else if (topic.endsWith('/system/watchdog')) {
+    const sys = data.system || {};
+    if (sys.cpu_temp) S.cpuTemp = sys.cpu_temp;
+    if (sys.disk_percent) S.diskPct = sys.disk_percent;
+    if (sys.disk_free_gb) S.diskFree = sys.disk_free_gb;
+    if (sys.memory_percent) S.memPct = sys.memory_percent;
+    if (sys.uptime_seconds) {
+      const h = Math.floor(sys.uptime_seconds / 3600);
+      const m = Math.floor((sys.uptime_seconds % 3600) / 60);
+      S.uptime = h + 'h ' + m + 'm';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  WEBSOCKET
+// ═══════════════════════════════════════════════════
+const WS_URL = 'ws://' + location.hostname + ':8081';
+let ws = null;
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    S.connected = true;
+    document.getElementById('conn-dot').className = 'conn-dot live';
+    document.getElementById('conn-text').textContent = 'LIVE';
+    document.getElementById('conn-status').className = 'conn live';
+  };
+  ws.onmessage = (e) => {
+    try { handleMsg(JSON.parse(e.data)); } catch(err) {}
+  };
+  ws.onclose = () => {
+    S.connected = false;
+    document.getElementById('conn-dot').className = 'conn-dot off';
+    document.getElementById('conn-text').textContent = 'OFF';
+    document.getElementById('conn-status').className = 'conn';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+// ═══════════════════════════════════════════════════
+//  PAGE NAVIGATION
+// ═══════════════════════════════════════════════════
+function goToPage(idx) {
+  if (idx < 0 || idx >= PAGES || idx === currentPage) return;
+  document.getElementById('page-' + currentPage).className = 'page';
+  currentPage = idx;
+  document.getElementById('page-' + idx).className = 'page active';
+  for (let i = 0; i < PAGES; i++) {
+    document.getElementById('dot-' + i).className = 'page-dot' + (i === idx ? ' active' : '');
+  }
+  document.getElementById('page-label').textContent = PAGE_NAMES[idx];
+}
+
+// Touch swipe
+let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+document.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  touchStartTime = Date.now();
+}, {passive: true});
+
+document.addEventListener('touchend', (e) => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const dt = Date.now() - touchStartTime;
+
+  // Require horizontal swipe > 30px, within 600ms, more horizontal than vertical
+  // (lower threshold for small resistive touchscreen)
+  if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy) * 1.2 && dt < 600) {
+    if (dx < 0) goToPage(currentPage + 1);  // swipe left = next
+    else goToPage(currentPage - 1);          // swipe right = prev
+    return;
+  }
+
+  // Tap edges (fallback for resistive screens)
+  // Convert screen coords to HUD coords for edge detection
+  // Wide 70px zones (~15% of screen) for easier tapping on small display
+  if (dt < 400 && Math.abs(dx) < 25 && Math.abs(dy) < 25) {
+    const root = document.getElementById('hud-root');
+    const rect = root.getBoundingClientRect();
+    const hudX = ((t.clientX - rect.left) / rect.width) * 480;
+    if (hudX < 70) goToPage(currentPage - 1);
+    else if (hudX > 410) goToPage(currentPage + 1);
+  }
+}, {passive: true});
+
+// Keyboard nav (for testing)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') goToPage(currentPage - 1);
+  if (e.key === 'ArrowRight') goToPage(currentPage + 1);
+});
+
+// ═══════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════
+function render() {
+  // Smooth interpolation for RPM and speed
+  dRpm += (S.rpm - dRpm) * 0.18;
+  dSpeed += (S.speed - dSpeed) * 0.18;
+
+  // Always draw tach (it's the hero)
+  drawTach(dRpm);
+
+  // Update active page DOM
+  if (currentPage === 0) updateDriveUI();
+  else if (currentPage === 1) updateTyresUI();
+  else if (currentPage === 2) updateEngineUI();
+  else if (currentPage === 3) updateStatusUI();
+
+  requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════════════
+//  HARDWARE STATUS
+// ═══════════════════════════════════════════════════
+let hwDismissed = false;
+let hwTimer = null;
+
+function pollHardware() {
+  fetch('/api/hardware').then(r => r.json()).then(hw => {
+    const ol = document.getElementById('hw-overlay');
+    if (!ol) return;
+
+    if (hw.ready || hwDismissed) {
+      ol.classList.add('done');
+      if (hwTimer) { clearInterval(hwTimer); hwTimer = null; }
+      setTimeout(() => { ol.style.display = 'none'; }, 600);
+      return;
+    }
+    ol.classList.remove('done');
+    ol.style.display = '';
+
+    // Render items
+    const items = document.getElementById('hw-items');
+    items.innerHTML = (hw.summary || []).map(s =>
+      `<div class="hw-row"><div class="hw-dot ${s.status}"></div><div class="hw-name">${s.item}</div><div class="hw-detail">${s.detail}</div></div>`
+    ).join('');
+
+    // Render services footer
+    const footer = document.getElementById('hw-footer');
+    if (hw.services) {
+      footer.innerHTML = Object.entries(hw.services).map(([k, v]) => {
+        const cls = v === 'active' ? 'svc-ok' : v === 'failed' ? 'svc-fail' : 'svc-off';
+        const name = k.replace('drifter-', '');
+        return `<span class="${cls}">${name}</span>`;
+      }).join('');
+    }
+  }).catch(() => {});
+}
+
+// ═══════════════════════════════════════════════════
+//  BOOT SEQUENCE
+// ═══════════════════════════════════════════════════
+function boot() {
+  // Start hardware polling immediately (shows under boot overlay)
+  pollHardware();
+  hwTimer = setInterval(pollHardware, 5000);
+
+  // Dismiss boot overlay after animation completes
+  setTimeout(() => {
+    document.getElementById('boot').classList.add('done');
+    // Remove from DOM after fade
+    setTimeout(() => {
+      document.getElementById('boot').style.display = 'none';
+    }, 500);
+  }, 1800);
+
+  // Prevent screen sleep
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').catch(() => {});
+  }
+
+  // Request fullscreen on first touch
+  document.addEventListener('touchstart', function fs() {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    document.removeEventListener('touchstart', fs);
+  }, {once: true});
+
+  // Start
+  connect();
+  drawTach(0);
+  requestAnimationFrame(render);
+}
+
+boot();
+</script>
+</body>
+</html>

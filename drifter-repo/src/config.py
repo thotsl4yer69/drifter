@@ -487,4 +487,5 @@ SERVICES = [
     "drifter-watchdog",
     "drifter-realdash",
     "drifter-rf",
+    "drifter-dashboard",
 ]

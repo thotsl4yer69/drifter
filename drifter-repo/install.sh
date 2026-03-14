@@ -143,19 +143,34 @@ pip install --quiet --upgrade pip
 pip install --quiet \
     python-can \
     "paho-mqtt<2.0" \
-    psutil
+    psutil \
+    websockets
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 6. Deploy Application ──
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py"
 for f in $SRC_FILES; do
-    cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
-    chmod +x "${DRIFTER_DIR}/${f}"
+    if [ -f "${REPO_DIR}/src/${f}" ]; then
+        cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
+        chmod +x "${DRIFTER_DIR}/${f}"
+    fi
 done
 ok "Python services deployed to ${DRIFTER_DIR}"
+
+# Screen HUD
+cp "${REPO_DIR}/src/screen_dash.html" "${DRIFTER_DIR}/"
+cp "${REPO_DIR}/src/start-hud.sh" "${DRIFTER_DIR}/" 2>/dev/null && chmod +x "${DRIFTER_DIR}/start-hud.sh"
+ok "Screen HUD deployed"
+
+# Framebuffer mirror (SPI LCD support)
+if [ -f "${REPO_DIR}/src/fbmirror.c" ]; then
+    gcc -O2 -o "${DRIFTER_DIR}/fbmirror" "${REPO_DIR}/src/fbmirror.c" 2>/dev/null && \
+    ok "fbmirror compiled for SPI LCD" || \
+    warn "fbmirror compilation failed — SPI LCD mirroring unavailable"
+fi
 
 # RealDash config
 mkdir -p "${DRIFTER_DIR}/realdash"
@@ -229,7 +244,7 @@ done
 systemctl daemon-reload
 
 # Enable all services
-SERVICES="drifter-canbridge drifter-alerts drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

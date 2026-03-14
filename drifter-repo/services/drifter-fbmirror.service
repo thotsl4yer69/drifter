@@ -1,0 +1,15 @@
+[Unit]
+Description=MZ1312 DRIFTER Framebuffer Mirror (fb0→fb1 for SPI LCD)
+After=multi-user.target
+ConditionPathExists=/dev/fb1
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/opt/drifter/fbmirror 25
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

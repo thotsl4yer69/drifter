@@ -51,11 +51,18 @@ DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
 
 DTC_CHECK_INTERVAL = 60  # Check DTCs every 60 seconds
 
+# ── Resilience ──
+MAX_CONSECUTIVE_FAILURES = 20   # Exit after this many consecutive send failures
+ERROR_LOG_INTERVAL = 30         # Only log CAN errors every N seconds
+
 # ── State ──
 latest_values = {}
 active_dtcs = []
 pending_dtcs = []
 running = True
+_consecutive_failures = 0
+_last_error_log = 0.0
+_suppressed_errors = 0
 
 
 def _handle_signal(sig, frame):
@@ -106,6 +113,7 @@ def find_can_interface():
 
 def send_obd_request(bus, pid):
     """Send a standard OBD-II request for a given PID."""
+    global _consecutive_failures, _last_error_log, _suppressed_errors
     # Mode 01 request: [number_of_bytes, mode, pid, padding...]
     data = [0x02, 0x01, pid, 0x00, 0x00, 0x00, 0x00, 0x00]
     msg = can.Message(
@@ -115,9 +123,22 @@ def send_obd_request(bus, pid):
     )
     try:
         bus.send(msg)
+        if _consecutive_failures > 0:
+            log.info(f"CAN interface recovered after {_consecutive_failures} failures")
+            _consecutive_failures = 0
+            _suppressed_errors = 0
         return True
     except can.CanError as e:
-        log.warning(f"CAN send error for PID 0x{pid:02X}: {e}")
+        _consecutive_failures += 1
+        now = time.monotonic()
+        if now - _last_error_log >= ERROR_LOG_INTERVAL:
+            if _suppressed_errors > 0:
+                log.warning(f"CAN send failing — {_suppressed_errors} errors suppressed in last {ERROR_LOG_INTERVAL}s")
+            log.warning(f"CAN send error for PID 0x{pid:02X}: {e} (failures: {_consecutive_failures})")
+            _last_error_log = now
+            _suppressed_errors = 0
+        else:
+            _suppressed_errors += 1
         return False
 
 
@@ -259,6 +280,20 @@ def main():
     while running:
         try:
             now = time.monotonic()
+
+            # ── Interface health check ──
+            if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                log.error(
+                    f"CAN interface lost — {_consecutive_failures} consecutive failures. "
+                    f"Exiting for systemd restart."
+                )
+                mqtt_client.publish(TOPICS['system_status'], json.dumps({
+                    "state": "can_lost",
+                    "can_interface": iface,
+                    "failures": _consecutive_failures,
+                    "timestamp": time.time()
+                }), retain=True)
+                break
 
             # Find the next PID that's due
             for entry in schedule:

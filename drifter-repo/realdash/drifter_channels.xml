@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   MZ1312 DRIFTER — RealDash Channel Map
-  Import this in RealDash: Connections → Add → MQTT
-  Broker: 10.42.0.1:1883
+  Import this in RealDash: Connections → Add → CAN (RealDash 66)
+  Target: kali.local:35000 (TCP)
   UNCAGED TECHNOLOGY — EST 1991
 -->
 <RealDashCAN version="2">
