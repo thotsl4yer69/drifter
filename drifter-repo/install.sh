@@ -39,7 +39,7 @@ banner
 # ── Preflight ──
 if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./install.sh"; fi
 
-TOTAL=11
+TOTAL=12
 
 # ── 1. System Update ──
 step 1 "Updating system packages"
@@ -134,7 +134,23 @@ else
     warn "Could not download Piper model — voice will use espeak-ng fallback"
 fi
 
-# ── 5. Python Environment ──
+# ── 5. LLM Engine (Ollama) ──
+step 5 "Installing Ollama LLM engine"
+if command -v ollama &>/dev/null; then
+    ok "Ollama already installed"
+else
+    curl -fsSL https://ollama.com/install.sh | sh 2>/dev/null && ok "Ollama installed" || \
+        warn "Ollama installation failed — LLM mechanic will be unavailable"
+fi
+
+# Pull the mechanic model
+if command -v ollama &>/dev/null; then
+    step 5 "Pulling LLM model (llama3.2:3b)"
+    ollama pull llama3.2:3b 2>/dev/null && ok "LLM model ready" || \
+        warn "Could not pull LLM model — run 'ollama pull llama3.2:3b' manually"
+fi
+
+# ── 6. Python Environment ──
 step 5 "Setting up Python environment"
 mkdir -p ${DRIFTER_DIR}
 python3 -m venv ${DRIFTER_DIR}/venv
@@ -144,14 +160,15 @@ pip install --quiet \
     python-can \
     "paho-mqtt<2.0" \
     psutil \
-    websockets
+    websockets \
+    requests
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 6. Deploy Application ──
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -180,6 +197,11 @@ ok "RealDash channel map deployed"
 # Log & session directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions
 ok "Log directories created"
+
+# Analyst data directories and API key placeholder
+mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
+touch ${DRIFTER_DIR}/.env
+ok "Analyst data directories created"
 
 # ── 7. CAN Interface Setup ──
 step 7 "Configuring CAN interface"
@@ -244,7 +266,10 @@ done
 systemctl daemon-reload
 
 # Enable all services
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror"
+# Disable superseded reactive LLM service
+systemctl disable --now drifter-llm 2>/dev/null || true
+
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

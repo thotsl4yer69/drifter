@@ -509,6 +509,8 @@ SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",
     "drifter-logger",
+    "drifter-anomaly",
+    "drifter-analyst",
     "drifter-voice",
     "drifter-hotspot",
     "drifter-homesync",
@@ -516,5 +518,5 @@ SERVICES = [
     "drifter-realdash",
     "drifter-rf",
     "drifter-dashboard",
-    "drifter-llm",
+    # drifter-llm removed — superseded by drifter-analyst
 ]
