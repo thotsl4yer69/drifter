@@ -50,6 +50,8 @@ AUDIO_WS_PORT = 8082
 
 running = True
 latest_state = {}
+latest_report = {}
+mqtt_client = None
 ws_clients = set()
 audio_ws_clients = set()
 
@@ -175,9 +177,16 @@ def check_hardware():
 
 def on_message(client, userdata, msg):
     """Collect all MQTT data into latest_state."""
+    global latest_report
     try:
         data = json.loads(msg.payload)
         topic = msg.topic
+
+        if topic == 'drifter/analysis/report':
+            latest_report = data
+            log.info("New diagnostic report received")
+            return
+
         key = topic.replace('drifter/', '').replace('/', '_')
         latest_state[key] = data
         latest_state['_last_update'] = time.time()
@@ -547,6 +556,19 @@ body{
   <div class="sys-row"><span class="lbl">Uptime</span><span id="v-uptime">--</span></div>
 </div>
 
+<div class="section">DIAGNOSIS</div>
+<div id="diag-card" style="background:#111;border:1px solid #222;border-radius:6px;padding:12px;margin:4px 0 8px">
+  <div id="diag-primary" style="font-size:15px;font-weight:bold;color:var(--ok)">No report yet — complete a drive to generate one</div>
+  <div id="diag-evidence" style="font-size:12px;color:var(--dim);margin-top:4px"></div>
+  <div id="diag-actions" style="margin-top:8px;font-size:12px"></div>
+  <div id="diag-safety" style="color:var(--red);font-weight:bold;display:none;margin-top:6px">&#x26a0; SAFETY CRITICAL</div>
+</div>
+<button onclick="triggerAnalysis()" style="width:100%;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:4px;color:var(--text);font-size:12px;cursor:pointer;margin-bottom:4px">RUN ANALYSIS</button>
+<details style="font-size:11px;color:var(--dim)">
+  <summary style="cursor:pointer;padding:4px">Full report JSON</summary>
+  <pre id="diag-json" style="font-size:10px;overflow-x:auto;color:var(--dim)"></pre>
+</details>
+
 <div style="height:80px"></div>
 
 <a href="/mechanic" class="audio-btn" style="bottom:16px;left:16px;font-size:14px;text-decoration:none" title="Mechanic advisor">&#x1f527;</a>
@@ -805,6 +827,30 @@ setInterval(()=>{
   else el.textContent='STALE ('+age.toFixed(0)+'s)';
   el.style.color = age<5?'var(--ok)':age<30?'var(--amber)':'var(--red)';
 }, 1000);
+
+// ── Diagnosis ──
+function triggerAnalysis(){
+  fetch('/api/analyse',{method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{document.getElementById('diag-primary').textContent='Analysis triggered — check back in ~60s';})
+    .catch(()=>{});
+}
+function loadReport(){
+  fetch('/api/report').then(r=>r.json()).then(report=>{
+    if(!report||!report.session_id) return;
+    const ps=report.primary_suspect||{};
+    const conf=ps.confidence!=null?` (${ps.confidence}%)`:'';
+    document.getElementById('diag-primary').textContent=(ps.diagnosis||'Unknown')+conf;
+    document.getElementById('diag-primary').style.color=report.safety_critical?'var(--red)':'var(--ok)';
+    document.getElementById('diag-evidence').textContent=ps.evidence||'';
+    const actions=(report.action_items||[]).map(a=>`• ${a}`).join('\n');
+    document.getElementById('diag-actions').textContent=actions;
+    document.getElementById('diag-safety').style.display=report.safety_critical?'':'none';
+    document.getElementById('diag-json').textContent=JSON.stringify(report,null,2);
+  }).catch(()=>{});
+}
+loadReport();
+setInterval(loadReport,30000);
 
 // ── Start ──
 connect();
@@ -1171,6 +1217,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._serve_json(TECHNICAL_BULLETINS)
             except ImportError:
                 self._serve_json([])
+        elif parsed.path == '/api/report':
+            self._serve_json(latest_report)
+        elif parsed.path == '/api/reports':
+            try:
+                import sys as _sys
+                if 'src' not in _sys.path:
+                    _sys.path.insert(0, '/opt/drifter')
+                import db as _db
+                self._serve_json(_db.get_recent_reports(10))
+            except Exception:
+                self._serve_json([])
         elif parsed.path in ('/screen', '/screen.html'):
             screen_path = Path('/opt/drifter/screen_dash.html')
             if screen_path.exists():
@@ -1191,6 +1248,19 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(xml_path.read_bytes())
             else:
                 self.send_error(404)
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        if self.path == '/api/analyse':
+            try:
+                mqtt_client.publish('drifter/analysis/request', '{}')
+            except Exception:
+                pass
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "triggered"}')
         else:
             self.send_error(404)
 
@@ -1363,6 +1433,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     # ── MQTT (telemetry ingest) ──
+    global mqtt_client
     mqtt_client = mqtt.Client(client_id="drifter-dashboard")
     mqtt_client.on_message = on_message
 
