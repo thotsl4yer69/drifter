@@ -1,7 +1,7 @@
 [Unit]
 Description=DRIFTER Session Analyst (LLM Diagnostics)
-After=mosquitto.service drifter-logger.service network-online.target
-Requires=mosquitto.service
+After=network.target drifter-logger.service
+Wants=network.target
 Wants=network-online.target
 
 [Service]

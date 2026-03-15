@@ -31,5 +31,5 @@ for DEV in /dev/ttyACM* /dev/ttyUSB*; do
     fi
 done
 
-echo "DRIFTER: No CAN interface found"
-exit 1
+echo "DRIFTER: No CAN interface found — will retry on next start"
+exit 0

@@ -1,7 +1,7 @@
 [Unit]
 Description=DRIFTER Anomaly Monitor
-After=mosquitto.service drifter-canbridge.service
-Requires=mosquitto.service
+After=network.target drifter-canbridge.service
+Wants=network.target
 
 [Service]
 Type=simple

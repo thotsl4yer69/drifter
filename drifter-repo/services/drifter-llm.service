@@ -1,7 +1,7 @@
 [Unit]
 Description=DRIFTER LLM Mechanic
-After=drifter-canbridge.service mosquitto.service
-Wants=drifter-canbridge.service
+After=network.target drifter-canbridge.service
+Wants=network.target
 
 [Service]
 Type=simple
