@@ -1,0 +1,20 @@
+[Unit]
+Description=DRIFTER LLM Mechanic
+After=drifter-canbridge.service mosquitto.service
+Wants=drifter-canbridge.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/drifter
+Environment=PYTHONPATH=/opt/drifter
+Environment=OLLAMA_HOST=localhost
+Environment=OLLAMA_PORT=11434
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/llm_mechanic.py
+Restart=always
+RestartSec=10
+KillMode=process
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
