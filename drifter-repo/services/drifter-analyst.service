@@ -1,0 +1,19 @@
+[Unit]
+Description=DRIFTER Session Analyst (LLM Diagnostics)
+After=mosquitto.service drifter-logger.service network-online.target
+Requires=mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/drifter
+EnvironmentFile=-/opt/drifter/.env
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/session_analyst.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

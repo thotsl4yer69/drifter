@@ -1,0 +1,18 @@
+[Unit]
+Description=DRIFTER Anomaly Monitor
+After=mosquitto.service drifter-canbridge.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/drifter
+EnvironmentFile=-/opt/drifter/.env
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/anomaly_monitor.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
