@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""
+MZ1312 DRIFTER — Real-Time Anomaly Monitor
+Statistical z-score anomaly detection on OBD-II sensor streams.
+Writes anomaly events to SQLite during drive sessions.
+UNCAGED TECHNOLOGY — EST 1991
+"""
+
+import json
+import math
+import time
+import signal
+import logging
+from collections import deque
+from typing import Optional, List
+
+import paho.mqtt.client as mqtt
+
+import db
+from config import (
+    MQTT_HOST, MQTT_PORT, TOPICS,
+    ANOMALY_ROLLING_WINDOW, ANOMALY_WARN_Z, ANOMALY_HIGH_Z, ANOMALY_CRITICAL_Z,
+    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD,
+)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANOMALY] %(message)s',
+                    datefmt='%H:%M:%S')
+log = logging.getLogger(__name__)
+
+# Sensors to monitor with z-score detection
+MONITORED_SENSORS = {
+    'stft_b1': 'drifter/engine/stft1',
+    'stft_b2': 'drifter/engine/stft2',
+    'ltft_b1': 'drifter/engine/ltft1',
+    'ltft_b2': 'drifter/engine/ltft2',
+    'rpm':     'drifter/engine/rpm',
+    'coolant': 'drifter/engine/coolant',
+    'iat':     'drifter/engine/iat',
+    'maf':     'drifter/engine/maf',
+    'throttle':'drifter/engine/throttle',
+    'voltage': 'drifter/power/voltage',
+}
+
+
+class SensorWindow:
+    """Rolling window with z-score anomaly detection."""
+
+    MIN_READINGS = 5  # need at least this many before detecting
+
+    def __init__(self, window_size: int = ANOMALY_ROLLING_WINDOW):
+        self.window = deque(maxlen=window_size)
+
+    def add(self, value: float):
+        self.window.append(value)
+
+    def check(self, value: float) -> Optional[dict]:
+        """Return anomaly dict if value is anomalous, else None."""
+        if len(self.window) < self.MIN_READINGS:
+            return None
+        mean = sum(self.window) / len(self.window)
+        variance = sum((x - mean) ** 2 for x in self.window) / len(self.window)
+        std = math.sqrt(variance) if variance > 0 else max(0.01, abs(mean) * 0.01)
+        z = abs(value - mean) / std
+        if z < ANOMALY_WARN_Z:
+            return None
+        severity = 'warning'
+        if z >= ANOMALY_CRITICAL_Z:
+            severity = 'critical'
+        elif z >= ANOMALY_HIGH_Z:
+            severity = 'high'
+        return {'z_score': round(z, 2), 'severity': severity, 'mean': round(mean, 2)}
+
+
+class AnomalyMonitor:
+    """Main anomaly monitor — subscribes to MQTT and logs events."""
+
+    def __init__(self):
+        self.windows = {name: SensorWindow() for name in MONITORED_SENSORS}
+        self.rpm_idle_window = deque(maxlen=10)  # for instability check
+        self.current_session_id: Optional[str] = None
+        self.current_coolant: float = 0.0
+        self.current_speed: float = 0.0
+        self.current_snapshot: dict = {}
+        self.running = True
+
+        db.init_db()
+        self.client = mqtt.Client(client_id="drifter-anomaly-monitor")
+        self.client.on_message = self._on_message
+
+    def _on_message(self, client, userdata, msg):
+        try:
+            data = json.loads(msg.payload)
+            topic = msg.topic
+            value = data.get('value')
+            if value is None:
+                return
+
+            # Track state for context snapshots
+            if topic == TOPICS['coolant']:
+                self.current_coolant = float(value)
+            elif topic == TOPICS['speed']:
+                self.current_speed = float(value)
+
+            # Track session
+            if topic == TOPICS['drive_session']:
+                event = data.get('event')
+                if event == 'start':
+                    self.current_session_id = data.get('session_id')
+                    log.info(f"Session started: {self.current_session_id}")
+                elif event == 'end':
+                    self.current_session_id = None
+
+            # Update snapshot for context
+            sensor_name = self._topic_to_sensor(topic)
+            if sensor_name:
+                self.current_snapshot[sensor_name] = round(float(value), 2)
+
+            # Check for anomalies
+            if sensor_name and sensor_name != 'rpm':
+                events = self._check_sensor(sensor_name, float(value))
+                for e in events:
+                    db.insert_anomaly_event(e)
+                    if e['severity'] == 'critical':
+                        self.client.publish(TOPICS.get('alert_message', 'drifter/alert/message'),
+                                            json.dumps({'message': f"Critical anomaly: {sensor_name}"}))
+
+            # RPM: update window + check instability
+            if sensor_name == 'rpm':
+                self.windows['rpm'].add(float(value))
+                if self.current_speed == 0 and self.current_session_id:
+                    self.rpm_idle_window.append(float(value))
+                    for e in self._check_rpm_instability():
+                        db.insert_anomaly_event(e)
+
+        except Exception as e:
+            log.warning(f"Message error: {e}")
+
+    def _topic_to_sensor(self, topic: str) -> Optional[str]:
+        for name, t in MONITORED_SENSORS.items():
+            if topic == t:
+                return name
+        return None
+
+    def _check_sensor(self, sensor_name: str, value: float) -> List[dict]:
+        """Check a single sensor value. Returns list of anomaly events (0 or 1)."""
+        if not self.current_session_id:
+            return []
+        if self.current_coolant < WARMUP_COOLANT_THRESHOLD:
+            self.windows[sensor_name].add(value)
+            return []  # suppressed during cold start
+        result = self.windows[sensor_name].check(value)
+        self.windows[sensor_name].add(value)
+        if result is None:
+            return []
+        context = dict(self.current_snapshot)
+        context[sensor_name] = round(value, 2)
+        return [{
+            'session_id': self.current_session_id,
+            'ts': time.time(),
+            'sensor': sensor_name,
+            'value': round(value, 2),
+            'z_score': result['z_score'],
+            'severity': result['severity'],
+            'context_json': json.dumps(context),
+        }]
+
+    def _check_rpm_instability(self) -> List[dict]:
+        """Detect RPM instability at idle (stddev > threshold)."""
+        if len(self.rpm_idle_window) < 5 or not self.current_session_id:
+            return []
+        vals = list(self.rpm_idle_window)
+        mean = sum(vals) / len(vals)
+        std = math.sqrt(sum((v - mean) ** 2 for v in vals) / len(vals))
+        if std < ANOMALY_IDLE_RPM_STDDEV:
+            return []
+        return [{
+            'session_id': self.current_session_id,
+            'ts': time.time(),
+            'sensor': 'rpm_instability',
+            'value': round(std, 1),
+            'z_score': round(std / ANOMALY_IDLE_RPM_STDDEV, 2),
+            'severity': 'high' if std > ANOMALY_IDLE_RPM_STDDEV * 1.5 else 'warning',
+            'context_json': json.dumps({**self.current_snapshot, 'rpm_stddev': round(std, 1)}),
+        }]
+
+    def start(self):
+        log.info("Anomaly Monitor starting...")
+        connected = False
+        while not connected and self.running:
+            try:
+                self.client.connect(MQTT_HOST, MQTT_PORT, 60)
+                connected = True
+            except Exception as e:
+                log.warning(f"MQTT connect failed: {e}")
+                time.sleep(3)
+        self.client.subscribe("drifter/#")
+        self.client.loop_start()
+        log.info("Anomaly Monitor LIVE")
+        while self.running:
+            time.sleep(1)
+        self.client.loop_stop()
+        self.client.disconnect()
+
+
+def main():
+    monitor = AnomalyMonitor()
+    def _stop(sig, frame):
+        monitor.running = False
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    monitor.start()
+
+
+if __name__ == '__main__':
+    main()
