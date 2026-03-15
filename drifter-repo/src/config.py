@@ -5,6 +5,7 @@ All shared constants, thresholds, and paths in one place.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import os
 from pathlib import Path
 
 # ── Paths ──
@@ -474,7 +475,34 @@ TOPICS = {
     'rf_emergency': 'drifter/rf/emergency',
     'rf_status': 'drifter/rf/status',
     'rf_command': 'drifter/rf/command',
+    # LLM Mechanic
+    'llm_query': 'drifter/llm/query',
+    'llm_response': 'drifter/llm/response',
+    # Analyst
+    'analysis_report': 'drifter/analysis/report',
+    'analysis_request': 'drifter/analysis/request',
+    'anomaly_event': 'drifter/anomaly/event',
 }
+
+# ── LLM Analyst ──
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+# ── Anomaly Detection ──
+ANOMALY_ROLLING_WINDOW = 60        # readings per sensor
+ANOMALY_WARN_Z = 2.5
+ANOMALY_HIGH_Z = 3.5
+ANOMALY_CRITICAL_Z = 4.5
+ANOMALY_IDLE_RPM_STDDEV = 50       # RPM stddev threshold at idle
+
+# ── Storage ──
+DB_PATH = DRIFTER_DIR / "data" / "drifter.db"
+REPORTS_DIR = DRIFTER_DIR / "reports"
+ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
 SERVICES = [
@@ -488,4 +516,5 @@ SERVICES = [
     "drifter-realdash",
     "drifter-rf",
     "drifter-dashboard",
+    "drifter-llm",
 ]
