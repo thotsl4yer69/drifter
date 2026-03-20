@@ -177,9 +177,9 @@ def rule_coolant_critical(state: VehicleState):
                 f"Coolant high: {coolant}°C. Monitor closely. "
                 f"Check thermostat, fan relay, coolant level.")
 
-    if coolant > 100 and trend > THRESHOLDS['coolant_rise_rate']:
+    if coolant > 100 and trend * 60 > THRESHOLDS['coolant_rise_rate']:
         return (LEVEL_AMBER,
-                f"Coolant rising fast: {coolant}°C (+{trend:.1f}°C/min). "
+                f"Coolant rising fast: {coolant}°C (+{trend * 60:.1f}°C/min). "
                 f"Monitor closely. May indicate thermostat sticking or fan failure.")
     return None
 
