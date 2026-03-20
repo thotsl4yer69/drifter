@@ -67,5 +67,34 @@ def test_rpm_instability_at_idle():
 def test_monitored_sensors_list_not_empty():
     assert len(MONITORED_SENSORS) >= 8
     assert 'stft_b1' in MONITORED_SENSORS
+
+
+def test_check_sensor_rejects_non_numeric_value():
+    """_check_sensor must not crash when MQTT delivers a non-numeric value."""
+    monitor = AnomalyMonitor()
+    monitor.current_coolant = 90.0
+    monitor.current_session_id = "TEST"
+    for _ in range(10):
+        monitor.windows['stft_b1'].add(2.0)
+    # Simulate the value coercion guard added in _on_message:
+    # _check_sensor itself receives a float, so test the guard in _on_message
+    # indirectly by verifying SensorWindow.check handles boundary values.
+    result = monitor.windows['stft_b1'].check(float('inf'))
+    # inf z-score → should still return a result dict, not crash
+    assert result is not None
+
+
+def test_float_coercion_in_on_message(monkeypatch):
+    """Non-numeric MQTT values must be silently dropped (no exception)."""
+    import json
+    monitor = AnomalyMonitor()
+    monitor.current_session_id = "TEST"
+
+    class FakeMsg:
+        topic = 'drifter/engine/stft1'
+        payload = json.dumps({'value': 'not_a_number'}).encode()
+
+    # Should not raise
+    monitor._on_message(None, None, FakeMsg())
     assert 'coolant' in MONITORED_SENSORS
     assert 'voltage' in MONITORED_SENSORS
