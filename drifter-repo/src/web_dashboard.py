@@ -595,6 +595,27 @@ body{
   <pre id="diag-json" style="font-size:10px;overflow-x:auto;color:var(--dim)"></pre>
 </details>
 
+<div class="section">RECENT DRIVES</div>
+<div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)">Loading...</div>
+
+<div class="section">ASK MECHANIC</div>
+<div style="padding:6px 10px 10px">
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input id="ask-input" type="text"
+      placeholder="e.g. Why is my coolant rising fast?"
+      style="flex:1;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--text);font-family:inherit;font-size:12px;outline:none">
+    <button id="ask-btn" onclick="askMechanic()"
+      style="padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap">ASK</button>
+  </div>
+  <div id="ask-output"
+    style="font-size:12px;color:var(--dim);line-height:1.5;white-space:pre-wrap;
+           min-height:32px;padding:6px 2px">
+    Ask anything about your X-Type — live telemetry included in context.
+  </div>
+</div>
+
 <div style="height:80px"></div>
 
 <a href="/mechanic" class="audio-btn" style="bottom:16px;left:16px;font-size:14px;text-decoration:none" title="Mechanic advisor">&#x1f527;</a>
@@ -787,11 +808,7 @@ function handleMessage(msg){
   }
   // DTCs
   else if(topic.endsWith('/dtc')){
-    const el = document.getElementById('dtc-list');
-    let html = '';
-    (data.stored||[]).forEach(c=>{html+=`<span class="dtc-code">${c}</span>`});
-    (data.pending||[]).forEach(c=>{html+=`<span class="dtc-code dtc-pending">${c}</span>`});
-    el.innerHTML = html || '<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    renderDtcs(data.stored||[], data.pending||[]);
   }
   // TPMS
   else if(topic.includes('/rf/tpms/') && !topic.endsWith('/snapshot')){
@@ -905,6 +922,79 @@ function loadReport(){
 }
 loadReport();
 setInterval(loadReport,30000);
+
+// ── DTC description enrichment ──
+const dtcCache = {};
+async function fetchDtcDesc(code){
+  if(dtcCache[code]!==undefined) return dtcCache[code];
+  try{
+    const r=await fetch('/api/mechanic/dtc/'+code);
+    const d=await r.json();
+    dtcCache[code]=d.desc||'';
+  }catch(e){dtcCache[code]='';}
+  return dtcCache[code];
+}
+async function renderDtcs(stored, pending){
+  const el=document.getElementById('dtc-list');
+  if(!stored.length&&!pending.length){
+    el.innerHTML='<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    return;
+  }
+  const all=[...stored.map(c=>({c,p:false})),...pending.map(c=>({c,p:true}))];
+  const descs=await Promise.all(all.map(({c})=>fetchDtcDesc(c)));
+  el.innerHTML=all.map(({c,p},i)=>{
+    const desc=descs[i]?`<span style="font-size:10px;color:var(--dim);display:block;margin-top:1px">${descs[i]}</span>`:'';
+    return `<div style="margin:3px 0"><span class="dtc-code${p?' dtc-pending':''}">${c}</span>${desc}</div>`;
+  }).join('');
+}
+
+// ── Recent Drives ──
+function loadSessions(){
+  fetch('/api/sessions').then(r=>r.json()).then(sessions=>{
+    const el=document.getElementById('sessions-list');
+    if(!sessions||!sessions.length){el.textContent='No sessions recorded yet';return;}
+    el.innerHTML=sessions.slice(0,5).map(s=>{
+      const d=new Date((s.start_ts||0)*1000);
+      const dateStr=d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});
+      const dur=Math.round((s.duration_seconds||0)/60);
+      const dist=(s.distance_km||0).toFixed(1);
+      const cool=s.max_coolant?Math.round(s.max_coolant)+'°C':'--';
+      const volt=s.min_voltage?s.min_voltage.toFixed(1)+'V':'--';
+      const alerts=s.alert_count||0;
+      const alertBadge=alerts?`<span style="color:var(--amber);margin-left:6px">${alerts} alert${alerts>1?'s':''}</span>`:'';
+      return `<div style="border-left:2px solid #2a2a2a;padding:5px 0 5px 10px;margin-bottom:6px">
+        <div style="color:var(--text);font-size:11px">${dateStr}&ensp;<span style="color:var(--dim)">${dur}min &bull; ${dist}&thinsp;km</span>${alertBadge}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">Cool ${cool} &bull; ${volt}</div>
+      </div>`;
+    }).join('');
+  }).catch(()=>{});
+}
+loadSessions();
+
+// ── Ask Mechanic (LLM) ──
+let queryBusy=false;
+function askMechanic(){
+  if(queryBusy) return;
+  const inp=document.getElementById('ask-input');
+  const q=inp.value.trim();
+  if(!q) return;
+  queryBusy=true;
+  const out=document.getElementById('ask-output');
+  const btn=document.getElementById('ask-btn');
+  out.style.color='var(--dim)';
+  out.textContent='Thinking...';
+  btn.disabled=true;
+  btn.textContent='...';
+  fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
+      else{out.style.color='var(--text)';out.textContent=d.response;}
+    })
+    .catch(e=>{out.style.color='var(--red)';out.textContent='Request failed.'})
+    .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
+}
+document.getElementById('ask-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askMechanic();}});
 
 // ── Start ──
 connect();
@@ -1271,6 +1361,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._serve_json(TECHNICAL_BULLETINS)
             except ImportError:
                 self._serve_json([])
+        elif parsed.path == '/api/sessions':
+            try:
+                import db as _db
+                self._serve_json(_db.get_recent_sessions(10))
+            except Exception:
+                self._serve_json([])
+        elif parsed.path.startswith('/api/mechanic/dtc/'):
+            code = parsed.path.split('/')[-1].upper()
+            from config import XTYPE_DTC_LOOKUP
+            info = XTYPE_DTC_LOOKUP.get(code, {})
+            self._serve_json({'code': code, **info})
         elif parsed.path == '/api/report':
             self._serve_json(latest_report)
         elif parsed.path == '/api/reports':
@@ -1315,6 +1416,75 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status": "triggered"}')
+        elif self.path == '/api/query':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                query = body.get('query', '').strip()
+                if not query:
+                    self.send_error(400, 'Missing query')
+                    return
+
+                # Build context: live telemetry + relevant KB entries
+                from mechanic import search as kb_search
+                context_parts = []
+
+                # Telemetry snapshot
+                telem_lines = []
+                def _v(key, fmt=''):
+                    d = latest_state.get(key, {})
+                    return d.get('value') if isinstance(d, dict) else None
+                rpm = _v('engine_rpm')
+                cool = _v('engine_coolant')
+                speed = _v('vehicle_speed')
+                stft1 = _v('engine_stft1')
+                stft2 = _v('engine_stft2')
+                volt = _v('power_voltage')
+                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
+                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
+                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
+                if stft1 is not None and stft2 is not None:
+                    telem_lines.append(f"Fuel trims: B1 {stft1:+.1f}%, B2 {stft2:+.1f}%")
+                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+                dtc_data = latest_state.get('diag_dtc', {})
+                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+                if stored_dtcs:
+                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+                alert_d = latest_state.get('alert_message', {})
+                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
+                if alert_msg:
+                    telem_lines.append(f"Active alert: {alert_msg}")
+                if telem_lines:
+                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+
+                # KB retrieval
+                kb_results = kb_search(query)
+                kb_lines = []
+                for r in kb_results[:2]:
+                    if r.get('type') == 'problem':
+                        p = r['data']
+                        kb_lines.append(
+                            f"KNOWN ISSUE: {p['title']}\n"
+                            f"Cause: {p.get('cause','')}\n"
+                            f"Fix: {p.get('fix','')}"
+                        )
+                if kb_lines:
+                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+                prompt = query
+                if context_parts:
+                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+
+                import llm_client
+                result = llm_client.query_llm(prompt)
+                self._serve_json({
+                    'response': result['text'],
+                    'model': result['model'],
+                    'tokens': result['tokens'],
+                })
+            except Exception as e:
+                log.warning(f"Query error: {e}")
+                self._serve_json({'error': str(e)})
         else:
             self.send_error(404)
 
