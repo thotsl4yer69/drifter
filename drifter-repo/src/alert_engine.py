@@ -57,6 +57,8 @@ class VehicleState:
     iat: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     maf: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     timestamps: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    coolant_ts: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    voltage_ts: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     active_dtcs: list = field(default_factory=list)
     pending_dtcs: list = field(default_factory=list)
     # TPMS: {pos: {pressure_psi, temp_c, ts}}
@@ -77,15 +79,23 @@ class VehicleState:
         """Most recent reading."""
         return buf[-1] if buf else None
 
-    def trend(self, buf, window=100):
-        """Rate of change per second over window."""
-        if len(buf) < 10 or len(self.timestamps) < 10:
+    def trend(self, buf, window=100, ts_buf=None):
+        """Rate of change per second over window.
+
+        ts_buf should be the per-sensor timestamp deque (same length as buf).
+        Falls back to the shared timestamps deque only if ts_buf is omitted,
+        which is only correct when buf and timestamps grow in lock-step.
+        """
+        ts = ts_buf if ts_buf is not None else self.timestamps
+        n = min(len(buf), len(ts), window)
+        if n < 10:
             return 0
-        samples = list(buf)[-window:]
-        times = list(self.timestamps)[-window:]
-        if times[-1] == times[0]:
+        samples = list(buf)[-n:]
+        times = list(ts)[-n:]
+        dt = times[-1] - times[0]
+        if abs(dt) < 1e-6:
             return 0
-        return (samples[-1] - samples[0]) / (times[-1] - times[0])
+        return (samples[-1] - samples[0]) / dt
 
     def sustained_above(self, buf, threshold, min_samples=50):
         """Check if value has been above threshold for min_samples readings."""
@@ -162,7 +172,7 @@ def rule_vacuum_leak_both(state: VehicleState):
 def rule_coolant_critical(state: VehicleState):
     """Coolant temperature critical."""
     coolant = state.latest(state.coolant)
-    trend = state.trend(state.coolant)
+    trend = state.trend(state.coolant, ts_buf=state.coolant_ts)
 
     if coolant is None:
         return None
@@ -711,7 +721,7 @@ def rule_xtype_alternator_age(state: VehicleState):
     # should hold 13.8-14.4V easily at 1500+ RPM.
     if rpm > 1500 and 12.8 < voltage < 13.5:
         # Check for voltage trend — is it dropping over time?
-        trend = state.trend(state.voltage, 200)
+        trend = state.trend(state.voltage, 200, ts_buf=state.voltage_ts)
         if trend < -0.001:  # Falling voltage over time
             return (LEVEL_INFO,
                     f"Alternator output marginal: {voltage:.1f}V at {rpm:.0f} RPM "
@@ -827,6 +837,7 @@ def on_message(client, userdata, msg):
             state.rpm.append(value)
         elif topic.endswith('/coolant'):
             state.coolant.append(value)
+            state.coolant_ts.append(ts)
         elif topic.endswith('/stft1'):
             state.stft1.append(value)
         elif topic.endswith('/stft2'):
@@ -843,6 +854,7 @@ def on_message(client, userdata, msg):
             state.throttle.append(value)
         elif topic.endswith('/voltage'):
             state.voltage.append(value)
+            state.voltage_ts.append(ts)
         elif topic.endswith('/iat'):
             state.iat.append(value)
         elif topic.endswith('/maf'):

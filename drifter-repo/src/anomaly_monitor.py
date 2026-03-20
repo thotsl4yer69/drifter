@@ -94,6 +94,10 @@ class AnomalyMonitor:
             value = data.get('value')
             if value is None:
                 return
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return
 
             # Track state for context snapshots
             if topic == TOPICS['coolant']:

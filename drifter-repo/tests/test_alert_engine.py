@@ -436,6 +436,7 @@ class TestXTypeAlternatorAge:
         for i in range(200):
             state.voltage.append(13.4 - i * 0.002)
             state.timestamps.append(now - 200 + i)
+            state.voltage_ts.append(now - 200 + i)
         fill(state.rpm, 2000, 200)
         result = rule_xtype_alternator_age(state)
         assert result is not None

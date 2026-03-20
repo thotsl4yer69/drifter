@@ -290,8 +290,10 @@ def run_calibration(auto=False):
     try:
         pub = mqtt.Client(client_id="drifter-cal-pub")
         pub.connect(MQTT_HOST, MQTT_PORT, 10)
-        pub.publish(TOPICS['calibration'], json.dumps(cal), retain=True)
-        pub.disconnect()
+        try:
+            pub.publish(TOPICS['calibration'], json.dumps(cal), retain=True)
+        finally:
+            pub.disconnect()
     except Exception:
         pass
 
