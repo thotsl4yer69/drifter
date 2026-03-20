@@ -337,6 +337,18 @@ body{
 .card.lg .value{font-size:42px}
 .card.med .value{font-size:32px}
 
+/* RPM zone markers */
+.bar-zones{position:relative;height:3px;background:#222;border-radius:2px;margin-top:6px;overflow:hidden}
+.bar-zone-ok{position:absolute;left:0;top:0;height:100%;width:78%;background:var(--ok)}
+.bar-zone-warn{position:absolute;left:78%;top:0;height:100%;width:8%;background:var(--amber)}
+.bar-zone-red{position:absolute;left:86%;top:0;height:100%;width:14%;background:var(--red)}
+.bar-needle{position:absolute;top:-1px;width:2px;height:5px;background:#fff;border-radius:1px;transform:translateX(-50%);transition:left .2s}
+
+/* Trim bar — centred at 0 */
+.trim-bar-wrap{height:3px;background:#333;border-radius:2px;margin-top:6px;position:relative;overflow:hidden}
+.trim-bar-center{position:absolute;left:50%;top:0;width:1px;height:100%;background:#555}
+.trim-bar-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:left .3s,width .3s}
+
 /* TPMS */
 .tpms-grid{
   display:grid;grid-template-columns:1fr 1fr;
@@ -454,7 +466,12 @@ body{
   <div class="card lg" id="c-rpm">
     <div class="label">RPM</div>
     <div class="value" id="v-rpm">--</div>
-    <div class="bar"><div class="bar-fill" id="b-rpm" style="width:0;background:var(--ok)"></div></div>
+    <div class="bar-zones">
+      <div class="bar-zone-ok"></div>
+      <div class="bar-zone-warn"></div>
+      <div class="bar-zone-red"></div>
+      <div class="bar-needle" id="b-rpm" style="left:0"></div>
+    </div>
   </div>
   <div class="card lg" id="c-speed">
     <div class="label">SPEED</div>
@@ -464,8 +481,13 @@ body{
   <div class="card med" id="c-coolant">
     <div class="label">COOLANT</div>
     <div class="value" id="v-coolant">--</div>
-    <div class="unit">&deg;C</div>
-    <div class="bar"><div class="bar-fill" id="b-coolant" style="width:0;background:var(--ok)"></div></div>
+    <div class="unit">&deg;C &nbsp;<span style="font-size:9px;color:var(--dim)">normal 86-98</span></div>
+    <div class="bar" style="position:relative">
+      <div class="bar-fill" id="b-coolant" style="width:0;background:var(--ok)"></div>
+      <!-- Normal range markers at 86°C (57.5%) and 98°C (72.5%) of 40-145°C span -->
+      <div style="position:absolute;top:0;left:57.5%;width:1px;height:100%;background:#444"></div>
+      <div style="position:absolute;top:0;left:72.5%;width:1px;height:100%;background:#444"></div>
+    </div>
   </div>
   <div class="card med" id="c-voltage">
     <div class="label">VOLTAGE</div>
@@ -480,21 +502,25 @@ body{
     <div class="label">STFT B1</div>
     <div class="value" id="v-stft1">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft1"></div></div>
   </div>
   <div class="card">
     <div class="label">STFT B2</div>
     <div class="value" id="v-stft2">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft2"></div></div>
   </div>
   <div class="card">
     <div class="label">LTFT B1</div>
     <div class="value" id="v-ltft1">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft1"></div></div>
   </div>
   <div class="card">
     <div class="label">LTFT B2</div>
     <div class="value" id="v-ltft2">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft2"></div></div>
   </div>
 </div>
 
@@ -651,6 +677,16 @@ function setBar(id, pct, color){
   el.style.width=Math.min(100,Math.max(0,pct))+'%';
   if(color)el.style.background=color;
 }
+function setTrimBar(id, val, color){
+  // val is fuel trim %, range clamped to ±25%. Bar grows left or right from centre.
+  const el=document.getElementById(id);
+  if(!el)return;
+  const pct=Math.min(25,Math.max(-25,val));
+  const halfW=Math.abs(pct)/25*50; // 0-50% of half-width
+  if(pct>=0){el.style.left='50%';el.style.width=halfW+'%';}
+  else{el.style.left=(50-halfW)+'%';el.style.width=halfW+'%';}
+  if(color)el.style.background=color;
+}
 function flash(cardId){
   const el=document.getElementById(cardId);
   if(!el)return;
@@ -672,7 +708,9 @@ function handleMessage(msg){
 
   if(topic.endsWith('/rpm') && v!==undefined){
     setVal('v-rpm', Math.round(v), rpmColor(v));
-    setBar('b-rpm', (v/7000)*100, rpmColor(v));
+    // Position needle along zone bar (0-7000 RPM = 0-100%)
+    const needle=document.getElementById('b-rpm');
+    if(needle) needle.style.left=Math.min(100,(v/7000)*100)+'%';
     flash('c-rpm');
   }
   else if(topic.endsWith('/coolant') && v!==undefined){
@@ -690,15 +728,19 @@ function handleMessage(msg){
   }
   else if(topic.endsWith('/stft1') && v!==undefined){
     setVal('v-stft1', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-stft1', v, trimColor(v));
   }
   else if(topic.endsWith('/stft2') && v!==undefined){
     setVal('v-stft2', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-stft2', v, trimColor(v));
   }
   else if(topic.endsWith('/ltft1') && v!==undefined){
     setVal('v-ltft1', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-ltft1', v, trimColor(v));
   }
   else if(topic.endsWith('/ltft2') && v!==undefined){
     setVal('v-ltft2', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-ltft2', v, trimColor(v));
   }
   else if(topic.endsWith('/load') && v!==undefined){
     setVal('v-load', v.toFixed(0));
@@ -718,10 +760,12 @@ function handleMessage(msg){
   else if(topic.endsWith('/alert/level')){
     const lvl = data.level || 0;
     const banner = document.getElementById('alert-banner');
-    const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'AMBER',3:'RED'};
+    const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
     const cls = {0:'alert-ok',1:'alert-info',2:'alert-amber',3:'alert-red'};
     banner.className = 'alert-banner ' + (cls[lvl]||'alert-ok');
-    banner.textContent = names[lvl] || 'OK';
+    banner.dataset.level = lvl;
+    // Only show level name if no message text is stored
+    if(!banner.dataset.msg) banner.textContent = names[lvl] || 'OK';
   }
   // Alert message
   else if(topic.endsWith('/alert/message')){
@@ -730,6 +774,16 @@ function handleMessage(msg){
     const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
     el.style.color = colors[lvl] || 'var(--text)';
     el.textContent = data.message || 'Systems nominal';
+    // Mirror active alerts on the banner too
+    const banner = document.getElementById('alert-banner');
+    if(lvl > 0 && data.message){
+      banner.dataset.msg = data.message;
+      banner.textContent = data.message;
+    } else {
+      delete banner.dataset.msg;
+      const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
+      banner.textContent = names[lvl] || 'SYSTEMS NOMINAL';
+    }
   }
   // DTCs
   else if(topic.endsWith('/dtc')){
@@ -749,14 +803,14 @@ function handleMessage(msg){
         setVal(`v-tpms-${pos}-psi`, psi.toFixed(0)+' PSI', psiColor(psi));
       }
       if(temp!==null&&temp!==undefined){
-        setVal(`v-tpms-${pos}-temp`, temp.toFixed(0)+'C');
+        setVal(`v-tpms-${pos}-temp`, temp.toFixed(0)+'\u00b0C');
       }
     }
   }
   // Watchdog / system
   else if(topic.endsWith('/system/watchdog')){
     const sys = data.system || {};
-    if(sys.cpu_temp) setVal('v-cpu-temp', sys.cpu_temp.toFixed(0)+'C');
+    if(sys.cpu_temp) setVal('v-cpu-temp', sys.cpu_temp.toFixed(0)+'\u00b0C');
     if(sys.disk_percent) setVal('v-disk', sys.disk_percent.toFixed(0)+'% ('+
       (sys.disk_free_gb||'?')+'GB free)');
     if(sys.memory_percent) setVal('v-mem', sys.memory_percent.toFixed(0)+'%');
