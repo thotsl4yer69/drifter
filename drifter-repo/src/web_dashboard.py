@@ -394,6 +394,14 @@ body{
 }
 .sys-row .lbl{color:var(--dim)}
 
+/* Quick-pick chips */
+.chip{
+  padding:6px 10px;background:#1a1a1a;border:1px solid #2a2a2a;
+  border-radius:16px;color:var(--dim);font-family:inherit;font-size:11px;
+  cursor:pointer;white-space:nowrap;transition:border-color .15s,color .15s;
+}
+.chip:active,.chip.active{border-color:var(--accent);color:var(--accent)}
+
 /* Audio Toggle */
 .audio-btn{
   position:fixed;bottom:16px;right:16px;z-index:200;
@@ -600,19 +608,37 @@ body{
 
 <div class="section">ASK MECHANIC</div>
 <div style="padding:6px 10px 10px">
+
+  <!-- Quick-pick chips — one tap sends the question -->
+  <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+    <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
+    <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
+    <button class="chip" onclick="chipAsk(this)">Why is coolant rising?</button>
+    <button class="chip" onclick="chipAsk(this)">What do my DTCs mean?</button>
+    <button class="chip" onclick="chipAsk(this)">Likely cause of alert?</button>
+    <button class="chip" onclick="chipAsk(this)">Check engine light causes?</button>
+    <button class="chip" onclick="chipAsk(this)">Next service items?</button>
+    <button class="chip" onclick="chipAsk(this)">Thermostat OK?</button>
+  </div>
+
+  <!-- Text input row with mic button -->
   <div style="display:flex;gap:6px;margin-bottom:6px">
     <input id="ask-input" type="text"
-      placeholder="e.g. Why is my coolant rising fast?"
+      placeholder="Or type a question..."
       style="flex:1;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
              color:var(--text);font-family:inherit;font-size:12px;outline:none">
+    <button id="mic-btn" onclick="toggleMic()" title="Voice input"
+      style="padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--dim);font-size:16px;cursor:pointer;line-height:1">&#x1f3a4;</button>
     <button id="ask-btn" onclick="askMechanic()"
       style="padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
              color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap">ASK</button>
   </div>
+
   <div id="ask-output"
     style="font-size:12px;color:var(--dim);line-height:1.5;white-space:pre-wrap;
            min-height:32px;padding:6px 2px">
-    Ask anything about your X-Type — live telemetry included in context.
+    Tap a question above or use the mic — live telemetry is sent with every query.
   </div>
 </div>
 
@@ -973,11 +999,9 @@ loadSessions();
 
 // ── Ask Mechanic (LLM) ──
 let queryBusy=false;
-function askMechanic(){
-  if(queryBusy) return;
-  const inp=document.getElementById('ask-input');
-  const q=inp.value.trim();
-  if(!q) return;
+
+function _submitQuery(q){
+  if(queryBusy||!q) return;
   queryBusy=true;
   const out=document.getElementById('ask-output');
   const btn=document.getElementById('ask-btn');
@@ -991,9 +1015,57 @@ function askMechanic(){
       if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
       else{out.style.color='var(--text)';out.textContent=d.response;}
     })
-    .catch(e=>{out.style.color='var(--red)';out.textContent='Request failed.'})
+    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed.'})
     .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
 }
+
+function askMechanic(){
+  const q=document.getElementById('ask-input').value.trim();
+  _submitQuery(q);
+}
+
+// Quick-pick chip — highlight it, fill the input, and submit immediately
+function chipAsk(el){
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  const q=el.textContent;
+  document.getElementById('ask-input').value=q;
+  _submitQuery(q);
+}
+
+// Voice input via Web Speech API
+let recognition=null;
+function toggleMic(){
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const btn=document.getElementById('mic-btn');
+  if(!SpeechRecognition){
+    document.getElementById('ask-output').textContent='Voice input not supported in this browser.';
+    return;
+  }
+  if(recognition){
+    recognition.stop();
+    return;
+  }
+  recognition=new SpeechRecognition();
+  recognition.lang='en-GB';
+  recognition.interimResults=false;
+  recognition.maxAlternatives=1;
+  btn.style.color='var(--red)';
+  btn.title='Listening... tap to cancel';
+  recognition.onresult=e=>{
+    const transcript=e.results[0][0].transcript;
+    document.getElementById('ask-input').value=transcript;
+    _submitQuery(transcript);
+  };
+  recognition.onerror=()=>{};
+  recognition.onend=()=>{
+    recognition=null;
+    btn.style.color='var(--dim)';
+    btn.title='Voice input';
+  };
+  recognition.start();
+}
+
 document.getElementById('ask-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askMechanic();}});
 
 // ── Start ──
