@@ -168,18 +168,23 @@ def flush_buffer():
     """Write buffered data to disk."""
     global buffer, message_count
 
-    if not buffer:
+    # Atomically swap buffer so MQTT thread appends into a new list while
+    # we safely iterate and write the old one.  Without this swap, entries
+    # appended after the for-loop exits but before buffer=[] would be cleared
+    # without ever being written to disk.
+    to_flush = buffer
+    buffer = []
+
+    if not to_flush:
         return
 
     f = get_log_file()
-    for entry in buffer:
+    for entry in to_flush:
         f.write(json.dumps(entry) + '\n')
     f.flush()
 
-    count = len(buffer)
-    message_count += count
-    buffer = []
-    log.debug(f"Flushed {count} records (total: {message_count})")
+    message_count += len(to_flush)
+    log.debug(f"Flushed {len(to_flush)} records (total: {message_count})")
 
 
 def compress_log(path: Path) -> Path:

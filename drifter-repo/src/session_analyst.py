@@ -79,11 +79,11 @@ def build_context_packet(
         f"VEHICLE: 2004 Jaguar X-Type 2.5L V6 (AJ-V6)",
         f"",
         f"SESSION: {session['session_id']}",
-        f"  Duration: {int(session.get('duration_seconds', 0) // 60)}m"
+        f"  Duration: {int(session.get('duration_seconds', 0) // 60)}m",
         f"  Distance: {session.get('distance_km', 0):.1f} km",
         f"  Max coolant: {session.get('max_coolant', '?')}°C",
         f"  Min voltage: {session.get('min_voltage', '?')}V",
-        f"  Warm-up time: {session.get('warmup_seconds', '?'):.0f}s",
+        f"  Warm-up time: {session.get('warmup_seconds', '?')}s",
     ]
 
     # DTCs
@@ -98,7 +98,7 @@ def build_context_packet(
         for ev in sorted(anomalies, key=lambda e: e['ts']):
             ctx = json.loads(ev.get('context_json', '{}'))
             ctx_str = ', '.join(f"{k}={v}" for k, v in list(ctx.items())[:5])
-            ts_rel = int(ev['ts'] - session.get('start_ts', ev['ts']))
+            ts_rel = int(ev['ts'] - session.get('start', session.get('start_ts', ev['ts'])))
             lines.append(
                 f"  +{ts_rel:04d}s  {ev['sensor']} = {ev['value']} "
                 f"(z={ev['z_score']}, {ev['severity']})  [{ctx_str}]"
@@ -175,7 +175,11 @@ def run_analysis(session: dict) -> Optional[dict]:
     # 3. Compute sensor averages from JSONL
     date_str = session_id[:8]  # YYYYMMDD
     log_file = LOG_DIR / f"drive_{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}.jsonl"
-    sensor_avgs = compute_sensor_avgs(log_file, session.get('start_ts', 0), session.get('end_ts', time.time()))
+    sensor_avgs = compute_sensor_avgs(
+        log_file,
+        session.get('start', session.get('start_ts', 0)),
+        session.get('end', session.get('end_ts', time.time())),
+    )
 
     # 4. Baseline delta
     baseline = db.get_baseline(exclude_session_id=session_id, n=ANALYST_BASELINE_SESSIONS)

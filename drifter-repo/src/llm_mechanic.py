@@ -10,7 +10,6 @@ import json
 import time
 import signal
 import logging
-import asyncio
 import threading
 import paho.mqtt.client as mqtt
 from pathlib import Path
@@ -309,30 +308,34 @@ class LLMMechanic:
         # MQTT client
         self.mqtt = mqtt.Client(client_id="drifter-llm-mechanic")
         self.mqtt.on_message = self._on_mqtt_message
-        
-        # Response queue for async processing
-        self.query_queue = asyncio.Queue()
-    
+
     def _on_mqtt_message(self, client, userdata, msg):
         """Handle incoming MQTT messages."""
         try:
             data = json.loads(msg.payload)
             topic = msg.topic
-            
+
             # Update telemetry
             self.telemetry.update(topic, data)
-            
-            # Handle LLM queries
+
+            # Handle LLM queries — spawn a daemon thread so the MQTT loop
+            # is never blocked.  asyncio.create_task() cannot be used here
+            # because this callback runs in the paho network thread, not in
+            # any asyncio event loop.
             if topic == 'drifter/llm/query':
                 query = data.get('query', '')
                 session_id = data.get('session_id', 'default')
-                asyncio.create_task(self._process_query(query, session_id))
-                
+                threading.Thread(
+                    target=self._process_query,
+                    args=(query, session_id),
+                    daemon=True,
+                ).start()
+
         except Exception as e:
             log.warning(f"MQTT message error: {e}")
-    
-    async def _process_query(self, query: str, session_id: str):
-        """Process a user query with full context."""
+
+    def _process_query(self, query: str, session_id: str):
+        """Process a user query with full context (runs in a worker thread)."""
         log.info(f"Query: {query[:50]}...")
         
         # Build context

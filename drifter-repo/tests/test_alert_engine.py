@@ -78,6 +78,53 @@ def test_rule_count():
     assert len(ALL_RULES) == 23
 
 
+# ── Test: trend() per-sensor timestamp alignment ──
+
+class TestTrendAlignment:
+    def test_trend_uses_per_sensor_ts_buf(self, state):
+        """trend() must use ts_buf, not the shared timestamps deque.
+
+        Simulate the real scenario: coolant is 1Hz, total messages arrive at
+        5Hz (5 PIDs).  Without per-sensor timestamps the time window would be
+        5× too short and the slope would be 5× too large.
+        """
+        base_time = 1_000_000.0
+        # Add 50 coolant readings at 1-second intervals (50 s span, +1°C each)
+        for i in range(50):
+            state.coolant.append(70.0 + i)
+            state.coolant_ts.append(base_time + i * 1.0)
+
+        # Pollute shared timestamps: 5 messages per second (250 entries total)
+        for i in range(250):
+            state.timestamps.append(base_time + i * 0.2)
+
+        # Correct slope: 1°C/s  (49°C rise over 49 s)
+        trend_correct = state.trend(state.coolant, ts_buf=state.coolant_ts)
+        assert abs(trend_correct - 1.0) < 0.05, f"Expected ~1.0°C/s, got {trend_correct}"
+
+        # Misaligned slope using shared timestamps: 5× faster "time" → slope ~5×
+        trend_wrong = state.trend(state.coolant)   # falls back to timestamps
+        # The misaligned version should give a very different (much larger) value
+        assert abs(trend_wrong) > abs(trend_correct) * 3, (
+            f"Misaligned trend should be much larger than {trend_correct}, got {trend_wrong}"
+        )
+
+    def test_trend_returns_zero_when_ts_buf_too_short(self, state):
+        """trend() with fewer than 10 per-sensor timestamps returns 0."""
+        for i in range(5):
+            state.coolant.append(80.0 + i)
+            state.coolant_ts.append(1_000_000.0 + i)
+        assert state.trend(state.coolant, ts_buf=state.coolant_ts) == 0
+
+    def test_trend_epsilon_guard_for_identical_timestamps(self, state):
+        """trend() must not divide by zero when all timestamps are identical."""
+        t = 1_000_000.0
+        for _ in range(20):
+            state.coolant.append(90.0)
+            state.coolant_ts.append(t)  # all same
+        assert state.trend(state.coolant, ts_buf=state.coolant_ts) == 0
+
+
 # ── Test: None Handling ──
 
 def test_all_rules_return_none_on_empty_state(state):
@@ -436,6 +483,7 @@ class TestXTypeAlternatorAge:
         for i in range(200):
             state.voltage.append(13.4 - i * 0.002)
             state.timestamps.append(now - 200 + i)
+            state.voltage_ts.append(now - 200 + i)
         fill(state.rpm, 2000, 200)
         result = rule_xtype_alternator_age(state)
         assert result is not None

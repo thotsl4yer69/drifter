@@ -114,8 +114,8 @@ def check_hardware():
     services_status = {}
     for svc in ['drifter-canbridge', 'drifter-alerts', 'drifter-dashboard',
                 'drifter-watchdog', 'drifter-hotspot', 'drifter-rf',
-                'drifter-voice', 'drifter-realdash', 'drifter-logger',
-                'drifter-homesync', 'mosquitto']:
+                'drifter-wardrive', 'drifter-voice', 'drifter-realdash',
+                'drifter-logger', 'drifter-homesync', 'mosquitto']:
         try:
             out = subprocess.run(['systemctl', 'is-active', svc],
                                  capture_output=True, text=True, timeout=3)
@@ -337,6 +337,18 @@ body{
 .card.lg .value{font-size:42px}
 .card.med .value{font-size:32px}
 
+/* RPM zone markers */
+.bar-zones{position:relative;height:3px;background:#222;border-radius:2px;margin-top:6px;overflow:hidden}
+.bar-zone-ok{position:absolute;left:0;top:0;height:100%;width:78%;background:var(--ok)}
+.bar-zone-warn{position:absolute;left:78%;top:0;height:100%;width:8%;background:var(--amber)}
+.bar-zone-red{position:absolute;left:86%;top:0;height:100%;width:14%;background:var(--red)}
+.bar-needle{position:absolute;top:-1px;width:2px;height:5px;background:#fff;border-radius:1px;transform:translateX(-50%);transition:left .2s}
+
+/* Trim bar — centred at 0 */
+.trim-bar-wrap{height:3px;background:#333;border-radius:2px;margin-top:6px;position:relative;overflow:hidden}
+.trim-bar-center{position:absolute;left:50%;top:0;width:1px;height:100%;background:#555}
+.trim-bar-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:left .3s,width .3s}
+
 /* TPMS */
 .tpms-grid{
   display:grid;grid-template-columns:1fr 1fr;
@@ -381,6 +393,14 @@ body{
   padding:3px 16px;font-size:11px;
 }
 .sys-row .lbl{color:var(--dim)}
+
+/* Quick-pick chips */
+.chip{
+  padding:6px 10px;background:#1a1a1a;border:1px solid #2a2a2a;
+  border-radius:16px;color:var(--dim);font-family:inherit;font-size:11px;
+  cursor:pointer;white-space:nowrap;transition:border-color .15s,color .15s;
+}
+.chip:active,.chip.active{border-color:var(--accent);color:var(--accent)}
 
 /* Audio Toggle */
 .audio-btn{
@@ -454,7 +474,12 @@ body{
   <div class="card lg" id="c-rpm">
     <div class="label">RPM</div>
     <div class="value" id="v-rpm">--</div>
-    <div class="bar"><div class="bar-fill" id="b-rpm" style="width:0;background:var(--ok)"></div></div>
+    <div class="bar-zones">
+      <div class="bar-zone-ok"></div>
+      <div class="bar-zone-warn"></div>
+      <div class="bar-zone-red"></div>
+      <div class="bar-needle" id="b-rpm" style="left:0"></div>
+    </div>
   </div>
   <div class="card lg" id="c-speed">
     <div class="label">SPEED</div>
@@ -464,8 +489,13 @@ body{
   <div class="card med" id="c-coolant">
     <div class="label">COOLANT</div>
     <div class="value" id="v-coolant">--</div>
-    <div class="unit">&deg;C</div>
-    <div class="bar"><div class="bar-fill" id="b-coolant" style="width:0;background:var(--ok)"></div></div>
+    <div class="unit">&deg;C &nbsp;<span style="font-size:9px;color:var(--dim)">normal 86-98</span></div>
+    <div class="bar" style="position:relative">
+      <div class="bar-fill" id="b-coolant" style="width:0;background:var(--ok)"></div>
+      <!-- Normal range markers at 86°C (57.5%) and 98°C (72.5%) of 40-145°C span -->
+      <div style="position:absolute;top:0;left:57.5%;width:1px;height:100%;background:#444"></div>
+      <div style="position:absolute;top:0;left:72.5%;width:1px;height:100%;background:#444"></div>
+    </div>
   </div>
   <div class="card med" id="c-voltage">
     <div class="label">VOLTAGE</div>
@@ -480,21 +510,25 @@ body{
     <div class="label">STFT B1</div>
     <div class="value" id="v-stft1">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft1"></div></div>
   </div>
   <div class="card">
     <div class="label">STFT B2</div>
     <div class="value" id="v-stft2">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft2"></div></div>
   </div>
   <div class="card">
     <div class="label">LTFT B1</div>
     <div class="value" id="v-ltft1">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft1"></div></div>
   </div>
   <div class="card">
     <div class="label">LTFT B2</div>
     <div class="value" id="v-ltft2">--</div>
     <div class="unit">%</div>
+    <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft2"></div></div>
   </div>
 </div>
 
@@ -568,6 +602,61 @@ body{
   <summary style="cursor:pointer;padding:4px">Full report JSON</summary>
   <pre id="diag-json" style="font-size:10px;overflow-x:auto;color:var(--dim)"></pre>
 </details>
+
+<div class="section">RECENT DRIVES</div>
+<div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)">Loading...</div>
+
+<div class="section">WARDRIVE</div>
+<div id="wardrive-panel" style="padding:6px 10px 4px">
+  <div style="display:flex;gap:8px;font-size:11px;color:var(--dim);margin-bottom:6px">
+    <span>&#x1f4f6; Wi-Fi: <b id="wd-wifi-count" style="color:var(--text)">--</b></span>
+    <span>&bull;</span>
+    <span>&#x1f4f1; BT: <b id="wd-bt-count" style="color:var(--text)">--</b></span>
+    <span style="margin-left:auto" id="wd-session-totals" style="color:var(--dim)"></span>
+  </div>
+  <div id="wd-networks" style="font-size:11px;color:var(--dim)">No scan yet</div>
+</div>
+
+<div class="section">ADS-B AIRCRAFT</div>
+<div id="adsb-panel" style="padding:6px 10px 8px;font-size:11px;color:var(--dim)">
+  No data yet — ADS-B scan runs every 5 min (requires dump1090)
+</div>
+
+<div class="section">ASK MECHANIC</div>
+<div style="padding:6px 10px 10px">
+
+  <!-- Quick-pick chips — one tap sends the question -->
+  <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+    <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
+    <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
+    <button class="chip" onclick="chipAsk(this)">Why is coolant rising?</button>
+    <button class="chip" onclick="chipAsk(this)">What do my DTCs mean?</button>
+    <button class="chip" onclick="chipAsk(this)">Likely cause of alert?</button>
+    <button class="chip" onclick="chipAsk(this)">Check engine light causes?</button>
+    <button class="chip" onclick="chipAsk(this)">Next service items?</button>
+    <button class="chip" onclick="chipAsk(this)">Thermostat OK?</button>
+  </div>
+
+  <!-- Text input row with mic button -->
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input id="ask-input" type="text"
+      placeholder="Or type a question..."
+      style="flex:1;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--text);font-family:inherit;font-size:12px;outline:none">
+    <button id="mic-btn" onclick="toggleMic()" title="Voice input"
+      style="padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--dim);font-size:16px;cursor:pointer;line-height:1">&#x1f3a4;</button>
+    <button id="ask-btn" onclick="askMechanic()"
+      style="padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
+             color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap">ASK</button>
+  </div>
+
+  <div id="ask-output"
+    style="font-size:12px;color:var(--dim);line-height:1.5;white-space:pre-wrap;
+           min-height:32px;padding:6px 2px">
+    Tap a question above or use the mic — live telemetry is sent with every query.
+  </div>
+</div>
 
 <div style="height:80px"></div>
 
@@ -651,6 +740,16 @@ function setBar(id, pct, color){
   el.style.width=Math.min(100,Math.max(0,pct))+'%';
   if(color)el.style.background=color;
 }
+function setTrimBar(id, val, color){
+  // val is fuel trim %, range clamped to ±25%. Bar grows left or right from centre.
+  const el=document.getElementById(id);
+  if(!el)return;
+  const pct=Math.min(25,Math.max(-25,val));
+  const halfW=Math.abs(pct)/25*50; // 0-50% of half-width
+  if(pct>=0){el.style.left='50%';el.style.width=halfW+'%';}
+  else{el.style.left=(50-halfW)+'%';el.style.width=halfW+'%';}
+  if(color)el.style.background=color;
+}
 function flash(cardId){
   const el=document.getElementById(cardId);
   if(!el)return;
@@ -672,7 +771,9 @@ function handleMessage(msg){
 
   if(topic.endsWith('/rpm') && v!==undefined){
     setVal('v-rpm', Math.round(v), rpmColor(v));
-    setBar('b-rpm', (v/7000)*100, rpmColor(v));
+    // Position needle along zone bar (0-7000 RPM = 0-100%)
+    const needle=document.getElementById('b-rpm');
+    if(needle) needle.style.left=Math.min(100,(v/7000)*100)+'%';
     flash('c-rpm');
   }
   else if(topic.endsWith('/coolant') && v!==undefined){
@@ -690,15 +791,19 @@ function handleMessage(msg){
   }
   else if(topic.endsWith('/stft1') && v!==undefined){
     setVal('v-stft1', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-stft1', v, trimColor(v));
   }
   else if(topic.endsWith('/stft2') && v!==undefined){
     setVal('v-stft2', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-stft2', v, trimColor(v));
   }
   else if(topic.endsWith('/ltft1') && v!==undefined){
     setVal('v-ltft1', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-ltft1', v, trimColor(v));
   }
   else if(topic.endsWith('/ltft2') && v!==undefined){
     setVal('v-ltft2', (v>=0?'+':'')+v.toFixed(1), trimColor(v));
+    setTrimBar('tb-ltft2', v, trimColor(v));
   }
   else if(topic.endsWith('/load') && v!==undefined){
     setVal('v-load', v.toFixed(0));
@@ -718,10 +823,12 @@ function handleMessage(msg){
   else if(topic.endsWith('/alert/level')){
     const lvl = data.level || 0;
     const banner = document.getElementById('alert-banner');
-    const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'AMBER',3:'RED'};
+    const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
     const cls = {0:'alert-ok',1:'alert-info',2:'alert-amber',3:'alert-red'};
     banner.className = 'alert-banner ' + (cls[lvl]||'alert-ok');
-    banner.textContent = names[lvl] || 'OK';
+    banner.dataset.level = lvl;
+    // Only show level name if no message text is stored
+    if(!banner.dataset.msg) banner.textContent = names[lvl] || 'OK';
   }
   // Alert message
   else if(topic.endsWith('/alert/message')){
@@ -730,14 +837,20 @@ function handleMessage(msg){
     const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
     el.style.color = colors[lvl] || 'var(--text)';
     el.textContent = data.message || 'Systems nominal';
+    // Mirror active alerts on the banner too
+    const banner = document.getElementById('alert-banner');
+    if(lvl > 0 && data.message){
+      banner.dataset.msg = data.message;
+      banner.textContent = data.message;
+    } else {
+      delete banner.dataset.msg;
+      const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
+      banner.textContent = names[lvl] || 'SYSTEMS NOMINAL';
+    }
   }
   // DTCs
   else if(topic.endsWith('/dtc')){
-    const el = document.getElementById('dtc-list');
-    let html = '';
-    (data.stored||[]).forEach(c=>{html+=`<span class="dtc-code">${c}</span>`});
-    (data.pending||[]).forEach(c=>{html+=`<span class="dtc-code dtc-pending">${c}</span>`});
-    el.innerHTML = html || '<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    renderDtcs(data.stored||[], data.pending||[]);
   }
   // TPMS
   else if(topic.includes('/rf/tpms/') && !topic.endsWith('/snapshot')){
@@ -749,14 +862,22 @@ function handleMessage(msg){
         setVal(`v-tpms-${pos}-psi`, psi.toFixed(0)+' PSI', psiColor(psi));
       }
       if(temp!==null&&temp!==undefined){
-        setVal(`v-tpms-${pos}-temp`, temp.toFixed(0)+'C');
+        setVal(`v-tpms-${pos}-temp`, temp.toFixed(0)+'\u00b0C');
       }
     }
+  }
+  // Wardrive
+  else if(topic.includes('/wardrive/')){
+    handleWardrive(topic, data);
+  }
+  // ADS-B
+  else if(topic.endsWith('/rf/adsb')){
+    handleAdsb(data);
   }
   // Watchdog / system
   else if(topic.endsWith('/system/watchdog')){
     const sys = data.system || {};
-    if(sys.cpu_temp) setVal('v-cpu-temp', sys.cpu_temp.toFixed(0)+'C');
+    if(sys.cpu_temp) setVal('v-cpu-temp', sys.cpu_temp.toFixed(0)+'\u00b0C');
     if(sys.disk_percent) setVal('v-disk', sys.disk_percent.toFixed(0)+'% ('+
       (sys.disk_free_gb||'?')+'GB free)');
     if(sys.memory_percent) setVal('v-mem', sys.memory_percent.toFixed(0)+'%');
@@ -851,6 +972,175 @@ function loadReport(){
 }
 loadReport();
 setInterval(loadReport,30000);
+
+// ── Wardrive live updates ──
+function handleWardrive(topic, data){
+  if(topic.endsWith('/wardrive/wifi')){
+    const nets=data.scan||[];
+    document.getElementById('wd-wifi-count').textContent=nets.length;
+    const tot=data.session_total||0;
+    document.getElementById('wd-session-totals').textContent=
+      `session: ${tot} unique SSIDs`;
+    if(!nets.length){
+      document.getElementById('wd-networks').textContent='No Wi-Fi networks in range';
+      return;
+    }
+    const sorted=[...nets].sort((a,b)=>(b.signal_dbm||0)-(a.signal_dbm||0));
+    document.getElementById('wd-networks').innerHTML=sorted.slice(0,8).map(n=>{
+      const dbm=n.signal_dbm!=null?n.signal_dbm+'dBm':'';
+      const sec=n.security?`<span style="color:#555;margin-left:4px">${esc(n.security)}</span>`:'';
+      return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
+        <span style="color:var(--text)">${esc(n.ssid||'<hidden>')}</span>
+        <span style="color:var(--dim)">${esc(n.channel||'')}${dbm?'&ensp;'+dbm:''}${sec}</span>
+      </div>`;
+    }).join('');
+  }
+  else if(topic.endsWith('/wardrive/bt')){
+    const devs=data.devices||[];
+    document.getElementById('wd-bt-count').textContent=devs.length;
+  }
+}
+
+// ── ADS-B live updates ──
+function handleAdsb(data){
+  const panel=document.getElementById('adsb-panel');
+  const aircraft=data.aircraft||[];
+  if(!aircraft.length){
+    panel.textContent=`No aircraft detected (${data.count||0} in scan, ${data.messages||0} msgs)`;
+    return;
+  }
+  panel.innerHTML=aircraft.slice(0,6).map(a=>{
+    const cs=(a.flight||a.hex||'?').trim();
+    const alt=a.altitude?Math.round(a.altitude).toLocaleString()+"ft":'--';
+    const spd=a.speed?Math.round(a.speed)+"kt":'--';
+    const rssi=a.rssi!=null?a.rssi.toFixed(0)+'dBFS':'';
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
+      <span style="color:var(--accent);font-weight:bold">${esc(cs)}</span>
+      <span style="color:var(--dim)">${alt}&ensp;${spd}${rssi?'&ensp;'+rssi:''}</span>
+    </div>`;
+  }).join('');
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+
+// ── DTC description enrichment ──
+const dtcCache = {};
+async function fetchDtcDesc(code){
+  if(dtcCache[code]!==undefined) return dtcCache[code];
+  try{
+    const r=await fetch('/api/mechanic/dtc/'+code);
+    const d=await r.json();
+    dtcCache[code]=d.desc||'';
+  }catch(e){dtcCache[code]='';}
+  return dtcCache[code];
+}
+async function renderDtcs(stored, pending){
+  const el=document.getElementById('dtc-list');
+  if(!stored.length&&!pending.length){
+    el.innerHTML='<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    return;
+  }
+  const all=[...stored.map(c=>({c,p:false})),...pending.map(c=>({c,p:true}))];
+  const descs=await Promise.all(all.map(({c})=>fetchDtcDesc(c)));
+  el.innerHTML=all.map(({c,p},i)=>{
+    const desc=descs[i]?`<span style="font-size:10px;color:var(--dim);display:block;margin-top:1px">${descs[i]}</span>`:'';
+    return `<div style="margin:3px 0"><span class="dtc-code${p?' dtc-pending':''}">${c}</span>${desc}</div>`;
+  }).join('');
+}
+
+// ── Recent Drives ──
+function loadSessions(){
+  fetch('/api/sessions').then(r=>r.json()).then(sessions=>{
+    const el=document.getElementById('sessions-list');
+    if(!sessions||!sessions.length){el.textContent='No sessions recorded yet';return;}
+    el.innerHTML=sessions.slice(0,5).map(s=>{
+      const d=new Date((s.start_ts||0)*1000);
+      const dateStr=d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});
+      const dur=Math.round((s.duration_seconds||0)/60);
+      const dist=(s.distance_km||0).toFixed(1);
+      const cool=s.max_coolant?Math.round(s.max_coolant)+'°C':'--';
+      const volt=s.min_voltage?s.min_voltage.toFixed(1)+'V':'--';
+      const alerts=s.alert_count||0;
+      const alertBadge=alerts?`<span style="color:var(--amber);margin-left:6px">${alerts} alert${alerts>1?'s':''}</span>`:'';
+      return `<div style="border-left:2px solid #2a2a2a;padding:5px 0 5px 10px;margin-bottom:6px">
+        <div style="color:var(--text);font-size:11px">${dateStr}&ensp;<span style="color:var(--dim)">${dur}min &bull; ${dist}&thinsp;km</span>${alertBadge}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">Cool ${cool} &bull; ${volt}</div>
+      </div>`;
+    }).join('');
+  }).catch(()=>{});
+}
+loadSessions();
+
+// ── Ask Mechanic (LLM) ──
+let queryBusy=false;
+
+function _submitQuery(q){
+  if(queryBusy||!q) return;
+  queryBusy=true;
+  const out=document.getElementById('ask-output');
+  const btn=document.getElementById('ask-btn');
+  out.style.color='var(--dim)';
+  out.textContent='Thinking...';
+  btn.disabled=true;
+  btn.textContent='...';
+  fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
+      else{out.style.color='var(--text)';out.textContent=d.response;}
+    })
+    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed.'})
+    .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
+}
+
+function askMechanic(){
+  const q=document.getElementById('ask-input').value.trim();
+  _submitQuery(q);
+}
+
+// Quick-pick chip — highlight it, fill the input, and submit immediately
+function chipAsk(el){
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  const q=el.textContent;
+  document.getElementById('ask-input').value=q;
+  _submitQuery(q);
+}
+
+// Voice input via Web Speech API
+let recognition=null;
+function toggleMic(){
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const btn=document.getElementById('mic-btn');
+  if(!SpeechRecognition){
+    document.getElementById('ask-output').textContent='Voice input not supported in this browser.';
+    return;
+  }
+  if(recognition){
+    recognition.stop();
+    return;
+  }
+  recognition=new SpeechRecognition();
+  recognition.lang='en-GB';
+  recognition.interimResults=false;
+  recognition.maxAlternatives=1;
+  btn.style.color='var(--red)';
+  btn.title='Listening... tap to cancel';
+  recognition.onresult=e=>{
+    const transcript=e.results[0][0].transcript;
+    document.getElementById('ask-input').value=transcript;
+    _submitQuery(transcript);
+  };
+  recognition.onerror=()=>{};
+  recognition.onend=()=>{
+    recognition=null;
+    btn.style.color='var(--dim)';
+    btn.title='Voice input';
+  };
+  recognition.start();
+}
+
+document.getElementById('ask-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askMechanic();}});
 
 // ── Start ──
 connect();
@@ -1217,6 +1507,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._serve_json(TECHNICAL_BULLETINS)
             except ImportError:
                 self._serve_json([])
+        elif parsed.path == '/api/sessions':
+            try:
+                import db as _db
+                self._serve_json(_db.get_recent_sessions(10))
+            except Exception:
+                self._serve_json([])
+        elif parsed.path == '/api/wardrive':
+            wifi = latest_state.get('wardrive_wifi', {})
+            bt = latest_state.get('wardrive_bt', {})
+            adsb = latest_state.get('rf_adsb', {})
+            self._serve_json({
+                'wifi': wifi,
+                'bluetooth': bt,
+                'adsb': adsb,
+            })
+        elif parsed.path.startswith('/api/mechanic/dtc/'):
+            code = parsed.path.split('/')[-1].upper()
+            from config import XTYPE_DTC_LOOKUP
+            info = XTYPE_DTC_LOOKUP.get(code, {})
+            self._serve_json({'code': code, **info})
         elif parsed.path == '/api/report':
             self._serve_json(latest_report)
         elif parsed.path == '/api/reports':
@@ -1261,6 +1571,75 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status": "triggered"}')
+        elif self.path == '/api/query':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                query = body.get('query', '').strip()
+                if not query:
+                    self.send_error(400, 'Missing query')
+                    return
+
+                # Build context: live telemetry + relevant KB entries
+                from mechanic import search as kb_search
+                context_parts = []
+
+                # Telemetry snapshot
+                telem_lines = []
+                def _v(key, fmt=''):
+                    d = latest_state.get(key, {})
+                    return d.get('value') if isinstance(d, dict) else None
+                rpm = _v('engine_rpm')
+                cool = _v('engine_coolant')
+                speed = _v('vehicle_speed')
+                stft1 = _v('engine_stft1')
+                stft2 = _v('engine_stft2')
+                volt = _v('power_voltage')
+                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
+                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
+                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
+                if stft1 is not None and stft2 is not None:
+                    telem_lines.append(f"Fuel trims: B1 {stft1:+.1f}%, B2 {stft2:+.1f}%")
+                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+                dtc_data = latest_state.get('diag_dtc', {})
+                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+                if stored_dtcs:
+                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+                alert_d = latest_state.get('alert_message', {})
+                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
+                if alert_msg:
+                    telem_lines.append(f"Active alert: {alert_msg}")
+                if telem_lines:
+                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+
+                # KB retrieval
+                kb_results = kb_search(query)
+                kb_lines = []
+                for r in kb_results[:2]:
+                    if r.get('type') == 'problem':
+                        p = r['data']
+                        kb_lines.append(
+                            f"KNOWN ISSUE: {p['title']}\n"
+                            f"Cause: {p.get('cause','')}\n"
+                            f"Fix: {p.get('fix','')}"
+                        )
+                if kb_lines:
+                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+                prompt = query
+                if context_parts:
+                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+
+                import llm_client
+                result = llm_client.query_llm(prompt)
+                self._serve_json({
+                    'response': result['text'],
+                    'model': result['model'],
+                    'tokens': result['tokens'],
+                })
+            except Exception as e:
+                log.warning(f"Query error: {e}")
+                self._serve_json({'error': str(e)})
         else:
             self.send_error(404)
 
