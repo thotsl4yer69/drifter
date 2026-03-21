@@ -432,6 +432,17 @@ SPECTRUM_FREQ_START = 24        # MHz — rtl_power start
 SPECTRUM_FREQ_END = 1766        # MHz — rtl_power end
 EMERGENCY_SCAN_INTERVAL = 60    # Emergency band scan every 60s
 EMERGENCY_SCAN_DWELL = 5        # Seconds per frequency
+# ADS-B aircraft tracking (1090 MHz, requires dump1090)
+ADSB_SCAN_INTERVAL = 300        # ADS-B scan every 5 min (pauses TPMS)
+ADSB_SCAN_DURATION = 25         # Seconds to gather aircraft data
+ADSB_JSON_DIR = Path('/tmp/drifter_adsb')  # dump1090 write-json target
+DUMP1090_BIN = 'dump1090'       # or full path if needed
+
+# ── Wardrive ──
+WARDRIVE_LOG_DIR = DRIFTER_DIR / 'logs' / 'wardrive'
+WIFI_SCAN_INTERVAL = 30         # Seconds between Wi-Fi scans
+BT_SCAN_INTERVAL = 60           # Seconds between Bluetooth scans
+BT_SCAN_DURATION = 8            # Seconds for BLE lescan window
 EMERGENCY_BANDS = [
     # UK / EU emergency and utility bands
     {'name': 'PMR446', 'freq_mhz': 446.0, 'desc': 'Licence-free PMR radios'},
@@ -475,6 +486,12 @@ TOPICS = {
     'rf_emergency': 'drifter/rf/emergency',
     'rf_status': 'drifter/rf/status',
     'rf_command': 'drifter/rf/command',
+    'rf_adsb': 'drifter/rf/adsb',
+    # Wardrive
+    'wardrive_wifi': 'drifter/wardrive/wifi',
+    'wardrive_bt': 'drifter/wardrive/bt',
+    'wardrive_status': 'drifter/wardrive/status',
+    'wardrive_snapshot': 'drifter/wardrive/snapshot',
     # LLM Mechanic
     'llm_query': 'drifter/llm/query',
     'llm_response': 'drifter/llm/response',
@@ -517,6 +534,7 @@ SERVICES = [
     "drifter-watchdog",
     "drifter-realdash",
     "drifter-rf",
+    "drifter-wardrive",
     "drifter-dashboard",
     # drifter-llm removed — superseded by drifter-analyst
 ]

@@ -23,6 +23,7 @@ from config import (
     TPMS_LEARN_TIMEOUT, TPMS_STALE_TIMEOUT,
     SPECTRUM_SCAN_INTERVAL, SPECTRUM_FREQ_START, SPECTRUM_FREQ_END,
     EMERGENCY_SCAN_INTERVAL, EMERGENCY_SCAN_DWELL, EMERGENCY_BANDS,
+    ADSB_SCAN_INTERVAL, ADSB_SCAN_DURATION, ADSB_JSON_DIR, DUMP1090_BIN,
     THRESHOLDS,
 )
 
@@ -489,6 +490,100 @@ def run_emergency_scan(mqtt_client):
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  ADS-B Aircraft Scanner
+# ═══════════════════════════════════════════════════════════════════
+
+def check_dump1090() -> bool:
+    """Check if dump1090 is available."""
+    try:
+        subprocess.run(
+            [DUMP1090_BIN, '--help'],
+            capture_output=True, timeout=5
+        )
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def run_adsb_scan(mqtt_client):
+    """
+    Scan for ADS-B aircraft using dump1090.
+    Runs for ADSB_SCAN_DURATION seconds, reads aircraft.json, publishes results.
+    Caller is responsible for pausing/resuming rtl_433 around this call.
+    """
+    log.info("Starting ADS-B scan...")
+    ADSB_JSON_DIR.mkdir(parents=True, exist_ok=True)
+    aircraft_file = ADSB_JSON_DIR / 'aircraft.json'
+
+    proc = None
+    try:
+        cmd = [
+            DUMP1090_BIN,
+            '--device', '0',
+            '--no-interactive',
+            '--quiet',
+            '--write-json', str(ADSB_JSON_DIR),
+            '--write-json-every', '1',
+        ]
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+
+        # Gather data for the scan window
+        time.sleep(ADSB_SCAN_DURATION)
+
+    except FileNotFoundError:
+        log.warning(f"dump1090 not found — ADS-B scanning disabled. "
+                    "Install with: sudo apt install dump1090-fa")
+        return
+    except Exception as e:
+        log.warning(f"ADS-B scan error: {e}")
+        return
+    finally:
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+    # Read results
+    try:
+        if not aircraft_file.exists():
+            log.info("ADS-B scan complete — no aircraft data written")
+            return
+
+        data = json.loads(aircraft_file.read_text())
+        aircraft = data.get('aircraft', [])
+
+        # Filter to aircraft seen recently (within the scan window)
+        visible = [
+            a for a in aircraft
+            if a.get('seen', 999) < ADSB_SCAN_DURATION
+        ]
+
+        result = {
+            'aircraft': visible,
+            'count': len(visible),
+            'messages': data.get('messages', 0),
+            'scan_duration_s': ADSB_SCAN_DURATION,
+            'ts': time.time(),
+        }
+
+        mqtt_client.publish(TOPICS['rf_adsb'], json.dumps(result), retain=True)
+
+        if visible:
+            callsigns = [a.get('flight', a.get('hex', '?')).strip()
+                         for a in visible[:5]]
+            log.info(f"ADS-B: {len(visible)} aircraft — {', '.join(callsigns)}")
+        else:
+            log.info("ADS-B scan complete — no aircraft detected")
+
+    except Exception as e:
+        log.warning(f"ADS-B result parse error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  MQTT Command Handler
 # ═══════════════════════════════════════════════════════════════════
 
@@ -571,6 +666,7 @@ def main():
     # ── Check hardware ──
     has_sdr = check_rtl_sdr()
     has_rtl433 = check_rtl_433()
+    has_dump1090 = check_dump1090()
 
     if not has_sdr:
         log.error("No RTL-SDR device found. Plug in the dongle and restart.")
@@ -596,11 +692,17 @@ def main():
     mqtt_client.subscribe(TOPICS['rf_command'])
     mqtt_client.loop_start()
 
+    if has_dump1090:
+        log.info("dump1090 detected — ADS-B aircraft tracking enabled")
+    else:
+        log.info("dump1090 not found — ADS-B disabled (install dump1090-fa)")
+
     # Publish status
     mqtt_client.publish(TOPICS['rf_status'], json.dumps({
         'state': 'online',
         'sdr_detected': has_sdr,
         'rtl433_installed': has_rtl433,
+        'dump1090_installed': has_dump1090,
         'tpms_sensors': len(tpms.sensor_map),
         'ts': time.time(),
     }), retain=True)
@@ -654,6 +756,7 @@ def main():
     last_spectrum = 0
     last_emergency = 0
     last_tpms_snapshot = 0
+    last_adsb = 0
 
     log.info("RF Monitor is LIVE")
     if tpms.sensor_map:
@@ -691,6 +794,16 @@ def main():
                 if was_running:
                     resume_rtl_433()
             last_emergency = now
+
+        # ADS-B aircraft scan (pauses rtl_433 for ADSB_SCAN_DURATION seconds)
+        if has_sdr and has_dump1090 and now - last_adsb >= ADSB_SCAN_INTERVAL:
+            was_running = pause_rtl_433()
+            try:
+                run_adsb_scan(mqtt_client)
+            finally:
+                if was_running:
+                    resume_rtl_433()
+            last_adsb = now
 
         time.sleep(1)
 

@@ -114,8 +114,8 @@ def check_hardware():
     services_status = {}
     for svc in ['drifter-canbridge', 'drifter-alerts', 'drifter-dashboard',
                 'drifter-watchdog', 'drifter-hotspot', 'drifter-rf',
-                'drifter-voice', 'drifter-realdash', 'drifter-logger',
-                'drifter-homesync', 'mosquitto']:
+                'drifter-wardrive', 'drifter-voice', 'drifter-realdash',
+                'drifter-logger', 'drifter-homesync', 'mosquitto']:
         try:
             out = subprocess.run(['systemctl', 'is-active', svc],
                                  capture_output=True, text=True, timeout=3)
@@ -606,6 +606,22 @@ body{
 <div class="section">RECENT DRIVES</div>
 <div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)">Loading...</div>
 
+<div class="section">WARDRIVE</div>
+<div id="wardrive-panel" style="padding:6px 10px 4px">
+  <div style="display:flex;gap:8px;font-size:11px;color:var(--dim);margin-bottom:6px">
+    <span>&#x1f4f6; Wi-Fi: <b id="wd-wifi-count" style="color:var(--text)">--</b></span>
+    <span>&bull;</span>
+    <span>&#x1f4f1; BT: <b id="wd-bt-count" style="color:var(--text)">--</b></span>
+    <span style="margin-left:auto" id="wd-session-totals" style="color:var(--dim)"></span>
+  </div>
+  <div id="wd-networks" style="font-size:11px;color:var(--dim)">No scan yet</div>
+</div>
+
+<div class="section">ADS-B AIRCRAFT</div>
+<div id="adsb-panel" style="padding:6px 10px 8px;font-size:11px;color:var(--dim)">
+  No data yet — ADS-B scan runs every 5 min (requires dump1090)
+</div>
+
 <div class="section">ASK MECHANIC</div>
 <div style="padding:6px 10px 10px">
 
@@ -850,6 +866,14 @@ function handleMessage(msg){
       }
     }
   }
+  // Wardrive
+  else if(topic.includes('/wardrive/')){
+    handleWardrive(topic, data);
+  }
+  // ADS-B
+  else if(topic.endsWith('/rf/adsb')){
+    handleAdsb(data);
+  }
   // Watchdog / system
   else if(topic.endsWith('/system/watchdog')){
     const sys = data.system || {};
@@ -948,6 +972,56 @@ function loadReport(){
 }
 loadReport();
 setInterval(loadReport,30000);
+
+// ── Wardrive live updates ──
+function handleWardrive(topic, data){
+  if(topic.endsWith('/wardrive/wifi')){
+    const nets=data.scan||[];
+    document.getElementById('wd-wifi-count').textContent=nets.length;
+    const tot=data.session_total||0;
+    document.getElementById('wd-session-totals').textContent=
+      `session: ${tot} unique SSIDs`;
+    if(!nets.length){
+      document.getElementById('wd-networks').textContent='No Wi-Fi networks in range';
+      return;
+    }
+    const sorted=[...nets].sort((a,b)=>(b.signal_dbm||0)-(a.signal_dbm||0));
+    document.getElementById('wd-networks').innerHTML=sorted.slice(0,8).map(n=>{
+      const dbm=n.signal_dbm!=null?n.signal_dbm+'dBm':'';
+      const sec=n.security?`<span style="color:#555;margin-left:4px">${esc(n.security)}</span>`:'';
+      return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
+        <span style="color:var(--text)">${esc(n.ssid||'<hidden>')}</span>
+        <span style="color:var(--dim)">${esc(n.channel||'')}${dbm?'&ensp;'+dbm:''}${sec}</span>
+      </div>`;
+    }).join('');
+  }
+  else if(topic.endsWith('/wardrive/bt')){
+    const devs=data.devices||[];
+    document.getElementById('wd-bt-count').textContent=devs.length;
+  }
+}
+
+// ── ADS-B live updates ──
+function handleAdsb(data){
+  const panel=document.getElementById('adsb-panel');
+  const aircraft=data.aircraft||[];
+  if(!aircraft.length){
+    panel.textContent=`No aircraft detected (${data.count||0} in scan, ${data.messages||0} msgs)`;
+    return;
+  }
+  panel.innerHTML=aircraft.slice(0,6).map(a=>{
+    const cs=(a.flight||a.hex||'?').trim();
+    const alt=a.altitude?Math.round(a.altitude).toLocaleString()+"ft":'--';
+    const spd=a.speed?Math.round(a.speed)+"kt":'--';
+    const rssi=a.rssi!=null?a.rssi.toFixed(0)+'dBFS':'';
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
+      <span style="color:var(--accent);font-weight:bold">${esc(cs)}</span>
+      <span style="color:var(--dim)">${alt}&ensp;${spd}${rssi?'&ensp;'+rssi:''}</span>
+    </div>`;
+  }).join('');
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
 
 // ── DTC description enrichment ──
 const dtcCache = {};
@@ -1439,6 +1513,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._serve_json(_db.get_recent_sessions(10))
             except Exception:
                 self._serve_json([])
+        elif parsed.path == '/api/wardrive':
+            wifi = latest_state.get('wardrive_wifi', {})
+            bt = latest_state.get('wardrive_bt', {})
+            adsb = latest_state.get('rf_adsb', {})
+            self._serve_json({
+                'wifi': wifi,
+                'bluetooth': bt,
+                'adsb': adsb,
+            })
         elif parsed.path.startswith('/api/mechanic/dtc/'):
             code = parsed.path.split('/')[-1].upper()
             from config import XTYPE_DTC_LOOKUP
