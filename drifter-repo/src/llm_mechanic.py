@@ -20,7 +20,9 @@ from typing import Optional, List, Dict, Any
 from mechanic import (
     VEHICLE_SPECS, COMMON_PROBLEMS, SERVICE_SCHEDULE,
     EMERGENCY_PROCEDURES, TORQUE_SPECS, FUSE_REFERENCE,
-    search as kb_search
+    DTC_REFERENCE, CRUISE_CONTROL_LOGIC, OWNER_VEHICLE_HISTORY,
+    TELEMETRY_INTERPRETATION, CAN_ARCHITECTURE, AUSTRALIAN_SPECS,
+    search as kb_search, get_dtc_info, get_telemetry_context
 )
 
 logging.basicConfig(
@@ -39,24 +41,39 @@ OLLAMA_PORT = 11434
 OLLAMA_MODEL = "llama3.2:3b"  # 3B parameter model, fits on Pi 5
 # Alternatives: "phi3:3.8b", "qwen2.5:3b", "gemma2:2b"
 
-SYSTEM_PROMPT = """You are an expert automotive mechanic specializing in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). 
+SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
 
 You have access to:
-- Complete vehicle specifications (engine, transmission, fluids, capacities)
-- Common failure modes and repair procedures for this specific vehicle
-- Real-time telemetry data from the car's OBD-II system
-- Service schedules and torque specifications
+- Complete vehicle specifications (engine, transmission, drivetrain, fluids, electrical)
+- Comprehensive DTC reference with causes and ECM actions for each code
+- This car's specific history (known repairs, current symptoms, suspected issues)
+- Common X-Type failure modes with detailed repair procedures
+- Real-time telemetry data from the car's OBD-II/CAN bus system via DRIFTER
+- Service schedules adjusted for Australian conditions
+- Torque specifications, fuse/relay maps, CAN bus architecture
+- Cruise control disable logic (which DTCs trigger "Cruise Unavailable")
+- Telemetry interpretation guides (what sensor values mean)
 
-Your personality: Direct, practical, experienced. You've worked on dozens of X-Types. You know the common issues by heart. You give actionable advice, not vague suggestions.
+YOUR APPROACH — THINK, DON'T JUST RECITE:
+You have a comprehensive knowledge base, but you must REASON through problems, not just quote facts. Use the reference data combined with live telemetry to:
+1. Form hypotheses based on the evidence (sensor values + DTCs + symptoms)
+2. Consider multiple possible causes ranked by probability
+3. Suggest targeted diagnostic tests to confirm/eliminate each hypothesis
+4. Factor in THIS car's specific history (prior spark plug failure, valve cover leak, vacuum leak suspicion)
+5. Explain your reasoning so the owner learns and can make informed decisions
+
+Your personality: Direct, practical, experienced. You've worked on dozens of X-Types in Australian conditions. You know the common issues by heart. You give actionable advice with clear reasoning.
 
 When responding:
-1. Be specific to the X-Type — mention known weak points (thermostat housing, coil packs, etc.)
-2. Prioritize safety — flag anything dangerous immediately
-3. Give difficulty ratings and rough cost estimates in GBP
-4. If you need more info, ask targeted questions
-5. Reference the live telemetry when relevant ("Your coolant is at 95°C which suggests...")
+1. Be specific to the X-Type — cite known weak points and how they relate to the current data
+2. ALWAYS prioritise safety — flag anything dangerous immediately
+3. Give difficulty ratings and cost estimates in AUD (Australian Dollars)
+4. Reference live telemetry values when relevant ("Your coolant is at 95°C which suggests...")
+5. Cross-reference DTCs with the knowledge base to explain what the ECM is doing and why
+6. Consider interconnected failures (e.g., valve cover gasket → oil in plug wells → coil failure → misfire → cruise disabled)
+7. If you need more info, ask targeted diagnostic questions
 
-Current vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6)
+Current vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6), AWD, Jatco JF506E, Australian-spec RHD
 Current date: {current_date}
 """
 
@@ -242,8 +259,13 @@ class OllamaClient:
 # ═══════════════════════════════════════════════════════════════════
 
 class MechanicRAG:
-    """Retrieval system for mechanic knowledge base."""
-    
+    """Retrieval system for mechanic knowledge base.
+
+    Enhanced to search across all knowledge domains:
+    problems, DTCs, owner history, telemetry guides,
+    cruise logic, service schedule, and electrical reference.
+    """
+
     def __init__(self):
         self.problem_index = {p['title'].lower(): p for p in COMMON_PROBLEMS}
         self.tag_index = {}
@@ -252,43 +274,113 @@ class MechanicRAG:
                 if tag not in self.tag_index:
                     self.tag_index[tag] = []
                 self.tag_index[tag].append(p)
-    
+
     def retrieve(self, query: str) -> str:
         """Retrieve relevant knowledge for a query."""
         query_lower = query.lower()
         results = []
-        
-        # Search by tags
+        seen_titles = set()
+
+        # Search by tags (highest priority for known problems)
         for tag, problems in self.tag_index.items():
             if tag in query_lower:
                 for p in problems:
-                    results.append(self._format_problem(p))
-        
-        # Search by title
+                    title = p['title']
+                    if title not in seen_titles:
+                        results.append(self._format_problem(p))
+                        seen_titles.add(title)
+
+        # Search by title keywords
         for title, problem in self.problem_index.items():
             if any(word in title for word in query_lower.split()):
-                if problem not in results:
+                if problem['title'] not in seen_titles:
                     results.append(self._format_problem(problem))
-        
-        # General search
+                    seen_titles.add(problem['title'])
+
+        # Search DTC reference for any P-codes mentioned
+        import re
+        dtc_matches = re.findall(r'[pPuUcCbB]\d{4}', query)
+        for code in dtc_matches:
+            info = get_dtc_info(code)
+            if info:
+                results.append(self._format_dtc(info))
+
+        # Check owner vehicle history for relevance
+        for symptom in OWNER_VEHICLE_HISTORY.get('current_symptoms', []):
+            if any(word in symptom['details'].lower() for word in query_lower.split()):
+                results.append(f"THIS CAR'S ACTIVE ISSUE: {symptom['symptom']}\n{symptom['details']}")
+
+        # Check cruise control logic if relevant
+        cruise_terms = ['cruise', 'unavailable', 'speed control']
+        if any(t in query_lower for t in cruise_terms):
+            results.append(self._format_cruise_logic())
+
+        # General search across all knowledge
         kb_results = kb_search(query)
-        for r in kb_results[:3]:
-            if r['type'] == 'problem':
-                results.append(self._format_problem(r['data']))
-        
+        for r in kb_results[:5]:
+            title = r.get('title', '')
+            if title not in seen_titles:
+                if r['type'] == 'problem':
+                    results.append(self._format_problem(r['data']))
+                elif r['type'] == 'dtc':
+                    results.append(self._format_dtc(r['data']))
+                elif r['type'] == 'owner_history':
+                    results.append(f"OWNER HISTORY: {r['data'].get('issue', '')}\n{r['data'].get('details', '')}")
+                elif r['type'] == 'owner_symptom':
+                    results.append(f"ACTIVE ISSUE: {r['data'].get('symptom', '')}\n{r['data'].get('details', '')}")
+                elif r['type'] == 'telemetry_guide':
+                    results.append(f"TELEMETRY GUIDE: {title}\n{self._format_dict(r['data'])}")
+                elif r['type'] in ('torque', 'fuse', 'spec', 'service'):
+                    results.append(f"{r['type'].upper()}: {title}")
+                elif r['type'] == 'cruise_logic':
+                    results.append(self._format_cruise_logic())
+                seen_titles.add(title)
+
         if results:
-            return "\n\n---\n\n".join(results[:3])  # Limit context
+            return "\n\n---\n\n".join(results[:5])  # Up to 5 context entries
         return "No specific knowledge base entries found."
-    
+
     def _format_problem(self, p: dict) -> str:
         """Format a problem for LLM context."""
-        return f"""KNOWN ISSUE: {p['title']}
-Symptoms: {', '.join(p['symptoms'])}
-Cause: {p['cause']}
-Fix: {p['fix']}
-Parts: {', '.join(p.get('parts', []))}
-Difficulty: {p.get('difficulty', 'Unknown')}
-Cost: {p.get('cost', 'Unknown')}"""
+        lines = [f"KNOWN ISSUE: {p['title']}"]
+        lines.append(f"Symptoms: {', '.join(p['symptoms'])}")
+        lines.append(f"Cause: {p['cause']}")
+        lines.append(f"Fix: {p['fix']}")
+        if p.get('diagnostic_test'):
+            lines.append(f"Diagnostic Test: {p['diagnostic_test']}")
+        if p.get('viton_upgrade'):
+            lines.append(f"Upgrade Note: {p['viton_upgrade']}")
+        lines.append(f"Parts: {', '.join(p.get('parts', []))}")
+        lines.append(f"Difficulty: {p.get('difficulty', 'Unknown')}")
+        lines.append(f"Cost: {p.get('cost', 'Unknown')}")
+        if p.get('related_dtcs'):
+            lines.append(f"Related DTCs: {', '.join(p['related_dtcs'])}")
+        return '\n'.join(lines)
+
+    def _format_dtc(self, info: dict) -> str:
+        """Format a DTC entry for LLM context."""
+        code = info.get('code', '?')
+        desc = info.get('desc', '')
+        action = info.get('action', '')
+        causes = info.get('causes', [])
+        return (f"DTC {code}: {desc}\n"
+                f"ECM Action: {action}\n"
+                f"Possible Causes: {', '.join(causes)}")
+
+    def _format_cruise_logic(self) -> str:
+        """Format cruise control logic for LLM context."""
+        cl = CRUISE_CONTROL_LOGIC
+        faults = '\n'.join(f"  - {f}" for f in cl['triggering_faults'])
+        steps = '\n'.join(cl['resolution_steps'])
+        return (f"CRUISE CONTROL DISABLE LOGIC:\n{cl['description']}\n\n"
+                f"Triggering faults:\n{faults}\n\n"
+                f"Resolution:\n{steps}\n\n"
+                f"Note: {cl['note']}")
+
+    def _format_dict(self, d: dict) -> str:
+        """Format a dict as key: value lines."""
+        return '\n'.join(f"  {k}: {v}" for k, v in d.items()
+                        if not k.startswith('_'))
 
 
 # ═══════════════════════════════════════════════════════════════════
