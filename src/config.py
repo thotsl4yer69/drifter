@@ -562,6 +562,7 @@ SERVICES = [
     "drifter-rf",
     "drifter-wardrive",
     "drifter-dashboard",
+    "drifter-fbmirror",
     "drifter-voicein",
     "drifter-llm",
 ]

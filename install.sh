@@ -151,10 +151,9 @@ if command -v ollama &>/dev/null; then
 fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──
-step 5 "Installing voice input dependencies"
+step 5 "Installing voice input system dependencies"
 apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
-pip install --quiet vosk pyaudio openwakeword 2>/dev/null && ok "Voice input deps installed" || \
-    warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword' manually"
+# Python deps (vosk, pyaudio, openwakeword) installed below after venv creation
 
 # Download Vosk model
 VOSK_MODEL_DIR="${DRIFTER_DIR}/vosk-models"
@@ -172,7 +171,7 @@ else
 fi
 
 # ── 6. Python Environment ──
-step 5 "Setting up Python environment"
+step 6 "Setting up Python environment"
 mkdir -p ${DRIFTER_DIR}
 python3 -m venv ${DRIFTER_DIR}/venv
 source ${DRIFTER_DIR}/venv/bin/activate
@@ -183,10 +182,13 @@ pip install --quiet \
     psutil \
     websockets \
     requests
+# Voice input Python deps (must be in venv)
+pip install --quiet vosk pyaudio openwakeword 2>/dev/null && ok "Voice input Python deps installed" || \
+    warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword' in venv"
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
-# ── 6. Deploy Application ──
-step 6 "Deploying DRIFTER application"
+# ── 7. Deploy Application ──
+step 7 "Deploying DRIFTER application"
 
 # Source files
 SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py"
@@ -224,8 +226,8 @@ mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
 touch ${DRIFTER_DIR}/.env
 ok "Analyst data directories created"
 
-# ── 7. CAN Interface Setup ──
-step 7 "Configuring CAN interface"
+# ── 8. CAN Interface Setup ──
+step 8 "Configuring CAN interface"
 
 cp "${REPO_DIR}/config/setup-can.sh" /usr/local/bin/drifter-setup-can
 chmod +x /usr/local/bin/drifter-setup-can
@@ -247,8 +249,8 @@ else
     warn "Boot config not found at $BOOT_CFG — add entries manually (see config/boot-config.txt)"
 fi
 
-# ── 8. Wi-Fi Hotspot ──
-step 8 "Configuring Wi-Fi hotspot"
+# ── 9. Wi-Fi Hotspot ──
+step 9 "Configuring Wi-Fi hotspot"
 
 # Remove existing if present
 nmcli con show "MZ1312_DRIFTER" &>/dev/null && nmcli con delete "MZ1312_DRIFTER" &>/dev/null
@@ -269,8 +271,8 @@ nmcli con add type wifi \
 
 ok "Hotspot: MZ1312_DRIFTER / uncaged1312 / 10.42.0.1"
 
-# ── 9. systemd Services ──
-step 9 "Installing systemd services"
+# ── 10. systemd Services ──
+step 10 "Installing systemd services"
 
 # NanoMQ config
 if [ -d /etc/nanomq ]; then
@@ -290,7 +292,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
@@ -303,8 +305,8 @@ for svc in $SERVICES; do
     ok "Enabled: $svc"
 done
 
-# ── 10. RTL-SDR Blacklist ──
-step 10 "Configuring RTL-SDR"
+# ── 11. RTL-SDR Blacklist ──
+step 11 "Configuring RTL-SDR"
 
 # Blacklist the DVB-T kernel driver so rtl-sdr can use the device
 if [ ! -f /etc/modprobe.d/blacklist-rtlsdr.conf ]; then
@@ -319,8 +321,8 @@ else
     ok "RTL-SDR blacklist already configured"
 fi
 
-# ── 11. Initial Calibration Hint ──
-step 11 "Post-install calibration"
+# ── 12. Initial Calibration Hint ──
+step 12 "Post-install calibration"
 echo -e "  After first warm-up drive, run calibration to learn baselines:"
 echo -e "  ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
 ok "Calibration tool ready"

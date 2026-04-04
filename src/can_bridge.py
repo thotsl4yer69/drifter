@@ -71,9 +71,6 @@ def _handle_signal(sig, frame):
     running = False
 
 
-signal.signal(signal.SIGTERM, _handle_signal)
-signal.signal(signal.SIGINT, _handle_signal)
-
 
 def find_can_interface():
     """Auto-detect the USB2CANFD interface."""
@@ -222,6 +219,9 @@ def request_dtcs(bus, mode=0x03):
 
 def main():
     global running, latest_values
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     # ── Find CAN Interface ──
     log.info("Searching for CAN interface...")

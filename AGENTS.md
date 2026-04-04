@@ -5,12 +5,26 @@ Brand: **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 
 ## Architecture
 
-**11 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.  
+**22 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.  
+Organised in three tiers:
+
+### Tier 1 — Core Diagnostics
+`config.py` (single source of truth) · `can_bridge.py` · `alert_engine.py` · `logger.py` · `voice_alerts.py` · `realdash_bridge.py` · `watchdog.py` · `home_sync.py` · `rf_monitor.py` · `calibrate.py` · `status.py`
+
+### Tier 2 — Intelligence
+`llm_mechanic.py` · `mechanic.py` (97KB knowledge base) · `llm_client.py` · `tool_executor.py` · `field_ops_kb.py` · `anomaly_monitor.py` · `session_analyst.py` · `db.py`
+
+### Tier 3 — Interface
+`web_dashboard.py` (HTTP + WebSocket + audio bridge) · `voice_input.py` (Vosk STT + OpenWakeWord) · `wardrive.py`  
+Non-Python: `screen_dash.html` · `fbmirror.c` · `start-hud.sh`
+
 Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, and service list.
 
-**Data flow**: `can_bridge.py` → MQTT (NanoMQ) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py`  
+**Data flow**: `can_bridge.py` → MQTT (NanoMQ) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `llm_mechanic.py` / `anomaly_monitor.py` / `session_analyst.py`  
 **MQTT topics** use the `TOPICS` dict from config — never hardcode topic strings. Hierarchy: `drifter/{domain}/{metric}`.  
-**RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.
+**RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.  
+**Web Dashboard**: HTTP on port 8080, WebSocket telemetry on 8081, audio on 8082.  
+**LLM Mechanic**: Ollama chat API with tool calling. RAG over `mechanic.py` knowledge base + `field_ops_kb.py`.
 
 ## Code Style
 
@@ -75,17 +89,23 @@ pytest tests/ -v
 
 # Deploy (on Pi)
 sudo ./install.sh && sudo reboot
+
+# Deploy from Windows
+.\deploy.ps1 -PiHost <ip>
 ```
 
-**Dependencies**: `python-can`, `paho-mqtt<2.0`, `psutil` — installed in venv at `/opt/drifter/venv`.  
+**Dependencies**: `python-can`, `paho-mqtt<2.0`, `psutil`, `websockets`, `requests` — installed in venv at `/opt/drifter/venv`.  
+**Optional deps**: `vosk`, `pyaudio`, `openwakeword` (voice input); `ollama` (LLM mechanic).  
 **Test path setup**: `conftest.py` inserts `src/` into `sys.path`. Import directly: `from config import ...`
 
 ## Project Conventions
 
 - **No hardcoded MQTT topics** — always use `TOPICS['key']` from config
+- **No hardcoded MQTT host/port** — always use `MQTT_HOST`, `MQTT_PORT` from config
 - **No class-based services** — flat `main()` + `if __name__ == '__main__': main()` pattern
-- **9 systemd services** must match `SERVICES` list in config and `services/*.service` files
-- **install.sh** `SRC_FILES` variable must list all 11 `.py` files for deployment
+- **Signal handlers inside `main()`** — never at module level (prevents import side effects)
+- **16 systemd services** must match `SERVICES` list in config and `services/*.service` files
+- **install.sh** `SRC_FILES` variable must list all 22 `.py` files for deployment
 - **RealDash XML** frame IDs and conversions must match `realdash_bridge.py` pack functions exactly
 - **DTC codes**: add to `XTYPE_DTC_LOOKUP` in config with `desc`, `cause`, `action`, `severity` keys
 - **TPMS thresholds**: tuned for 205/55R16 at factory 30 PSI (warn 26, crit 20)
@@ -93,7 +113,8 @@ sudo ./install.sh && sudo reboot
 
 ## Security
 
-- Zero cloud — all processing is local on the Pi
+- Zero cloud — all processing is local on the Pi (Groq/Anthropic API in `llm_client.py` is optional, disabled by default)
 - Home sync uses `NANOB_USER` ("sentient") with `username_pw_set()` (no password)
 - Wi-Fi hotspot: SSID `MZ1312_DRIFTER`, PSK `uncaged1312`, subnet `10.42.0.1/24`
 - RTL-SDR decodes only — no transmit capability. Emergency bands detected but encrypted traffic (TETRA) is not decoded
+- LLM tool execution (`tool_executor.py`) has risk-level gating — dangerous commands require explicit authorization

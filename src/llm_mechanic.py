@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════
 
-from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL
+from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, MQTT_HOST, MQTT_PORT
 
 SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
 
@@ -648,7 +648,7 @@ class LLMMechanic:
         connected = False
         while not connected and self.running:
             try:
-                self.mqtt.connect("localhost", 1883, 60)
+                self.mqtt.connect(MQTT_HOST, MQTT_PORT, 60)
                 connected = True
                 log.info("Connected to MQTT broker")
             except Exception as e:

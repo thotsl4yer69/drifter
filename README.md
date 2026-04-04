@@ -173,6 +173,13 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
 | `drifter-watchdog` | Service health monitor + auto-restart | Yes |
 | `drifter-realdash` | MQTT → TCP CAN frame bridge for RealDash | Yes |
 | `drifter-rf` | RTL-SDR RF monitor — TPMS, spectrum, emergency bands | Yes |
+| `drifter-wardrive` | Passive Wi-Fi + Bluetooth scanning per drive | Yes |
+| `drifter-dashboard` | Web dashboard (HTTP :8080, WS :8081, audio :8082) | Yes |
+| `drifter-anomaly` | Z-score anomaly detection on telemetry | Yes |
+| `drifter-analyst` | Drive session analysis and reporting | Yes |
+| `drifter-voicein` | Vosk STT + OpenWakeWord voice input | Yes |
+| `drifter-fbmirror` | Framebuffer mirror for SPI LCD HUD | Yes |
+| `drifter-llm` | LLM mechanic (Ollama) — conversational diagnosis | No (optional) |
 
 ## MQTT Topics
 
