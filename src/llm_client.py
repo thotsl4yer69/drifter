@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — Model-Agnostic LLM Client
-Primary: Groq (Llama 3.3 70B, free tier)
-Fallback: Claude (claude-sonnet-4-6) on any failure
+Primary: Ollama (local, offline)
+Fallback: Groq (Llama 3.3 70B, free tier) → Claude (claude-sonnet-4-6)
 UNCAGED TECHNOLOGY — EST 1991
 """
 
@@ -14,6 +14,8 @@ from typing import Optional
 from config import (
     GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL,
     ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
+    OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    LLM_PRIMARY,
 )
 
 log = logging.getLogger(__name__)
@@ -61,6 +63,35 @@ Rules:
 """
 
 TIMEOUT_SECONDS = 45
+
+
+def _call_ollama(prompt: str) -> dict:
+    """Call local Ollama instance. Raises on any failure."""
+    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+        "format": "json",
+        "options": {
+            "temperature": 0.3,
+            "num_predict": 1000,
+        },
+    }
+    resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    text = data.get("message", {}).get("content", "")
+    tokens = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)
+    return {
+        "text": text,
+        "model": f"ollama/{OLLAMA_MODEL}",
+        "tokens": tokens,
+    }
 
 
 def _call_groq(prompt: str) -> dict:
@@ -121,18 +152,21 @@ def query_llm(prompt: str) -> dict:
     """
     Query the LLM with automatic fallback.
     Returns: {"text": str, "model": str, "tokens": int}
+    Priority configurable via LLM_PRIMARY env var.
     """
-    try:
-        result = _call_groq(prompt)
-        log.info(f"Groq response: {result['tokens']} tokens")
-        return result
-    except Exception as e:
-        log.warning(f"Groq failed ({e}), falling back to Claude")
+    if LLM_PRIMARY == "ollama":
+        chain = [("Ollama", _call_ollama), ("Groq", _call_groq), ("Claude", _call_claude)]
+    else:
+        chain = [("Groq", _call_groq), ("Claude", _call_claude), ("Ollama", _call_ollama)]
 
-    try:
-        result = _call_claude(prompt)
-        log.info(f"Claude response: {result['tokens']} tokens")
-        return result
-    except Exception as e:
-        log.error(f"Claude also failed: {e}")
-        raise RuntimeError("All LLM backends failed") from e
+    last_error = None
+    for name, fn in chain:
+        try:
+            result = fn(prompt)
+            log.info(f"{name} response: {result['tokens']} tokens")
+            return result
+        except Exception as e:
+            log.warning(f"{name} failed ({e}), trying next backend")
+            last_error = e
+
+    raise RuntimeError("All LLM backends failed") from last_error

@@ -151,6 +151,13 @@ def parse_report(raw_text: str) -> dict:
         text = '\n'.join(text.split('\n')[1:])
         if text.endswith('```'):
             text = text[:-3]
+    # Extract JSON object if surrounded by extra text
+    text = text.strip()
+    if not text.startswith('{'):
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end > start:
+            text = text[start:end + 1]
     try:
         report = json.loads(text)
         report['parse_error'] = False

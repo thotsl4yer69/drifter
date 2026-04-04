@@ -57,6 +57,20 @@ def test_parse_report_invalid_json_sets_error_flag():
     assert result['parse_error'] is True
     assert 'raw_response' in result
 
+def test_parse_report_extracts_json_from_surrounding_text():
+    from session_analyst import parse_report
+    raw = 'Here is my analysis: {"primary_suspect": {"diagnosis": "Thermostat"}, "safety_critical": false} Hope this helps!'
+    result = parse_report(raw)
+    assert result['parse_error'] is False
+    assert result['primary_suspect']['diagnosis'] == 'Thermostat'
+
+def test_parse_report_handles_markdown_fences():
+    from session_analyst import parse_report
+    raw = '```json\n{"primary_suspect": {"diagnosis": "Coil pack"}, "safety_critical": true}\n```'
+    result = parse_report(raw)
+    assert result['parse_error'] is False
+    assert result['primary_suspect']['diagnosis'] == 'Coil pack'
+
 def test_compute_sensor_avgs_from_jsonl(tmp_path):
     from session_analyst import compute_sensor_avgs
     # Write a mock JSONL file

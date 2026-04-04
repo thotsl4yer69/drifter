@@ -1,0 +1,17 @@
+[Unit]
+Description=MZ1312 DRIFTER Voice Input (STT + Wake Word)
+After=nanomq.service sound.target
+Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/voice_input.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

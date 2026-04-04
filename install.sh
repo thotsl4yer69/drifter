@@ -145,9 +145,30 @@ fi
 
 # Pull the mechanic model
 if command -v ollama &>/dev/null; then
-    step 5 "Pulling LLM model (llama3.2:3b)"
-    ollama pull llama3.2:3b 2>/dev/null && ok "LLM model ready" || \
-        warn "Could not pull LLM model — run 'ollama pull llama3.2:3b' manually"
+    step 5 "Pulling LLM model (qwen3.5:7b)"
+    ollama pull qwen3.5:7b 2>/dev/null && ok "LLM model ready (qwen3.5:7b)" || \
+        warn "Could not pull LLM model — run 'ollama pull qwen3.5:7b' manually"
+fi
+
+# ── 5b. Voice Input (STT + Wake Word) ──
+step 5 "Installing voice input dependencies"
+apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
+pip install --quiet vosk pyaudio openwakeword 2>/dev/null && ok "Voice input deps installed" || \
+    warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword' manually"
+
+# Download Vosk model
+VOSK_MODEL_DIR="${DRIFTER_DIR}/vosk-models"
+VOSK_MODEL_NAME="vosk-model-small-en-us-0.15"
+if [ -d "${VOSK_MODEL_DIR}/${VOSK_MODEL_NAME}" ]; then
+    ok "Vosk model already present"
+else
+    mkdir -p "$VOSK_MODEL_DIR"
+    VOSK_URL="https://alphacephei.com/vosk/models/${VOSK_MODEL_NAME}.zip"
+    curl -sL "$VOSK_URL" -o "/tmp/${VOSK_MODEL_NAME}.zip" 2>/dev/null && \
+    unzip -qo "/tmp/${VOSK_MODEL_NAME}.zip" -d "$VOSK_MODEL_DIR" 2>/dev/null && \
+    rm -f "/tmp/${VOSK_MODEL_NAME}.zip" && \
+    ok "Vosk STT model downloaded" || \
+    warn "Could not download Vosk model — voice input STT unavailable"
 fi
 
 # ── 6. Python Environment ──
@@ -168,7 +189,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
