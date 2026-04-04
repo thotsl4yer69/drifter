@@ -160,9 +160,26 @@ def speak(text):
 
 
 def on_message(client, userdata, msg):
-    """Handle alert messages with X-Type aware speech."""
+    """Handle alert messages, LLM responses, and voice commands."""
     try:
         data = json.loads(msg.payload)
+        topic = msg.topic
+
+        # LLM conversational response — speak it
+        if topic == TOPICS.get('llm_response'):
+            response = data.get('response', '')
+            if response:
+                speak(response)
+            return
+
+        # Voice command (tool confirmation requests, status messages)
+        if topic == TOPICS.get('voice_command'):
+            message = data.get('message', '')
+            if message:
+                speak(message)
+            return
+
+        # Alert messages
         level = data.get('level', 0)
         message = data.get('message', '')
 
@@ -222,6 +239,8 @@ def main():
         return
 
     client.subscribe(TOPICS['alert_message'])
+    client.subscribe(TOPICS['llm_response'])
+    client.subscribe(TOPICS['voice_command'])
     client.loop_start()
 
     # Startup announcement — X-Type specific

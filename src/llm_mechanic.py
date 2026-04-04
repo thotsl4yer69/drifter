@@ -24,6 +24,17 @@ from mechanic import (
     TELEMETRY_INTERPRETATION, CAN_ARCHITECTURE, AUSTRALIAN_SPECS,
     search as kb_search, get_dtc_info, get_telemetry_context
 )
+# Field operations knowledge base (emergency, RF, security, survival)
+try:
+    from field_ops_kb import search as field_ops_search
+except ImportError:
+    field_ops_search = None
+# Tool execution engine (V3SP3R pattern)
+try:
+    from tool_executor import execute_tool, update_telemetry_cache
+except ImportError:
+    execute_tool = None
+    update_telemetry_cache = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,10 +47,7 @@ log = logging.getLogger(__name__)
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════
 
-OLLAMA_HOST = "localhost"
-OLLAMA_PORT = 11434
-OLLAMA_MODEL = "llama3.2:3b"  # 3B parameter model, fits on Pi 5
-# Alternatives: "phi3:3.8b", "qwen2.5:3b", "gemma2:2b"
+from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL
 
 SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
 
@@ -75,7 +83,107 @@ When responding:
 
 Current vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6), AWD, Jatco JF506E, Australian-spec RHD
 Current date: {current_date}
+
+You are also a field operations advisor running on Kali Linux with an RTL-SDR dongle.
+
+Your additional domains:
+- RF operations: spectrum analysis, signal identification, emergency frequencies, TPMS, ADS-B
+- Kali Linux security tools: network recon, wireless analysis, Bluetooth scanning, RF tools
+- Emergency/survival: off-grid comms, signaling, navigation, first aid, Australian conditions
+
+You have tools available to execute commands, scan RF spectrum, scan networks, query knowledge
+bases, and read vehicle telemetry. Use them when the user asks you to DO something, not just
+explain something. Always explain what you're doing and what the results mean.
+
+For security operations: you are authorized for defensive testing and reconnaissance on the
+owner's own networks and equipment. Passive scanning is always acceptable.
 """
+
+# ═══════════════════════════════════════════════════════════════════
+#  Tool Definitions (Ollama native tool calling)
+# ═══════════════════════════════════════════════════════════════════
+
+DRIFTER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Execute a system command on the Kali Linux Pi",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to execute"},
+                    "reason": {"type": "string", "description": "Why this command is needed"},
+                },
+                "required": ["command", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rf_scan",
+            "description": "Scan RF spectrum or decode signals using RTL-SDR",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["spectrum", "decode_433", "listen_freq", "adsb", "emergency"]},
+                    "frequency_mhz": {"type": "number", "description": "Target frequency in MHz (for listen_freq mode)"},
+                    "duration_sec": {"type": "integer", "description": "Scan duration in seconds", "default": 10},
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "network_scan",
+            "description": "Scan local network or wireless environment",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["discover", "port_scan", "wifi_list", "bluetooth", "arp"]},
+                    "target": {"type": "string", "description": "Target IP/range (for port_scan mode)"},
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_knowledge",
+            "description": "Search DRIFTER knowledge bases (vehicle, RF, emergency, security)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "domain": {"type": "string", "enum": ["vehicle", "rf", "emergency", "security", "all"]},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_vehicle_telemetry",
+            "description": "Get current live vehicle sensor data from OBD-II/CAN bus",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sensors": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Sensor names: rpm, coolant, voltage, stft1, ltft1, maf, iat, throttle, speed, dtcs"
+                    },
+                },
+                "required": ["sensors"],
+            },
+        },
+    },
+]
 
 # ═══════════════════════════════════════════════════════════════════
 #  Conversation Memory
@@ -206,52 +314,94 @@ class OllamaClient:
             log.warning(f"Ollama not available: {e}")
             self.available = False
     
-    def generate(self, prompt: str, context: List[Dict] = None, 
-                 temperature: float = 0.7, max_tokens: int = 500) -> str:
-        """Generate response from LLM."""
+    def generate(self, prompt: str, context: List[Dict] = None,
+                 temperature: float = 0.7, max_tokens: int = 500,
+                 tools: List[Dict] = None,
+                 mqtt_client=None) -> str:
+        """Generate response from LLM with optional tool calling.
+
+        When *tools* is provided, enters a tool-calling loop:
+        1. Send messages + tools to Ollama
+        2. If model returns tool_calls, execute each via tool_executor
+        3. Feed results back as 'tool' role messages
+        4. Repeat until model returns a text response (no tool_calls)
+        Max 5 iterations to prevent infinite loops.
+        """
         import urllib.request
-        
+        from config import OLLAMA_TIMEOUT
+
         if not self.available:
             return "[LLM offline - install Ollama and pull model]"
-        
+
         messages = []
-        
+
         # Add system prompt with current date
         sys_prompt = SYSTEM_PROMPT.format(current_date=datetime.now().strftime("%Y-%m-%d"))
         messages.append({"role": "system", "content": sys_prompt})
-        
+
         # Add conversation context
         if context:
             messages.extend(context)
-        
+
         # Add current prompt
         messages.append({"role": "user", "content": prompt})
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens
+
+        max_iterations = 5
+        for iteration in range(max_iterations):
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens
+                }
             }
-        }
-        
-        try:
-            req = urllib.request.Request(
-                f"{self.base_url}/api/chat",
-                data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"},
-                method='POST'
-            )
-            
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                result = json.loads(resp.read().decode())
-                return result.get('message', {}).get('content', '[No response]')
-                
-        except Exception as e:
-            log.error(f"LLM generation failed: {e}")
-            return f"[Error: {str(e)}]"
+            if tools and execute_tool:
+                payload["tools"] = tools
+
+            try:
+                req = urllib.request.Request(
+                    f"{self.base_url}/api/chat",
+                    data=json.dumps(payload).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method='POST'
+                )
+
+                with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as resp:
+                    result = json.loads(resp.read().decode())
+
+                msg = result.get('message', {})
+                tool_calls = msg.get('tool_calls', [])
+
+                # If no tool calls, return the text response
+                if not tool_calls:
+                    return msg.get('content', '[No response]')
+
+                # Process tool calls
+                messages.append(msg)  # Add assistant message with tool_calls
+                for tc in tool_calls:
+                    fn = tc.get('function', {})
+                    tool_name = fn.get('name', '')
+                    tool_args = fn.get('arguments', {})
+                    log.info(f"Tool call: {tool_name}({json.dumps(tool_args)[:100]})")
+
+                    tool_result = execute_tool(
+                        tool_name, tool_args, mqtt_client=mqtt_client
+                    )
+                    # Add tool result as 'tool' role message
+                    messages.append({
+                        "role": "tool",
+                        "content": json.dumps(tool_result),
+                    })
+                    log.info(f"Tool result: {tool_result.get('risk_level', '?')} "
+                             f"success={tool_result.get('success', '?')}")
+
+            except Exception as e:
+                log.error(f"LLM generation failed: {e}")
+                return f"[Error: {str(e)}]"
+
+        return "[Tool calling limit reached - please rephrase your request]"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -409,6 +559,8 @@ class LLMMechanic:
 
             # Update telemetry
             self.telemetry.update(topic, data)
+            if update_telemetry_cache:
+                update_telemetry_cache(topic, msg.payload)
 
             # Handle LLM queries — spawn a daemon thread so the MQTT loop
             # is never blocked.  asyncio.create_task() cannot be used here
@@ -429,35 +581,48 @@ class LLMMechanic:
     def _process_query(self, query: str, session_id: str):
         """Process a user query with full context (runs in a worker thread)."""
         log.info(f"Query: {query[:50]}...")
-        
+
         # Build context
         context_parts = []
-        
+
         # Add telemetry summary
         telem = self.telemetry.get_summary()
         if telem:
             context_parts.append(f"CURRENT VEHICLE STATE:\n{telem}")
-        
-        # Add relevant knowledge base entries
+
+        # Add relevant knowledge base entries (vehicle)
         kb_context = self.rag.retrieve(query)
         if kb_context:
             context_parts.append(f"RELEVANT KNOWLEDGE:\n{kb_context}")
-        
+
+        # Add field ops knowledge (RF, emergency, security, survival)
+        if field_ops_search:
+            field_results = field_ops_search(query)
+            for r in field_results[:3]:
+                entry = r['data']
+                parts = [f"FIELD OPS: {entry['title']}"]
+                parts.append(entry.get('content', '')[:500])
+                if entry.get('commands'):
+                    parts.append(f"Commands: {'; '.join(entry['commands'][:3])}")
+                context_parts.append('\n'.join(parts))
+
         # Build full prompt
         full_prompt = f"""{query}
 
 ---
 
 {chr(10).join(context_parts)}"""
-        
+
         # Get conversation history
         conv_history = self.memory.get_context()
-        
-        # Generate response
+
+        # Generate response with tool calling
         response = self.llm.generate(
             prompt=full_prompt,
             context=conv_history,
-            temperature=0.7
+            temperature=0.7,
+            tools=DRIFTER_TOOLS,
+            mqtt_client=self.mqtt,
         )
         
         # Update memory

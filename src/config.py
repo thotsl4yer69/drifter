@@ -499,6 +499,12 @@ TOPICS = {
     'analysis_report': 'drifter/analysis/report',
     'analysis_request': 'drifter/analysis/request',
     'anomaly_event': 'drifter/anomaly/event',
+    # Voice Input
+    'voice_transcript': 'drifter/voice/transcript',
+    'voice_command': 'drifter/voice/command',
+    # Tool Executor
+    'tool_request': 'drifter/tool/request',
+    'tool_result': 'drifter/tool/result',
 }
 
 # ── LLM Analyst ──
@@ -508,6 +514,26 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+# ── LLM Backend (Ollama — local, offline) ──
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
+OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:7b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+LLM_PRIMARY = os.getenv("LLM_PRIMARY", "ollama")  # "ollama" = offline-first, "groq" = cloud-first
+
+# ── Voice Input (STT) ──
+VOSK_MODEL_DIR = DRIFTER_DIR / "vosk-models" / "vosk-model-small-en-us-0.15"
+WAKE_WORD_MODEL = "hey_drifter"
+WAKE_WORD_THRESHOLD = 0.7
+PTT_GPIO_PIN = 17                    # GPIO pin for push-to-talk button
+VOICE_SILENCE_TIMEOUT = 1.5          # seconds of silence to end recording
+VOICE_MAX_RECORD = 30                # max seconds per utterance
+
+# ── Tool Executor ──
+TOOL_EXEC_TIMEOUT = 30               # seconds per command
+TOOL_EXEC_LONG_TIMEOUT = 300         # for long scans
+TOOL_CONFIRM_TIMEOUT = 15            # seconds to wait for voice confirmation
 
 # ── Anomaly Detection ──
 ANOMALY_ROLLING_WINDOW = 60        # readings per sensor
@@ -536,5 +562,6 @@ SERVICES = [
     "drifter-rf",
     "drifter-wardrive",
     "drifter-dashboard",
-    # drifter-llm removed — superseded by drifter-analyst
+    "drifter-voicein",
+    "drifter-llm",
 ]
