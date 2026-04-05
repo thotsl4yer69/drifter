@@ -1,0 +1,27 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\mazla\.antigravity\repos\drifter
+plugins: anyio-4.12.1
+collected 119 items
+
+tests\test_alert_engine.py ............................................. [ 37%]
+...                                                                      [ 40%]
+tests\test_anomaly_monitor.py .........                                  [ 47%]
+tests\test_can_bridge.py .................                               [ 62%]
+tests\test_db.py .....                                                   [ 66%]
+tests\test_llm_client.py ...........                                     [ 75%]
+tests\test_session_analyst.py ......                                     [ 80%]
+tests\test_tool_executor.py .........                                    [ 88%]
+tests\test_wardrive.py ..............                                    [100%]
+
+============================== warnings summary ===============================
+tests/test_anomaly_monitor.py::test_cold_start_filter_suppresses_anomalies
+tests/test_anomaly_monitor.py::test_warm_engine_logs_anomaly
+tests/test_anomaly_monitor.py::test_rpm_instability_at_idle
+tests/test_anomaly_monitor.py::test_check_sensor_rejects_non_numeric_value
+tests/test_anomaly_monitor.py::test_float_coercion_in_on_message
+  C:\Users\mazla\.antigravity\repos\drifter\src\anomaly_monitor.py:87: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+    self.client = mqtt.Client(client_id="drifter-anomaly-monitor")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 119 passed, 5 warnings in 1.14s =======================
