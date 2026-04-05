@@ -200,6 +200,12 @@ for f in $SRC_FILES; do
 done
 ok "Python services deployed to ${DRIFTER_DIR}"
 
+# Data files
+if [ -f "${REPO_DIR}/src/knowledge_base.json" ]; then
+    cp "${REPO_DIR}/src/knowledge_base.json" "${DRIFTER_DIR}/"
+    ok "Knowledge base deployed"
+fi
+
 # Screen HUD
 cp "${REPO_DIR}/src/screen_dash.html" "${DRIFTER_DIR}/"
 cp "${REPO_DIR}/src/start-hud.sh" "${DRIFTER_DIR}/" 2>/dev/null && chmod +x "${DRIFTER_DIR}/start-hud.sh"
