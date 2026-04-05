@@ -29,7 +29,6 @@ log = logging.getLogger(__name__)
 # ── State ──
 last_mqtt_data = {}        # topic → timestamp of last message
 service_restarts = {}      # service → restart count
-running = True
 
 
 def get_service_status(name):
@@ -152,12 +151,12 @@ def check_health(mqtt_client):
 
 
 def main():
-    global running
-
     log.info("DRIFTER Watchdog starting...")
 
+    running = True
+
     def _handle_signal(sig, frame):
-        global running
+        nonlocal running
         running = False
 
     signal.signal(signal.SIGTERM, _handle_signal)

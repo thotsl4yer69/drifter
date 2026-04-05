@@ -40,7 +40,6 @@ latest = {
 alert_message = ""
 clients = []
 clients_lock = threading.Lock()
-running = True
 
 # RealDash frame header: 0x44, 0x33, 0x22, 0x11
 REALDASH_HEADER = bytes([0x44, 0x33, 0x22, 0x11])
@@ -206,6 +205,7 @@ def handle_client(conn, addr):
         clients.append(conn)
 
     try:
+        text_frame_counter = 0
         while running:
             try:
                 # Send all frames
@@ -219,9 +219,11 @@ def handle_client(conn, addr):
                 )
                 conn.sendall(frames)
 
-                # Send text frame less frequently (every 500ms)
-                if alert_message:
+                # Send text frame less frequently (every ~500ms = every 10th iteration)
+                text_frame_counter += 1
+                if alert_message and text_frame_counter >= 10:
                     conn.sendall(pack_alert_text_frame())
+                    text_frame_counter = 0
 
                 time.sleep(0.05)  # 20 Hz
 
@@ -264,13 +266,13 @@ def tcp_server():
 
 
 def main():
-    global running
-
-    log.info("DRIFTER RealDash Bridge starting...")
+    running = True
 
     def _handle_signal(sig, frame):
-        global running
+        nonlocal running
         running = False
+
+    log.info("DRIFTER RealDash Bridge starting...")
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

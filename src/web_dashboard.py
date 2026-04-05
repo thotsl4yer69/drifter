@@ -115,7 +115,9 @@ def check_hardware():
     for svc in ['drifter-canbridge', 'drifter-alerts', 'drifter-dashboard',
                 'drifter-watchdog', 'drifter-hotspot', 'drifter-rf',
                 'drifter-wardrive', 'drifter-voice', 'drifter-realdash',
-                'drifter-logger', 'drifter-homesync', 'mosquitto']:
+                'drifter-logger', 'drifter-homesync', 'drifter-anomaly',
+                'drifter-analyst', 'drifter-voicein', 'drifter-fbmirror',
+                'nanomq', 'mosquitto']:
         try:
             out = subprocess.run(['systemctl', 'is-active', svc],
                                  capture_output=True, text=True, timeout=3)

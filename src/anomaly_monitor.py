@@ -29,16 +29,16 @@ log = logging.getLogger(__name__)
 
 # Sensors to monitor with z-score detection
 MONITORED_SENSORS = {
-    'stft_b1': 'drifter/engine/stft1',
-    'stft_b2': 'drifter/engine/stft2',
-    'ltft_b1': 'drifter/engine/ltft1',
-    'ltft_b2': 'drifter/engine/ltft2',
-    'rpm':     'drifter/engine/rpm',
-    'coolant': 'drifter/engine/coolant',
-    'iat':     'drifter/engine/iat',
-    'maf':     'drifter/engine/maf',
-    'throttle':'drifter/engine/throttle',
-    'voltage': 'drifter/power/voltage',
+    'stft_b1': TOPICS['stft1'],
+    'stft_b2': TOPICS['stft2'],
+    'ltft_b1': TOPICS['ltft1'],
+    'ltft_b2': TOPICS['ltft2'],
+    'rpm':     TOPICS['rpm'],
+    'coolant': TOPICS['coolant'],
+    'iat':     TOPICS['iat'],
+    'maf':     TOPICS['maf'],
+    'throttle': TOPICS['throttle'],
+    'voltage': TOPICS['voltage'],
 }
 
 

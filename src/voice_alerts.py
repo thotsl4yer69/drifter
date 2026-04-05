@@ -31,6 +31,7 @@ AUDIO_DIR = Path("/tmp/drifter-audio")
 last_voice_time = 0
 last_spoken_msg = ""
 piper_available = False
+_mqtt_client = None  # Set in main() — reused by speak() for audio bridge
 
 
 def check_piper():
@@ -129,19 +130,15 @@ def speak(text):
                     spoke = True
 
         # Publish WAV via MQTT for web dashboard audio bridge
-        if wav_path.exists():
+        if wav_path.exists() and _mqtt_client is not None:
             try:
                 import base64
                 wav_data = wav_path.read_bytes()
-                # Publish as base64 on a dedicated topic
-                voice_mqtt = mqtt.Client(client_id="drifter-voice-wav")
-                voice_mqtt.connect(MQTT_HOST, MQTT_PORT, 10)
-                voice_mqtt.publish('drifter/audio/wav', json.dumps({
+                _mqtt_client.publish('drifter/audio/wav', json.dumps({
                     'text': text[:200],
                     'wav_b64': base64.b64encode(wav_data).decode(),
                     'ts': time.time()
                 }))
-                voice_mqtt.disconnect()
                 spoke = True
             except Exception as e:
                 log.debug(f"WAV publish failed: {e}")
@@ -223,7 +220,9 @@ def main():
     else:
         log.info("No local audio device — voice alerts routed to web dashboard")
 
+    global _mqtt_client
     client = mqtt.Client(client_id="drifter-voice")
+    _mqtt_client = client  # Reused by speak() for audio bridge publishing
     client.on_message = on_message
 
     connected = False

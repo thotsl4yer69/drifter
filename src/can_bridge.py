@@ -59,16 +59,10 @@ ERROR_LOG_INTERVAL = 30         # Only log CAN errors every N seconds
 latest_values = {}
 active_dtcs = []
 pending_dtcs = []
-running = True
 _consecutive_failures = 0
 _last_error_log = 0.0
 _suppressed_errors = 0
 
-
-def _handle_signal(sig, frame):
-    """Handle SIGTERM and SIGINT for clean systemd shutdown."""
-    global running
-    running = False
 
 
 
@@ -218,7 +212,13 @@ def request_dtcs(bus, mode=0x03):
 
 
 def main():
-    global running, latest_values
+    global latest_values
+
+    running = True
+
+    def _handle_signal(sig, frame):
+        nonlocal running
+        running = False
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

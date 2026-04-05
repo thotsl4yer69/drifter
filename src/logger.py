@@ -16,6 +16,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from collections import deque
+import threading
 import paho.mqtt.client as mqtt
 
 from config import (
@@ -31,6 +32,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 buffer = []
+_buffer_lock = threading.Lock()
 current_file = None
 current_date = None
 message_count = 0
@@ -168,12 +170,11 @@ def flush_buffer():
     """Write buffered data to disk."""
     global buffer, message_count
 
-    # Atomically swap buffer so MQTT thread appends into a new list while
-    # we safely iterate and write the old one.  Without this swap, entries
-    # appended after the for-loop exits but before buffer=[] would be cleared
-    # without ever being written to disk.
-    to_flush = buffer
-    buffer = []
+    # Atomically swap buffer under lock so MQTT thread appends into a new
+    # list while we safely iterate and write the old one.
+    with _buffer_lock:
+        to_flush = buffer
+        buffer = []
 
     if not to_flush:
         return
@@ -225,11 +226,12 @@ def on_message(client, userdata, msg):
     """Buffer incoming telemetry and update drive session."""
     try:
         data = json.loads(msg.payload)
-        buffer.append({
-            'topic': msg.topic,
-            'data': data,
-            'ts': time.time()
-        })
+        with _buffer_lock:
+            buffer.append({
+                'topic': msg.topic,
+                'data': data,
+                'ts': time.time()
+            })
 
         # Update drive session tracking
         value = data.get('value')

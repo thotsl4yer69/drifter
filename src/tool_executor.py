@@ -244,12 +244,19 @@ def _request_confirmation(command: str, risk: str, mqtt_client) -> bool:
 # ═══════════════════════════════════════════════════════════════════
 
 def _handle_run_command(arguments: dict, mqtt_client) -> dict:
-    """Execute an arbitrary shell command with risk-based gating."""
+    """Execute an arbitrary shell command with risk-based gating.
+
+    User-supplied commands are sanitised for shell metacharacters to prevent
+    injection.  Internal pre-defined commands (rf_scan, network_scan) bypass
+    this check because they are trusted templates.
+    """
     command = arguments.get('command', '').strip()
     if not command:
         return {'success': False, 'output': 'No command provided', 'risk_level': 'BLOCKED', 'command': ''}
 
-    # Sanitize: reject shell metacharacter injection in user-provided commands
+    # Sanitize: reject shell metacharacter injection in user-provided commands.
+    # Internal handlers (_handle_rf_scan, _handle_network_scan) call
+    # _execute_shell directly with trusted templates — they skip this check.
     if _SHELL_META.search(command):
         return {
             'success': False,
@@ -293,7 +300,11 @@ def _handle_rf_scan(arguments: dict, mqtt_client) -> dict:
 
 
 def _handle_network_scan(arguments: dict, mqtt_client) -> dict:
-    """Map network scan mode to a pre-defined shell command and execute."""
+    """Map network scan mode to a pre-defined shell command and execute.
+
+    We sanitise only the *user-supplied* target parameter (not the trusted
+    command template which intentionally uses shell metacharacters like ; and ||).
+    """
     mode = arguments.get('mode', 'discover')
     target = arguments.get('target', '192.168.1.0/24')
 
@@ -305,6 +316,8 @@ def _handle_network_scan(arguments: dict, mqtt_client) -> dict:
     if not template:
         return {'success': False, 'output': f'Unknown network scan mode: {mode}', 'risk_level': 'LOW', 'command': ''}
 
+    # Build command from trusted template + sanitised target.
+    # classify_risk runs on the expanded command to apply confirmation gates.
     command = template.format(target=target)
     risk = classify_risk(command)
     log.info("TOOL network_scan [%s] mode=%s: %s", risk, mode, command)

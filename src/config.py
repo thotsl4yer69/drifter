@@ -435,7 +435,7 @@ EMERGENCY_SCAN_DWELL = 5        # Seconds per frequency
 # ADS-B aircraft tracking (1090 MHz, requires dump1090)
 ADSB_SCAN_INTERVAL = 300        # ADS-B scan every 5 min (pauses TPMS)
 ADSB_SCAN_DURATION = 25         # Seconds to gather aircraft data
-ADSB_JSON_DIR = Path('/tmp/drifter_adsb')  # dump1090 write-json target
+ADSB_JSON_DIR = DRIFTER_DIR / 'data' / 'adsb'  # dump1090 write-json target
 DUMP1090_BIN = 'dump1090'       # or full path if needed
 
 # ── Wardrive ──
@@ -548,6 +548,8 @@ REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
+# Canonical list of 15 active systemd services.
+# drifter-llm was superseded by drifter-analyst and is disabled in install.sh.
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",
@@ -564,5 +566,4 @@ SERVICES = [
     "drifter-dashboard",
     "drifter-fbmirror",
     "drifter-voicein",
-    "drifter-llm",
 ]
