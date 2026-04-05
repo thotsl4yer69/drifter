@@ -40,6 +40,7 @@ latest = {
 alert_message = ""
 clients = []
 clients_lock = threading.Lock()
+running = True
 
 # RealDash frame header: 0x44, 0x33, 0x22, 0x11
 REALDASH_HEADER = bytes([0x44, 0x33, 0x22, 0x11])
@@ -266,10 +267,10 @@ def tcp_server():
 
 
 def main():
-    running = True
+    global running
 
     def _handle_signal(sig, frame):
-        nonlocal running
+        global running
         running = False
 
     log.info("DRIFTER RealDash Bridge starting...")

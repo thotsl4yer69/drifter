@@ -1,5 +1,5 @@
 [Unit]
-Description=DRIFTER LLM Mechanic
+Description=MZ1312 DRIFTER LLM Mechanic (superseded — disabled)
 After=network.target drifter-canbridge.service
 Wants=network.target
 
