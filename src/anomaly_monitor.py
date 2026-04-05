@@ -197,7 +197,11 @@ class AnomalyMonitor:
             except Exception as e:
                 log.warning(f"MQTT connect failed: {e}")
                 time.sleep(3)
-        self.client.subscribe("drifter/#")
+        # Subscribe to only the sensors we actually monitor + session lifecycle
+        for topic in MONITORED_SENSORS.values():
+            self.client.subscribe(topic)
+        self.client.subscribe(TOPICS.get('session', 'drifter/session'))
+        self.client.subscribe(TOPICS.get('rpm', 'drifter/engine/rpm'))  # for idle detection
         self.client.loop_start()
         log.info("Anomaly Monitor LIVE")
         while self.running:

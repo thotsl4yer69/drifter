@@ -46,26 +46,35 @@ TOPIC_TO_SENSOR = {
 
 
 def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> Dict[str, float]:
-    """Read JSONL log and compute per-sensor averages within the session time range."""
-    buckets: Dict[str, List[float]] = {}
+    """Read JSONL log and compute per-sensor averages within the session time range.
+
+    Uses running sums instead of accumulating all values in memory,
+    so this stays O(1) per sensor even for multi-hour drives.
+    """
+    sums: Dict[str, float] = {}
+    counts: Dict[str, int] = {}
     try:
         with open(log_file) as f:
             for line in f:
                 try:
                     rec = json.loads(line)
-                    if not (start_ts <= rec.get('ts', 0) <= end_ts):
+                    ts = rec.get('ts', 0)
+                    if ts < start_ts:
                         continue
+                    if ts > end_ts:
+                        break  # JSONL is time-ordered — no need to read further
                     sensor = TOPIC_TO_SENSOR.get(rec.get('topic', ''))
                     if sensor is None:
                         continue
                     value = rec.get('data', {}).get('value')
                     if value is not None:
-                        buckets.setdefault(sensor, []).append(float(value))
+                        sums[sensor] = sums.get(sensor, 0.0) + float(value)
+                        counts[sensor] = counts.get(sensor, 0) + 1
                 except (json.JSONDecodeError, KeyError):
                     continue
     except FileNotFoundError:
         log.warning(f"JSONL log not found: {log_file}")
-    return {k: sum(v) / len(v) for k, v in buckets.items() if v}
+    return {k: sums[k] / counts[k] for k in sums if counts.get(k, 0) > 0}
 
 
 def build_context_packet(

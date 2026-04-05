@@ -7,6 +7,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import sqlite3
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -50,11 +51,18 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 """
 
+# Thread-local storage: each thread gets its own reusable connection
+# instead of opening+closing the DB file on every single query.
+_local = threading.local()
+
 
 def _conn():
-    """Open a connection with row_factory for dict-like access."""
-    conn = sqlite3.connect(str(config.DB_PATH))
-    conn.row_factory = sqlite3.Row
+    """Return a per-thread reusable connection with row_factory."""
+    conn = getattr(_local, 'conn', None)
+    if conn is None:
+        conn = sqlite3.connect(str(config.DB_PATH), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        _local.conn = conn
     return conn
 
 
@@ -62,8 +70,9 @@ def init_db():
     """Create tables if they don't exist."""
     config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    with _conn() as conn:
-        conn.executescript(SCHEMA)
+    conn = _conn()
+    conn.executescript(SCHEMA)
+    conn.commit()
     log.info(f"DB initialised at {config.DB_PATH}")
 
 
@@ -74,59 +83,62 @@ def insert_session(session: dict):
         :avg_stft_b1, :avg_stft_b2, :avg_ltft_b1, :avg_ltft_b2,
         :idle_rpm_stddev, :dtcs_seen, :alert_count
     )"""
-    with _conn() as conn:
-        conn.execute(sql, session)
+    conn = _conn()
+    conn.execute(sql, session)
+    conn.commit()
 
 
 def insert_anomaly_event(event: dict):
     sql = """INSERT INTO anomaly_events
         (session_id, ts, sensor, value, z_score, severity, context_json)
         VALUES (:session_id, :ts, :sensor, :value, :z_score, :severity, :context_json)"""
-    with _conn() as conn:
-        conn.execute(sql, event)
+    conn = _conn()
+    conn.execute(sql, event)
+    conn.commit()
 
 
 def insert_report(report: dict):
     sql = """INSERT INTO reports
         (session_id, generated_at, model_used, report_json, tokens_used)
         VALUES (:session_id, :generated_at, :model_used, :report_json, :tokens_used)"""
-    with _conn() as conn:
-        conn.execute(sql, report)
+    conn = _conn()
+    conn.execute(sql, report)
+    conn.commit()
 
 
 def get_session_anomalies(session_id: str) -> list:
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM anomaly_events WHERE session_id=? ORDER BY ts",
-            (session_id,)
-        ).fetchall()
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT * FROM anomaly_events WHERE session_id=? ORDER BY ts",
+        (session_id,)
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_recent_sessions(n: int) -> list:
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM sessions ORDER BY start_ts DESC LIMIT ?", (n,)
-        ).fetchall()
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT * FROM sessions ORDER BY start_ts DESC LIMIT ?", (n,)
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_recent_reports(n: int) -> list:
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM reports ORDER BY generated_at DESC LIMIT ?", (n,)
-        ).fetchall()
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT * FROM reports ORDER BY generated_at DESC LIMIT ?", (n,)
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_baseline(exclude_session_id: str, n: int = 10) -> Optional[dict]:
     """Return column averages for the last N sessions excluding the current one."""
-    with _conn() as conn:
-        rows = conn.execute(
-            """SELECT * FROM sessions WHERE session_id != ?
-               ORDER BY start_ts DESC LIMIT ?""",
-            (exclude_session_id, n)
-        ).fetchall()
+    conn = _conn()
+    rows = conn.execute(
+        """SELECT * FROM sessions WHERE session_id != ?
+           ORDER BY start_ts DESC LIMIT ?""",
+        (exclude_session_id, n)
+    ).fetchall()
     if not rows:
         return None
     cols = ['distance_km', 'duration_seconds', 'max_rpm', 'max_speed',

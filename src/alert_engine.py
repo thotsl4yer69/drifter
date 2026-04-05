@@ -804,6 +804,13 @@ current_alert_msg = "Systems nominal"
 last_alert_time = 0
 ALERT_COOLDOWN = 5  # Don't spam alerts faster than every 5s
 
+# Hysteresis: once a rule triggers, it must clear for HYSTERESIS_CYCLES
+# consecutive evaluations before the alert is retracted.  This prevents
+# flickering when sensor values hover near a threshold boundary.
+HYSTERESIS_CYCLES = 3
+_active_alerts = {}   # rule_name -> (level, message)
+_clear_counters = {}  # rule_name -> consecutive-clear count
+
 
 def on_message(client, userdata, msg):
     """Ingest telemetry from CAN bridge."""
@@ -867,23 +874,46 @@ def on_message(client, userdata, msg):
 
 
 def evaluate_rules(mqtt_client):
-    """Run all diagnostic rules and publish the highest-priority alert."""
+    """Run all diagnostic rules, apply hysteresis, and publish alerts.
+
+    Publishes:
+      - alert_level / alert_message: the highest-severity alert (retained)
+      - drifter/alert/active: list of ALL currently-active alerts (retained)
+    """
     global current_alert_level, current_alert_msg, last_alert_time
 
     now = time.time()
     if now - last_alert_time < ALERT_COOLDOWN:
         return
 
-    highest_level = LEVEL_OK
-    highest_msg = "Systems nominal"
-
+    # Evaluate every rule and collect results
+    triggered = {}  # rule_name -> (level, message)
     for rule in ALL_RULES:
         result = rule(state)
-        if result and result[0] > highest_level:
-            highest_level = result[0]
-            highest_msg = result[1]
+        if result:
+            triggered[rule.__name__] = result
 
-    # Only publish if something changed or it's been a while
+    # Apply hysteresis: a rule must clear for HYSTERESIS_CYCLES before removal
+    for name, alert in triggered.items():
+        _active_alerts[name] = alert
+        _clear_counters[name] = 0
+
+    for name in list(_active_alerts):
+        if name not in triggered:
+            _clear_counters[name] = _clear_counters.get(name, 0) + 1
+            if _clear_counters[name] >= HYSTERESIS_CYCLES:
+                del _active_alerts[name]
+                _clear_counters.pop(name, None)
+
+    # Determine highest severity from active alerts
+    highest_level = LEVEL_OK
+    highest_msg = "Systems nominal"
+    for level, msg in _active_alerts.values():
+        if level > highest_level:
+            highest_level = level
+            highest_msg = msg
+
+    # Only publish if something changed
     if highest_level != current_alert_level or highest_msg != current_alert_msg:
         current_alert_level = highest_level
         current_alert_msg = highest_msg
@@ -902,8 +932,21 @@ def evaluate_rules(mqtt_client):
             'ts': now
         }), retain=True)
 
+        # Publish ALL active alerts so consumers can see multi-condition states
+        all_alerts = [
+            {'rule': name, 'level': lvl, 'name': LEVEL_NAMES[lvl], 'message': msg}
+            for name, (lvl, msg) in sorted(_active_alerts.items(), key=lambda x: -x[1][0])
+        ]
+        mqtt_client.publish('drifter/alert/active', json.dumps({
+            'alerts': all_alerts,
+            'count': len(all_alerts),
+            'ts': now
+        }), retain=True)
+
         if highest_level >= LEVEL_AMBER:
             log.warning(f"[{LEVEL_NAMES[highest_level]}] {highest_msg}")
+            if len(all_alerts) > 1:
+                log.warning(f"  ({len(all_alerts)} total active alerts)")
         elif highest_level == LEVEL_INFO:
             log.info(f"[INFO] {highest_msg}")
 
@@ -950,12 +993,10 @@ def main():
     if not running:
         return
 
-    # Subscribe to all telemetry
-    client.subscribe("drifter/engine/#")
-    client.subscribe("drifter/vehicle/#")
-    client.subscribe("drifter/power/#")
-    client.subscribe("drifter/diag/#")
-    client.subscribe("drifter/rf/tpms/#")
+    # Subscribe to telemetry domains used by diagnostic rules.
+    # Uses wildcards matching the TOPICS hierarchy (drifter/{domain}/...).
+    for domain in ('engine', 'vehicle', 'power', 'diag', 'rf/tpms'):
+        client.subscribe(f"drifter/{domain}/#")
     client.loop_start()
 
     log.info("Alert Engine is LIVE — monitoring telemetry")

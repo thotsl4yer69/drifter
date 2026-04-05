@@ -54,6 +54,7 @@ latest_report = {}
 mqtt_client = None
 ws_clients = set()
 audio_ws_clients = set()
+_ws_loop = None  # Set in main() — avoids deprecated asyncio.get_event_loop()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -195,9 +196,10 @@ def on_message(client, userdata, msg):
 
         # Broadcast to WebSocket clients
         ws_msg = json.dumps({'topic': topic, 'data': data, 'ts': time.time()})
-        asyncio.get_event_loop().call_soon_threadsafe(
-            _broadcast_sync, ws_msg
-        )
+        if _ws_loop is not None:
+            _ws_loop.call_soon_threadsafe(
+                _broadcast_sync, ws_msg
+            )
     except (json.JSONDecodeError, RuntimeError):
         pass
 
@@ -1754,10 +1756,10 @@ def on_alert_message(client, userdata, msg):
                 last_audio_text = data.get('text', '')
                 last_audio_time = time.time()
                 try:
-                    loop = asyncio.get_event_loop()
-                    loop.call_soon_threadsafe(
-                        lambda w=wav_bytes: asyncio.ensure_future(broadcast_audio(w))
-                    )
+                    if _ws_loop is not None:
+                        _ws_loop.call_soon_threadsafe(
+                            lambda w=wav_bytes: asyncio.ensure_future(broadcast_audio(w))
+                        )
                 except RuntimeError:
                     pass
             return
@@ -1783,10 +1785,10 @@ def on_alert_message(client, userdata, msg):
             last_audio_text = message
             last_audio_time = now
             try:
-                loop = asyncio.get_event_loop()
-                loop.call_soon_threadsafe(
-                    lambda w=wav: asyncio.ensure_future(broadcast_audio(w))
-                )
+                if _ws_loop is not None:
+                    _ws_loop.call_soon_threadsafe(
+                        lambda w=wav: asyncio.ensure_future(broadcast_audio(w))
+                    )
             except RuntimeError:
                 pass
     except Exception as e:
@@ -1846,8 +1848,10 @@ def main():
     http_thread.start()
 
     # ── Async Event Loop (WebSocket servers) ──
+    global _ws_loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    _ws_loop = loop  # Published for MQTT callbacks to schedule coroutines
 
     async def run_ws_servers():
         async with websockets.serve(ws_handler, '0.0.0.0', WS_PORT):

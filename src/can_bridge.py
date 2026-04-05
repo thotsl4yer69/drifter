@@ -285,15 +285,46 @@ def main():
             if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 log.error(
                     f"CAN interface lost — {_consecutive_failures} consecutive failures. "
-                    f"Exiting for systemd restart."
+                    f"Attempting in-process reconnection..."
                 )
                 mqtt_client.publish(TOPICS['system_status'], json.dumps({
-                    "state": "can_lost",
+                    "state": "can_reconnecting",
                     "can_interface": iface,
                     "failures": _consecutive_failures,
                     "timestamp": time.time()
                 }), retain=True)
-                break
+
+                # Tear down old bus
+                try:
+                    bus.shutdown()
+                except Exception:
+                    pass
+
+                # Re-discover CAN interface
+                _consecutive_failures = 0
+                iface = None
+                while iface is None and running:
+                    iface = find_can_interface()
+                    if iface is None:
+                        log.warning("Waiting for CAN interface... (is USB2CANFD plugged in?)")
+                        time.sleep(5)
+
+                if not running:
+                    break
+
+                try:
+                    bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
+                    log.info(f"CAN interface reconnected on {iface}")
+                    mqtt_client.publish(TOPICS['system_status'], json.dumps({
+                        "state": "online",
+                        "can_interface": iface,
+                        "timestamp": time.time()
+                    }), retain=True)
+                except Exception as e:
+                    log.error(f"CAN reconnect failed: {e} — exiting for systemd restart")
+                    break
+
+                continue
 
             # Find the next PID that's due
             for entry in schedule:
