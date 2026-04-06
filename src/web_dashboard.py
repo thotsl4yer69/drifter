@@ -576,28 +576,28 @@ body{
 <div class="section">FUEL</div>
 <div class="grid">
   <div class="card" style="position:relative">
-    <div class="label">STFT B1 <span class="help-icon" onclick="toggleHelp(this)" data-help="Short-Term Fuel Trim Bank 1: How much the ECU is adjusting fuel right now. Positive = adding fuel (lean). Negative = removing fuel (rich). Normal: &plusmn;5%.">?</span></div>
+    <div class="label">STFT B1 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Short-Term Fuel Trim Bank 1: How much the ECU is adjusting fuel right now. Positive = adding fuel (lean). Negative = removing fuel (rich). Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-stft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft1"></div></div>
     <div class="help-tip"></div>
   </div>
   <div class="card" style="position:relative">
-    <div class="label">STFT B2 <span class="help-icon" onclick="toggleHelp(this)" data-help="Short-Term Fuel Trim Bank 2: Same as B1 but for the other cylinder bank. Both banks high = shared vacuum leak. One bank high = bank-specific issue.">?</span></div>
+    <div class="label">STFT B2 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Short-Term Fuel Trim Bank 2: Same as B1 but for the other cylinder bank. Both banks high = shared vacuum leak. One bank high = bank-specific issue.">?</span></div>
     <div class="value" id="v-stft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft2"></div></div>
     <div class="help-tip"></div>
   </div>
   <div class="card" style="position:relative">
-    <div class="label">LTFT B1 <span class="help-icon" onclick="toggleHelp(this)" data-help="Long-Term Fuel Trim Bank 1: The ECU's learned fuel adjustment. High positive = sustained lean (vacuum leak, dirty MAF). Persists across restarts. Normal: &plusmn;5%.">?</span></div>
+    <div class="label">LTFT B1 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Long-Term Fuel Trim Bank 1: The ECU's learned fuel adjustment. High positive = sustained lean (vacuum leak, dirty MAF). Persists across restarts. Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-ltft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft1"></div></div>
     <div class="help-tip"></div>
   </div>
   <div class="card" style="position:relative">
-    <div class="label">LTFT B2 <span class="help-icon" onclick="toggleHelp(this)" data-help="Long-Term Fuel Trim Bank 2: Same as LTFT B1 but for the other cylinder bank. Compare both banks to isolate bank-specific issues.">?</span></div>
+    <div class="label">LTFT B2 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Long-Term Fuel Trim Bank 2: Same as LTFT B1 but for the other cylinder bank. Compare both banks to isolate bank-specific issues.">?</span></div>
     <div class="value" id="v-ltft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft2"></div></div>
@@ -608,7 +608,7 @@ body{
 <div class="section">PERFORMANCE</div>
 <div class="grid">
   <div class="card" style="position:relative">
-    <div class="label">LOAD <span class="help-icon" onclick="toggleHelp(this)" data-help="Engine Load: How hard the engine is working (0-100%). Idle ~15-25%. Cruising ~30-50%. Full throttle ~80-100%.">?</span></div>
+    <div class="label">LOAD <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Engine Load: How hard the engine is working (0-100%). Idle ~15-25%. Cruising ~30-50%. Full throttle ~80-100%.">?</span></div>
     <div class="value" id="v-load">--</div>
     <div class="unit">%</div>
     <div class="bar"><div class="bar-fill" id="b-load" style="width:0;background:var(--accent)"></div></div>
@@ -621,13 +621,13 @@ body{
     <div class="bar"><div class="bar-fill" id="b-throttle" style="width:0;background:var(--accent)"></div></div>
   </div>
   <div class="card" style="position:relative">
-    <div class="label">IAT <span class="help-icon" onclick="toggleHelp(this)" data-help="Intake Air Temperature: Air temp entering the engine. Normal: 20-45&deg;C. Above 50&deg;C = heat soak risk, reduced power. Above 65&deg;C = critical.">?</span></div>
+    <div class="label">IAT <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Intake Air Temperature: Air temp entering the engine. Normal: 20-45&deg;C. Above 50&deg;C = heat soak risk, reduced power. Above 65&deg;C = critical.">?</span></div>
     <div class="value" id="v-iat">--</div>
     <div class="unit">&deg;C</div>
     <div class="help-tip"></div>
   </div>
   <div class="card" style="position:relative">
-    <div class="label">MAF <span class="help-icon" onclick="toggleHelp(this)" data-help="Mass Air Flow: Air entering the engine in grams/second. Idle: 2.5-6.0 g/s. Below 2.5 at warm idle = dirty/failing MAF sensor. Clean with electronics cleaner.">?</span></div>
+    <div class="label">MAF <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Mass Air Flow: Air entering the engine in grams/second. Idle: 2.5-6.0 g/s. Below 2.5 at warm idle = dirty/failing MAF sensor. Clean with electronics cleaner.">?</span></div>
     <div class="value" id="v-maf">--</div>
     <div class="unit">g/s</div>
     <div class="help-tip"></div>
@@ -853,16 +853,29 @@ function askAboutAlert(){
 function dismissAlert(){
   if(currentAlertMsg){
     dismissedAlerts[currentAlertMsg] = Date.now() + 600000; // 10 min
+    // Persist to sessionStorage so it survives page refresh
+    try{sessionStorage.setItem('drifter_dismissed',JSON.stringify(dismissedAlerts))}catch(e){}
     showToast('Alert dismissed for 10 minutes', 'info');
     document.getElementById('alert-expand').classList.remove('open');
   }
 }
+// Restore dismissed alerts from sessionStorage
+try{
+  const saved=sessionStorage.getItem('drifter_dismissed');
+  if(saved){
+    const parsed=JSON.parse(saved);
+    const now=Date.now();
+    for(const[k,v] of Object.entries(parsed)){
+      if(v>now) dismissedAlerts[k]=v; // Only restore non-expired
+    }
+  }
+}catch(e){}
 function toggleAlertHistory(){
   const el = document.getElementById('alert-history');
   el.classList.toggle('hidden');
   if(!el.classList.contains('hidden')){
     el.innerHTML = alertHistory.length ?
-      alertHistory.slice(-30).reverse().map(a=>{
+      alertHistory.slice(-50).reverse().map(a=>{
         const t = new Date(a.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
         const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
         return `<div class="alert-history-item"><span style="color:${colors[a.level]||'var(--dim)'}">${esc(a.message)}</span><span class="ah-time">${t}</span></div>`;
@@ -1031,7 +1044,7 @@ function handleMessage(msg){
     // Track alert history
     if(lvl > 0 && message !== 'Systems nominal'){
       alertHistory.push({level:lvl, message:message, ts:now});
-      if(alertHistory.length > 100) alertHistory.shift();
+      if(alertHistory.length > 50) alertHistory.shift();
     }
     // Mirror active alerts on the banner too
     const banner = document.getElementById('alert-banner');
