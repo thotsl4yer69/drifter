@@ -421,12 +421,74 @@ body{
 /* Connection */
 .disconnected{
   position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  background:rgba(0,0,0,.9);padding:30px;border-radius:12px;
+  background:rgba(0,0,0,.95);padding:30px;border-radius:12px;
   text-align:center;z-index:999;border:1px solid var(--red);
+  max-width:320px;
 }
 .disconnected h2{color:var(--red);margin-bottom:8px}
-.disconnected p{color:var(--dim);font-size:12px}
+.disconnected p{color:var(--dim);font-size:12px;line-height:1.6}
+.disconnected .retry-info{color:var(--amber);font-size:11px;margin-top:10px}
 .hidden{display:none!important}
+
+/* Toast Notifications */
+.toast-container{
+  position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
+  z-index:1000;display:flex;flex-direction:column-reverse;gap:6px;
+  pointer-events:none;max-width:90%;
+}
+.toast{
+  padding:10px 16px;border-radius:8px;font-size:12px;
+  pointer-events:auto;animation:toast-in .3s ease;
+  display:flex;align-items:center;gap:8px;
+  box-shadow:0 4px 12px rgba(0,0,0,.5);
+}
+.toast.info{background:#1a2733;color:var(--info);border:1px solid #2196f355}
+.toast.warn{background:#2e2a1a;color:var(--amber);border:1px solid #ff980055}
+.toast.error{background:#2e1a1a;color:var(--red);border:1px solid #f4433655}
+.toast.success{background:#1b2e1b;color:var(--ok);border:1px solid #4caf5055}
+@keyframes toast-in{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+
+/* Help Tooltip */
+.help-icon{
+  display:inline-block;width:14px;height:14px;border-radius:50%;
+  background:#222;color:var(--dim);font-size:9px;text-align:center;
+  line-height:14px;cursor:pointer;margin-left:4px;vertical-align:middle;
+  border:1px solid #333;user-select:none;
+}
+.help-icon:hover{color:var(--accent);border-color:var(--accent)}
+.help-tip{
+  display:none;position:absolute;left:0;right:0;top:100%;z-index:50;
+  background:#1a1a1a;border:1px solid var(--border);border-radius:6px;
+  padding:8px 10px;font-size:11px;color:var(--dim);line-height:1.5;
+  margin-top:4px;font-weight:normal;text-transform:none;letter-spacing:0;
+}
+.help-tip.show{display:block}
+
+/* Alert expanded */
+.alert-expand{
+  background:#111;margin:0 10px;border-radius:0 0 6px 6px;
+  padding:10px 16px;font-size:11px;line-height:1.5;
+  border:1px solid #222;border-top:none;
+  max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s;
+}
+.alert-expand.open{max-height:400px;padding:10px 16px}
+.alert-expand .advice-text{color:var(--dim);margin-bottom:8px}
+.alert-expand .alert-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.alert-expand .alert-actions button{
+  padding:4px 10px;background:#1a1a1a;border:1px solid #333;border-radius:4px;
+  color:var(--accent);font-family:inherit;font-size:11px;cursor:pointer;
+}
+
+/* Alert History */
+.alert-history{
+  max-height:200px;overflow-y:auto;padding:4px 16px 8px;font-size:11px;
+}
+.alert-history-item{
+  display:flex;justify-content:space-between;padding:4px 0;
+  border-bottom:1px solid #1a1a1a;color:var(--dim);
+}
+.alert-history-item .ah-time{color:#555;white-space:nowrap;margin-left:8px}
 
 /* Hardware Status */
 .hw-overlay{
@@ -513,39 +575,44 @@ body{
 
 <div class="section">FUEL</div>
 <div class="grid">
-  <div class="card">
-    <div class="label">STFT B1</div>
+  <div class="card" style="position:relative">
+    <div class="label">STFT B1 <span class="help-icon" onclick="toggleHelp(this)" data-help="Short-Term Fuel Trim Bank 1: How much the ECU is adjusting fuel right now. Positive = adding fuel (lean). Negative = removing fuel (rich). Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-stft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft1"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">STFT B2</div>
+  <div class="card" style="position:relative">
+    <div class="label">STFT B2 <span class="help-icon" onclick="toggleHelp(this)" data-help="Short-Term Fuel Trim Bank 2: Same as B1 but for the other cylinder bank. Both banks high = shared vacuum leak. One bank high = bank-specific issue.">?</span></div>
     <div class="value" id="v-stft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft2"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">LTFT B1</div>
+  <div class="card" style="position:relative">
+    <div class="label">LTFT B1 <span class="help-icon" onclick="toggleHelp(this)" data-help="Long-Term Fuel Trim Bank 1: The ECU's learned fuel adjustment. High positive = sustained lean (vacuum leak, dirty MAF). Persists across restarts. Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-ltft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft1"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">LTFT B2</div>
+  <div class="card" style="position:relative">
+    <div class="label">LTFT B2 <span class="help-icon" onclick="toggleHelp(this)" data-help="Long-Term Fuel Trim Bank 2: Same as LTFT B1 but for the other cylinder bank. Compare both banks to isolate bank-specific issues.">?</span></div>
     <div class="value" id="v-ltft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft2"></div></div>
+    <div class="help-tip"></div>
   </div>
 </div>
 
 <div class="section">PERFORMANCE</div>
 <div class="grid">
-  <div class="card">
-    <div class="label">LOAD</div>
+  <div class="card" style="position:relative">
+    <div class="label">LOAD <span class="help-icon" onclick="toggleHelp(this)" data-help="Engine Load: How hard the engine is working (0-100%). Idle ~15-25%. Cruising ~30-50%. Full throttle ~80-100%.">?</span></div>
     <div class="value" id="v-load">--</div>
     <div class="unit">%</div>
     <div class="bar"><div class="bar-fill" id="b-load" style="width:0;background:var(--accent)"></div></div>
+    <div class="help-tip"></div>
   </div>
   <div class="card">
     <div class="label">THROTTLE</div>
@@ -553,20 +620,31 @@ body{
     <div class="unit">%</div>
     <div class="bar"><div class="bar-fill" id="b-throttle" style="width:0;background:var(--accent)"></div></div>
   </div>
-  <div class="card">
-    <div class="label">IAT</div>
+  <div class="card" style="position:relative">
+    <div class="label">IAT <span class="help-icon" onclick="toggleHelp(this)" data-help="Intake Air Temperature: Air temp entering the engine. Normal: 20-45&deg;C. Above 50&deg;C = heat soak risk, reduced power. Above 65&deg;C = critical.">?</span></div>
     <div class="value" id="v-iat">--</div>
     <div class="unit">&deg;C</div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">MAF</div>
+  <div class="card" style="position:relative">
+    <div class="label">MAF <span class="help-icon" onclick="toggleHelp(this)" data-help="Mass Air Flow: Air entering the engine in grams/second. Idle: 2.5-6.0 g/s. Below 2.5 at warm idle = dirty/failing MAF sensor. Clean with electronics cleaner.">?</span></div>
     <div class="value" id="v-maf">--</div>
     <div class="unit">g/s</div>
+    <div class="help-tip"></div>
   </div>
 </div>
 
 <div class="section">DIAGNOSTICS</div>
-<div class="alert-msg" id="alert-msg">Waiting for data...</div>
+<div class="alert-msg" id="alert-msg" onclick="toggleAlertExpand()" style="cursor:pointer" title="Tap for details">Waiting for data...</div>
+<div class="alert-expand" id="alert-expand">
+  <div class="advice-text" id="alert-advice">Loading guidance...</div>
+  <div class="alert-actions">
+    <button onclick="askAboutAlert()">&#x1f527; Ask Mechanic</button>
+    <button onclick="dismissAlert()">&#x23f8; Dismiss 10min</button>
+    <button onclick="toggleAlertHistory()">&#x1f4dc; History</button>
+  </div>
+</div>
+<div class="alert-history hidden" id="alert-history"></div>
 <div class="dtc-list" id="dtc-list"></div>
 
 <div class="section">TIRES</div>
@@ -656,6 +734,9 @@ body{
     <button id="ask-btn" onclick="askMechanic()"
       style="padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
              color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap">ASK</button>
+    <button id="cancel-btn" onclick="cancelQuery()" class="hidden"
+      style="padding:8px 12px;background:#2e1a1a;border:1px solid #f4433655;border-radius:6px;
+             color:var(--red);font-size:12px;cursor:pointer;white-space:nowrap">CANCEL</button>
   </div>
 
   <div id="ask-output"
@@ -674,8 +755,11 @@ body{
 
 <div class="disconnected hidden" id="dc-overlay">
   <h2>DISCONNECTED</h2>
-  <p>Reconnecting to DRIFTER...</p>
+  <p>Connecting to vehicle&hellip;<br>Check that the MZ1312_DRIFTER hotspot is active and your phone is connected to it.</p>
+  <div class="retry-info" id="dc-retry">Retrying in 2s&hellip;</div>
 </div>
+
+<div class="toast-container" id="toast-container"></div>
 
 <div class="hw-overlay" id="hw-overlay">
   <div class="hw-header">
@@ -696,6 +780,96 @@ let audioCtx = null;
 let lastDataTime = 0;
 let hwOverlayDismissed = false;
 let hwPollTimer = null;
+let wsRetryDelay = 2000;
+const WS_RETRY_MAX = 16000;
+
+// ── Toast Notification System ──
+function showToast(message, type='info', duration=4000){
+  const container = document.getElementById('toast-container');
+  if(!container) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = message;
+  container.appendChild(t);
+  setTimeout(()=>{
+    t.style.animation='toast-out .3s ease forwards';
+    setTimeout(()=>t.remove(), 300);
+  }, duration);
+}
+
+// ── Help Tooltip Toggle ──
+function toggleHelp(icon){
+  const card = icon.closest('.card');
+  if(!card) return;
+  const tip = card.querySelector('.help-tip');
+  if(!tip) return;
+  const isOpen = tip.classList.contains('show');
+  // Close all other tips
+  document.querySelectorAll('.help-tip.show').forEach(t=>t.classList.remove('show'));
+  if(!isOpen){
+    tip.textContent = icon.dataset.help || '';
+    tip.classList.add('show');
+  }
+}
+// Close tips on outside click
+document.addEventListener('click', (e)=>{
+  if(!e.target.classList.contains('help-icon')){
+    document.querySelectorAll('.help-tip.show').forEach(t=>t.classList.remove('show'));
+  }
+});
+
+// ── Alert Interaction ──
+let alertHistory = [];
+let currentAlertMsg = '';
+let dismissedAlerts = {};
+
+function toggleAlertExpand(){
+  const el = document.getElementById('alert-expand');
+  if(!el) return;
+  const isOpen = el.classList.contains('open');
+  if(isOpen){ el.classList.remove('open'); return; }
+  el.classList.add('open');
+  // Fetch advice for current alert
+  if(currentAlertMsg && currentAlertMsg !== 'Systems nominal'){
+    fetch('/api/mechanic/advice?alert='+encodeURIComponent(currentAlertMsg))
+      .then(r=>r.json()).then(d=>{
+        const advEl = document.getElementById('alert-advice');
+        if(d.advice && d.advice.length){
+          advEl.innerHTML = d.advice.map(a=>'<div style="margin-bottom:4px">&bull; '+esc(typeof a==='string'?a:a.text||JSON.stringify(a))+'</div>').join('');
+        } else {
+          advEl.textContent = 'No specific guidance available for this alert.';
+        }
+      }).catch(()=>{});
+  }
+}
+function askAboutAlert(){
+  if(!currentAlertMsg) return;
+  document.getElementById('ask-input').value = 'Explain this alert and what I should do: ' + currentAlertMsg;
+  document.getElementById('alert-expand').classList.remove('open');
+  askMechanic();
+  // Scroll to Ask Mechanic section
+  document.getElementById('ask-input').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function dismissAlert(){
+  if(currentAlertMsg){
+    dismissedAlerts[currentAlertMsg] = Date.now() + 600000; // 10 min
+    showToast('Alert dismissed for 10 minutes', 'info');
+    document.getElementById('alert-expand').classList.remove('open');
+  }
+}
+function toggleAlertHistory(){
+  const el = document.getElementById('alert-history');
+  el.classList.toggle('hidden');
+  if(!el.classList.contains('hidden')){
+    el.innerHTML = alertHistory.length ?
+      alertHistory.slice(-30).reverse().map(a=>{
+        const t = new Date(a.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
+        return `<div class="alert-history-item"><span style="color:${colors[a.level]||'var(--dim)'}">${esc(a.message)}</span><span class="ah-time">${t}</span></div>`;
+      }).join('') :
+      '<div style="color:var(--dim);padding:8px;text-align:center">No alert history yet</div>';
+  }
+}
 
 // ── Hardware Status ──
 function pollHardware(){
@@ -843,14 +1017,27 @@ function handleMessage(msg){
   else if(topic.endsWith('/alert/message')){
     const el = document.getElementById('alert-msg');
     const lvl = data.level || 0;
+    const message = data.message || 'Systems nominal';
     const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
+    // Check dismissed
+    const now = Date.now();
+    if(dismissedAlerts[message] && dismissedAlerts[message] > now){
+      return; // Still dismissed
+    }
+    delete dismissedAlerts[message]; // Expired
+    currentAlertMsg = message;
     el.style.color = colors[lvl] || 'var(--text)';
-    el.textContent = data.message || 'Systems nominal';
+    el.textContent = message;
+    // Track alert history
+    if(lvl > 0 && message !== 'Systems nominal'){
+      alertHistory.push({level:lvl, message:message, ts:now});
+      if(alertHistory.length > 100) alertHistory.shift();
+    }
     // Mirror active alerts on the banner too
     const banner = document.getElementById('alert-banner');
-    if(lvl > 0 && data.message){
-      banner.dataset.msg = data.message;
-      banner.textContent = data.message;
+    if(lvl > 0 && message){
+      banner.dataset.msg = message;
+      banner.textContent = message;
     } else {
       delete banner.dataset.msg;
       const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
@@ -898,13 +1085,15 @@ function handleMessage(msg){
   }
 }
 
-// ── WebSocket Connection ──
+// ── WebSocket Connection (exponential backoff) ──
 function connect(){
   ws = new WebSocket(WS_URL);
   ws.onopen = ()=>{
+    wsRetryDelay = 2000; // Reset backoff on success
     document.getElementById('dc-overlay').classList.add('hidden');
     document.getElementById('dot-conn').className='status-dot dot-ok';
     document.getElementById('conn-text').textContent='LIVE';
+    showToast('Connected to DRIFTER', 'success', 2000);
   };
   ws.onmessage = (e)=>{
     try{handleMessage(JSON.parse(e.data))}catch(err){}
@@ -913,7 +1102,10 @@ function connect(){
     document.getElementById('dc-overlay').classList.remove('hidden');
     document.getElementById('dot-conn').className='status-dot dot-off';
     document.getElementById('conn-text').textContent='OFFLINE';
-    setTimeout(connect, 2000);
+    const retryEl = document.getElementById('dc-retry');
+    if(retryEl) retryEl.textContent = 'Retrying in '+(wsRetryDelay/1000)+'s\u2026';
+    setTimeout(connect, wsRetryDelay);
+    wsRetryDelay = Math.min(wsRetryDelay * 2, WS_RETRY_MAX); // Exponential backoff
   };
   ws.onerror = ()=>ws.close();
 }
@@ -1080,8 +1272,10 @@ function loadSessions(){
 }
 loadSessions();
 
-// ── Ask Mechanic (LLM) ──
+// ── Ask Mechanic (LLM with Streaming) ──
 let queryBusy=false;
+let queryAbort=null;
+let queryTimer=null;
 
 function _submitQuery(q){
   if(queryBusy||!q) return;
@@ -1089,31 +1283,112 @@ function _submitQuery(q){
   const out=document.getElementById('ask-output');
   const meta=document.getElementById('ask-meta');
   const btn=document.getElementById('ask-btn');
+  const cancelBtn=document.getElementById('cancel-btn');
   out.style.color='var(--dim)';
-  out.innerHTML='<span style="animation:pulse 1.5s infinite">Thinking\u2026</span>';
+  out.innerHTML='<span style="animation:pulse 1.5s infinite">\u25cf\u25cf\u25cf Thinking\u2026</span>';
   if(meta) meta.textContent='';
   btn.disabled=true;
-  btn.textContent='\u2026';
-  fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
-    .then(r=>r.json())
-    .then(d=>{
-      if(d.error){
-        out.style.color='var(--red)';
-        out.textContent='Error: '+d.error;
-      } else {
-        out.style.color='var(--text)';
-        // Escape HTML before injecting text but allow our own line breaks
-        const text = d.response || '';
-        const escText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-        out.innerHTML = escText.replace(/\n/g, '<br>');
-        if(meta){
-          const m=(d.model||'').split('/').pop();
-          meta.textContent=m+(d.tokens?' \u00b7 '+d.tokens+' tok':'');
+  btn.classList.add('hidden');
+  cancelBtn.classList.remove('hidden');
+
+  // Elapsed time counter
+  const startTime=Date.now();
+  queryTimer=setInterval(()=>{
+    const elapsed=((Date.now()-startTime)/1000).toFixed(0);
+    if(meta) meta.textContent=elapsed+'s elapsed';
+  }, 1000);
+
+  // Try streaming first, fall back to non-streaming
+  queryAbort = new AbortController();
+  fetch('/api/query/stream',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:q}),
+    signal:queryAbort.signal
+  }).then(resp=>{
+    if(!resp.ok) throw new Error('Stream unavailable');
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText='';
+    let model='';
+    let tokens=0;
+    out.textContent='';
+    out.style.color='var(--text)';
+
+    function readChunk(){
+      return reader.read().then(({done, value})=>{
+        if(done) return;
+        const text = decoder.decode(value, {stream:true});
+        const lines = text.split('\n');
+        for(const line of lines){
+          if(!line.startsWith('data: ')) continue;
+          try{
+            const d=JSON.parse(line.slice(6));
+            if(d.error){
+              out.style.color='var(--red)';
+              out.textContent='Error: '+d.error;
+              return;
+            }
+            if(d.token){
+              fullText+=d.token;
+              // Escape and render
+              const escText=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              out.innerHTML=escText.replace(/\n/g,'<br>');
+            }
+            if(d.done){
+              model=d.model||'';
+              tokens=d.tokens||0;
+            }
+          }catch(e){}
         }
+        return readChunk();
+      });
+    }
+    return readChunk().then(()=>{
+      if(meta){
+        const m=(model||'').split('/').pop();
+        const elapsed=((Date.now()-startTime)/1000).toFixed(1);
+        meta.textContent=(m?m+' \u00b7 ':'')+(tokens?tokens+' tok \u00b7 ':'')+elapsed+'s';
       }
-    })
-    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed \u2014 is Ollama running?';})
-    .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
+    });
+  }).catch(err=>{
+    if(err.name==='AbortError'){
+      out.style.color='var(--amber)';
+      out.textContent='Query cancelled.';
+      return;
+    }
+    // Fallback to non-streaming
+    return fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q}),signal:queryAbort.signal})
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
+        else{
+          out.style.color='var(--text)';
+          const text=d.response||'';
+          const escText=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          out.innerHTML=escText.replace(/\n/g,'<br>');
+          if(meta){
+            const m=(d.model||'').split('/').pop();
+            const elapsed=((Date.now()-startTime)/1000).toFixed(1);
+            meta.textContent=(m?m+' \u00b7 ':'')+(d.tokens?d.tokens+' tok \u00b7 ':'')+elapsed+'s';
+          }
+        }
+      });
+  }).catch(err=>{
+    if(err.name!=='AbortError'){
+      out.style.color='var(--red)';out.textContent='Request failed \u2014 is Ollama running?';
+    }
+  }).finally(()=>{
+    queryBusy=false;queryAbort=null;
+    btn.disabled=false;btn.classList.remove('hidden');btn.textContent='ASK';
+    cancelBtn.classList.add('hidden');
+    if(queryTimer){clearInterval(queryTimer);queryTimer=null;}
+  });
+}
+
+function cancelQuery(){
+  if(queryAbort) queryAbort.abort();
+  showToast('Query cancelled', 'info', 2000);
 }
 
 function askMechanic(){
