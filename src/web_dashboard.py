@@ -30,7 +30,10 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
 
-from config import MQTT_HOST, MQTT_PORT, TOPICS, LEVEL_NAMES, DRIFTER_DIR
+from config import (
+    MQTT_HOST, MQTT_PORT, TOPICS, LEVEL_NAMES, DRIFTER_DIR,
+    load_settings, save_settings, SETTINGS_DEFAULTS,
+)
 from mechanic import (
     search as mechanic_search, VEHICLE_SPECS, COMMON_PROBLEMS,
     SERVICE_SCHEDULE, EMERGENCY_PROCEDURES, TORQUE_SPECS, FUSE_REFERENCE,
@@ -418,12 +421,74 @@ body{
 /* Connection */
 .disconnected{
   position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  background:rgba(0,0,0,.9);padding:30px;border-radius:12px;
+  background:rgba(0,0,0,.95);padding:30px;border-radius:12px;
   text-align:center;z-index:999;border:1px solid var(--red);
+  max-width:320px;
 }
 .disconnected h2{color:var(--red);margin-bottom:8px}
-.disconnected p{color:var(--dim);font-size:12px}
+.disconnected p{color:var(--dim);font-size:12px;line-height:1.6}
+.disconnected .retry-info{color:var(--amber);font-size:11px;margin-top:10px}
 .hidden{display:none!important}
+
+/* Toast Notifications */
+.toast-container{
+  position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
+  z-index:1000;display:flex;flex-direction:column-reverse;gap:6px;
+  pointer-events:none;max-width:90%;
+}
+.toast{
+  padding:10px 16px;border-radius:8px;font-size:12px;
+  pointer-events:auto;animation:toast-in .3s ease;
+  display:flex;align-items:center;gap:8px;
+  box-shadow:0 4px 12px rgba(0,0,0,.5);
+}
+.toast.info{background:#1a2733;color:var(--info);border:1px solid #2196f355}
+.toast.warn{background:#2e2a1a;color:var(--amber);border:1px solid #ff980055}
+.toast.error{background:#2e1a1a;color:var(--red);border:1px solid #f4433655}
+.toast.success{background:#1b2e1b;color:var(--ok);border:1px solid #4caf5055}
+@keyframes toast-in{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+
+/* Help Tooltip */
+.help-icon{
+  display:inline-block;width:14px;height:14px;border-radius:50%;
+  background:#222;color:var(--dim);font-size:9px;text-align:center;
+  line-height:14px;cursor:pointer;margin-left:4px;vertical-align:middle;
+  border:1px solid #333;user-select:none;
+}
+.help-icon:hover{color:var(--accent);border-color:var(--accent)}
+.help-tip{
+  display:none;position:absolute;left:0;right:0;top:100%;z-index:50;
+  background:#1a1a1a;border:1px solid var(--border);border-radius:6px;
+  padding:8px 10px;font-size:11px;color:var(--dim);line-height:1.5;
+  margin-top:4px;font-weight:normal;text-transform:none;letter-spacing:0;
+}
+.help-tip.show{display:block}
+
+/* Alert expanded */
+.alert-expand{
+  background:#111;margin:0 10px;border-radius:0 0 6px 6px;
+  padding:10px 16px;font-size:11px;line-height:1.5;
+  border:1px solid #222;border-top:none;
+  max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s;
+}
+.alert-expand.open{max-height:400px;padding:10px 16px}
+.alert-expand .advice-text{color:var(--dim);margin-bottom:8px}
+.alert-expand .alert-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.alert-expand .alert-actions button{
+  padding:4px 10px;background:#1a1a1a;border:1px solid #333;border-radius:4px;
+  color:var(--accent);font-family:inherit;font-size:11px;cursor:pointer;
+}
+
+/* Alert History */
+.alert-history{
+  max-height:200px;overflow-y:auto;padding:4px 16px 8px;font-size:11px;
+}
+.alert-history-item{
+  display:flex;justify-content:space-between;padding:4px 0;
+  border-bottom:1px solid #1a1a1a;color:var(--dim);
+}
+.alert-history-item .ah-time{color:#555;white-space:nowrap;margin-left:8px}
 
 /* Hardware Status */
 .hw-overlay{
@@ -510,39 +575,44 @@ body{
 
 <div class="section">FUEL</div>
 <div class="grid">
-  <div class="card">
-    <div class="label">STFT B1</div>
+  <div class="card" style="position:relative">
+    <div class="label">STFT B1 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Short-Term Fuel Trim Bank 1: How much the ECU is adjusting fuel right now. Positive = adding fuel (lean). Negative = removing fuel (rich). Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-stft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft1"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">STFT B2</div>
+  <div class="card" style="position:relative">
+    <div class="label">STFT B2 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Short-Term Fuel Trim Bank 2: Same as B1 but for the other cylinder bank. Both banks high = shared vacuum leak. One bank high = bank-specific issue.">?</span></div>
     <div class="value" id="v-stft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-stft2"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">LTFT B1</div>
+  <div class="card" style="position:relative">
+    <div class="label">LTFT B1 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Long-Term Fuel Trim Bank 1: The ECU's learned fuel adjustment. High positive = sustained lean (vacuum leak, dirty MAF). Persists across restarts. Normal: &plusmn;5%.">?</span></div>
     <div class="value" id="v-ltft1">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft1"></div></div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">LTFT B2</div>
+  <div class="card" style="position:relative">
+    <div class="label">LTFT B2 <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Long-Term Fuel Trim Bank 2: Same as LTFT B1 but for the other cylinder bank. Compare both banks to isolate bank-specific issues.">?</span></div>
     <div class="value" id="v-ltft2">--</div>
     <div class="unit">%</div>
     <div class="trim-bar-wrap"><div class="trim-bar-center"></div><div class="trim-bar-fill" id="tb-ltft2"></div></div>
+    <div class="help-tip"></div>
   </div>
 </div>
 
 <div class="section">PERFORMANCE</div>
 <div class="grid">
-  <div class="card">
-    <div class="label">LOAD</div>
+  <div class="card" style="position:relative">
+    <div class="label">LOAD <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Engine Load: How hard the engine is working (0-100%). Idle ~15-25%. Cruising ~30-50%. Full throttle ~80-100%.">?</span></div>
     <div class="value" id="v-load">--</div>
     <div class="unit">%</div>
     <div class="bar"><div class="bar-fill" id="b-load" style="width:0;background:var(--accent)"></div></div>
+    <div class="help-tip"></div>
   </div>
   <div class="card">
     <div class="label">THROTTLE</div>
@@ -550,20 +620,31 @@ body{
     <div class="unit">%</div>
     <div class="bar"><div class="bar-fill" id="b-throttle" style="width:0;background:var(--accent)"></div></div>
   </div>
-  <div class="card">
-    <div class="label">IAT</div>
+  <div class="card" style="position:relative">
+    <div class="label">IAT <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Intake Air Temperature: Air temp entering the engine. Normal: 20-45&deg;C. Above 50&deg;C = heat soak risk, reduced power. Above 65&deg;C = critical.">?</span></div>
     <div class="value" id="v-iat">--</div>
     <div class="unit">&deg;C</div>
+    <div class="help-tip"></div>
   </div>
-  <div class="card">
-    <div class="label">MAF</div>
+  <div class="card" style="position:relative">
+    <div class="label">MAF <span class="help-icon" tabindex="0" onclick="toggleHelp(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHelp(this)}" data-help="Mass Air Flow: Air entering the engine in grams/second. Idle: 2.5-6.0 g/s. Below 2.5 at warm idle = dirty/failing MAF sensor. Clean with electronics cleaner.">?</span></div>
     <div class="value" id="v-maf">--</div>
     <div class="unit">g/s</div>
+    <div class="help-tip"></div>
   </div>
 </div>
 
 <div class="section">DIAGNOSTICS</div>
-<div class="alert-msg" id="alert-msg">Waiting for data...</div>
+<div class="alert-msg" id="alert-msg" onclick="toggleAlertExpand()" style="cursor:pointer" title="Tap for details">Waiting for data...</div>
+<div class="alert-expand" id="alert-expand">
+  <div class="advice-text" id="alert-advice">Loading guidance...</div>
+  <div class="alert-actions">
+    <button onclick="askAboutAlert()">&#x1f527; Ask Mechanic</button>
+    <button onclick="dismissAlert()">&#x23f8; Dismiss 10min</button>
+    <button onclick="toggleAlertHistory()">&#x1f4dc; History</button>
+  </div>
+</div>
+<div class="alert-history hidden" id="alert-history"></div>
 <div class="dtc-list" id="dtc-list"></div>
 
 <div class="section">TIRES</div>
@@ -653,6 +734,9 @@ body{
     <button id="ask-btn" onclick="askMechanic()"
       style="padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;
              color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap">ASK</button>
+    <button id="cancel-btn" onclick="cancelQuery()" class="hidden"
+      style="padding:8px 12px;background:#2e1a1a;border:1px solid #f4433655;border-radius:6px;
+             color:var(--red);font-size:12px;cursor:pointer;white-space:nowrap">CANCEL</button>
   </div>
 
   <div id="ask-output"
@@ -666,12 +750,16 @@ body{
 <div style="height:80px"></div>
 
 <a href="/mechanic" class="audio-btn" style="bottom:16px;left:16px;font-size:14px;text-decoration:none" title="Mechanic advisor">&#x1f527;</a>
+<a href="/settings" class="audio-btn" style="bottom:16px;left:64px;font-size:14px;text-decoration:none" title="Settings" aria-label="Settings">&#x2699;</a>
 <button class="audio-btn" id="audio-btn" title="Enable voice alerts on this device">&#x1f50a;</button>
 
 <div class="disconnected hidden" id="dc-overlay">
   <h2>DISCONNECTED</h2>
-  <p>Reconnecting to DRIFTER...</p>
+  <p>Connecting to vehicle&hellip;<br>Check that the MZ1312_DRIFTER hotspot is active and your phone is connected to it.</p>
+  <div class="retry-info" id="dc-retry">Retrying in 2s&hellip;</div>
 </div>
+
+<div class="toast-container" id="toast-container"></div>
 
 <div class="hw-overlay" id="hw-overlay">
   <div class="hw-header">
@@ -692,6 +780,109 @@ let audioCtx = null;
 let lastDataTime = 0;
 let hwOverlayDismissed = false;
 let hwPollTimer = null;
+let wsRetryDelay = 2000;
+const WS_RETRY_MAX = 16000;
+
+// ── Toast Notification System ──
+function showToast(message, type='info', duration=4000){
+  const container = document.getElementById('toast-container');
+  if(!container) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = message;
+  container.appendChild(t);
+  setTimeout(()=>{
+    t.style.animation='toast-out .3s ease forwards';
+    setTimeout(()=>t.remove(), 300);
+  }, duration);
+}
+
+// ── Help Tooltip Toggle ──
+function toggleHelp(icon){
+  const card = icon.closest('.card');
+  if(!card) return;
+  const tip = card.querySelector('.help-tip');
+  if(!tip) return;
+  const isOpen = tip.classList.contains('show');
+  // Close all other tips
+  document.querySelectorAll('.help-tip.show').forEach(t=>t.classList.remove('show'));
+  if(!isOpen){
+    tip.textContent = icon.dataset.help || '';
+    tip.classList.add('show');
+  }
+}
+// Close tips on outside click
+document.addEventListener('click', (e)=>{
+  if(!e.target.classList.contains('help-icon')){
+    document.querySelectorAll('.help-tip.show').forEach(t=>t.classList.remove('show'));
+  }
+});
+
+// ── Alert Interaction ──
+let alertHistory = [];
+let currentAlertMsg = '';
+let dismissedAlerts = {};
+
+function toggleAlertExpand(){
+  const el = document.getElementById('alert-expand');
+  if(!el) return;
+  const isOpen = el.classList.contains('open');
+  if(isOpen){ el.classList.remove('open'); return; }
+  el.classList.add('open');
+  // Fetch advice for current alert
+  if(currentAlertMsg && currentAlertMsg !== 'Systems nominal'){
+    fetch('/api/mechanic/advice?alert='+encodeURIComponent(currentAlertMsg))
+      .then(r=>r.json()).then(d=>{
+        const advEl = document.getElementById('alert-advice');
+        if(d.advice && d.advice.length){
+          advEl.innerHTML = d.advice.map(a=>'<div style="margin-bottom:4px">&bull; '+esc(typeof a==='string'?a:a.text||JSON.stringify(a))+'</div>').join('');
+        } else {
+          advEl.textContent = 'No specific guidance available for this alert.';
+        }
+      }).catch(()=>{});
+  }
+}
+function askAboutAlert(){
+  if(!currentAlertMsg) return;
+  document.getElementById('ask-input').value = 'Explain this alert and what I should do: ' + currentAlertMsg;
+  document.getElementById('alert-expand').classList.remove('open');
+  askMechanic();
+  // Scroll to Ask Mechanic section
+  document.getElementById('ask-input').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function dismissAlert(){
+  if(currentAlertMsg){
+    dismissedAlerts[currentAlertMsg] = Date.now() + 600000; // 10 min
+    // Persist to sessionStorage so it survives page refresh
+    try{sessionStorage.setItem('drifter_dismissed',JSON.stringify(dismissedAlerts))}catch(e){}
+    showToast('Alert dismissed for 10 minutes', 'info');
+    document.getElementById('alert-expand').classList.remove('open');
+  }
+}
+// Restore dismissed alerts from sessionStorage
+try{
+  const saved=sessionStorage.getItem('drifter_dismissed');
+  if(saved){
+    const parsed=JSON.parse(saved);
+    const now=Date.now();
+    for(const[k,v] of Object.entries(parsed)){
+      if(v>now) dismissedAlerts[k]=v; // Only restore non-expired
+    }
+  }
+}catch(e){}
+function toggleAlertHistory(){
+  const el = document.getElementById('alert-history');
+  el.classList.toggle('hidden');
+  if(!el.classList.contains('hidden')){
+    el.innerHTML = alertHistory.length ?
+      alertHistory.slice(-50).reverse().map(a=>{
+        const t = new Date(a.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
+        return `<div class="alert-history-item"><span style="color:${colors[a.level]||'var(--dim)'}">${esc(a.message)}</span><span class="ah-time">${t}</span></div>`;
+      }).join('') :
+      '<div style="color:var(--dim);padding:8px;text-align:center">No alert history yet</div>';
+  }
+}
 
 // ── Hardware Status ──
 function pollHardware(){
@@ -839,14 +1030,27 @@ function handleMessage(msg){
   else if(topic.endsWith('/alert/message')){
     const el = document.getElementById('alert-msg');
     const lvl = data.level || 0;
+    const message = data.message || 'Systems nominal';
     const colors = {0:'var(--ok)',1:'var(--info)',2:'var(--amber)',3:'var(--red)'};
+    // Check dismissed
+    const now = Date.now();
+    if(dismissedAlerts[message] && dismissedAlerts[message] > now){
+      return; // Still dismissed
+    }
+    delete dismissedAlerts[message]; // Expired
+    currentAlertMsg = message;
     el.style.color = colors[lvl] || 'var(--text)';
-    el.textContent = data.message || 'Systems nominal';
+    el.textContent = message;
+    // Track alert history
+    if(lvl > 0 && message !== 'Systems nominal'){
+      alertHistory.push({level:lvl, message:message, ts:now});
+      if(alertHistory.length > 50) alertHistory.shift();
+    }
     // Mirror active alerts on the banner too
     const banner = document.getElementById('alert-banner');
-    if(lvl > 0 && data.message){
-      banner.dataset.msg = data.message;
-      banner.textContent = data.message;
+    if(lvl > 0 && message){
+      banner.dataset.msg = message;
+      banner.textContent = message;
     } else {
       delete banner.dataset.msg;
       const names = {0:'SYSTEMS NOMINAL',1:'INFO',2:'CAUTION',3:'ALERT'};
@@ -894,13 +1098,15 @@ function handleMessage(msg){
   }
 }
 
-// ── WebSocket Connection ──
+// ── WebSocket Connection (exponential backoff) ──
 function connect(){
   ws = new WebSocket(WS_URL);
   ws.onopen = ()=>{
+    wsRetryDelay = 2000; // Reset backoff on success
     document.getElementById('dc-overlay').classList.add('hidden');
     document.getElementById('dot-conn').className='status-dot dot-ok';
     document.getElementById('conn-text').textContent='LIVE';
+    showToast('Connected to DRIFTER', 'success', 2000);
   };
   ws.onmessage = (e)=>{
     try{handleMessage(JSON.parse(e.data))}catch(err){}
@@ -909,7 +1115,10 @@ function connect(){
     document.getElementById('dc-overlay').classList.remove('hidden');
     document.getElementById('dot-conn').className='status-dot dot-off';
     document.getElementById('conn-text').textContent='OFFLINE';
-    setTimeout(connect, 2000);
+    const retryEl = document.getElementById('dc-retry');
+    if(retryEl) retryEl.textContent = 'Retrying in '+(wsRetryDelay/1000)+'s\u2026';
+    setTimeout(connect, wsRetryDelay);
+    wsRetryDelay = Math.min(wsRetryDelay * 2, WS_RETRY_MAX); // Exponential backoff
   };
   ws.onerror = ()=>ws.close();
 }
@@ -1076,8 +1285,10 @@ function loadSessions(){
 }
 loadSessions();
 
-// ── Ask Mechanic (LLM) ──
+// ── Ask Mechanic (LLM with Streaming) ──
 let queryBusy=false;
+let queryAbort=null;
+let queryTimer=null;
 
 function _submitQuery(q){
   if(queryBusy||!q) return;
@@ -1085,31 +1296,112 @@ function _submitQuery(q){
   const out=document.getElementById('ask-output');
   const meta=document.getElementById('ask-meta');
   const btn=document.getElementById('ask-btn');
+  const cancelBtn=document.getElementById('cancel-btn');
   out.style.color='var(--dim)';
-  out.innerHTML='<span style="animation:pulse 1.5s infinite">Thinking\u2026</span>';
+  out.innerHTML='<span style="animation:pulse 1.5s infinite">\u25cf\u25cf\u25cf Thinking\u2026</span>';
   if(meta) meta.textContent='';
   btn.disabled=true;
-  btn.textContent='\u2026';
-  fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
-    .then(r=>r.json())
-    .then(d=>{
-      if(d.error){
-        out.style.color='var(--red)';
-        out.textContent='Error: '+d.error;
-      } else {
-        out.style.color='var(--text)';
-        // Escape HTML before injecting text but allow our own line breaks
-        const text = d.response || '';
-        const escText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-        out.innerHTML = escText.replace(/\n/g, '<br>');
-        if(meta){
-          const m=(d.model||'').split('/').pop();
-          meta.textContent=m+(d.tokens?' \u00b7 '+d.tokens+' tok':'');
+  btn.classList.add('hidden');
+  cancelBtn.classList.remove('hidden');
+
+  // Elapsed time counter
+  const startTime=Date.now();
+  queryTimer=setInterval(()=>{
+    const elapsed=((Date.now()-startTime)/1000).toFixed(0);
+    if(meta) meta.textContent=elapsed+'s elapsed';
+  }, 1000);
+
+  // Try streaming first, fall back to non-streaming
+  queryAbort = new AbortController();
+  fetch('/api/query/stream',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:q}),
+    signal:queryAbort.signal
+  }).then(resp=>{
+    if(!resp.ok) throw new Error('Stream unavailable');
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText='';
+    let model='';
+    let tokens=0;
+    out.textContent='';
+    out.style.color='var(--text)';
+
+    function readChunk(){
+      return reader.read().then(({done, value})=>{
+        if(done) return;
+        const text = decoder.decode(value, {stream:true});
+        const lines = text.split('\n');
+        for(const line of lines){
+          if(!line.startsWith('data: ')) continue;
+          try{
+            const d=JSON.parse(line.slice(6));
+            if(d.error){
+              out.style.color='var(--red)';
+              out.textContent='Error: '+d.error;
+              return;
+            }
+            if(d.token){
+              fullText+=d.token;
+              // Escape and render
+              const escText=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              out.innerHTML=escText.replace(/\n/g,'<br>');
+            }
+            if(d.done){
+              model=d.model||'';
+              tokens=d.tokens||0;
+            }
+          }catch(e){}
         }
+        return readChunk();
+      });
+    }
+    return readChunk().then(()=>{
+      if(meta){
+        const m=(model||'').split('/').pop();
+        const elapsed=((Date.now()-startTime)/1000).toFixed(1);
+        meta.textContent=(m?m+' \u00b7 ':'')+(tokens?tokens+' tok \u00b7 ':'')+elapsed+'s';
       }
-    })
-    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed \u2014 is Ollama running?';})
-    .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
+    });
+  }).catch(err=>{
+    if(err.name==='AbortError'){
+      out.style.color='var(--amber)';
+      out.textContent='Query cancelled.';
+      return;
+    }
+    // Fallback to non-streaming
+    return fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q}),signal:queryAbort.signal})
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
+        else{
+          out.style.color='var(--text)';
+          const text=d.response||'';
+          const escText=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          out.innerHTML=escText.replace(/\n/g,'<br>');
+          if(meta){
+            const m=(d.model||'').split('/').pop();
+            const elapsed=((Date.now()-startTime)/1000).toFixed(1);
+            meta.textContent=(m?m+' \u00b7 ':'')+(d.tokens?d.tokens+' tok \u00b7 ':'')+elapsed+'s';
+          }
+        }
+      });
+  }).catch(err=>{
+    if(err.name!=='AbortError'){
+      out.style.color='var(--red)';out.textContent='Request failed \u2014 is Ollama running?';
+    }
+  }).finally(()=>{
+    queryBusy=false;queryAbort=null;
+    btn.disabled=false;btn.classList.remove('hidden');btn.textContent='ASK';
+    cancelBtn.classList.add('hidden');
+    if(queryTimer){clearInterval(queryTimer);queryTimer=null;}
+  });
+}
+
+function cancelQuery(){
+  if(queryAbort) queryAbort.abort();
+  showToast('Query cancelled', 'info', 2000);
 }
 
 function askMechanic(){
@@ -1477,8 +1769,257 @@ function esc(s) {
 </html>"""
 
 
+SETTINGS_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>DRIFTER SETTINGS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:#141414;--border:#222;--text:#e0e0e0;--dim:#666;
+--accent:#00bcd4;--ok:#4caf50;--info:#2196f3;--amber:#ff9800;--red:#f44336}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
+overflow-x:hidden;-webkit-font-smoothing:antialiased;padding:16px;padding-bottom:80px}
+h1{font-size:16px;letter-spacing:2px;color:var(--accent);margin-bottom:16px}
+.section{background:var(--card);border:1px solid var(--border);border-radius:6px;
+padding:14px;margin-bottom:14px}
+.section h2{font-size:13px;color:var(--accent);letter-spacing:1px;margin-bottom:12px;
+border-bottom:1px solid var(--border);padding-bottom:6px}
+.field{display:flex;flex-wrap:wrap;align-items:center;margin-bottom:10px;gap:8px}
+.field:last-child{margin-bottom:0}
+.field label{flex:1 1 180px;font-size:12px;color:var(--text)}
+.field .hint{width:100%;font-size:10px;color:var(--dim);margin-top:-4px}
+.field input[type="number"],.field input[type="text"],.field select{
+background:var(--bg);border:1px solid var(--border);color:var(--text);
+font-family:'Courier New',monospace;font-size:12px;padding:6px 8px;
+border-radius:4px;width:140px}
+.field input[type="number"]:focus,.field input[type="text"]:focus,.field select:focus{
+outline:none;border-color:var(--accent)}
+.field input[type="checkbox"]{accent-color:var(--accent);width:16px;height:16px}
+.save-btn{display:block;width:100%;padding:12px;margin-top:16px;
+background:var(--accent);color:#000;font-family:'Courier New',monospace;
+font-size:14px;font-weight:bold;letter-spacing:2px;border:none;border-radius:6px;
+cursor:pointer}
+.save-btn:active{opacity:0.8}
+.save-btn:disabled{opacity:0.4;cursor:not-allowed}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);
+padding:10px 24px;border-radius:6px;font-size:12px;font-family:'Courier New',monospace;
+z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.ok{background:var(--ok);color:#000}
+.toast.err{background:var(--red);color:#fff}
+.home-btn{position:fixed;bottom:16px;left:16px;background:var(--card);
+border:1px solid var(--border);color:var(--accent);width:40px;height:40px;
+border-radius:50%;display:flex;align-items:center;justify-content:center;
+text-decoration:none;font-size:18px;z-index:100}
+</style>
+</head>
+<body>
+<h1>&#x2699; DRIFTER SETTINGS</h1>
+
+<div class="section">
+<h2>ALERT THRESHOLDS</h2>
+<div class="field">
+  <label for="coolant_amber">Coolant amber (&deg;C)</label>
+  <input type="number" id="coolant_amber" step="1">
+  <div class="hint">Coolant temp warning level (default 104&deg;C)</div>
+</div>
+<div class="field">
+  <label for="coolant_red">Coolant red (&deg;C)</label>
+  <input type="number" id="coolant_red" step="1">
+  <div class="hint">Coolant temp critical level (default 108&deg;C)</div>
+</div>
+<div class="field">
+  <label for="voltage_undercharge">Voltage undercharge (V)</label>
+  <input type="number" id="voltage_undercharge" step="0.1">
+  <div class="hint">Low alternator voltage warning (default 13.2V)</div>
+</div>
+<div class="field">
+  <label for="voltage_critical">Voltage critical (V)</label>
+  <input type="number" id="voltage_critical" step="0.1">
+  <div class="hint">Critical low voltage threshold (default 12.0V)</div>
+</div>
+<div class="field">
+  <label for="stft_lean_idle">STFT lean idle (%)</label>
+  <input type="number" id="stft_lean_idle" step="0.5">
+  <div class="hint">Short-term fuel trim lean threshold at idle (default 12.0%)</div>
+</div>
+<div class="field">
+  <label for="ltft_lean_warn">LTFT lean warn (%)</label>
+  <input type="number" id="ltft_lean_warn" step="0.5">
+  <div class="hint">Long-term fuel trim lean warning (default 15.0%)</div>
+</div>
+<div class="field">
+  <label for="ltft_lean_crit">LTFT lean critical (%)</label>
+  <input type="number" id="ltft_lean_crit" step="0.5">
+  <div class="hint">Long-term fuel trim lean critical (default 25.0%)</div>
+</div>
+</div>
+
+<div class="section">
+<h2>VOICE SETTINGS</h2>
+<div class="field">
+  <label for="voice_cooldown">Voice cooldown (seconds)</label>
+  <input type="number" id="voice_cooldown" step="1" min="0">
+  <div class="hint">Minimum seconds between voice alerts (default 15)</div>
+</div>
+<div class="field">
+  <label for="tts_engine">TTS engine</label>
+  <select id="tts_engine">
+    <option value="piper">piper</option>
+    <option value="espeak">espeak</option>
+  </select>
+  <div class="hint">Text-to-speech engine for voice alerts</div>
+</div>
+<div class="field">
+  <label for="voice_min_level">Minimum alert level</label>
+  <select id="voice_min_level">
+    <option value="0">0 &mdash; All alerts</option>
+    <option value="1">1 &mdash; Info and above</option>
+    <option value="2">2 &mdash; Amber and above</option>
+    <option value="3">3 &mdash; Red only</option>
+  </select>
+  <div class="hint">Only voice alerts at or above this severity level</div>
+</div>
+</div>
+
+<div class="section">
+<h2>DISPLAY</h2>
+<div class="field">
+  <label for="temp_unit">Temperature unit</label>
+  <select id="temp_unit">
+    <option value="C">Celsius (&deg;C)</option>
+    <option value="F">Fahrenheit (&deg;F)</option>
+  </select>
+  <div class="hint">Temperature display unit for dashboard</div>
+</div>
+<div class="field">
+  <label for="pressure_unit">Pressure unit</label>
+  <select id="pressure_unit">
+    <option value="PSI">PSI</option>
+    <option value="kPa">kPa</option>
+    <option value="bar">bar</option>
+  </select>
+  <div class="hint">Tire pressure display unit</div>
+</div>
+</div>
+
+<div class="section">
+<h2>LLM</h2>
+<div class="field">
+  <label for="llm_model">Model name</label>
+  <input type="text" id="llm_model" placeholder="(use default)">
+  <div class="hint">Ollama model for mechanic chat (empty = config default)</div>
+</div>
+<div class="field">
+  <label for="llm_max_tokens">Max tokens</label>
+  <input type="number" id="llm_max_tokens" step="50" min="50">
+  <div class="hint">Maximum response token length (default 500)</div>
+</div>
+<div class="field">
+  <label for="llm_tools_enabled">Tool calling enabled</label>
+  <input type="checkbox" id="llm_tools_enabled">
+  <div class="hint">Allow LLM to execute diagnostic tool calls</div>
+</div>
+</div>
+
+<div class="section">
+<h2>DATA</h2>
+<div class="field">
+  <label for="data_retention_days">Retention days</label>
+  <input type="number" id="data_retention_days" step="1" min="1">
+  <div class="hint">Days to keep logged data before purging (default 90)</div>
+</div>
+</div>
+
+<button class="save-btn" id="save-btn">SAVE</button>
+
+<div class="toast" id="toast"></div>
+
+<a href="/" class="home-btn" title="Back to dashboard">&#x25C0;</a>
+
+<script>
+const FIELDS = [
+  {id:'coolant_amber', type:'number'},
+  {id:'coolant_red', type:'number'},
+  {id:'voltage_undercharge', type:'number'},
+  {id:'voltage_critical', type:'number'},
+  {id:'stft_lean_idle', type:'number'},
+  {id:'ltft_lean_warn', type:'number'},
+  {id:'ltft_lean_crit', type:'number'},
+  {id:'voice_cooldown', type:'number'},
+  {id:'tts_engine', type:'select'},
+  {id:'voice_min_level', type:'select'},
+  {id:'temp_unit', type:'select'},
+  {id:'pressure_unit', type:'select'},
+  {id:'llm_model', type:'text'},
+  {id:'llm_max_tokens', type:'number'},
+  {id:'llm_tools_enabled', type:'checkbox'},
+  {id:'data_retention_days', type:'number'},
+];
+
+function showToast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+function populate(settings) {
+  FIELDS.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (!el) return;
+    const val = settings[f.id];
+    if (val === undefined || val === null) return;
+    if (f.type === 'checkbox') el.checked = !!val;
+    else if (f.type === 'select') el.value = String(val);
+    else el.value = val;
+  });
+}
+
+function gather() {
+  const s = {};
+  FIELDS.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (!el) return;
+    if (f.type === 'checkbox') s[f.id] = el.checked;
+    else if (f.type === 'number') s[f.id] = parseFloat(el.value);
+    else s[f.id] = el.value;
+  });
+  return s;
+}
+
+fetch('/api/settings')
+  .then(r => r.json())
+  .then(populate)
+  .catch(() => showToast('Failed to load settings', false));
+
+document.getElementById('save-btn').addEventListener('click', function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = 'SAVING...';
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(gather()),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) showToast('Settings saved', true);
+    else showToast(d.error || 'Save failed', false);
+  })
+  .catch(() => showToast('Network error', false))
+  .finally(() => { btn.disabled = false; btn.textContent = 'SAVE'; });
+});
+</script>
+</body>
+</html>"""
+
+
 # ═══════════════════════════════════════════════════════════════════
-#  HTTP Server (serves the dashboard HTML + mechanic advisor)
+#  HTTP Server (serves the dashboard HTML + mechanic advisor + settings)
 # ═══════════════════════════════════════════════════════════════════
 
 class DashboardHandler(SimpleHTTPRequestHandler):
@@ -1490,6 +2031,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._serve_html(DASHBOARD_HTML)
         elif parsed.path == '/mechanic':
             self._serve_html(MECHANIC_HTML)
+        elif parsed.path == '/settings':
+            self._serve_html(SETTINGS_HTML)
+        elif parsed.path == '/api/settings':
+            self._serve_json(load_settings())
         elif parsed.path == '/api/state':
             self._serve_json(latest_state)
         elif parsed.path == '/api/hardware':
@@ -1580,6 +2125,83 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _build_query_context(self, query):
+        """Build telemetry + KB context for LLM queries."""
+        context_parts = []
+        telem_lines = []
+        def _v(key):
+            d = latest_state.get(key, {})
+            return d.get('value') if isinstance(d, dict) else None
+        rpm = _v('engine_rpm')
+        cool = _v('engine_coolant')
+        speed = _v('vehicle_speed')
+        stft1 = _v('engine_stft1')
+        stft2 = _v('engine_stft2')
+        ltft1 = _v('engine_ltft1')
+        ltft2 = _v('engine_ltft2')
+        volt = _v('power_voltage')
+        load = _v('engine_load')
+        throttle = _v('vehicle_throttle')
+        iat = _v('engine_iat')
+        maf = _v('engine_maf')
+        if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
+        if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
+        if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
+        if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
+        if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
+        if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
+        if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
+        if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+        if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
+        if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
+        if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
+        if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
+
+        dtc_data = latest_state.get('diag_dtc', {})
+        stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+        pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
+        if stored_dtcs:
+            telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+        if pending_dtcs:
+            telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
+
+        alert_d = latest_state.get('alert_message', {})
+        alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
+        if alert_msg and alert_msg != 'Systems nominal':
+            telem_lines.append(f"Active alert: {alert_msg}")
+
+        if telem_lines:
+            context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+        else:
+            context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
+
+        kb_results = mechanic_search(query)
+        kb_lines = []
+        for r in kb_results[:5]:
+            if r.get('type') == 'problem':
+                p = r['data']
+                kb_lines.append(
+                    f"KNOWN ISSUE: {p['title']}\n"
+                    f"Cause: {p.get('cause','')}\n"
+                    f"Fix: {p.get('fix','')}\n"
+                    f"Cost: {p.get('cost', 'Unknown')}"
+                )
+            elif r.get('type') == 'dtc':
+                d = r['data']
+                kb_lines.append(
+                    f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
+                    f"Causes: {', '.join(d.get('causes', []))}"
+                )
+            elif r.get('type') == 'telemetry_guide':
+                kb_lines.append(f"GUIDE: {r.get('title', '')}")
+        if kb_lines:
+            context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+        prompt = query
+        if context_parts:
+            prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+        return prompt
+
     def do_POST(self):
         if self.path == '/api/analyse':
             try:
@@ -1599,86 +2221,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     self.send_error(400, 'Missing query')
                     return
 
-                # Build context: live telemetry + relevant KB entries
-                from mechanic import search as kb_search
-                context_parts = []
-
-                # Telemetry snapshot
-                telem_lines = []
-                def _v(key):
-                    d = latest_state.get(key, {})
-                    return d.get('value') if isinstance(d, dict) else None
-                rpm = _v('engine_rpm')
-                cool = _v('engine_coolant')
-                speed = _v('vehicle_speed')
-                stft1 = _v('engine_stft1')
-                stft2 = _v('engine_stft2')
-                ltft1 = _v('engine_ltft1')
-                ltft2 = _v('engine_ltft2')
-                volt = _v('power_voltage')
-                load = _v('engine_load')
-                throttle = _v('vehicle_throttle')
-                iat = _v('engine_iat')
-                maf = _v('engine_maf')
-                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
-                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
-                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
-                if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
-                if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
-                if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
-                if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
-                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
-                if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
-                if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
-                if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
-                if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
-
-                # DTCs
-                dtc_data = latest_state.get('diag_dtc', {})
-                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
-                pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
-                if stored_dtcs:
-                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
-                if pending_dtcs:
-                    telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
-
-                # Current alert
-                alert_d = latest_state.get('alert_message', {})
-                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
-                if alert_msg and alert_msg != 'Systems nominal':
-                    telem_lines.append(f"Active alert: {alert_msg}")
-
-                if telem_lines:
-                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
-                else:
-                    context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
-
-                # KB retrieval (up to 5 entries for better context)
-                kb_results = kb_search(query)
-                kb_lines = []
-                for r in kb_results[:5]:
-                    if r.get('type') == 'problem':
-                        p = r['data']
-                        kb_lines.append(
-                            f"KNOWN ISSUE: {p['title']}\n"
-                            f"Cause: {p.get('cause','')}\n"
-                            f"Fix: {p.get('fix','')}\n"
-                            f"Cost: {p.get('cost', 'Unknown')}"
-                        )
-                    elif r.get('type') == 'dtc':
-                        d = r['data']
-                        kb_lines.append(
-                            f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
-                            f"Causes: {', '.join(d.get('causes', []))}"
-                        )
-                    elif r.get('type') == 'telemetry_guide':
-                        kb_lines.append(f"GUIDE: {r.get('title', '')}")
-                if kb_lines:
-                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
-
-                prompt = query
-                if context_parts:
-                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+                prompt = self._build_query_context(query)
 
                 import llm_client
                 result = llm_client.query_chat(prompt)
@@ -1690,6 +2233,46 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning(f"Query error: {e}")
                 self._serve_json({'error': str(e)})
+        elif self.path == '/api/query/stream':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                query = body.get('query', '').strip()
+                if not query:
+                    self.send_error(400, 'Missing query')
+                    return
+
+                prompt = self._build_query_context(query)
+
+                # SSE streaming response
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'keep-alive')
+                self.end_headers()
+
+                import llm_client
+                for chunk in llm_client.stream_chat_ollama(prompt):
+                    sse_data = json.dumps(chunk, default=str)
+                    self.wfile.write(f"data: {sse_data}\n\n".encode())
+                    self.wfile.flush()
+            except Exception as e:
+                log.warning(f"Stream query error: {e}")
+                try:
+                    err = json.dumps({"error": str(e)})
+                    self.wfile.write(f"data: {err}\n\n".encode())
+                    self.wfile.flush()
+                except Exception:
+                    pass
+        elif self.path == '/api/settings':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                ok = save_settings(body)
+                self._serve_json({'ok': ok})
+            except Exception as e:
+                log.warning(f"Settings save error: {e}")
+                self._serve_json({'ok': False, 'error': str(e)})
         else:
             self.send_error(404)
 

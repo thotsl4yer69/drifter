@@ -156,3 +156,58 @@ def test_build_system_prompt_contains_vehicle():
     assert 'X-Type' in SYSTEM_PROMPT
     assert 'AJ-V6' in SYSTEM_PROMPT
     assert 'JSON' in SYSTEM_PROMPT
+
+
+# ── Streaming Chat Tests ──
+
+def test_stream_chat_ollama_yields_tokens():
+    """stream_chat_ollama yields token chunks then a done marker."""
+    from llm_client import stream_chat_ollama
+    import io
+
+    # Simulate Ollama streaming response (NDJSON lines)
+    lines = [
+        json.dumps({"message": {"content": "Hello"}, "done": False}).encode() + b'\n',
+        json.dumps({"message": {"content": " world"}, "done": False}).encode() + b'\n',
+        json.dumps({"done": True, "eval_count": 10, "prompt_eval_count": 5}).encode() + b'\n',
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_lines.return_value = iter([l.strip() for l in lines])
+
+    with patch('llm_client.requests.post', return_value=mock_resp):
+        chunks = list(stream_chat_ollama("test"))
+
+    # Should have 2 token chunks + 1 done
+    token_chunks = [c for c in chunks if 'token' in c]
+    done_chunks = [c for c in chunks if c.get('done')]
+    assert len(token_chunks) == 2
+    assert token_chunks[0]['token'] == 'Hello'
+    assert token_chunks[1]['token'] == ' world'
+    assert len(done_chunks) == 1
+    assert done_chunks[0]['tokens'] == 15  # 10 + 5
+    assert done_chunks[0]['text'] == 'Hello world'
+
+
+def test_stream_chat_ollama_fallback_on_error():
+    """stream_chat_ollama falls back to non-streaming on HTTP error."""
+    from llm_client import stream_chat_ollama
+
+    mock_stream_resp = MagicMock()
+    mock_stream_resp.status_code = 500
+
+    mock_chat_resp = make_mock_response(200, {
+        "message": {"content": "Fallback response"},
+        "eval_count": 20, "prompt_eval_count": 10,
+    })
+
+    with patch('llm_client.requests.post') as mock_post:
+        # First call (streaming) fails, second call (non-streaming fallback) succeeds
+        mock_post.side_effect = [mock_stream_resp, mock_chat_resp]
+        chunks = list(stream_chat_ollama("test"))
+
+    # Should contain the fallback response
+    token_chunks = [c for c in chunks if 'token' in c]
+    assert len(token_chunks) >= 1
+    assert 'Fallback response' in token_chunks[0]['token']

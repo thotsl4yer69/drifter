@@ -302,3 +302,54 @@ def query_chat(prompt: str) -> dict:
             last_error = e
 
     raise RuntimeError("All LLM backends failed") from last_error
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Streaming Chat — yields tokens as they arrive from Ollama
+# ═══════════════════════════════════════════════════════════════════
+
+def stream_chat_ollama(prompt: str):
+    """
+    Stream tokens from Ollama for the Ask Mechanic feature.
+    Yields dicts: {"token": str} for each token, then {"done": True, "model": str, "tokens": int}.
+    Falls back to non-streaming query_chat if Ollama streaming fails.
+    """
+    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": True,
+        "options": {
+            "temperature": 0.7,
+            "num_predict": 500,
+        },
+    }
+    try:
+        resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT, stream=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Ollama HTTP {resp.status_code}")
+        full_text = ""
+        tokens = 0
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            chunk = json.loads(line)
+            if chunk.get("done"):
+                tokens = chunk.get("eval_count", 0) + chunk.get("prompt_eval_count", 0)
+                break
+            content = chunk.get("message", {}).get("content", "")
+            if content:
+                full_text += content
+                yield {"token": content}
+        yield {"done": True, "model": f"ollama/{OLLAMA_MODEL}", "tokens": tokens, "text": full_text}
+    except Exception as e:
+        log.warning(f"Ollama streaming failed ({e}), falling back to non-streaming")
+        try:
+            result = query_chat(prompt)
+            yield {"token": result["text"]}
+            yield {"done": True, "model": result["model"], "tokens": result["tokens"], "text": result["text"]}
+        except Exception as e2:
+            yield {"error": str(e2)}
