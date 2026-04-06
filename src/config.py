@@ -6,12 +6,69 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import os
+import json
+import logging
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # ── Paths ──
 DRIFTER_DIR = Path("/opt/drifter")
 LOG_DIR = DRIFTER_DIR / "logs"
 CALIBRATION_FILE = DRIFTER_DIR / "calibration.json"
+SETTINGS_FILE = DRIFTER_DIR / "settings.json"
+
+# ── User Settings (runtime-editable via /settings page) ──
+SETTINGS_DEFAULTS = {
+    # Alert thresholds (mirror THRESHOLDS keys — overrides on load)
+    'coolant_amber': 104,
+    'coolant_red': 108,
+    'voltage_undercharge': 13.2,
+    'voltage_critical': 12.0,
+    'stft_lean_idle': 12.0,
+    'ltft_lean_warn': 15.0,
+    'ltft_lean_crit': 25.0,
+    # Voice
+    'voice_cooldown': 15,
+    'tts_engine': 'piper',          # 'piper' or 'espeak'
+    'voice_min_level': 2,           # min alert level for voice (0-3)
+    # Display
+    'temp_unit': 'C',               # 'C' or 'F'
+    'pressure_unit': 'PSI',         # 'PSI', 'kPa', or 'bar'
+    # LLM
+    'llm_model': '',                # empty = use config default
+    'llm_max_tokens': 500,
+    'llm_tools_enabled': True,
+    # Data
+    'data_retention_days': 90,
+    # Setup
+    'setup_complete': False,
+}
+
+
+def load_settings() -> dict:
+    """Load user settings from settings.json, merging with defaults."""
+    settings = dict(SETTINGS_DEFAULTS)
+    try:
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, 'r') as f:
+                saved = json.load(f)
+            settings.update(saved)
+    except Exception as e:
+        _log.warning(f"Failed to load settings: {e}")
+    return settings
+
+
+def save_settings(settings: dict) -> bool:
+    """Persist user settings to settings.json. Returns True on success."""
+    try:
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+        return True
+    except Exception as e:
+        _log.warning(f"Failed to save settings: {e}")
+        return False
 
 # ── MQTT ──
 MQTT_HOST = "localhost"

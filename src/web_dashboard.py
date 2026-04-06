@@ -30,7 +30,10 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
 
-from config import MQTT_HOST, MQTT_PORT, TOPICS, LEVEL_NAMES, DRIFTER_DIR
+from config import (
+    MQTT_HOST, MQTT_PORT, TOPICS, LEVEL_NAMES, DRIFTER_DIR,
+    load_settings, save_settings, SETTINGS_DEFAULTS,
+)
 from mechanic import (
     search as mechanic_search, VEHICLE_SPECS, COMMON_PROBLEMS,
     SERVICE_SCHEDULE, EMERGENCY_PROCEDURES, TORQUE_SPECS, FUSE_REFERENCE,
@@ -666,6 +669,7 @@ body{
 <div style="height:80px"></div>
 
 <a href="/mechanic" class="audio-btn" style="bottom:16px;left:16px;font-size:14px;text-decoration:none" title="Mechanic advisor">&#x1f527;</a>
+<a href="/settings" class="audio-btn" style="bottom:16px;left:64px;font-size:14px;text-decoration:none" title="Settings">&#x2699;</a>
 <button class="audio-btn" id="audio-btn" title="Enable voice alerts on this device">&#x1f50a;</button>
 
 <div class="disconnected hidden" id="dc-overlay">
@@ -1477,8 +1481,257 @@ function esc(s) {
 </html>"""
 
 
+SETTINGS_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>DRIFTER SETTINGS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:#141414;--border:#222;--text:#e0e0e0;--dim:#666;
+--accent:#00bcd4;--ok:#4caf50;--info:#2196f3;--amber:#ff9800;--red:#f44336}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
+overflow-x:hidden;-webkit-font-smoothing:antialiased;padding:16px;padding-bottom:80px}
+h1{font-size:16px;letter-spacing:2px;color:var(--accent);margin-bottom:16px}
+.section{background:var(--card);border:1px solid var(--border);border-radius:6px;
+padding:14px;margin-bottom:14px}
+.section h2{font-size:13px;color:var(--accent);letter-spacing:1px;margin-bottom:12px;
+border-bottom:1px solid var(--border);padding-bottom:6px}
+.field{display:flex;flex-wrap:wrap;align-items:center;margin-bottom:10px;gap:8px}
+.field:last-child{margin-bottom:0}
+.field label{flex:1 1 180px;font-size:12px;color:var(--text)}
+.field .hint{width:100%;font-size:10px;color:var(--dim);margin-top:-4px}
+.field input[type="number"],.field input[type="text"],.field select{
+background:var(--bg);border:1px solid var(--border);color:var(--text);
+font-family:'Courier New',monospace;font-size:12px;padding:6px 8px;
+border-radius:4px;width:140px}
+.field input[type="number"]:focus,.field input[type="text"]:focus,.field select:focus{
+outline:none;border-color:var(--accent)}
+.field input[type="checkbox"]{accent-color:var(--accent);width:16px;height:16px}
+.save-btn{display:block;width:100%;padding:12px;margin-top:16px;
+background:var(--accent);color:#000;font-family:'Courier New',monospace;
+font-size:14px;font-weight:bold;letter-spacing:2px;border:none;border-radius:6px;
+cursor:pointer}
+.save-btn:active{opacity:0.8}
+.save-btn:disabled{opacity:0.4;cursor:not-allowed}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);
+padding:10px 24px;border-radius:6px;font-size:12px;font-family:'Courier New',monospace;
+z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.ok{background:var(--ok);color:#000}
+.toast.err{background:var(--red);color:#fff}
+.home-btn{position:fixed;bottom:16px;left:16px;background:var(--card);
+border:1px solid var(--border);color:var(--accent);width:40px;height:40px;
+border-radius:50%;display:flex;align-items:center;justify-content:center;
+text-decoration:none;font-size:18px;z-index:100}
+</style>
+</head>
+<body>
+<h1>&#x2699; DRIFTER SETTINGS</h1>
+
+<div class="section">
+<h2>ALERT THRESHOLDS</h2>
+<div class="field">
+  <label for="coolant_amber">Coolant amber (&deg;C)</label>
+  <input type="number" id="coolant_amber" step="1">
+  <div class="hint">Coolant temp warning level (default 104&deg;C)</div>
+</div>
+<div class="field">
+  <label for="coolant_red">Coolant red (&deg;C)</label>
+  <input type="number" id="coolant_red" step="1">
+  <div class="hint">Coolant temp critical level (default 108&deg;C)</div>
+</div>
+<div class="field">
+  <label for="voltage_undercharge">Voltage undercharge (V)</label>
+  <input type="number" id="voltage_undercharge" step="0.1">
+  <div class="hint">Low alternator voltage warning (default 13.2V)</div>
+</div>
+<div class="field">
+  <label for="voltage_critical">Voltage critical (V)</label>
+  <input type="number" id="voltage_critical" step="0.1">
+  <div class="hint">Critical low voltage threshold (default 12.0V)</div>
+</div>
+<div class="field">
+  <label for="stft_lean_idle">STFT lean idle (%)</label>
+  <input type="number" id="stft_lean_idle" step="0.5">
+  <div class="hint">Short-term fuel trim lean threshold at idle (default 12.0%)</div>
+</div>
+<div class="field">
+  <label for="ltft_lean_warn">LTFT lean warn (%)</label>
+  <input type="number" id="ltft_lean_warn" step="0.5">
+  <div class="hint">Long-term fuel trim lean warning (default 15.0%)</div>
+</div>
+<div class="field">
+  <label for="ltft_lean_crit">LTFT lean critical (%)</label>
+  <input type="number" id="ltft_lean_crit" step="0.5">
+  <div class="hint">Long-term fuel trim lean critical (default 25.0%)</div>
+</div>
+</div>
+
+<div class="section">
+<h2>VOICE SETTINGS</h2>
+<div class="field">
+  <label for="voice_cooldown">Voice cooldown (seconds)</label>
+  <input type="number" id="voice_cooldown" step="1" min="0">
+  <div class="hint">Minimum seconds between voice alerts (default 15)</div>
+</div>
+<div class="field">
+  <label for="tts_engine">TTS engine</label>
+  <select id="tts_engine">
+    <option value="piper">piper</option>
+    <option value="espeak">espeak</option>
+  </select>
+  <div class="hint">Text-to-speech engine for voice alerts</div>
+</div>
+<div class="field">
+  <label for="voice_min_level">Minimum alert level</label>
+  <select id="voice_min_level">
+    <option value="0">0 &mdash; All alerts</option>
+    <option value="1">1 &mdash; Info and above</option>
+    <option value="2">2 &mdash; Amber and above</option>
+    <option value="3">3 &mdash; Red only</option>
+  </select>
+  <div class="hint">Only voice alerts at or above this severity level</div>
+</div>
+</div>
+
+<div class="section">
+<h2>DISPLAY</h2>
+<div class="field">
+  <label for="temp_unit">Temperature unit</label>
+  <select id="temp_unit">
+    <option value="C">Celsius (&deg;C)</option>
+    <option value="F">Fahrenheit (&deg;F)</option>
+  </select>
+  <div class="hint">Temperature display unit for dashboard</div>
+</div>
+<div class="field">
+  <label for="pressure_unit">Pressure unit</label>
+  <select id="pressure_unit">
+    <option value="PSI">PSI</option>
+    <option value="kPa">kPa</option>
+    <option value="bar">bar</option>
+  </select>
+  <div class="hint">Tire pressure display unit</div>
+</div>
+</div>
+
+<div class="section">
+<h2>LLM</h2>
+<div class="field">
+  <label for="llm_model">Model name</label>
+  <input type="text" id="llm_model" placeholder="(use default)">
+  <div class="hint">Ollama model for mechanic chat (empty = config default)</div>
+</div>
+<div class="field">
+  <label for="llm_max_tokens">Max tokens</label>
+  <input type="number" id="llm_max_tokens" step="50" min="50">
+  <div class="hint">Maximum response token length (default 500)</div>
+</div>
+<div class="field">
+  <label for="llm_tools_enabled">Tool calling enabled</label>
+  <input type="checkbox" id="llm_tools_enabled">
+  <div class="hint">Allow LLM to execute diagnostic tool calls</div>
+</div>
+</div>
+
+<div class="section">
+<h2>DATA</h2>
+<div class="field">
+  <label for="data_retention_days">Retention days</label>
+  <input type="number" id="data_retention_days" step="1" min="1">
+  <div class="hint">Days to keep logged data before purging (default 90)</div>
+</div>
+</div>
+
+<button class="save-btn" id="save-btn">SAVE</button>
+
+<div class="toast" id="toast"></div>
+
+<a href="/" class="home-btn" title="Back to dashboard">&#x25C0;</a>
+
+<script>
+const FIELDS = [
+  {id:'coolant_amber', type:'number'},
+  {id:'coolant_red', type:'number'},
+  {id:'voltage_undercharge', type:'number'},
+  {id:'voltage_critical', type:'number'},
+  {id:'stft_lean_idle', type:'number'},
+  {id:'ltft_lean_warn', type:'number'},
+  {id:'ltft_lean_crit', type:'number'},
+  {id:'voice_cooldown', type:'number'},
+  {id:'tts_engine', type:'select'},
+  {id:'voice_min_level', type:'select'},
+  {id:'temp_unit', type:'select'},
+  {id:'pressure_unit', type:'select'},
+  {id:'llm_model', type:'text'},
+  {id:'llm_max_tokens', type:'number'},
+  {id:'llm_tools_enabled', type:'checkbox'},
+  {id:'data_retention_days', type:'number'},
+];
+
+function showToast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+function populate(settings) {
+  FIELDS.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (!el) return;
+    const val = settings[f.id];
+    if (val === undefined || val === null) return;
+    if (f.type === 'checkbox') el.checked = !!val;
+    else if (f.type === 'select') el.value = String(val);
+    else el.value = val;
+  });
+}
+
+function gather() {
+  const s = {};
+  FIELDS.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (!el) return;
+    if (f.type === 'checkbox') s[f.id] = el.checked;
+    else if (f.type === 'number') s[f.id] = parseFloat(el.value);
+    else s[f.id] = el.value;
+  });
+  return s;
+}
+
+fetch('/api/settings')
+  .then(r => r.json())
+  .then(populate)
+  .catch(() => showToast('Failed to load settings', false));
+
+document.getElementById('save-btn').addEventListener('click', function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = 'SAVING...';
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(gather()),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) showToast('Settings saved', true);
+    else showToast(d.error || 'Save failed', false);
+  })
+  .catch(() => showToast('Network error', false))
+  .finally(() => { btn.disabled = false; btn.textContent = 'SAVE'; });
+});
+</script>
+</body>
+</html>"""
+
+
 # ═══════════════════════════════════════════════════════════════════
-#  HTTP Server (serves the dashboard HTML + mechanic advisor)
+#  HTTP Server (serves the dashboard HTML + mechanic advisor + settings)
 # ═══════════════════════════════════════════════════════════════════
 
 class DashboardHandler(SimpleHTTPRequestHandler):
@@ -1490,6 +1743,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._serve_html(DASHBOARD_HTML)
         elif parsed.path == '/mechanic':
             self._serve_html(MECHANIC_HTML)
+        elif parsed.path == '/settings':
+            self._serve_html(SETTINGS_HTML)
+        elif parsed.path == '/api/settings':
+            self._serve_json(load_settings())
         elif parsed.path == '/api/state':
             self._serve_json(latest_state)
         elif parsed.path == '/api/hardware':
@@ -1690,6 +1947,116 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning(f"Query error: {e}")
                 self._serve_json({'error': str(e)})
+        elif self.path == '/api/query/stream':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                query = body.get('query', '').strip()
+                if not query:
+                    self.send_error(400, 'Missing query')
+                    return
+
+                # Build context (same as /api/query)
+                from mechanic import search as kb_search
+                context_parts = []
+                telem_lines = []
+                def _v(key):
+                    d = latest_state.get(key, {})
+                    return d.get('value') if isinstance(d, dict) else None
+                rpm = _v('engine_rpm')
+                cool = _v('engine_coolant')
+                speed = _v('vehicle_speed')
+                stft1 = _v('engine_stft1')
+                stft2 = _v('engine_stft2')
+                ltft1 = _v('engine_ltft1')
+                ltft2 = _v('engine_ltft2')
+                volt = _v('power_voltage')
+                load = _v('engine_load')
+                throttle = _v('vehicle_throttle')
+                iat = _v('engine_iat')
+                maf = _v('engine_maf')
+                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
+                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
+                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
+                if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
+                if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
+                if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
+                if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
+                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+                if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
+                if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
+                if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
+                if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
+
+                dtc_data = latest_state.get('diag_dtc', {})
+                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+                pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
+                if stored_dtcs:
+                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+                if pending_dtcs:
+                    telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
+                alert_d = latest_state.get('alert_message', {})
+                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
+                if alert_msg and alert_msg != 'Systems nominal':
+                    telem_lines.append(f"Active alert: {alert_msg}")
+                if telem_lines:
+                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+                else:
+                    context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
+
+                kb_results = kb_search(query)
+                kb_lines = []
+                for r in kb_results[:5]:
+                    if r.get('type') == 'problem':
+                        p = r['data']
+                        kb_lines.append(
+                            f"KNOWN ISSUE: {p['title']}\nCause: {p.get('cause','')}\n"
+                            f"Fix: {p.get('fix','')}\nCost: {p.get('cost', 'Unknown')}"
+                        )
+                    elif r.get('type') == 'dtc':
+                        d = r['data']
+                        kb_lines.append(
+                            f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
+                            f"Causes: {', '.join(d.get('causes', []))}"
+                        )
+                    elif r.get('type') == 'telemetry_guide':
+                        kb_lines.append(f"GUIDE: {r.get('title', '')}")
+                if kb_lines:
+                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+                prompt = query
+                if context_parts:
+                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+
+                # SSE streaming response
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'keep-alive')
+                self.end_headers()
+
+                import llm_client
+                for chunk in llm_client.stream_chat_ollama(prompt):
+                    sse_data = json.dumps(chunk, default=str)
+                    self.wfile.write(f"data: {sse_data}\n\n".encode())
+                    self.wfile.flush()
+            except Exception as e:
+                log.warning(f"Stream query error: {e}")
+                try:
+                    err = json.dumps({"error": str(e)})
+                    self.wfile.write(f"data: {err}\n\n".encode())
+                    self.wfile.flush()
+                except Exception:
+                    pass
+        elif self.path == '/api/settings':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                ok = save_settings(body)
+                self._serve_json({'ok': ok})
+            except Exception as e:
+                log.warning(f"Settings save error: {e}")
+                self._serve_json({'ok': False, 'error': str(e)})
         else:
             self.send_error(404)
 
