@@ -669,7 +669,7 @@ body{
 <div style="height:80px"></div>
 
 <a href="/mechanic" class="audio-btn" style="bottom:16px;left:16px;font-size:14px;text-decoration:none" title="Mechanic advisor">&#x1f527;</a>
-<a href="/settings" class="audio-btn" style="bottom:16px;left:64px;font-size:14px;text-decoration:none" title="Settings">&#x2699;</a>
+<a href="/settings" class="audio-btn" style="bottom:16px;left:64px;font-size:14px;text-decoration:none" title="Settings" aria-label="Settings">&#x2699;</a>
 <button class="audio-btn" id="audio-btn" title="Enable voice alerts on this device">&#x1f50a;</button>
 
 <div class="disconnected hidden" id="dc-overlay">
@@ -1837,6 +1837,83 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _build_query_context(self, query):
+        """Build telemetry + KB context for LLM queries."""
+        context_parts = []
+        telem_lines = []
+        def _v(key):
+            d = latest_state.get(key, {})
+            return d.get('value') if isinstance(d, dict) else None
+        rpm = _v('engine_rpm')
+        cool = _v('engine_coolant')
+        speed = _v('vehicle_speed')
+        stft1 = _v('engine_stft1')
+        stft2 = _v('engine_stft2')
+        ltft1 = _v('engine_ltft1')
+        ltft2 = _v('engine_ltft2')
+        volt = _v('power_voltage')
+        load = _v('engine_load')
+        throttle = _v('vehicle_throttle')
+        iat = _v('engine_iat')
+        maf = _v('engine_maf')
+        if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
+        if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
+        if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
+        if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
+        if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
+        if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
+        if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
+        if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+        if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
+        if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
+        if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
+        if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
+
+        dtc_data = latest_state.get('diag_dtc', {})
+        stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+        pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
+        if stored_dtcs:
+            telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+        if pending_dtcs:
+            telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
+
+        alert_d = latest_state.get('alert_message', {})
+        alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
+        if alert_msg and alert_msg != 'Systems nominal':
+            telem_lines.append(f"Active alert: {alert_msg}")
+
+        if telem_lines:
+            context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+        else:
+            context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
+
+        kb_results = mechanic_search(query)
+        kb_lines = []
+        for r in kb_results[:5]:
+            if r.get('type') == 'problem':
+                p = r['data']
+                kb_lines.append(
+                    f"KNOWN ISSUE: {p['title']}\n"
+                    f"Cause: {p.get('cause','')}\n"
+                    f"Fix: {p.get('fix','')}\n"
+                    f"Cost: {p.get('cost', 'Unknown')}"
+                )
+            elif r.get('type') == 'dtc':
+                d = r['data']
+                kb_lines.append(
+                    f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
+                    f"Causes: {', '.join(d.get('causes', []))}"
+                )
+            elif r.get('type') == 'telemetry_guide':
+                kb_lines.append(f"GUIDE: {r.get('title', '')}")
+        if kb_lines:
+            context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+        prompt = query
+        if context_parts:
+            prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+        return prompt
+
     def do_POST(self):
         if self.path == '/api/analyse':
             try:
@@ -1856,86 +1933,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     self.send_error(400, 'Missing query')
                     return
 
-                # Build context: live telemetry + relevant KB entries
-                from mechanic import search as kb_search
-                context_parts = []
-
-                # Telemetry snapshot
-                telem_lines = []
-                def _v(key):
-                    d = latest_state.get(key, {})
-                    return d.get('value') if isinstance(d, dict) else None
-                rpm = _v('engine_rpm')
-                cool = _v('engine_coolant')
-                speed = _v('vehicle_speed')
-                stft1 = _v('engine_stft1')
-                stft2 = _v('engine_stft2')
-                ltft1 = _v('engine_ltft1')
-                ltft2 = _v('engine_ltft2')
-                volt = _v('power_voltage')
-                load = _v('engine_load')
-                throttle = _v('vehicle_throttle')
-                iat = _v('engine_iat')
-                maf = _v('engine_maf')
-                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
-                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
-                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
-                if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
-                if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
-                if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
-                if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
-                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
-                if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
-                if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
-                if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
-                if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
-
-                # DTCs
-                dtc_data = latest_state.get('diag_dtc', {})
-                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
-                pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
-                if stored_dtcs:
-                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
-                if pending_dtcs:
-                    telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
-
-                # Current alert
-                alert_d = latest_state.get('alert_message', {})
-                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
-                if alert_msg and alert_msg != 'Systems nominal':
-                    telem_lines.append(f"Active alert: {alert_msg}")
-
-                if telem_lines:
-                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
-                else:
-                    context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
-
-                # KB retrieval (up to 5 entries for better context)
-                kb_results = kb_search(query)
-                kb_lines = []
-                for r in kb_results[:5]:
-                    if r.get('type') == 'problem':
-                        p = r['data']
-                        kb_lines.append(
-                            f"KNOWN ISSUE: {p['title']}\n"
-                            f"Cause: {p.get('cause','')}\n"
-                            f"Fix: {p.get('fix','')}\n"
-                            f"Cost: {p.get('cost', 'Unknown')}"
-                        )
-                    elif r.get('type') == 'dtc':
-                        d = r['data']
-                        kb_lines.append(
-                            f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
-                            f"Causes: {', '.join(d.get('causes', []))}"
-                        )
-                    elif r.get('type') == 'telemetry_guide':
-                        kb_lines.append(f"GUIDE: {r.get('title', '')}")
-                if kb_lines:
-                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
-
-                prompt = query
-                if context_parts:
-                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+                prompt = self._build_query_context(query)
 
                 import llm_client
                 result = llm_client.query_chat(prompt)
@@ -1956,77 +1954,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     self.send_error(400, 'Missing query')
                     return
 
-                # Build context (same as /api/query)
-                from mechanic import search as kb_search
-                context_parts = []
-                telem_lines = []
-                def _v(key):
-                    d = latest_state.get(key, {})
-                    return d.get('value') if isinstance(d, dict) else None
-                rpm = _v('engine_rpm')
-                cool = _v('engine_coolant')
-                speed = _v('vehicle_speed')
-                stft1 = _v('engine_stft1')
-                stft2 = _v('engine_stft2')
-                ltft1 = _v('engine_ltft1')
-                ltft2 = _v('engine_ltft2')
-                volt = _v('power_voltage')
-                load = _v('engine_load')
-                throttle = _v('vehicle_throttle')
-                iat = _v('engine_iat')
-                maf = _v('engine_maf')
-                if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
-                if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
-                if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
-                if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
-                if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
-                if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
-                if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
-                if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
-                if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
-                if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
-                if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
-                if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
-
-                dtc_data = latest_state.get('diag_dtc', {})
-                stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
-                pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
-                if stored_dtcs:
-                    telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
-                if pending_dtcs:
-                    telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
-                alert_d = latest_state.get('alert_message', {})
-                alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
-                if alert_msg and alert_msg != 'Systems nominal':
-                    telem_lines.append(f"Active alert: {alert_msg}")
-                if telem_lines:
-                    context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
-                else:
-                    context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
-
-                kb_results = kb_search(query)
-                kb_lines = []
-                for r in kb_results[:5]:
-                    if r.get('type') == 'problem':
-                        p = r['data']
-                        kb_lines.append(
-                            f"KNOWN ISSUE: {p['title']}\nCause: {p.get('cause','')}\n"
-                            f"Fix: {p.get('fix','')}\nCost: {p.get('cost', 'Unknown')}"
-                        )
-                    elif r.get('type') == 'dtc':
-                        d = r['data']
-                        kb_lines.append(
-                            f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
-                            f"Causes: {', '.join(d.get('causes', []))}"
-                        )
-                    elif r.get('type') == 'telemetry_guide':
-                        kb_lines.append(f"GUIDE: {r.get('title', '')}")
-                if kb_lines:
-                    context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
-
-                prompt = query
-                if context_parts:
-                    prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
+                prompt = self._build_query_context(query)
 
                 # SSE streaming response
                 self.send_response(200)
