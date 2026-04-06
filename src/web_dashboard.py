@@ -658,8 +658,9 @@ body{
   <div id="ask-output"
     style="font-size:12px;color:var(--dim);line-height:1.5;white-space:pre-wrap;
            min-height:32px;padding:6px 2px">
-    Tap a question above or use the mic — live telemetry is sent with every query.
+    Tap a question above or use the mic &mdash; live telemetry is sent with every query.
   </div>
+  <div id="ask-meta" style="font-size:9px;color:#444;text-align:right;padding:0 2px"></div>
 </div>
 
 <div style="height:80px"></div>
@@ -1082,18 +1083,32 @@ function _submitQuery(q){
   if(queryBusy||!q) return;
   queryBusy=true;
   const out=document.getElementById('ask-output');
+  const meta=document.getElementById('ask-meta');
   const btn=document.getElementById('ask-btn');
   out.style.color='var(--dim)';
-  out.textContent='Thinking...';
+  out.innerHTML='<span style="animation:pulse 1.5s infinite">Thinking\u2026</span>';
+  if(meta) meta.textContent='';
   btn.disabled=true;
-  btn.textContent='...';
+  btn.textContent='\u2026';
   fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
     .then(r=>r.json())
     .then(d=>{
-      if(d.error){out.style.color='var(--red)';out.textContent='Error: '+d.error;}
-      else{out.style.color='var(--text)';out.textContent=d.response;}
+      if(d.error){
+        out.style.color='var(--red)';
+        out.textContent='Error: '+d.error;
+      } else {
+        out.style.color='var(--text)';
+        // Escape HTML before injecting text but allow our own line breaks
+        const text = d.response || '';
+        const escText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        out.innerHTML = escText.replace(/\n/g, '<br>');
+        if(meta){
+          const m=(d.model||'').split('/').pop();
+          meta.textContent=m+(d.tokens?' \u00b7 '+d.tokens+' tok':'');
+        }
+      }
     })
-    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed.'})
+    .catch(()=>{out.style.color='var(--red)';out.textContent='Request failed \u2014 is Ollama running?';})
     .finally(()=>{queryBusy=false;btn.disabled=false;btn.textContent='ASK';});
 }
 
@@ -1590,7 +1605,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
                 # Telemetry snapshot
                 telem_lines = []
-                def _v(key, fmt=''):
+                def _v(key):
                     d = latest_state.get(key, {})
                     return d.get('value') if isinstance(d, dict) else None
                 rpm = _v('engine_rpm')
@@ -1598,35 +1613,66 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 speed = _v('vehicle_speed')
                 stft1 = _v('engine_stft1')
                 stft2 = _v('engine_stft2')
+                ltft1 = _v('engine_ltft1')
+                ltft2 = _v('engine_ltft2')
                 volt = _v('power_voltage')
+                load = _v('engine_load')
+                throttle = _v('vehicle_throttle')
+                iat = _v('engine_iat')
+                maf = _v('engine_maf')
                 if rpm is not None:   telem_lines.append(f"RPM: {rpm:.0f}")
                 if cool is not None:  telem_lines.append(f"Coolant: {cool:.1f}°C")
                 if speed is not None: telem_lines.append(f"Speed: {speed:.0f} km/h")
-                if stft1 is not None and stft2 is not None:
-                    telem_lines.append(f"Fuel trims: B1 {stft1:+.1f}%, B2 {stft2:+.1f}%")
+                if stft1 is not None: telem_lines.append(f"STFT B1: {stft1:+.1f}%")
+                if stft2 is not None: telem_lines.append(f"STFT B2: {stft2:+.1f}%")
+                if ltft1 is not None: telem_lines.append(f"LTFT B1: {ltft1:+.1f}%")
+                if ltft2 is not None: telem_lines.append(f"LTFT B2: {ltft2:+.1f}%")
                 if volt is not None:  telem_lines.append(f"Battery: {volt:.1f}V")
+                if load is not None:  telem_lines.append(f"Load: {load:.0f}%")
+                if throttle is not None: telem_lines.append(f"Throttle: {throttle:.0f}%")
+                if iat is not None:   telem_lines.append(f"IAT: {iat:.0f}°C")
+                if maf is not None:   telem_lines.append(f"MAF: {maf:.1f} g/s")
+
+                # DTCs
                 dtc_data = latest_state.get('diag_dtc', {})
                 stored_dtcs = dtc_data.get('stored', []) if isinstance(dtc_data, dict) else []
+                pending_dtcs = dtc_data.get('pending', []) if isinstance(dtc_data, dict) else []
                 if stored_dtcs:
                     telem_lines.append(f"Active DTCs: {', '.join(stored_dtcs)}")
+                if pending_dtcs:
+                    telem_lines.append(f"Pending DTCs: {', '.join(pending_dtcs)}")
+
+                # Current alert
                 alert_d = latest_state.get('alert_message', {})
                 alert_msg = alert_d.get('message', '') if isinstance(alert_d, dict) else ''
-                if alert_msg:
+                if alert_msg and alert_msg != 'Systems nominal':
                     telem_lines.append(f"Active alert: {alert_msg}")
+
                 if telem_lines:
                     context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
+                else:
+                    context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
 
-                # KB retrieval
+                # KB retrieval (up to 5 entries for better context)
                 kb_results = kb_search(query)
                 kb_lines = []
-                for r in kb_results[:2]:
+                for r in kb_results[:5]:
                     if r.get('type') == 'problem':
                         p = r['data']
                         kb_lines.append(
                             f"KNOWN ISSUE: {p['title']}\n"
                             f"Cause: {p.get('cause','')}\n"
-                            f"Fix: {p.get('fix','')}"
+                            f"Fix: {p.get('fix','')}\n"
+                            f"Cost: {p.get('cost', 'Unknown')}"
                         )
+                    elif r.get('type') == 'dtc':
+                        d = r['data']
+                        kb_lines.append(
+                            f"DTC: {d.get('code','')} — {d.get('desc','')}\n"
+                            f"Causes: {', '.join(d.get('causes', []))}"
+                        )
+                    elif r.get('type') == 'telemetry_guide':
+                        kb_lines.append(f"GUIDE: {r.get('title', '')}")
                 if kb_lines:
                     context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
 
@@ -1635,7 +1681,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
 
                 import llm_client
-                result = llm_client.query_llm(prompt)
+                result = llm_client.query_chat(prompt)
                 self._serve_json({
                     'response': result['text'],
                     'model': result['model'],

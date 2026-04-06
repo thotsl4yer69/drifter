@@ -8,20 +8,34 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import struct
 import pytest
-from unittest.mock import patch
 
-# Patch threading/socket so the module can be imported on non-Linux
 import realdash_bridge as rb
 
 
 REALDASH_HEADER = bytes([0x44, 0x33, 0x22, 0x11])
+
+# Actual frame IDs from realdash_bridge.py pack functions
+ENGINE_FRAME_ID = 0x110
+VEHICLE_FRAME_ID = 0x120
+EXTENDED_FRAME_ID = 0x130
+ALERT_FRAME_ID = 0x300
+TPMS_FRAME_ID = 0x140
+TPMS_TEMP_FRAME_ID = 0x150
+
+
+@pytest.fixture(autouse=True)
+def reset_latest():
+    """Reset the latest dict to defaults (all zeros) before each test."""
+    for key in rb.latest:
+        rb.latest[key] = 0
+    rb.alert_message = ""
+    yield
 
 
 class TestFramePacking:
     """Verify each frame packer produces a valid 16-byte RealDash CAN frame."""
 
     def _validate_frame(self, frame_bytes, expected_frame_id):
-        """Assert a frame has correct header, ID, and length (16 bytes)."""
         assert len(frame_bytes) == 16, f"Frame should be 16 bytes, got {len(frame_bytes)}"
         assert frame_bytes[:4] == REALDASH_HEADER, "Missing RealDash header"
         frame_id = struct.unpack_from('<I', frame_bytes, 4)[0]
@@ -30,74 +44,91 @@ class TestFramePacking:
         )
 
     def test_engine_frame_structure(self):
-        """Engine frame (0x5100) should encode RPM, coolant, STFT, load."""
-        rb.latest_values = {'rpm': 800.0, 'coolant': 90.0, 'stft1': 2.5, 'load': 35.0}
+        """Engine frame should encode RPM, coolant, STFT1, STFT2."""
+        rb.latest['rpm'] = 800.0
+        rb.latest['coolant'] = 90.0
+        rb.latest['stft1'] = 2.5
+        rb.latest['stft2'] = -1.0
         frame = rb.pack_engine_frame()
-        self._validate_frame(frame, 0x5100)
+        self._validate_frame(frame, ENGINE_FRAME_ID)
 
     def test_vehicle_frame_structure(self):
-        """Vehicle frame (0x5101) should encode speed, throttle, STFT2, LTFT."""
-        rb.latest_values = {'speed': 60.0, 'throttle': 25.0, 'stft2': -1.0, 'ltft1': 3.0}
+        """Vehicle frame should encode speed, throttle, load, voltage."""
+        rb.latest['speed'] = 60.0
+        rb.latest['throttle'] = 25.0
+        rb.latest['load'] = 35.0
+        rb.latest['voltage'] = 14.2
         frame = rb.pack_vehicle_frame()
-        self._validate_frame(frame, 0x5101)
+        self._validate_frame(frame, VEHICLE_FRAME_ID)
 
     def test_extended_frame_structure(self):
-        """Extended frame (0x5102) should encode MAF, IAT, voltage, LTFT2."""
-        rb.latest_values = {'maf': 15.0, 'iat': 30.0, 'voltage': 14.2, 'ltft2': -2.0}
+        """Extended frame should encode LTFT1, LTFT2, IAT, MAF."""
+        rb.latest['ltft1'] = 3.0
+        rb.latest['ltft2'] = -2.0
+        rb.latest['iat'] = 30.0
+        rb.latest['maf'] = 15.0
         frame = rb.pack_extended_frame()
-        self._validate_frame(frame, 0x5102)
+        self._validate_frame(frame, EXTENDED_FRAME_ID)
 
     def test_alert_frame_structure(self):
-        """Alert frame (0x5103) should encode alert level."""
-        rb.alert_level = 2
+        """Alert frame should encode alert level."""
+        rb.latest['alert_level'] = 2
         frame = rb.pack_alert_frame()
-        self._validate_frame(frame, 0x5103)
+        self._validate_frame(frame, ALERT_FRAME_ID)
 
-    def test_empty_values_dont_crash(self):
-        """Packing with no data should still produce valid frames (all zeros)."""
-        rb.latest_values = {}
-        rb.alert_level = 0
-        for pack_fn in [rb.pack_engine_frame, rb.pack_vehicle_frame,
-                        rb.pack_extended_frame, rb.pack_alert_frame]:
+    def test_empty_values_produce_valid_frames(self):
+        """Packing with all zeros should still produce valid frames."""
+        for pack_fn, fid in [
+            (rb.pack_engine_frame, ENGINE_FRAME_ID),
+            (rb.pack_vehicle_frame, VEHICLE_FRAME_ID),
+            (rb.pack_extended_frame, EXTENDED_FRAME_ID),
+            (rb.pack_alert_frame, ALERT_FRAME_ID),
+        ]:
             frame = pack_fn()
             assert len(frame) == 16
+            self._validate_frame(frame, fid)
 
     def test_tpms_frame_structure(self):
-        """TPMS frame (0x5104) should encode 4 tire pressures."""
-        rb.tpms_data = {
-            'fl': {'pressure_psi': 32.0}, 'fr': {'pressure_psi': 31.5},
-            'rl': {'pressure_psi': 30.0}, 'rr': {'pressure_psi': 29.5},
-        }
+        """TPMS frame should encode 4 tire pressures."""
+        rb.latest['tpms_fl_psi'] = 32.0
+        rb.latest['tpms_fr_psi'] = 31.5
+        rb.latest['tpms_rl_psi'] = 30.0
+        rb.latest['tpms_rr_psi'] = 29.5
         frame = rb.pack_tpms_frame()
-        self._validate_frame(frame, 0x5104)
+        self._validate_frame(frame, TPMS_FRAME_ID)
 
     def test_tpms_temp_frame_structure(self):
-        """TPMS temp frame (0x5105) should encode 4 tire temperatures."""
-        rb.tpms_data = {
-            'fl': {'temp_c': 35.0}, 'fr': {'temp_c': 36.0},
-            'rl': {'temp_c': 34.0}, 'rr': {'temp_c': 33.0},
-        }
+        """TPMS temp frame should encode 4 tire temperatures."""
+        rb.latest['tpms_fl_temp'] = 35.0
+        rb.latest['tpms_fr_temp'] = 36.0
+        rb.latest['tpms_rl_temp'] = 34.0
+        rb.latest['tpms_rr_temp'] = 33.0
         frame = rb.pack_tpms_temp_frame()
-        self._validate_frame(frame, 0x5105)
+        self._validate_frame(frame, TPMS_TEMP_FRAME_ID)
 
 
 class TestRPMEncoding:
-    """Verify RPM round-trips through pack/unpack correctly."""
+    """Verify RPM encodes differently at different values."""
 
     def test_rpm_encoding_800(self):
-        """Idle RPM (800) should encode/decode correctly."""
-        rb.latest_values = {'rpm': 800.0, 'coolant': 0, 'stft1': 0, 'load': 0}
+        """Idle RPM (800) should produce non-zero data in the engine frame."""
+        rb.latest['rpm'] = 800.0
         frame = rb.pack_engine_frame()
-        # RPM is first 2 bytes of data section (bytes 8-9), little-endian unsigned short
-        rpm_raw = struct.unpack_from('<H', frame, 8)[0]
-        # The scaling depends on pack function — just verify non-zero
-        assert rpm_raw > 0
+        # RPM is first 2 bytes of data section (big-endian), raw value = rpm * 4
+        rpm_raw = struct.unpack_from('>H', frame, 8)[0]
+        assert rpm_raw == 800 * 4  # 3200
 
     def test_rpm_encoding_6000(self):
         """High RPM (6000) should encode differently from idle."""
-        rb.latest_values = {'rpm': 6000.0, 'coolant': 0, 'stft1': 0, 'load': 0}
+        rb.latest['rpm'] = 6000.0
         frame_high = rb.pack_engine_frame()
-        rb.latest_values = {'rpm': 800.0, 'coolant': 0, 'stft1': 0, 'load': 0}
+        rb.latest['rpm'] = 800.0
         frame_low = rb.pack_engine_frame()
-        # High RPM frame should have different data than idle
-        assert frame_high[8:] != frame_low[8:]
+        assert frame_high[8:10] != frame_low[8:10]  # RPM bytes differ
+
+    def test_coolant_encoding(self):
+        """Coolant 90°C should encode as (90+40)*10 = 1300."""
+        rb.latest['coolant'] = 90.0
+        frame = rb.pack_engine_frame()
+        coolant_raw = struct.unpack_from('>h', frame, 10)[0]
+        assert coolant_raw == int((90 + 40) * 10)
