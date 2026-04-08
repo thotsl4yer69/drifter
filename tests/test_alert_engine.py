@@ -43,9 +43,19 @@ from alert_engine import (
     ALL_RULES,
     calibration,
 )
+import alert_engine
 
 
 # ── Fixtures ──
+
+@pytest.fixture(autouse=True)
+def reset_state():
+    """Reset global state between tests to prevent leakage."""
+    alert_engine.engine_start_time = 0.0
+    alert_engine.warmup_complete = False
+    yield
+    alert_engine.engine_start_time = 0.0
+    alert_engine.warmup_complete = False
 
 @pytest.fixture
 def state():
@@ -178,19 +188,19 @@ class TestVacuumLeakBoth:
 
 class TestCoolantCritical:
     def test_red_at_108(self, state):
-        fill(state.coolant, 110, 10, state.timestamps)
+        fill(state.coolant, 110, 10, state.coolant_ts)
         result = rule_coolant_critical(state)
         assert result is not None
         assert result[0] == LEVEL_RED
 
     def test_amber_at_104(self, state):
-        fill(state.coolant, 105, 10, state.timestamps)
+        fill(state.coolant, 105, 10, state.coolant_ts)
         result = rule_coolant_critical(state)
         assert result is not None
         assert result[0] == LEVEL_AMBER
 
     def test_ok_at_normal(self, state):
-        fill(state.coolant, 92, 10, state.timestamps)
+        fill(state.coolant, 92, 10, state.coolant_ts)
         result = rule_coolant_critical(state)
         assert result is None
 
@@ -508,6 +518,3 @@ class TestXTypeWarmupProgress:
         assert result is not None
         assert result[0] == LEVEL_INFO
         assert "Warmup complete" in result[1]
-        # Reset globals
-        alert_engine.engine_start_time = 0
-        alert_engine.warmup_complete = False

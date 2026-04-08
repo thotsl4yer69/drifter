@@ -10,6 +10,7 @@ import json
 import time
 import signal
 import logging
+import itertools
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
@@ -101,13 +102,15 @@ class VehicleState:
         """Check if value has been above threshold for min_samples readings."""
         if len(buf) < min_samples:
             return False
-        return all(v > threshold for v in list(buf)[-min_samples:])
+        start = len(buf) - min_samples
+        return all(v > threshold for v in itertools.islice(buf, start, None))
 
     def sustained_below(self, buf, threshold, min_samples=50):
         """Check if value has been below threshold for min_samples readings."""
         if len(buf) < min_samples:
             return False
-        return all(v < threshold for v in list(buf)[-min_samples:])
+        start = len(buf) - min_samples
+        return all(v < threshold for v in itertools.islice(buf, start, None))
 
 
 # ── Diagnostic Rules ──

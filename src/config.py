@@ -127,7 +127,7 @@ MAF_CRUISE_MIN = 8.0   # g/s — cruising 60-70 km/h typical minimum
 DRIVETRAIN = "AWD"     # Haldex coupling to rear axle
 TRANSMISSION = "5AT"   # Jatco 5-speed auto (JF506E)
 FUEL_TYPE = "petrol"
-FUEL_OCTANE = 95       # RON — UK spec
+FUEL_OCTANE = 95       # RON — AU spec
 
 # Tire spec — factory 205/55R16
 TIRE_SIZE = "205/55R16"
@@ -301,7 +301,7 @@ XTYPE_DTC_LOOKUP = {
                  'UK MOT relevant. On X-Type often caused by prolonged rich running '
                  'from a bad coil pack fouling the cat.',
         'action': 'Fix any upstream fuel trim or misfire codes FIRST. '
-                  'Then clear and retest. If cat is truly dead, budget £200-400 for replacement.',
+                  'Then clear and retest. If cat is truly dead, budget $400-800 for replacement.',
         'severity': 'AMBER',
     },
     'P0430': {
@@ -395,7 +395,7 @@ XTYPE_DTC_LOOKUP = {
         'cause': 'PCM has put the engine in limp mode. Usually triggered by another '
                  'fault code. The X-Type throttle body motor can fail internally.',
         'action': 'LIMP MODE. Read ALL codes — fix the root cause. '
-                  'If throttle body related, try cleaning first before replacing (£150+ part).',
+                  'If throttle body related, try cleaning first before replacing ($250+ part).',
         'severity': 'RED',
     },
     'P2111': {
@@ -436,7 +436,7 @@ XTYPE_DTC_LOOKUP = {
         'cause': 'ABS module failure or CAN bus fault. The X-Type ABS module '
                  'is known to fail internally (common issue).',
         'action': 'Check ABS fuse first. If module dead, specialist rebuild '
-                  '(BBA Reman, ECU Testing) typically £150-200.',
+                  '(BBA Reman, ECU Testing) typically $250-400.',
         'severity': 'AMBER',
     },
 }
@@ -524,6 +524,12 @@ TOPICS = {
     'voltage': 'drifter/power/voltage',
     'iat': 'drifter/engine/iat',
     'maf': 'drifter/engine/maf',
+    'timing': 'drifter/engine/timing',
+    'o2_b1s1': 'drifter/engine/o2_b1s1',
+    'o2_b2s1': 'drifter/engine/o2_b2s1',
+    'run_time': 'drifter/engine/run_time',
+    'baro': 'drifter/engine/baro',
+    'fuel_lvl': 'drifter/vehicle/fuel_lvl',
     'alert_level': 'drifter/alert/level',
     'alert_message': 'drifter/alert/message',
     'snapshot': 'drifter/snapshot',

@@ -41,10 +41,16 @@ PIDS = {
     0x10: {'name': 'maf',      'topic': TOPICS['maf'],      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
     0x11: {'name': 'throttle', 'topic': TOPICS['throttle'], 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
     0x42: {'name': 'voltage',  'topic': TOPICS['voltage'],  'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
+    0x0E: {'name': 'timing',   'topic': TOPICS['timing'],   'decode': lambda a, b=0: (a / 2) - 64,             'unit': 'deg',  'hz': 5},
+    0x14: {'name': 'o2_b1s1',  'topic': TOPICS['o2_b1s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
+    0x15: {'name': 'o2_b2s1',  'topic': TOPICS['o2_b2s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
+    0x1F: {'name': 'run_time', 'topic': TOPICS['run_time'], 'decode': lambda a, b: (a * 256) + b,              'unit': 's',    'hz': 1},
+    0x2F: {'name': 'fuel_lvl', 'topic': TOPICS['fuel_lvl'], 'decode': lambda a, b=0: round((a * 100) / 255.0, 1), 'unit': '%', 'hz': 0.5},
+    0x33: {'name': 'baro',     'topic': TOPICS['baro'],     'decode': lambda a, b=0: a,                        'unit': 'kPa',  'hz': 0.1},
 }
 
 # Two-byte PID set (need both A and B bytes for decode)
-TWO_BYTE_PIDS = {0x0C, 0x10, 0x42}
+TWO_BYTE_PIDS = {0x0C, 0x10, 0x1F, 0x42}
 
 # ── DTC Decoding ──
 DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
@@ -326,7 +332,8 @@ def main():
 
                 continue
 
-            # Find the next PID that's due
+            # Find the next PIDs that are due (up to 4 per loop to prevent blocking)
+            polled_count = 0
             for entry in schedule:
                 if now - entry['last_poll'] >= entry['interval']:
                     send_obd_request(bus, entry['pid'])
@@ -348,7 +355,9 @@ def main():
                                 'ts': time.time()
                             }))
 
-                    break  # Only poll one PID per loop iteration
+                    polled_count += 1
+                    if polled_count >= 4:
+                        break  # Limit to 4 PIDs per iteration
 
             # Publish combined snapshot every second
             if latest_values and now - last_snapshot >= 1.0:

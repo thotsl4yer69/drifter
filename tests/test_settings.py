@@ -76,8 +76,8 @@ class TestSaveSettings:
         assert loaded['tts_engine'] == 'espeak'
 
     def test_returns_false_on_permission_error(self, tmp_path):
-        # Use a path that can't be written
-        fake_path = Path("/proc/nonexistent/settings.json")
+        # Use a path that is a directory to trigger an OS error on open()
+        fake_path = tmp_path
         with patch.object(config, 'SETTINGS_FILE', fake_path):
             ok = config.save_settings({'test': True})
         assert ok is False
