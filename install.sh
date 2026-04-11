@@ -181,7 +181,8 @@ pip install --quiet \
     "paho-mqtt<2.0" \
     psutil \
     websockets \
-    requests
+    requests \
+    numpy
 # Voice input Python deps (must be in venv)
 pip install --quiet vosk pyaudio openwakeword 2>/dev/null && ok "Voice input Python deps installed" || \
     warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword' in venv"

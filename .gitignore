@@ -7,5 +7,13 @@ venv/
 logs/
 *.log
 *.wav
+*.db
+*.onnx
+*.onnx.json
+calibration.json
+settings.json
+tpms_sensors.json
+data/
+reports/
 .vscode/
 .idea/

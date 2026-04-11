@@ -143,9 +143,12 @@ class TestConnectionPooling:
     def test_different_threads_get_different_connections(self):
         """Different threads should get independent connections."""
         results = {}
+        barrier = threading.Barrier(2)
 
         def worker(name):
-            results[name] = id(db._conn())
+            conn = db._conn()
+            results[name] = id(conn)
+            barrier.wait()  # keep both threads alive so GC can't reclaim
 
         t1 = threading.Thread(target=worker, args=('t1',))
         t2 = threading.Thread(target=worker, args=('t2',))

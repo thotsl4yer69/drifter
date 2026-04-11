@@ -3,7 +3,7 @@
 MZ1312 DRIFTER — Web Dashboard & Audio Bridge
 Self-hosted live vehicle dashboard served over Wi-Fi hotspot.
 
-Phone connects to MZ1312_DRIFTER Wi-Fi → opens browser → 10.13.12.1:8080
+Phone connects to MZ1312_DRIFTER Wi-Fi → opens browser → 10.42.0.1:8080
 Live telemetry via WebSocket, zero apps needed.
 
 Also serves TTS audio alerts as WAV over WebSocket for phone speaker output,
@@ -2489,9 +2489,9 @@ def main():
                 log.info(f"WebSocket audio on ws://0.0.0.0:{AUDIO_WS_PORT}")
                 log.info("")
                 log.info("=== DRIFTER DASHBOARD LIVE ===")
-                log.info(f"  Open on phone: http://10.13.12.1:{WEB_PORT}")
+                log.info(f"  Open on phone: http://10.42.0.1:{WEB_PORT}")
                 log.info(f"  Local:         http://localhost:{WEB_PORT}")
-                log.info(f"  RealDash TCP:  10.13.12.1:35000 (still available)")
+                log.info(f"  RealDash TCP:  10.42.0.1:35000 (still available)")
                 log.info("")
                 while running:
                     await asyncio.sleep(0.5)

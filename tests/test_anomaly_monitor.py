@@ -4,7 +4,30 @@ import json
 import sys
 sys.path.insert(0, 'src')
 
+import config
+import db
 from anomaly_monitor import SensorWindow, AnomalyMonitor, MONITORED_SENSORS
+
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    """Redirect DB to a temp directory so AnomalyMonitor() can call db.init_db()."""
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'test.db')
+    monkeypatch.setattr(config, 'REPORTS_DIR', tmp_path / 'reports')
+    # Clear any cached thread-local connection
+    if hasattr(db._local, 'conn'):
+        try:
+            db._local.conn.close()
+        except Exception:
+            pass
+        del db._local.conn
+    yield
+    if hasattr(db._local, 'conn'):
+        try:
+            db._local.conn.close()
+        except Exception:
+            pass
+        del db._local.conn
 
 def test_sensor_window_no_anomaly_on_stable_data():
     w = SensorWindow(window_size=10)
