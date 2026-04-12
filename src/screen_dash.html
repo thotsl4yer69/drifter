@@ -9,10 +9,10 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --amber:#FF9500;--amber-dim:#33200a;--amber-glow:rgba(255,149,0,0.55);
-  --red:#FF2200;--red-dim:#331000;--red-glow:rgba(255,34,0,0.45);
-  --green:#00CC44;--green-dim:#003311;
-  --bg:#000;--panel:#0D0800;--border:#1A1000;
+  --amber:#FF9500;--amber-dim:#664020;--amber-glow:rgba(255,149,0,0.55);
+  --red:#FF2200;--red-dim:#551500;--red-glow:rgba(255,34,0,0.45);
+  --green:#00CC44;--green-dim:#004418;
+  --bg:#000;--panel:#0D0800;--border:#261800;
 }
 html,body{
   width:100vw;height:100vh;overflow:hidden;
@@ -50,12 +50,14 @@ html,body{
 }
 .topbar .id{color:var(--amber);text-shadow:0 0 6px var(--amber-glow)}
 .conn-dot{
-  width:6px;height:6px;border-radius:50%;display:inline-block;
-  margin-right:4px;background:#333;vertical-align:middle;
+  width:8px;height:8px;border-radius:50%;display:inline-block;
+  margin-right:4px;background:#444;vertical-align:middle;
+  transition:all 0.3s;
 }
-.conn-dot.live{background:var(--green);box-shadow:0 0 4px var(--green)}
-.conn-dot.off{background:#333}
-.topbar .conn{color:#555;font-size:9px}
+.conn-dot.live{background:var(--green);box-shadow:0 0 6px var(--green)}
+.conn-dot.off{background:#662200;animation:conn-pulse 1.5s infinite}
+@keyframes conn-pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.topbar .conn{color:#666;font-size:9px}
 .topbar .conn.live{color:var(--green)}
 .alert-ind{
   font-size:9px;padding:1px 6px;border-radius:2px;
@@ -221,44 +223,44 @@ html,body{
 /* ═══════════════════════════════════════════════ */
 /*  PAGE 2 — ENGINE                               */
 /* ═══════════════════════════════════════════════ */
-.engine-layout{padding:8px 10px;height:100%}
+.engine-layout{padding:6px 10px;height:100%;display:flex;flex-direction:column}
 .engine-title{
   font-size:10px;letter-spacing:3px;color:var(--amber-dim);
-  margin-bottom:6px;text-align:center;
+  margin-bottom:4px;text-align:center;
 }
 .engine-grid{
   display:grid;grid-template-columns:1fr 1fr 1fr;
-  gap:6px;
+  gap:4px;flex:1;
 }
 .eng-cell{
   background:var(--panel);border:1px solid var(--border);
-  border-radius:4px;padding:6px 8px;text-align:center;
+  border-radius:4px;padding:4px 6px;text-align:center;
 }
-.eng-cell .e-label{font-size:8px;color:var(--amber-dim);letter-spacing:1px;margin-bottom:3px}
+.eng-cell .e-label{font-size:7px;color:var(--amber-dim);letter-spacing:1px;margin-bottom:2px}
 .eng-cell .e-value{
-  font-size:22px;font-weight:bold;line-height:1;
+  font-size:18px;font-weight:bold;line-height:1;
   text-shadow:0 0 8px var(--amber-glow);
   font-variant-numeric:tabular-nums;
 }
 .eng-cell .e-unit{font-size:9px;color:var(--amber-dim);margin-top:1px}
 .eng-cell .e-bar{
   height:3px;background:var(--amber-dim);border-radius:1px;
-  overflow:hidden;margin-top:4px;
+  overflow:hidden;margin-top:3px;
 }
 .eng-cell .e-bar-fill{height:100%;border-radius:1px;background:var(--amber);transition:width 0.2s}
 .engine-footer{
   display:flex;justify-content:space-around;
-  margin-top:8px;padding:6px 0;
+  margin-top:4px;padding:4px 0;flex-shrink:0;
   border-top:1px solid var(--border);
 }
 .engine-footer .ef-item{text-align:center}
-.engine-footer .ef-label{font-size:8px;color:var(--amber-dim);letter-spacing:1px}
+.engine-footer .ef-label{font-size:7px;color:var(--amber-dim);letter-spacing:1px}
 .engine-footer .ef-value{
-  font-size:18px;font-weight:bold;
+  font-size:15px;font-weight:bold;
   text-shadow:0 0 6px var(--amber-glow);
   font-variant-numeric:tabular-nums;
 }
-.engine-footer .ef-unit{font-size:8px;color:var(--amber-dim)}
+.engine-footer .ef-unit{font-size:7px;color:var(--amber-dim)}
 
 /* ═══════════════════════════════════════════════ */
 /*  PAGE 3 — STATUS                               */
@@ -537,6 +539,24 @@ html,body{
           <div class="e-unit">g/s</div>
           <div class="e-bar"><div class="e-bar-fill" id="eb-maf"></div></div>
         </div>
+        <div class="eng-cell">
+          <div class="e-label">O2 B1</div>
+          <div class="e-value" id="ev-o2b1">--</div>
+          <div class="e-unit">V</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-o2b1"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">O2 B2</div>
+          <div class="e-value" id="ev-o2b2">--</div>
+          <div class="e-unit">V</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-o2b2"></div></div>
+        </div>
+        <div class="eng-cell">
+          <div class="e-label">TIMING</div>
+          <div class="e-value" id="ev-timing">--</div>
+          <div class="e-unit">&deg;</div>
+          <div class="e-bar"><div class="e-bar-fill" id="eb-timing"></div></div>
+        </div>
       </div>
       <div class="engine-footer">
         <div class="ef-item">
@@ -548,12 +568,16 @@ html,body{
           <div><span class="ef-value" id="ev-iat">--</span><span class="ef-unit">&deg;C</span></div>
         </div>
         <div class="ef-item">
-          <div class="ef-label">RPM</div>
-          <div><span class="ef-value" id="ev-rpm">--</span></div>
+          <div class="ef-label">FUEL</div>
+          <div><span class="ef-value" id="ev-fuel">--</span><span class="ef-unit">%</span></div>
         </div>
         <div class="ef-item">
-          <div class="ef-label">SPEED</div>
-          <div><span class="ef-value" id="ev-speed">--</span></div>
+          <div class="ef-label">BARO</div>
+          <div><span class="ef-value" id="ev-baro">--</span><span class="ef-unit">kPa</span></div>
+        </div>
+        <div class="ef-item">
+          <div class="ef-label">RUN</div>
+          <div><span class="ef-value" id="ev-runtime">--</span></div>
         </div>
       </div>
     </div>
@@ -615,6 +639,14 @@ function scaleHUD() {
 scaleHUD();
 window.addEventListener('resize', scaleHUD);
 
+// Lock to landscape if the API is available (prevents accidental rotation in car mount)
+try {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape-primary').catch(() => {});
+  }
+} catch(e) {}
+
+
 // ═══════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════
@@ -622,6 +654,7 @@ const S = {
   rpm:0, speed:0, coolant:0, voltage:0,
   load:0, throttle:0, iat:0, maf:0,
   stft1:0, stft2:0, ltft1:0, ltft2:0,
+  o2b1:0, o2b2:0, timing:0, baro:0, fuelLvl:0, runTime:0,
   alertLevel:0, alertMsg:'',
   tpms:{fl:{psi:null,temp:null},fr:{psi:null,temp:null},
         rl:{psi:null,temp:null},rr:{psi:null,temp:null}},
@@ -632,6 +665,7 @@ const S = {
 
 // Display state (smoothed)
 let dRpm = 0, dSpeed = 0;
+let lastDrawnRpm = -1;  // dirty flag for tach canvas
 const PAGE_NAMES = ['DRIVE','TYRES','ENGINE','STATUS'];
 let currentPage = 0;
 const PAGES = 4;
@@ -830,10 +864,29 @@ function updateEngineUI() {
   setEl('ev-maf', S.maf > 0 ? S.maf.toFixed(1) : '--');
   setBar('eb-maf', (S.maf / 25) * 100);
 
+  // O2 sensors (0-1.275V range, bar as percentage of 1.275V)
+  setEl('ev-o2b1', S.o2b1 > 0 ? S.o2b1.toFixed(2) : '--');
+  setBar('eb-o2b1', (S.o2b1 / 1.275) * 100);
+  setEl('ev-o2b2', S.o2b2 > 0 ? S.o2b2.toFixed(2) : '--');
+  setBar('eb-o2b2', (S.o2b2 / 1.275) * 100);
+
+  // Timing advance (-10 to +50 typical, map to 0-100% bar with 0 at 16%)
+  setEl('ev-timing', S.timing !== 0 || S.connected ? S.timing.toFixed(1) : '--');
+  setBar('eb-timing', ((S.timing + 10) / 60) * 100);
+
   setEl('ev-throttle', S.throttle >= 0 ? Math.round(S.throttle).toString() : '--');
   setEl('ev-iat', S.iat > 0 ? Math.round(S.iat).toString() : '--');
-  setEl('ev-rpm', S.rpm > 0 ? Math.round(S.rpm).toString() : '--');
-  setEl('ev-speed', S.speed > 0 ? Math.round(S.speed).toString() : '--');
+  setEl('ev-fuel', S.fuelLvl > 0 ? Math.round(S.fuelLvl).toString() : '--');
+  setEl('ev-baro', S.baro > 0 ? Math.round(S.baro).toString() : '--');
+
+  // Run time — format as Hh Mm
+  if (S.runTime > 0) {
+    const h = Math.floor(S.runTime / 3600);
+    const m = Math.floor((S.runTime % 3600) / 60);
+    setEl('ev-runtime', h > 0 ? h + 'h' + m + 'm' : m + 'm');
+  } else {
+    setEl('ev-runtime', '--');
+  }
 }
 
 function updateStatusUI() {
@@ -851,12 +904,30 @@ function updateStatusUI() {
     sa.style.borderColor = 'var(--border)';
   }
 
-  // DTCs
+  // DTCs (use textContent per code to prevent XSS from malformed DTC strings)
   const dtcEl = document.getElementById('dtc-list');
-  let html = '';
-  S.dtcStored.forEach(c => { html += '<span class="dtc-code">' + c + '</span> '; });
-  S.dtcPending.forEach(c => { html += '<span class="dtc-code pending">' + c + '</span> '; });
-  dtcEl.innerHTML = html || '<span class="dtc-none">NO CODES</span>';
+  dtcEl.textContent = '';
+  if (S.dtcStored.length === 0 && S.dtcPending.length === 0) {
+    const noData = document.createElement('span');
+    noData.className = 'dtc-none';
+    noData.textContent = 'NO CODES';
+    dtcEl.appendChild(noData);
+  } else {
+    S.dtcStored.forEach(c => {
+      const el = document.createElement('span');
+      el.className = 'dtc-code';
+      el.textContent = c;
+      dtcEl.appendChild(el);
+      dtcEl.appendChild(document.createTextNode(' '));
+    });
+    S.dtcPending.forEach(c => {
+      const el = document.createElement('span');
+      el.className = 'dtc-code pending';
+      el.textContent = c;
+      dtcEl.appendChild(el);
+      dtcEl.appendChild(document.createTextNode(' '));
+    });
+  }
 
   // System
   setEl('sv-cpu', S.cpuTemp > 0 ? Math.round(S.cpuTemp) + '\u00B0C' : '--');
@@ -902,6 +973,12 @@ function handleMsg(msg) {
   else if (topic.endsWith('/stft2') && v !== undefined) { S.stft2 = v; }
   else if (topic.endsWith('/ltft1') && v !== undefined) { S.ltft1 = v; }
   else if (topic.endsWith('/ltft2') && v !== undefined) { S.ltft2 = v; }
+  else if (topic.endsWith('/o2_b1s1') && v !== undefined) { S.o2b1 = v; }
+  else if (topic.endsWith('/o2_b2s1') && v !== undefined) { S.o2b2 = v; }
+  else if (topic.endsWith('/timing') && v !== undefined) { S.timing = v; }
+  else if (topic.endsWith('/baro') && v !== undefined) { S.baro = v; }
+  else if (topic.endsWith('/fuel_lvl') && v !== undefined) { S.fuelLvl = v; }
+  else if (topic.endsWith('/run_time') && v !== undefined) { S.runTime = v; }
   else if (topic.endsWith('/alert/level')) {
     S.alertLevel = data.level || 0;
     updateAlertIndicator();
@@ -956,7 +1033,7 @@ function connect() {
   ws.onclose = () => {
     S.connected = false;
     document.getElementById('conn-dot').className = 'conn-dot off';
-    document.getElementById('conn-text').textContent = 'OFF';
+    document.getElementById('conn-text').textContent = 'RECON';
     document.getElementById('conn-status').className = 'conn';
     setTimeout(connect, 2000);
   };
@@ -975,6 +1052,8 @@ function goToPage(idx) {
     document.getElementById('dot-' + i).className = 'page-dot' + (i === idx ? ' active' : '');
   }
   document.getElementById('page-label').textContent = PAGE_NAMES[idx];
+  // Haptic feedback for page change (short vibration)
+  if (navigator.vibrate) navigator.vibrate(15);
 }
 
 // Touch swipe
@@ -1026,10 +1105,14 @@ function render() {
   dRpm += (S.rpm - dRpm) * 0.18;
   dSpeed += (S.speed - dSpeed) * 0.18;
 
-  // Always draw tach (it's the hero)
-  drawTach(dRpm);
+  // Only redraw tach canvas when RPM changed visually (>25 RPM = ~1 segment)
+  const rpmRounded = Math.round(dRpm);
+  if (Math.abs(rpmRounded - lastDrawnRpm) > 25) {
+    drawTach(dRpm);
+    lastDrawnRpm = rpmRounded;
+  }
 
-  // Update active page DOM
+  // Only update the active page DOM (skip hidden pages)
   if (currentPage === 0) updateDriveUI();
   else if (currentPage === 1) updateTyresUI();
   else if (currentPage === 2) updateEngineUI();
