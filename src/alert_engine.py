@@ -10,6 +10,7 @@ import json
 import time
 import signal
 import logging
+import threading
 import itertools
 from collections import deque
 from dataclasses import dataclass, field
@@ -73,7 +74,8 @@ class VehicleState:
         """Average of last n readings."""
         if not buf:
             return None
-        samples = list(buf)[-n:]
+        start = max(0, len(buf) - n)
+        samples = list(itertools.islice(buf, start, len(buf)))
         return sum(samples) / len(samples)
 
     def latest(self, buf):
@@ -91,8 +93,10 @@ class VehicleState:
         n = min(len(buf), len(ts), window)
         if n < 10:
             return 0
-        samples = list(buf)[-n:]
-        times = list(ts)[-n:]
+        buf_start = max(0, len(buf) - n)
+        ts_start = max(0, len(ts) - n)
+        samples = list(itertools.islice(buf, buf_start, len(buf)))
+        times = list(itertools.islice(ts, ts_start, len(ts)))
         dt = times[-1] - times[0]
         if abs(dt) < 1e-6:
             return 0
@@ -249,7 +253,8 @@ def rule_idle_instability(state: VehicleState):
         return None  # Only care at idle
 
     # Check RPM variance
-    recent = list(state.rpm)[-100:]
+    start = max(0, len(state.rpm) - 100)
+    recent = list(itertools.islice(state.rpm, start, len(state.rpm)))
     rpm_min = min(recent)
     rpm_max = max(recent)
     spread = rpm_max - rpm_min
@@ -411,7 +416,8 @@ def rule_stalled(state: VehicleState):
     if rpm == 0 and voltage > 10:
         # Check if RPM was recently > 0 (stall vs key-off)
         if len(state.rpm) >= 10:
-            recent = list(state.rpm)[-10:]
+            start = max(0, len(state.rpm) - 10)
+            recent = list(itertools.islice(state.rpm, start, len(state.rpm)))
             if any(r > 200 for r in recent[:-3]):
                 return (LEVEL_RED,
                         f"ENGINE STALL DETECTED. RPM dropped to 0. "
@@ -520,7 +526,8 @@ def rule_xtype_thermostat(state: VehicleState):
 
     # Pattern 1: Oscillation — thermostat repeatedly opening/closing
     if len(state.coolant) >= 200:
-        recent = list(state.coolant)[-200:]  # ~20s of readings at 10Hz
+        c_start = max(0, len(state.coolant) - 200)
+        recent = list(itertools.islice(state.coolant, c_start, len(state.coolant)))  # ~20s at 10Hz
         c_min = min(recent)
         c_max = max(recent)
         swing = c_max - c_min
@@ -577,7 +584,8 @@ def rule_xtype_coil_pack(state: VehicleState):
         return None
 
     # Look for RPM drops under load — a classic coil pack symptom
-    recent_rpm = list(state.rpm)[-100:]
+    rpm_start = max(0, len(state.rpm) - 100)
+    recent_rpm = list(itertools.islice(state.rpm, rpm_start, len(state.rpm)))
     rpm_max = max(recent_rpm)
     rpm_min = min(recent_rpm)
     drop = rpm_max - rpm_min
@@ -802,6 +810,7 @@ ALL_RULES = [
 
 # ── MQTT Callbacks ──
 state = VehicleState()
+_state_lock = threading.Lock()
 current_alert_level = LEVEL_OK
 current_alert_msg = "Systems nominal"
 last_alert_time = 0
@@ -822,55 +831,56 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload)
         topic = msg.topic
 
-        # DTC messages have a different structure
-        if topic.endswith('/dtc'):
-            state.active_dtcs = data.get('stored', [])
-            state.pending_dtcs = data.get('pending', [])
-            return
+        with _state_lock:
+            # DTC messages have a different structure
+            if topic.endswith('/dtc'):
+                state.active_dtcs = data.get('stored', [])
+                state.pending_dtcs = data.get('pending', [])
+                return
 
-        # TPMS tire data
-        if '/rf/tpms/' in topic and not topic.endswith('/snapshot'):
-            pos = topic.split('/')[-1]  # fl, fr, rl, rr
-            if pos in ('fl', 'fr', 'rl', 'rr'):
-                state.tpms[pos] = data
-                psi = data.get('pressure_psi')
-                if psi is not None:
-                    state.tpms_history[pos].append((data.get('ts', time.time()), psi))
-            return
+            # TPMS tire data
+            if '/rf/tpms/' in topic and not topic.endswith('/snapshot'):
+                pos = topic.split('/')[-1]  # fl, fr, rl, rr
+                if pos in ('fl', 'fr', 'rl', 'rr'):
+                    state.tpms[pos] = data
+                    psi = data.get('pressure_psi')
+                    if psi is not None:
+                        state.tpms_history[pos].append((data.get('ts', time.time()), psi))
+                return
 
-        value = data.get('value')
-        if value is None:
-            return
-        ts = data.get('ts', time.time())
+            value = data.get('value')
+            if value is None:
+                return
+            ts = data.get('ts', time.time())
 
-        if topic.endswith('/rpm'):
-            state.rpm.append(value)
-        elif topic.endswith('/coolant'):
-            state.coolant.append(value)
-            state.coolant_ts.append(ts)
-        elif topic.endswith('/stft1'):
-            state.stft1.append(value)
-        elif topic.endswith('/stft2'):
-            state.stft2.append(value)
-        elif topic.endswith('/ltft1'):
-            state.ltft1.append(value)
-        elif topic.endswith('/ltft2'):
-            state.ltft2.append(value)
-        elif topic.endswith('/load'):
-            state.load.append(value)
-        elif topic.endswith('/speed'):
-            state.speed.append(value)
-        elif topic.endswith('/throttle'):
-            state.throttle.append(value)
-        elif topic.endswith('/voltage'):
-            state.voltage.append(value)
-            state.voltage_ts.append(ts)
-        elif topic.endswith('/iat'):
-            state.iat.append(value)
-        elif topic.endswith('/maf'):
-            state.maf.append(value)
+            if topic.endswith('/rpm'):
+                state.rpm.append(value)
+            elif topic.endswith('/coolant'):
+                state.coolant.append(value)
+                state.coolant_ts.append(ts)
+            elif topic.endswith('/stft1'):
+                state.stft1.append(value)
+            elif topic.endswith('/stft2'):
+                state.stft2.append(value)
+            elif topic.endswith('/ltft1'):
+                state.ltft1.append(value)
+            elif topic.endswith('/ltft2'):
+                state.ltft2.append(value)
+            elif topic.endswith('/load'):
+                state.load.append(value)
+            elif topic.endswith('/speed'):
+                state.speed.append(value)
+            elif topic.endswith('/throttle'):
+                state.throttle.append(value)
+            elif topic.endswith('/voltage'):
+                state.voltage.append(value)
+                state.voltage_ts.append(ts)
+            elif topic.endswith('/iat'):
+                state.iat.append(value)
+            elif topic.endswith('/maf'):
+                state.maf.append(value)
 
-        state.timestamps.append(ts)
+            state.timestamps.append(ts)
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         log.warning(f"Bad message on {msg.topic}: {e}")
@@ -889,12 +899,14 @@ def evaluate_rules(mqtt_client):
     if now - last_alert_time < ALERT_COOLDOWN:
         return
 
-    # Evaluate every rule and collect results
+    # Evaluate every rule and collect results under lock so the MQTT
+    # callback thread cannot mutate VehicleState mid-evaluation.
     triggered = {}  # rule_name -> (level, message)
-    for rule in ALL_RULES:
-        result = rule(state)
-        if result:
-            triggered[rule.__name__] = result
+    with _state_lock:
+        for rule in ALL_RULES:
+            result = rule(state)
+            if result:
+                triggered[rule.__name__] = result
 
     # Apply hysteresis: a rule must clear for HYSTERESIS_CYCLES before removal
     for name, alert in triggered.items():

@@ -33,6 +33,8 @@ latest = {
     'rpm': 0, 'coolant': 0, 'stft1': 0, 'stft2': 0,
     'speed': 0, 'throttle': 0, 'load': 0, 'voltage': 0,
     'ltft1': 0, 'ltft2': 0, 'iat': 0, 'maf': 0,
+    'o2_b1s1': 0, 'o2_b2s1': 0, 'timing': 0, 'baro': 0,
+    'fuel_lvl': 0, 'run_time': 0,
     'alert_level': 0,
     'tpms_fl_psi': 0, 'tpms_fr_psi': 0, 'tpms_rl_psi': 0, 'tpms_rr_psi': 0,
     'tpms_fl_temp': 0, 'tpms_fr_temp': 0, 'tpms_rl_temp': 0, 'tpms_rr_temp': 0,
@@ -112,7 +114,7 @@ def pack_alert_frame():
 
 def pack_alert_text_frame():
     """Frame 0x200: Alert text (up to 63 bytes + null terminator)."""
-    text = alert_message[:63].encode('ascii', errors='replace')
+    text = alert_message[:63].encode('latin-1', errors='replace')
     text += b'\x00'  # Null terminator
     # RealDash text frame uses 0x44 header but with full 64 bytes
     frame = REALDASH_HEADER
@@ -135,6 +137,32 @@ def pack_tpms_frame():
                        max(0, min(65535, rl)),
                        max(0, min(65535, rr)))
     return build_frame(0x140, data)
+
+
+def pack_extra_engine_frame():
+    """Frame 0x160: O2 B1S1, O2 B2S1, Timing Advance, Barometric Pressure."""
+    o2_b1 = int(latest['o2_b1s1'] * 10000)   # 0-1.275V → 0-12750
+    o2_b2 = int(latest['o2_b2s1'] * 10000)
+    timing = int((latest['timing'] + 64) * 100)  # -64 to +64° → 0-12800
+    baro = int(latest['baro'] * 10)               # kPa × 10
+
+    data = struct.pack('>HHHH',
+                       max(0, min(65535, o2_b1)),
+                       max(0, min(65535, o2_b2)),
+                       max(0, min(65535, timing)),
+                       max(0, min(65535, baro)))
+    return build_frame(0x160, data)
+
+
+def pack_vehicle_extra_frame():
+    """Frame 0x170: Fuel Level, Engine Run Time."""
+    fuel = int(latest['fuel_lvl'] * 100)    # 0-100% → 0-10000
+    run_time = int(latest['run_time'])       # seconds
+
+    data = struct.pack('>HH',
+                       max(0, min(65535, fuel)),
+                       max(0, min(65535, run_time)))
+    return build_frame(0x170, data)
 
 
 def pack_tpms_temp_frame():
@@ -183,6 +211,18 @@ def on_mqtt_message(client, userdata, msg):
             latest['iat'] = data.get('value', 0)
         elif topic.endswith('/maf'):
             latest['maf'] = data.get('value', 0)
+        elif topic.endswith('/o2_b1s1'):
+            latest['o2_b1s1'] = data.get('value', 0)
+        elif topic.endswith('/o2_b2s1'):
+            latest['o2_b2s1'] = data.get('value', 0)
+        elif topic.endswith('/timing'):
+            latest['timing'] = data.get('value', 0)
+        elif topic.endswith('/baro'):
+            latest['baro'] = data.get('value', 0)
+        elif topic.endswith('/fuel_lvl'):
+            latest['fuel_lvl'] = data.get('value', 0)
+        elif topic.endswith('/run_time'):
+            latest['run_time'] = data.get('value', 0)
         elif topic.endswith('/alert/level'):
             latest['alert_level'] = data.get('level', 0)
         elif topic.endswith('/alert/message'):
@@ -214,6 +254,8 @@ def handle_client(conn, addr):
                     pack_engine_frame() +
                     pack_vehicle_frame() +
                     pack_extended_frame() +
+                    pack_extra_engine_frame() +
+                    pack_vehicle_extra_frame() +
                     pack_alert_frame() +
                     pack_tpms_frame() +
                     pack_tpms_temp_frame()

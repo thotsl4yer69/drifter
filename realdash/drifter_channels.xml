@@ -83,6 +83,38 @@
              offset="0" length="1"/>
     </frame>
 
+    <!-- Extra engine data (O2 sensors, timing, barometric) -->
+    <frame id="0x160">
+      <value name="Jaguar: O2 Bank 1 S1"
+             offset="0" length="2"
+             units="V"
+             conversion="V*0.0001"/>
+      <value name="Jaguar: O2 Bank 2 S1"
+             offset="2" length="2"
+             units="V"
+             conversion="V*0.0001"/>
+      <value name="Jaguar: Timing Advance"
+             offset="4" length="2"
+             units="°"
+             conversion="V*0.01-64"/>
+      <value name="Jaguar: Barometric Pressure"
+             offset="6" length="2"
+             units="kPa"
+             conversion="V*0.1"/>
+    </frame>
+
+    <!-- Vehicle extra (fuel level, run time) -->
+    <frame id="0x170">
+      <value name="Jaguar: Fuel Level"
+             offset="0" length="2"
+             units="%"
+             conversion="V*0.01"/>
+      <value name="Jaguar: Engine Run Time"
+             offset="2" length="2"
+             units="s"
+             conversion="V"/>
+    </frame>
+
     <!-- TPMS Pressures (published by rf_monitor.py) -->
     <frame id="0x140">
       <value name="Jaguar: TPMS FL PSI"
