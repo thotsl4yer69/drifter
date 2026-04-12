@@ -110,18 +110,16 @@ def sync_logs():
     synced = set(sync_state.get('synced_files', []))
     new_synced = []
 
-    # Sync compressed log files
-    for gz_file in sorted(LOG_DIR.glob("*.jsonl.gz")):
-        if gz_file.name not in synced:
-            if _rsync_file(gz_file, f"{NANOB_LOG_PATH}/"):
-                new_synced.append(gz_file.name)
+    # Sync compressed log files (batched into a single rsync call)
+    unsynced_logs = [f for f in sorted(LOG_DIR.glob("*.jsonl.gz")) if f.name not in synced]
+    if unsynced_logs:
+        new_synced.extend(_rsync_batch(unsynced_logs, f"{NANOB_LOG_PATH}/"))
 
-    # Sync session summaries
+    # Sync session summaries (batched into a single rsync call)
     if SESSION_DIR.exists():
-        for session_file in sorted(SESSION_DIR.glob("session_*.json")):
-            if session_file.name not in synced:
-                if _rsync_file(session_file, f"{NANOB_LOG_PATH}/sessions/"):
-                    new_synced.append(session_file.name)
+        unsynced_sessions = [f for f in sorted(SESSION_DIR.glob("session_*.json")) if f.name not in synced]
+        if unsynced_sessions:
+            new_synced.extend(_rsync_batch(unsynced_sessions, f"{NANOB_LOG_PATH}/sessions/"))
 
     # Sync calibration file
     if CALIBRATION_FILE.exists() and CALIBRATION_FILE.name not in synced:
@@ -134,6 +132,28 @@ def sync_logs():
         sync_state['last_sync'] = now
         save_sync_state(sync_state)
         log.info(f"Synced {len(new_synced)} files to nanob")
+
+
+def _rsync_batch(local_files, remote_dir):
+    """Rsync multiple files to nanob in one call. Returns list of synced filenames."""
+    if not local_files:
+        return []
+    remote = f"{NANOB_USER}@{NANOB_HOST}:{remote_dir}"
+    file_args = [str(f) for f in local_files]
+    try:
+        result = subprocess.run(
+            ['rsync', '-az', '--timeout=30'] + file_args + [remote],
+            capture_output=True, timeout=120
+        )
+        if result.returncode == 0:
+            log.debug(f"Batch synced {len(local_files)} files")
+            return [f.name for f in local_files]
+        else:
+            log.debug(f"Batch rsync failed: {result.stderr.decode()[:200]}")
+            return []
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.debug(f"Batch rsync error: {e}")
+        return []
 
 
 def _rsync_file(local_path, remote_dir):

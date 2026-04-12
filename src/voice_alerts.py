@@ -104,14 +104,17 @@ def speak(text):
                 stderr=subprocess.PIPE
             )
             process.communicate(input=text.encode(), timeout=10)
+            if process.returncode != 0:
+                log.warning("Piper TTS failed with exit code %d", process.returncode)
 
             if wav_path.exists() and has_local_audio:
-                subprocess.run(
+                aplay_result = subprocess.run(
                     ['aplay', '-q', str(wav_path)],
                     timeout=15,
                     capture_output=True
                 )
-                spoke = True
+                if aplay_result.returncode == 0:
+                    spoke = True
         else:
             # espeak-ng — generate WAV to file
             result = subprocess.run(
@@ -122,12 +125,13 @@ def speak(text):
             )
             if result.returncode == 0 and wav_path.exists():
                 if has_local_audio:
-                    subprocess.run(
+                    aplay_result = subprocess.run(
                         ['aplay', '-q', str(wav_path)],
                         timeout=15,
                         capture_output=True
                     )
-                    spoke = True
+                    if aplay_result.returncode == 0:
+                        spoke = True
 
         # Publish WAV via MQTT for web dashboard audio bridge
         if wav_path.exists() and _mqtt_client is not None:

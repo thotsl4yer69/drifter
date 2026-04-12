@@ -283,8 +283,17 @@ def _handle_run_command(arguments: dict, mqtt_client) -> dict:
 def _handle_rf_scan(arguments: dict, mqtt_client) -> dict:
     """Map RF scan mode to a pre-defined shell command and execute."""
     mode = arguments.get('mode', 'decode_433')
-    duration = int(arguments.get('duration_sec', 30))
-    frequency = arguments.get('frequency_mhz', '433.92')
+
+    try:
+        duration = int(arguments.get('duration_sec', 30))
+    except (TypeError, ValueError):
+        return {'success': False, 'output': 'Invalid duration (must be integer)', 'risk_level': 'BLOCKED', 'command': ''}
+
+    frequency = str(arguments.get('frequency_mhz', '433.92'))
+
+    # Sanitize frequency — must be numeric, no shell metacharacters
+    if _SHELL_META.search(frequency) or not re.fullmatch(r'\d+(\.\d+)?', frequency):
+        return {'success': False, 'output': 'Invalid frequency (must be numeric, e.g. 433.92)', 'risk_level': 'BLOCKED', 'command': ''}
 
     template = RF_COMMANDS.get(mode)
     if not template:

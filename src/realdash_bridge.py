@@ -112,7 +112,7 @@ def pack_alert_frame():
 
 def pack_alert_text_frame():
     """Frame 0x200: Alert text (up to 63 bytes + null terminator)."""
-    text = alert_message[:63].encode('ascii', errors='replace')
+    text = alert_message[:63].encode('latin-1', errors='replace')
     text += b'\x00'  # Null terminator
     # RealDash text frame uses 0x44 header but with full 64 bytes
     frame = REALDASH_HEADER

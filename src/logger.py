@@ -193,7 +193,7 @@ def compress_log(path: Path) -> Path:
     gz_path = Path(str(path) + '.gz')
     with open(path, 'rb') as f_in, gzip.open(gz_path, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
-    path.unlink()
+    path.unlink(missing_ok=True)
     log.info(f"Compressed: {path.name} → {gz_path.name}")
     return gz_path
 
@@ -211,13 +211,21 @@ def cleanup_old_logs():
     all_logs = sorted(
         LOG_DIR.glob("*.jsonl.gz"), key=lambda f: f.stat().st_mtime
     )
-    total_size = sum(f.stat().st_size for f in all_logs)
+    total_size = 0
+    for f in all_logs:
+        try:
+            total_size += f.stat().st_size
+        except FileNotFoundError:
+            pass
     total_mb = total_size / (1024 * 1024)
 
     while total_mb > MAX_LOG_SIZE_MB * 0.8 and all_logs:
         oldest = all_logs.pop(0)
-        size = oldest.stat().st_size / (1024 * 1024)
-        oldest.unlink()
+        try:
+            size = oldest.stat().st_size / (1024 * 1024)
+        except FileNotFoundError:
+            continue
+        oldest.unlink(missing_ok=True)
         total_mb -= size
         log.info(f"Removed old log: {oldest.name} ({size:.1f} MB)")
 

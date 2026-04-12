@@ -139,8 +139,12 @@ def _call_groq(prompt: str) -> dict:
     if resp.status_code != 200:
         raise RuntimeError(f"Groq HTTP {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
+    try:
+        text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected Groq response structure: {e}") from e
     return {
-        "text": data["choices"][0]["message"]["content"],
+        "text": text,
         "model": f"groq/{GROQ_MODEL}",
         "tokens": data.get("usage", {}).get("total_tokens", 0),
     }
@@ -167,8 +171,12 @@ def _call_claude(prompt: str) -> dict:
         raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
     usage = data.get("usage", {})
+    try:
+        text = data["content"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected Claude response structure: {e}") from e
     return {
-        "text": data["content"][0]["text"],
+        "text": text,
         "model": f"anthropic/{ANTHROPIC_MODEL}",
         "tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
     }
@@ -245,8 +253,12 @@ def _chat_groq(prompt: str) -> dict:
     if resp.status_code != 200:
         raise RuntimeError(f"Groq HTTP {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
+    try:
+        text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected Groq chat response structure: {e}") from e
     return {
-        "text": data["choices"][0]["message"]["content"],
+        "text": text,
         "model": f"groq/{GROQ_MODEL}",
         "tokens": data.get("usage", {}).get("total_tokens", 0),
     }
@@ -273,8 +285,12 @@ def _chat_claude(prompt: str) -> dict:
         raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
     usage = data.get("usage", {})
+    try:
+        text = data["content"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected Claude chat response structure: {e}") from e
     return {
-        "text": data["content"][0]["text"],
+        "text": text,
         "model": f"anthropic/{ANTHROPIC_MODEL}",
         "tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
     }
