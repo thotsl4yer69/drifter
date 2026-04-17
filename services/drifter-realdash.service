@@ -13,5 +13,18 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
+# --- Hardening (see AGENTS.md) --------------------------------------
+# Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
+# read-only while leaving /opt/drifter writable for logs/state.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
 [Install]
 WantedBy=multi-user.target

@@ -11,5 +11,13 @@ ExecStart=/opt/drifter/fbmirror 25
 Restart=on-failure
 RestartSec=5
 
+# fbmirror needs raw /dev/fb0 and /dev/fb1 access; sandbox what we can.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=true
+LockPersonality=true
+RestrictSUIDSGID=true
+
 [Install]
 WantedBy=multi-user.target

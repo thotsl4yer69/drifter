@@ -15,7 +15,7 @@
 #   cd drifter && sudo ./install.sh
 # ============================================
 
-set -e
+set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'

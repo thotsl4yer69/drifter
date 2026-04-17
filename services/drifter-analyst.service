@@ -14,5 +14,15 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
 [Install]
 WantedBy=multi-user.target

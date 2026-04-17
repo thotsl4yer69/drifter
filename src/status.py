@@ -41,7 +41,10 @@ collected = {}
 def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload)
-        collected[msg.topic] = data
+        # Downstream code uses .get(...) — only store dict payloads so a
+        # rogue publisher sending a bare JSON number/string cannot crash us.
+        if isinstance(data, dict):
+            collected[msg.topic] = data
     except (json.JSONDecodeError, ValueError):
         pass
 

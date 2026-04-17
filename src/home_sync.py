@@ -178,13 +178,20 @@ def _rsync_file(local_path, remote_dir):
 def on_local_message(client, userdata, msg):
     """Forward drifter messages to nanob."""
     global home_client
-    if home_client and is_home:
-        try:
-            # Republish under sentient namespace
-            remote_topic = msg.topic.replace("drifter/", "sentient/vehicle/drifter/")
-            home_client.publish(remote_topic, msg.payload)
-        except Exception:
-            pass
+    if not (home_client and is_home):
+        return
+    try:
+        topic = msg.topic
+        # Only rewrite the leading "drifter/" prefix. str.replace rewrites
+        # every occurrence, which would mangle any topic that legitimately
+        # contains the substring "drifter/" past the first segment.
+        if topic.startswith("drifter/"):
+            remote_topic = "sentient/vehicle/drifter/" + topic[len("drifter/"):]
+        else:
+            remote_topic = topic
+        home_client.publish(remote_topic, msg.payload)
+    except Exception as e:
+        log.debug(f"Forward to nanob failed for {msg.topic}: {e}")
 
 
 def main():

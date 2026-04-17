@@ -13,6 +13,7 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
+import re
 import time
 import glob as globmod
 import signal
@@ -23,6 +24,14 @@ import subprocess
 from pathlib import Path
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import paho.mqtt.client as mqtt
+
+# Hard cap on POST request body size (bytes). Protects HTTP handler threads
+# from being stalled by a malicious Content-Length value.
+MAX_POST_BODY = 64 * 1024
+
+# Valid OBD-II / manufacturer DTC format — single uppercase letter + 4 hex
+# digits. Used to reject path traversal / junk in /api/mechanic/dtc/:code.
+_DTC_RE = re.compile(r'^[PCBU][0-9A-F]{4}$')
 
 try:
     import websockets
@@ -2088,6 +2097,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             })
         elif parsed.path.startswith('/api/mechanic/dtc/'):
             code = parsed.path.split('/')[-1].upper()
+            if not _DTC_RE.match(code):
+                self.send_error(400, 'Invalid DTC code')
+                return
             from config import XTYPE_DTC_LOOKUP
             info = XTYPE_DTC_LOOKUP.get(code, {})
             self._serve_json({'code': code, **info})
@@ -2202,6 +2214,34 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             prompt += "\n\n---\n\n" + "\n\n".join(context_parts)
         return prompt
 
+    def _read_json_body(self):
+        """Read + parse a JSON request body with a size cap.
+
+        Returns the parsed dict, or None after sending an error response.
+        Callers MUST return immediately on None.
+        """
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            self.send_error(400, 'Invalid Content-Length')
+            return None
+        if length <= 0:
+            self.send_error(400, 'Missing request body')
+            return None
+        if length > MAX_POST_BODY:
+            self.send_error(413, 'Request body too large')
+            return None
+        try:
+            raw = self.rfile.read(length)
+            body = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            self.send_error(400, 'Invalid JSON')
+            return None
+        if not isinstance(body, dict):
+            self.send_error(400, 'Expected JSON object')
+            return None
+        return body
+
     def do_POST(self):
         if self.path == '/api/analyse':
             try:
@@ -2213,9 +2253,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"status": "triggered"}')
         elif self.path == '/api/query':
+            body = self._read_json_body()
+            if body is None:
+                return
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                body = json.loads(self.rfile.read(length))
                 query = body.get('query', '').strip()
                 if not query:
                     self.send_error(400, 'Missing query')
@@ -2234,9 +2275,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 log.warning(f"Query error: {e}")
                 self._serve_json({'error': str(e)})
         elif self.path == '/api/query/stream':
+            body = self._read_json_body()
+            if body is None:
+                return
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                body = json.loads(self.rfile.read(length))
                 query = body.get('query', '').strip()
                 if not query:
                     self.send_error(400, 'Missing query')
@@ -2265,9 +2307,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
         elif self.path == '/api/settings':
+            body = self._read_json_body()
+            if body is None:
+                return
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                body = json.loads(self.rfile.read(length))
                 ok = save_settings(body)
                 self._serve_json({'ok': ok})
             except Exception as e:
