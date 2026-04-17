@@ -15,6 +15,24 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
 <title>DRIFTER</title>
+<script>
+/* Theme boot — runs before any CSS applies to avoid a flash of wrong theme.
+   Order of precedence: explicit user choice in localStorage, then OS-level
+   prefers-color-scheme, otherwise dark (the DRIFTER default). */
+(function(){
+  try{
+    var t=localStorage.getItem('drifter_theme')||'auto';
+    if(t==='auto'){
+      t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+    }
+    if(t==='light'){
+      document.documentElement.setAttribute('data-theme','light');
+      var m=document.querySelector('meta[name=theme-color]');
+      if(m) m.setAttribute('content','#f4f6f8');
+    }
+  }catch(e){}
+})();
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -200,7 +218,47 @@ body{
   transition:color .15s var(--ease);
 }
 .tabbar a:active,.tabbar button:active,.tabbar a.active,.tabbar button.active{color:var(--accent)}
-.tabbar .ico{font-size:18px;line-height:1;height:20px;display:flex;align-items:center}
+.tabbar .ico{
+  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;display:block;
+  transition:transform .2s var(--ease);
+}
+.tabbar a:active .ico,.tabbar button:active .ico{transform:scale(.92)}
+.tabbar button.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
+.tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
+
+/* ── Light-mode overrides ── */
+[data-theme="light"]{
+  --bg:#f4f6f8;--bg-elev:#ffffff;--card:#ffffff;--card-hi:#f0f3f6;
+  --border:#d8dfe5;--border-hi:#c2ccd4;
+  --text:#0c1319;--text-dim:#4b5763;--text-mute:#7b8693;
+  --dim:#4b5763;
+  --accent:#0891b2;--accent-glow:rgba(8,145,178,.22);
+  --ok:#16a34a;--info:#2563eb;--amber:#d97706;--red:#dc2626;
+  --ok-glow:rgba(22,163,74,.18);--amber-glow:rgba(217,119,6,.22);--red-glow:rgba(220,38,38,.25);
+}
+[data-theme="light"] body{
+  background:
+    radial-gradient(1200px 600px at 50% -150px,#e6eef5 0%,transparent 60%),
+    var(--bg);
+}
+[data-theme="light"] .header{background:linear-gradient(180deg,#ffffff,var(--bg))}
+[data-theme="light"] .card{background:linear-gradient(180deg,var(--card),#f7f9fb)}
+[data-theme="light"] .card::before{background:radial-gradient(140% 80% at 50% -30%,rgba(8,145,178,.05),transparent 55%)}
+[data-theme="light"] .tpms-card,[data-theme="light"] .diag-card,[data-theme="light"] .alert-msg,
+[data-theme="light"] .alert-expand,[data-theme="light"] .hw-item{
+  background:linear-gradient(180deg,var(--card),#f7f9fb);
+}
+[data-theme="light"] .bar,
+[data-theme="light"] .bar-zones,
+[data-theme="light"] .trim-bar-wrap{background:#e8edf2}
+[data-theme="light"] .bar-needle{background:#0c1319;box-shadow:0 0 6px rgba(12,19,25,.35)}
+[data-theme="light"] .tabbar{background:linear-gradient(180deg,rgba(244,246,248,.92),var(--bg))}
+[data-theme="light"] .alert-ok{background:linear-gradient(180deg,rgba(22,163,74,.08),rgba(22,163,74,.02))}
+[data-theme="light"] .alert-info{background:linear-gradient(180deg,rgba(37,99,235,.08),rgba(37,99,235,.02))}
+[data-theme="light"] .alert-amber{background:linear-gradient(180deg,rgba(217,119,6,.12),rgba(217,119,6,.03))}
+[data-theme="light"] .alert-red{background:linear-gradient(180deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
+[data-theme="light"] .hw-overlay,[data-theme="light"] .disconnected{background:var(--bg)}
 
 /* Disconnected overlay */
 .disconnected{
@@ -569,19 +627,19 @@ details[open] summary::before{content:"▾ "}
 
 <nav class="tabbar" aria-label="Primary">
   <a href="/" class="active" aria-label="Dashboard">
-    <span class="ico" aria-hidden="true">&#x1F4CA;</span>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9h3M12 3a9 9 0 0 1 9 9h-3M12 3v4M5.3 6.3l2.1 2.1M18.7 6.3l-2.1 2.1M12 12l5-4"/><circle cx="12" cy="12" r="1.5"/></svg>
     <span>LIVE</span>
   </a>
   <a href="/mechanic" aria-label="Mechanic advisor">
-    <span class="ico" aria-hidden="true">&#x1F527;</span>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.4 1.4 0 0 0 2 2l6-6a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
     <span>MECHANIC</span>
   </a>
   <a href="/settings" aria-label="Settings">
-    <span class="ico" aria-hidden="true">&#x2699;</span>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     <span>SETTINGS</span>
   </a>
   <button id="audio-btn" aria-label="Enable voice alerts on this device" aria-pressed="false">
-    <span class="ico" aria-hidden="true">&#x1F50A;</span>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
     <span>VOICE</span>
   </button>
 </nav>
@@ -763,6 +821,48 @@ function setVal(id, val, color){
   el.textContent=val;
   if(color)el.style.color=color;
 }
+
+// ── Animated number counter ──
+// Tweens the displayed value from its current number to `target` over
+// `duration` ms with an ease-out curve so gauges feel smooth instead of
+// snapping.  If the element already shows a non-numeric value we skip the
+// tween and set directly (first paint, etc.).
+const _tweens = new Map();  // id -> rAF handle, so a newer update cancels the previous tween
+function animateVal(id, target, fmt, color, duration){
+  const el = document.getElementById(id);
+  if(!el) return;
+  duration = duration || 280;
+  fmt = fmt || (v => Math.round(v));
+  // Cancel any in-flight tween on this element.
+  const prev = _tweens.get(id);
+  if(prev) cancelAnimationFrame(prev);
+  const from = parseFloat(el.textContent);
+  // If we can't parse the current text (first render, "--", etc.) just snap.
+  if(!isFinite(from)){
+    el.textContent = fmt(target);
+    if(color) el.style.color = color;
+    return;
+  }
+  // If the delta is tiny, skip the tween entirely — feels like wasted motion.
+  if(Math.abs(target - from) < 0.1){
+    el.textContent = fmt(target);
+    if(color) el.style.color = color;
+    return;
+  }
+  if(color) el.style.color = color;
+  const start = performance.now();
+  function step(now){
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);             // ease-out cubic
+    el.textContent = fmt(from + (target - from) * eased);
+    if(t < 1){
+      _tweens.set(id, requestAnimationFrame(step));
+    } else {
+      _tweens.delete(id);
+    }
+  }
+  _tweens.set(id, requestAnimationFrame(step));
+}
 function setBar(id, pct, color){
   const el=document.getElementById(id);
   if(!el)return;
@@ -799,23 +899,23 @@ function handleMessage(msg){
   const v = data.value;
 
   if(topic.endsWith('/rpm') && v!==undefined){
-    setVal('v-rpm', Math.round(v), rpmColor(v));
+    animateVal('v-rpm', v, n => Math.round(n).toString(), rpmColor(v));
     // Position needle along zone bar (0-7000 RPM = 0-100%)
     const needle=document.getElementById('b-rpm');
     if(needle) needle.style.left=Math.min(100,(v/7000)*100)+'%';
     flash('c-rpm');
   }
   else if(topic.endsWith('/coolant') && v!==undefined){
-    setVal('v-coolant', Math.round(v), coolantColor(v));
+    animateVal('v-coolant', v, n => Math.round(n).toString(), coolantColor(v));
     setBar('b-coolant', ((v-40)/80)*100, coolantColor(v));
     flash('c-coolant');
   }
   else if(topic.endsWith('/speed') && v!==undefined){
-    setVal('v-speed', Math.round(v));
+    animateVal('v-speed', v, n => Math.round(n).toString());
     flash('c-speed');
   }
   else if(topic.endsWith('/voltage') && v!==undefined){
-    setVal('v-voltage', v.toFixed(1), voltColor(v));
+    animateVal('v-voltage', v, n => n.toFixed(1), voltColor(v));
     flash('c-voltage');
   }
   else if(topic.endsWith('/stft1') && v!==undefined){
@@ -835,18 +935,18 @@ function handleMessage(msg){
     setTrimBar('tb-ltft2', v, trimColor(v));
   }
   else if(topic.endsWith('/load') && v!==undefined){
-    setVal('v-load', v.toFixed(0));
+    animateVal('v-load', v, n => n.toFixed(0));
     setBar('b-load', v, 'var(--accent)');
   }
   else if(topic.endsWith('/throttle') && v!==undefined){
-    setVal('v-throttle', v.toFixed(0));
+    animateVal('v-throttle', v, n => n.toFixed(0));
     setBar('b-throttle', v, 'var(--accent)');
   }
   else if(topic.endsWith('/iat') && v!==undefined){
-    setVal('v-iat', Math.round(v), iatColor(v));
+    animateVal('v-iat', v, n => Math.round(n).toString(), iatColor(v));
   }
   else if(topic.endsWith('/maf') && v!==undefined){
-    setVal('v-maf', v.toFixed(1));
+    animateVal('v-maf', v, n => n.toFixed(1));
   }
   // Alert level
   else if(topic.endsWith('/alert/level')){
@@ -1316,6 +1416,17 @@ MECHANIC_HTML = r"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
 <title>DRIFTER MECHANIC</title>
+<script>
+(function(){try{
+  var t=localStorage.getItem('drifter_theme')||'auto';
+  if(t==='auto') t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+  if(t==='light'){
+    document.documentElement.setAttribute('data-theme','light');
+    var m=document.querySelector('meta[name=theme-color]');
+    if(m) m.setAttribute('content','#f4f6f8');
+  }
+}catch(e){}})();
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -1457,7 +1568,30 @@ body{
   display:flex;flex-direction:column;align-items:center;gap:4px;
 }
 .tabbar a.active,.tabbar a:active{color:var(--accent)}
-.tabbar .ico{font-size:18px;line-height:1;height:20px;display:flex;align-items:center}
+.tabbar .ico{
+  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;display:block;
+  transition:transform .2s var(--ease);
+}
+.tabbar a:active .ico{transform:scale(.92)}
+.tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
+
+/* Light-mode overrides */
+[data-theme="light"]{
+  --bg:#f4f6f8;--bg-elev:#ffffff;--card:#ffffff;
+  --border:#d8dfe5;--border-hi:#c2ccd4;
+  --text:#0c1319;--text-dim:#4b5763;--text-mute:#7b8693;--dim:#4b5763;
+  --accent:#0891b2;--accent-glow:rgba(8,145,178,.22);
+  --ok:#16a34a;--info:#2563eb;--amber:#d97706;--red:#dc2626;
+}
+[data-theme="light"] body{
+  background:radial-gradient(1200px 600px at 50% -150px,#e6eef5 0%,transparent 60%),var(--bg);
+}
+[data-theme="light"] .header{background:linear-gradient(180deg,#ffffff,var(--bg))}
+[data-theme="light"] .card{background:linear-gradient(180deg,var(--card),#f7f9fb)}
+[data-theme="light"] .nav{background:linear-gradient(180deg,var(--bg) 0%,var(--bg) 70%,transparent 100%)}
+[data-theme="light"] .nav a{background:var(--card)}
+[data-theme="light"] .tabbar{background:linear-gradient(180deg,rgba(244,246,248,.92),var(--bg))}
 </style>
 </head>
 <body>
@@ -1490,9 +1624,18 @@ body{
 </div>
 
 <nav class="tabbar" aria-label="Primary">
-  <a href="/" aria-label="Dashboard"><span class="ico">&#x1F4CA;</span><span>LIVE</span></a>
-  <a href="/mechanic" class="active" aria-label="Mechanic advisor"><span class="ico">&#x1F527;</span><span>MECHANIC</span></a>
-  <a href="/settings" aria-label="Settings"><span class="ico">&#x2699;</span><span>SETTINGS</span></a>
+  <a href="/" aria-label="Dashboard">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9h3M12 3a9 9 0 0 1 9 9h-3M12 3v4M5.3 6.3l2.1 2.1M18.7 6.3l-2.1 2.1M12 12l5-4"/><circle cx="12" cy="12" r="1.5"/></svg>
+    <span>LIVE</span>
+  </a>
+  <a href="/mechanic" class="active" aria-label="Mechanic advisor">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.4 1.4 0 0 0 2 2l6-6a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+    <span>MECHANIC</span>
+  </a>
+  <a href="/settings" aria-label="Settings">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <span>SETTINGS</span>
+  </a>
 </nav>
 
 <script>
@@ -1703,6 +1846,17 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
 <title>DRIFTER SETTINGS</title>
+<script>
+(function(){try{
+  var t=localStorage.getItem('drifter_theme')||'auto';
+  if(t==='auto') t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+  if(t==='light'){
+    document.documentElement.setAttribute('data-theme','light');
+    var m=document.querySelector('meta[name=theme-color]');
+    if(m) m.setAttribute('content','#f4f6f8');
+  }
+}catch(e){}})();
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -1837,7 +1991,33 @@ h1{
   display:flex;flex-direction:column;align-items:center;gap:4px;
 }
 .tabbar a.active,.tabbar a:active{color:var(--accent)}
-.tabbar .ico{font-size:18px;line-height:1;height:20px;display:flex;align-items:center}
+.tabbar .ico{
+  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;display:block;
+  transition:transform .2s var(--ease);
+}
+.tabbar a:active .ico{transform:scale(.92)}
+.tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
+
+/* Light-mode overrides */
+[data-theme="light"]{
+  --bg:#f4f6f8;--bg-elev:#ffffff;--card:#ffffff;
+  --border:#d8dfe5;--border-hi:#c2ccd4;
+  --text:#0c1319;--text-dim:#4b5763;--text-mute:#7b8693;--dim:#4b5763;
+  --accent:#0891b2;--accent-glow:rgba(8,145,178,.22);
+  --ok:#16a34a;--info:#2563eb;--amber:#d97706;--red:#dc2626;
+}
+[data-theme="light"] body{
+  background:radial-gradient(1200px 600px at 50% -150px,#e6eef5 0%,transparent 60%),var(--bg);
+}
+[data-theme="light"] .section{background:linear-gradient(180deg,var(--card),#f7f9fb)}
+[data-theme="light"] .field input[type="number"],
+[data-theme="light"] .field input[type="text"],
+[data-theme="light"] .field select{background:#ffffff}
+[data-theme="light"] .save-bar{background:linear-gradient(180deg,rgba(244,246,248,0),rgba(244,246,248,.95) 40%)}
+[data-theme="light"] .tabbar{background:linear-gradient(180deg,rgba(244,246,248,.92),var(--bg))}
+[data-theme="light"] .switch .slider{background:#c2ccd4}
+[data-theme="light"] .switch .slider::before{box-shadow:0 2px 6px rgba(0,0,0,.15)}
 </style>
 </head>
 <body>
@@ -1912,6 +2092,15 @@ h1{
 <div class="section">
 <h2>Display</h2>
 <div class="field">
+  <label for="theme">Theme</label>
+  <select id="theme">
+    <option value="auto">Match system</option>
+    <option value="dark">Dark</option>
+    <option value="light">Light</option>
+  </select>
+  <div class="hint">Applies instantly on this device &mdash; stored locally, not synced to the vehicle</div>
+</div>
+<div class="field">
   <label for="temp_unit">Temperature unit</label>
   <select id="temp_unit">
     <option value="C">Celsius (&deg;C)</option>
@@ -1968,9 +2157,18 @@ h1{
 <div class="toast" id="toast"></div>
 
 <nav class="tabbar" aria-label="Primary">
-  <a href="/" aria-label="Dashboard"><span class="ico">&#x1F4CA;</span><span>LIVE</span></a>
-  <a href="/mechanic" aria-label="Mechanic advisor"><span class="ico">&#x1F527;</span><span>MECHANIC</span></a>
-  <a href="/settings" class="active" aria-label="Settings"><span class="ico">&#x2699;</span><span>SETTINGS</span></a>
+  <a href="/" aria-label="Dashboard">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9h3M12 3a9 9 0 0 1 9 9h-3M12 3v4M5.3 6.3l2.1 2.1M18.7 6.3l-2.1 2.1M12 12l5-4"/><circle cx="12" cy="12" r="1.5"/></svg>
+    <span>LIVE</span>
+  </a>
+  <a href="/mechanic" aria-label="Mechanic advisor">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.4 1.4 0 0 0 2 2l6-6a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+    <span>MECHANIC</span>
+  </a>
+  <a href="/settings" class="active" aria-label="Settings">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <span>SETTINGS</span>
+  </a>
 </nav>
 
 <script>
@@ -2023,6 +2221,36 @@ function gather() {
   });
   return s;
 }
+
+// ── Theme picker ────────────────────────────────────────────────
+// Stored only in localStorage so every client can pick its own theme
+// without pushing it to the server or to the other services.
+function applyTheme(mode) {
+  let effective = mode;
+  if (effective === 'auto') {
+    effective = window.matchMedia('(prefers-color-scheme: light)').matches
+                  ? 'light' : 'dark';
+  }
+  const html = document.documentElement;
+  if (effective === 'light') html.setAttribute('data-theme', 'light');
+  else html.removeAttribute('data-theme');
+  const m = document.querySelector('meta[name=theme-color]');
+  if (m) m.setAttribute('content', effective === 'light' ? '#f4f6f8' : '#050708');
+}
+(function initTheme() {
+  const sel = document.getElementById('theme');
+  if (!sel) return;
+  const saved = (localStorage.getItem('drifter_theme') || 'auto');
+  sel.value = saved;
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem('drifter_theme', sel.value); } catch (e) {}
+    applyTheme(sel.value);
+  });
+  // Follow OS preference live when mode is 'auto'.
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if ((localStorage.getItem('drifter_theme') || 'auto') === 'auto') applyTheme('auto');
+  });
+})();
 
 fetch('/api/settings')
   .then(r => r.json())
