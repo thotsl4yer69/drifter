@@ -1,0 +1,35 @@
+{
+  "fuel": {
+    "minimum_octane": "95 RON (Premium Unleaded)",
+    "recommended": "98 RON (Ultra Premium) for best performance and economy",
+    "ethanol": "Up to 10% ethanol (E10) acceptable. E85 NOT suitable.",
+    "note": "Lower octane causes knock sensor intervention → reduced power and economy."
+  },
+  "climate_adjustments": {
+    "oil_change": "Every 8,000 km (vs 16,000 km European schedule)",
+    "coolant_change": "Every 3 years (vs 5 years European)",
+    "atf_change": "Every 50,000 km (vs \"lifetime\" Jaguar claim)",
+    "ptu_fluid": "Every 50,000 km (vs never per Jaguar)",
+    "air_filter": "Every 16,000 km (dust regions may need more frequent)",
+    "cabin_filter": "Every 16,000 km"
+  },
+  "roadworthy_critical_items": [
+    "Suspension ball joints and bushes (heat degrades rubber)",
+    "Brake pad minimum 3mm, disc minimum thickness",
+    "All lights functioning correctly",
+    "No major fluid leaks (seeping OK, dripping fails)",
+    "No check engine light illuminated",
+    "Horn functional",
+    "Windscreen wipers and washers operative",
+    "Tyre tread minimum 1.5mm"
+  ],
+  "parts_suppliers": {
+    "Sparesbox": "sparesbox.com.au — comprehensive X-Type parts catalog",
+    "Repco": "repco.com.au — aftermarket parts, filters, fluids",
+    "Supercheap Auto": "supercheapauto.com.au — filters, fluids, tools",
+    "eBay AU": "Good source for aftermarket thermostat housings, coils, sensors",
+    "Rolan Motors": "Jaguar specialist parts and service",
+    "Gearbox City": "Transmission parts, solenoid kits, filters"
+  },
+  "currency": "AUD — all costs in this knowledge base are in Australian Dollars"
+}

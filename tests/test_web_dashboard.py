@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, 'src')
 
-import web_dashboard
+import web_dashboard_handlers as web_dashboard  # alias keeps test diff small
 
 
 class FakeWFile(io.BytesIO):

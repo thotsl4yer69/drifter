@@ -1,0 +1,72 @@
+[
+  {
+    "interval": "Every 8,000 km / 6 months",
+    "item": "Engine oil & filter change",
+    "details": "5.5L 5W-30 (WSS-M2C913-A/B). Sump plug torque: 25 Nm. Reduced from 10,000 km factory interval due to Australian heat."
+  },
+  {
+    "interval": "Every 16,000 km / 12 months",
+    "item": "Air filter replacement",
+    "details": "Panel filter in airbox. Check MAF sensor condition while open. Reduced interval due to Australian dust."
+  },
+  {
+    "interval": "Every 16,000 km / 12 months",
+    "item": "Pollen/cabin filter",
+    "details": "Located behind glovebox. Remove glovebox liner to access."
+  },
+  {
+    "interval": "Every 30,000 km / 24 months",
+    "item": "Spark plugs",
+    "details": "AGSF-32PM or NGK ITR6F-13, gap 1.3mm. Torque: 15 Nm. Anti-seize on threads. Check plug wells for oil (valve cover gasket)."
+  },
+  {
+    "interval": "Every 24 months",
+    "item": "Brake fluid flush",
+    "details": "DOT 4 fluid. Bleed all four corners: RR → LR → RF → LF order."
+  },
+  {
+    "interval": "Every 50,000 km",
+    "item": "Transmission fluid & filter change",
+    "details": "Drain and fill: ~4L Mercon V. Total capacity 9.5L. Drop pan, replace filter, clean magnets, refit, fill through dipstick tube. Reset TCM adaptives with scanner."
+  },
+  {
+    "interval": "Every 60,000 km",
+    "item": "Haldex coupling fluid",
+    "details": "Haldex AOC fluid. Drain plug on rear coupling. Fill until it overflows. Critical for AWD function."
+  },
+  {
+    "interval": "Every 50,000 km",
+    "item": "PTU fluid change (vacuum extraction)",
+    "details": "No drain plug — vacuum extract through filler port. Refill with 75W-90 synthetic. ESSENTIAL in Australian conditions. Factory \"sealed for life\" is false."
+  },
+  {
+    "interval": "Every 60,000 km",
+    "item": "Coolant replacement",
+    "details": "7.5L OAT coolant (orange/pink). Drain from radiator petcock. Bleed by running engine with expansion tank cap off until thermostat opens and air purges."
+  },
+  {
+    "interval": "Every 100,000 km",
+    "item": "Drive belt replacement",
+    "details": "Serpentine belt. Check for cracks, glazing, or chirping. Automatic tensioner — check it holds tension and does not oscillate."
+  },
+  {
+    "interval": "Every 100,000 km",
+    "item": "Rear differential fluid",
+    "details": "75W-90 LS synthetic, 1.2-1.5L. Conventional drain/fill plugs."
+  },
+  {
+    "interval": "As needed",
+    "item": "Brake pads and discs",
+    "details": "Minimum pad thickness: 2mm. Front discs min: 22mm. Rear discs min: 8mm. Alloy wheel bolts: 103 Nm. Steel wheel bolts: 80 Nm."
+  },
+  {
+    "interval": "Every 20,000 km",
+    "item": "Inspect vacuum hoses and PCV system",
+    "details": "Check PCV hose, IMT valve O-ring, brake booster hose, all small vacuum lines. Squeeze test — hoses should be firm, not mushy or cracked."
+  },
+  {
+    "interval": "Every 20,000 km",
+    "item": "Inspect CV boots and propshaft",
+    "details": "Check for split/torn CV boots (grease loss). Listen for centre bearing noise. Check propshaft for play at joints."
+  }
+]

@@ -1,0 +1,77 @@
+{
+  "Engine Bay Fuse Box": {
+    "location": "Left side of engine bay, near the bulkhead adjacent to battery",
+    "key_fuses": {
+      "F1 (10A)": "ECM power",
+      "F2 (15A)": "Headlamp levelling",
+      "F4 (10A)": "Cooling fan control",
+      "F5 (10A)": "A/C compressor control",
+      "F6 (7.5A)": "Instrument cluster feed",
+      "F8 (30A)": "ABS module",
+      "F9 (30A)": "ABS pump motor",
+      "F10 (15A)": "Fuel injectors",
+      "F11 (15A)": "Ignition coils",
+      "F13 (5A)": "EGR solenoid",
+      "F14 (30A)": "Heated windscreen LH",
+      "F15 (30A)": "Heated windscreen RH",
+      "F16 (5A)": "Oxygen sensor heaters",
+      "F17 (10A)": "EVAP canister purge",
+      "F18 (10A)": "Secondary air injection",
+      "F19 (10A)": "Speed control module",
+      "F20 (30A)": "Starter relay supply",
+      "F24 (30A)": "Windscreen wiper motor",
+      "F27 (15A)": "Horn",
+      "F29 (20A)": "Front fog lamps",
+      "F30 (20A)": "Rear fog lamps",
+      "F32 (15A)": "Brake lamps",
+      "F34 (30A)": "Blower motor relay",
+      "F38 (20A)": "Fuel pump relay",
+      "F39 (150A)": "Main distribution (mega fuse)",
+      "F40 (80A)": "High current distribution",
+      "F41 (60A)": "High current distribution",
+      "F42 (50A)": "High current distribution"
+    },
+    "key_relays": {
+      "R1": "Main beam / front fog relay",
+      "R3": "A/C compressor clutch relay",
+      "R4": "Windscreen wiper motor relay",
+      "R5": "Power distribution ignition relay",
+      "R6": "Windscreen heater relay",
+      "R7 (V6)": "Throttle motor relay (2.5/3.0L)",
+      "R7 (2.0)": "Fuel pump relay (2.0L)",
+      "R8": "Powerwash pump relay",
+      "R9": "Reverse lamps relay",
+      "R10": "Battery saver relay",
+      "R11": "Dip beam relay",
+      "R12": "Starter relay",
+      "R13": "Slave ignition relay",
+      "R15": "Horn relay"
+    }
+  },
+  "Passenger Fuse Box": {
+    "location": "Behind the glovebox — remove glovebox liner to access",
+    "key_fuses": {
+      "F2.1 (15A)": "Instrument cluster",
+      "F2.3 (20A)": "Central locking",
+      "F2.7 (15A)": "Heated rear screen",
+      "F2.11 (20A)": "Heated seats",
+      "F2.15 (15A)": "OBD-II diagnostic port",
+      "F2.19 (10A)": "Radio/entertainment"
+    },
+    "key_relays": {
+      "R1": "Fold-back mirror module",
+      "R2": "Accessory relay",
+      "R3": "Rear wiper motor relay (Estate only)",
+      "R4": "Blower motor relay",
+      "R5": "Passenger junction fuse box ignition relay"
+    }
+  },
+  "Boot Fuse Box": {
+    "location": "Left side of boot, behind trim panel",
+    "key_fuses": {
+      "F3.1 (50A)": "Cooling fan (high speed)",
+      "F3.2 (30A)": "Cooling fan (low speed)",
+      "F3.4 (40A)": "Rear window heater"
+    }
+  }
+}
