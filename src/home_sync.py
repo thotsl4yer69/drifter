@@ -16,8 +16,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, NANOB_HOST, NANOB_PORT, NANOB_USER,
-    HOME_CHECK_INTERVAL, LOG_DIR, CALIBRATION_FILE
-)
+    HOME_CHECK_INTERVAL, LOG_DIR, CALIBRATION_FILE, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +51,7 @@ def connect_home():
     """Connect to nanob MQTT broker."""
     global home_client
     try:
-        home_client = mqtt.Client(client_id="drifter-sync")
+        home_client = make_mqtt_client("drifter-sync")
         home_client.username_pw_set(NANOB_USER)
         home_client.connect(NANOB_HOST, NANOB_PORT, 60)
         home_client.loop_start()
@@ -209,7 +208,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     # Connect to local broker
-    local = mqtt.Client(client_id="drifter-homesync")
+    local = make_mqtt_client("drifter-homesync")
     local.on_message = on_local_message
 
     connected = False

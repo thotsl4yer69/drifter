@@ -10,7 +10,29 @@ import json
 import logging
 from pathlib import Path
 
+import paho.mqtt.client as _mqtt
+
 _log = logging.getLogger(__name__)
+
+
+def make_mqtt_client(client_id: str, **kwargs):
+    """Build a paho-mqtt Client on the v2 callback API.
+
+    Centralised so the whole fleet can move API versions with one edit.
+    paho-mqtt 2.0 defaults to VERSION1 callbacks (deprecated) unless you
+    pass ``callback_api_version`` explicitly — so we always pass VERSION2.
+
+    Extra keyword args are forwarded to paho.mqtt.client.Client().
+    """
+    if hasattr(_mqtt, 'CallbackAPIVersion'):
+        return _mqtt.Client(
+            callback_api_version=_mqtt.CallbackAPIVersion.VERSION2,
+            client_id=client_id,
+            **kwargs,
+        )
+    # paho-mqtt < 2.0 — the old API is the only option. Keep the fleet
+    # running on older installs (e.g. before install.sh is re-run).
+    return _mqtt.Client(client_id=client_id, **kwargs)
 
 # ── Paths ──
 DRIFTER_DIR = Path("/opt/drifter")

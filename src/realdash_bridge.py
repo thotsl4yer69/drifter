@@ -19,7 +19,7 @@ import threading
 import logging
 import paho.mqtt.client as mqtt
 
-from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, LEVEL_NAMES, TOPICS
+from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, LEVEL_NAMES, TOPICS, make_mqtt_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -321,7 +321,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     # ── MQTT ──
-    mqtt_client = mqtt.Client(client_id="drifter-realdash")
+    mqtt_client = make_mqtt_client("drifter-realdash")
     mqtt_client.on_message = on_mqtt_message
 
     connected = False

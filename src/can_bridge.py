@@ -16,8 +16,7 @@ from collections import deque
 
 from config import (
     MQTT_HOST, MQTT_PORT, CAN_BITRATE, TOPICS,
-    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END
-)
+    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -248,7 +247,7 @@ def main():
     bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
 
     # ── Connect to MQTT ──
-    mqtt_client = mqtt.Client(client_id="drifter-canbridge")
+    mqtt_client = make_mqtt_client("drifter-canbridge")
     mqtt_connected = False
     while not mqtt_connected and running:
         try:

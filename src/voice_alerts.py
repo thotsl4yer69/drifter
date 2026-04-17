@@ -12,10 +12,11 @@ import signal
 import subprocess
 import logging
 import os
+import threading
 from pathlib import Path
 import paho.mqtt.client as mqtt
 from config import (MQTT_HOST, MQTT_PORT, TOPICS, VOICE_COOLDOWN, PIPER_MODEL, DRIFTER_DIR,
-                   VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE)
+                   VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +28,13 @@ log = logging.getLogger(__name__)
 # ── Config ──
 PIPER_MODEL_PATH = DRIFTER_DIR / "piper-models" / f"{PIPER_MODEL}.onnx"
 AUDIO_DIR = Path("/tmp/drifter-audio")
+
+# speak() is called from the paho MQTT callback thread. Two critical alerts
+# arriving together would otherwise race — both passing the cooldown, both
+# spawning piper, and both writing /tmp/drifter-audio/alert.wav
+# simultaneously. _speak_lock serialises the subprocess + MQTT publish + the
+# read-modify-write of last_voice_time / last_spoken_msg.
+_speak_lock = threading.Lock()
 
 last_voice_time = 0
 last_spoken_msg = ""
@@ -72,92 +80,104 @@ def _has_audio_device():
 has_local_audio = False  # Set in main after check
 
 
+def _generate_wav(text, wav_path):
+    """Render ``text`` into ``wav_path``. Returns True on success."""
+    if piper_available:
+        model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
+        process = subprocess.Popen(
+            ['piper', '--model', model_arg, '--output_file', str(wav_path)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        process.communicate(input=text.encode(), timeout=10)
+        if process.returncode != 0:
+            log.warning("Piper TTS failed with exit code %d", process.returncode)
+        return wav_path.exists()
+    # espeak-ng fallback — writes WAV directly.
+    result = subprocess.run(
+        ['espeak-ng', '-v', 'en-gb', '-s', '150', '-p', '40',
+         '-w', str(wav_path), text],
+        timeout=10, capture_output=True,
+    )
+    return result.returncode == 0 and wav_path.exists()
+
+
+def _play_local(wav_path):
+    """Play ``wav_path`` via aplay. Returns True if playback completed cleanly."""
+    if not has_local_audio:
+        return False
+    result = subprocess.run(
+        ['aplay', '-q', str(wav_path)],
+        timeout=15, capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def _publish_wav(text, wav_path):
+    """Publish WAV bytes to the MQTT audio topic for the dashboard bridge."""
+    if not (wav_path.exists() and _mqtt_client is not None):
+        return False
+    try:
+        import base64
+        _mqtt_client.publish('drifter/audio/wav', json.dumps({
+            'text': text[:200],
+            'wav_b64': base64.b64encode(wav_path.read_bytes()).decode(),
+            'ts': time.time(),
+        }))
+        return True
+    except Exception as e:
+        log.debug("WAV publish failed: %s", e)
+        return False
+
+
 def speak(text):
     """Speak text through audio output.
-    Tries local audio first (3.5mm/HDMI/USB).
-    Always generates WAV and publishes to MQTT for the web dashboard
-    audio bridge, so the phone can play it through its speaker / BT.
+
+    Serialised via _speak_lock — two concurrent calls used to race on the
+    piper subprocess and the /tmp/drifter-audio/alert.wav file. If a
+    speak() is already in flight we DROP the new one (new alerts are more
+    valuable than queuing stale ones).
+
+    Tries local ALSA playback first (3.5mm/HDMI/USB) and always publishes
+    the WAV to MQTT so the phone dashboard audio bridge can play it.
     """
     global last_voice_time, last_spoken_msg
 
-    now = time.time()
-
-    # Cooldown check
-    if now - last_voice_time < VOICE_COOLDOWN:
+    if not _speak_lock.acquire(blocking=False):
+        log.debug("speak() already in progress — dropping: %s", text[:40])
         return
-
-    # Don't repeat the same message
-    if text == last_spoken_msg and now - last_voice_time < 60:
-        return
-
-    AUDIO_DIR.mkdir(exist_ok=True)
-    wav_path = AUDIO_DIR / "alert.wav"
-    spoke = False
 
     try:
-        if piper_available:
-            model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
-            process = subprocess.Popen(
-                ['piper', '--model', model_arg, '--output_file', str(wav_path)],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            process.communicate(input=text.encode(), timeout=10)
-            if process.returncode != 0:
-                log.warning("Piper TTS failed with exit code %d", process.returncode)
+        now = time.time()
+        # Cooldown and repeat checks must live inside the lock so two
+        # threads can't both decide "cooldown elapsed" and both fire.
+        if now - last_voice_time < VOICE_COOLDOWN:
+            return
+        if text == last_spoken_msg and now - last_voice_time < 60:
+            return
 
-            if wav_path.exists() and has_local_audio:
-                aplay_result = subprocess.run(
-                    ['aplay', '-q', str(wav_path)],
-                    timeout=15,
-                    capture_output=True
-                )
-                if aplay_result.returncode == 0:
+        AUDIO_DIR.mkdir(exist_ok=True)
+        wav_path = AUDIO_DIR / "alert.wav"
+        spoke = False
+        try:
+            if _generate_wav(text, wav_path):
+                if _play_local(wav_path):
                     spoke = True
-        else:
-            # espeak-ng — generate WAV to file
-            result = subprocess.run(
-                ['espeak-ng', '-v', 'en-gb', '-s', '150', '-p', '40',
-                 '-w', str(wav_path), text],
-                timeout=10,
-                capture_output=True
-            )
-            if result.returncode == 0 and wav_path.exists():
-                if has_local_audio:
-                    aplay_result = subprocess.run(
-                        ['aplay', '-q', str(wav_path)],
-                        timeout=15,
-                        capture_output=True
-                    )
-                    if aplay_result.returncode == 0:
-                        spoke = True
+                if _publish_wav(text, wav_path):
+                    spoke = True
 
-        # Publish WAV via MQTT for web dashboard audio bridge
-        if wav_path.exists() and _mqtt_client is not None:
-            try:
-                import base64
-                wav_data = wav_path.read_bytes()
-                _mqtt_client.publish('drifter/audio/wav', json.dumps({
-                    'text': text[:200],
-                    'wav_b64': base64.b64encode(wav_data).decode(),
-                    'ts': time.time()
-                }))
-                spoke = True
-            except Exception as e:
-                log.debug(f"WAV publish failed: {e}")
-
-        if spoke:
-            last_voice_time = now
-            last_spoken_msg = text
-            log.info(f"Spoke: {text[:60]}...")
-        else:
-            log.warning(f"TTS generated but no output available for: {text[:40]}...")
-
-    except subprocess.TimeoutExpired:
-        log.warning("TTS timeout")
-    except Exception as e:
-        log.error(f"TTS error: {e}")
+            if spoke:
+                last_voice_time = now
+                last_spoken_msg = text
+                log.info("Spoke: %s...", text[:60])
+            else:
+                log.warning("TTS generated but no output available for: %s...",
+                            text[:40])
+        except subprocess.TimeoutExpired:
+            log.warning("TTS timeout")
+        except Exception as e:
+            log.error("TTS error: %s", e)
+    finally:
+        _speak_lock.release()
 
 
 def on_message(client, userdata, msg):
@@ -225,7 +245,7 @@ def main():
         log.info("No local audio device — voice alerts routed to web dashboard")
 
     global _mqtt_client
-    client = mqtt.Client(client_id="drifter-voice")
+    client = make_mqtt_client("drifter-voice")
     _mqtt_client = client  # Reused by speak() for audio bridge publishing
     client.on_message = on_message
 

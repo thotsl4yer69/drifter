@@ -20,8 +20,7 @@ import db
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     ANOMALY_ROLLING_WINDOW, ANOMALY_WARN_Z, ANOMALY_HIGH_Z, ANOMALY_CRITICAL_Z,
-    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD,
-)
+    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD, make_mqtt_client,)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANOMALY] %(message)s',
                     datefmt='%H:%M:%S')
@@ -94,7 +93,7 @@ class AnomalyMonitor:
         self.running = True
 
         db.init_db()
-        self.client = mqtt.Client(client_id="drifter-anomaly-monitor")
+        self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
 
     def _on_message(self, client, userdata, msg):

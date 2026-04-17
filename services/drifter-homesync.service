@@ -6,6 +6,8 @@ StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
+User=drifter
+Group=drifter
 Type=simple
 WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/home_sync.py

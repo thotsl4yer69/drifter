@@ -170,6 +170,26 @@ else
     warn "Could not download Vosk model — voice input STT unavailable"
 fi
 
+# ── 5c. Unprivileged service user ──
+# Most drifter-* services don't need root — only the ones that tweak the
+# network stack (canbridge / hotspot / watchdog). Create a system user
+# `drifter` so the pure-software services can drop privileges.
+step 5 "Creating unprivileged 'drifter' service user"
+if ! getent passwd drifter >/dev/null 2>&1; then
+    useradd --system --home "${DRIFTER_DIR}" --shell /usr/sbin/nologin \
+            --user-group drifter 2>/dev/null && ok "'drifter' user created" || \
+            warn "Could not create 'drifter' user"
+else
+    ok "'drifter' user already exists"
+fi
+# Group memberships for hardware access: audio (ALSA), dialout (USB-serial
+# CAN adapters), plugdev (USB hotplug incl. RTL-SDR), video (framebuffer).
+for grp in audio dialout plugdev video; do
+    if getent group "$grp" >/dev/null 2>&1; then
+        usermod -aG "$grp" drifter 2>/dev/null || true
+    fi
+done
+
 # ── 6. Python Environment ──
 step 6 "Setting up Python environment"
 mkdir -p ${DRIFTER_DIR}
@@ -178,7 +198,7 @@ source ${DRIFTER_DIR}/venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet \
     python-can \
-    "paho-mqtt<2.0" \
+    "paho-mqtt>=2.0" \
     psutil \
     websockets \
     requests \
@@ -239,6 +259,18 @@ ok "Log directories created"
 mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
 touch ${DRIFTER_DIR}/.env
 ok "Analyst data directories created"
+
+# Hand everything under DRIFTER_DIR to the drifter user. The services that
+# still run as root can write to root-owned paths fine; the services that
+# drop to `drifter` need this ownership to write logs / settings / the
+# SQLite DB. Keep the venv and data dir group-writable so re-installs don't
+# fight with mode 600 files from the previous run.
+if getent passwd drifter >/dev/null 2>&1; then
+    chown -R drifter:drifter "${DRIFTER_DIR}"
+    # .env may hold API keys — lock it down to the service user.
+    chmod 640 "${DRIFTER_DIR}/.env" 2>/dev/null || true
+    ok "Ownership of ${DRIFTER_DIR} assigned to drifter:drifter"
+fi
 
 # ── 8. CAN Interface Setup ──
 step 8 "Configuring CAN interface"

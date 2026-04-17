@@ -4,8 +4,9 @@ After=network.target drifter-canbridge.service
 Wants=network.target
 
 [Service]
+User=drifter
+Group=drifter
 Type=simple
-User=root
 WorkingDirectory=/opt/drifter
 Environment=PYTHONPATH=/opt/drifter
 Environment=OLLAMA_HOST=localhost

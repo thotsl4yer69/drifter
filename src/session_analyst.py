@@ -22,8 +22,7 @@ import llm_client
 from mechanic import search as kb_search
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS, LOG_DIR,
-    REPORTS_DIR, ANALYST_BASELINE_SESSIONS,
-)
+    REPORTS_DIR, ANALYST_BASELINE_SESSIONS, make_mqtt_client,)
 # Note: TOPICS is used in TOPIC_TO_SENSOR below (no hardcoded topic strings)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANALYST] %(message)s',
@@ -272,7 +271,7 @@ class SessionAnalyst:
         self.running = True
         self.last_session: Optional[dict] = None
         db.init_db()
-        self.client = mqtt.Client(client_id="drifter-session-analyst")
+        self.client = make_mqtt_client("drifter-session-analyst")
         self.client.on_message = self._on_message
 
     def _on_message(self, client, userdata, msg):

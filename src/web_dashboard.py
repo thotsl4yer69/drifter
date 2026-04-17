@@ -38,7 +38,7 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
 
-from config import MQTT_HOST, MQTT_PORT
+from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
 from http.server import HTTPServer
 
 import web_dashboard_state as state
@@ -223,7 +223,7 @@ def _connect_mqtt(client_id: str, on_message, topics: list[str]):
     Returns the client on success, None if the dashboard is shutting down
     before the connection succeeds.
     """
-    client = mqtt.Client(client_id=client_id)
+    client = make_mqtt_client(client_id)
     client.on_message = on_message
     while state.running:
         try:

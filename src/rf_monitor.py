@@ -24,8 +24,7 @@ from config import (
     SPECTRUM_SCAN_INTERVAL, SPECTRUM_FREQ_START, SPECTRUM_FREQ_END,
     EMERGENCY_SCAN_INTERVAL, EMERGENCY_SCAN_DWELL, EMERGENCY_BANDS,
     ADSB_SCAN_INTERVAL, ADSB_SCAN_DURATION, ADSB_JSON_DIR, DUMP1090_BIN,
-    THRESHOLDS,
-)
+    THRESHOLDS, make_mqtt_client,)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -677,7 +676,7 @@ def main():
         log.error("rtl_433 not installed. Run: sudo apt install rtl-433")
 
     # ── MQTT ──
-    mqtt_client = mqtt.Client(client_id="drifter-rf")
+    mqtt_client = make_mqtt_client("drifter-rf")
     mqtt_client.on_message = on_message
 
     connected = False

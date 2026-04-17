@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════
 
-from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, MQTT_HOST, MQTT_PORT
+from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, MQTT_HOST, MQTT_PORT, make_mqtt_client
 
 SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
 
@@ -557,7 +557,7 @@ class LLMMechanic:
         )
 
         # MQTT client
-        self.mqtt = mqtt.Client(client_id="drifter-llm-mechanic")
+        self.mqtt = make_mqtt_client("drifter-llm-mechanic")
         self.mqtt.on_message = self._on_mqtt_message
 
     def stop(self):

@@ -16,8 +16,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, SERVICES, TOPICS,
-    WATCHDOG_INTERVAL, WATCHDOG_MQTT_TIMEOUT, DRIFTER_DIR
-)
+    WATCHDOG_INTERVAL, WATCHDOG_MQTT_TIMEOUT, DRIFTER_DIR, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -175,7 +174,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-watchdog")
+    client = make_mqtt_client("drifter-watchdog")
     client.on_message = on_message
 
     connected = False
