@@ -7,6 +7,10 @@
 # Run after deploy.ps1 + reboot to verify everything is healthy.
 # ============================================
 
+# Strict mode. Not `-e` on purpose — this script *expects* individual
+# checks to fail and continues; it tallies PASS/FAIL at the end.
+set -o pipefail
+
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'

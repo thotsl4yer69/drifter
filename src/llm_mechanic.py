@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════
 
-from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, MQTT_HOST, MQTT_PORT
+from config import OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, MQTT_HOST, MQTT_PORT, make_mqtt_client
 
 SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
 
@@ -540,16 +540,30 @@ class MechanicRAG:
 class LLMMechanic:
     """Main service integrating LLM with vehicle telemetry."""
     
+    # Maximum number of LLM queries processed concurrently. Protects against
+    # a flood of `drifter/llm/query` messages spawning unbounded daemon
+    # threads and exhausting memory / the Ollama socket.
+    MAX_CONCURRENT_QUERIES = 3
+
     def __init__(self):
         self.telemetry = TelemetryContext()
         self.memory = ConversationMemory()
         self.llm = OllamaClient()
         self.rag = MechanicRAG()
         self.running = True
-        
+        self._stop_event = threading.Event()
+        self._query_semaphore = threading.BoundedSemaphore(
+            self.MAX_CONCURRENT_QUERIES
+        )
+
         # MQTT client
-        self.mqtt = mqtt.Client(client_id="drifter-llm-mechanic")
+        self.mqtt = make_mqtt_client("drifter-llm-mechanic")
         self.mqtt.on_message = self._on_mqtt_message
+
+    def stop(self):
+        """Signal the main loop to exit promptly without busy-waiting."""
+        self.running = False
+        self._stop_event.set()
 
     def _on_mqtt_message(self, client, userdata, msg):
         """Handle incoming MQTT messages."""
@@ -565,18 +579,39 @@ class LLMMechanic:
             # Handle LLM queries — spawn a daemon thread so the MQTT loop
             # is never blocked.  asyncio.create_task() cannot be used here
             # because this callback runs in the paho network thread, not in
-            # any asyncio event loop.
+            # any asyncio event loop.  A bounded semaphore caps concurrent
+            # queries so a flood of messages cannot exhaust resources.
             if topic == 'drifter/llm/query':
                 query = data.get('query', '')
                 session_id = data.get('session_id', 'default')
+                if not self._query_semaphore.acquire(blocking=False):
+                    log.warning("Query dropped — %d already in flight",
+                                self.MAX_CONCURRENT_QUERIES)
+                    self.mqtt.publish('drifter/llm/response', json.dumps({
+                        'query': query,
+                        'response': 'Busy — try again in a moment.',
+                        'session_id': session_id,
+                        'timestamp': time.time(),
+                        'dropped': True,
+                    }))
+                    return
                 threading.Thread(
-                    target=self._process_query,
+                    target=self._process_query_wrapped,
                     args=(query, session_id),
                     daemon=True,
                 ).start()
 
         except Exception as e:
             log.warning(f"MQTT message error: {e}")
+
+    def _process_query_wrapped(self, query: str, session_id: str):
+        """Wrapper that guarantees the concurrency semaphore is released."""
+        try:
+            self._process_query(query, session_id)
+        except Exception:
+            log.exception("Query processing failed")
+        finally:
+            self._query_semaphore.release()
 
     def _process_query(self, query: str, session_id: str):
         """Process a user query with full context (runs in a worker thread)."""
@@ -662,11 +697,11 @@ class LLMMechanic:
         log.info("LLM Mechanic is LIVE")
         log.info(f"Model: {OLLAMA_MODEL}")
         log.info("Send queries to: drifter/llm/query")
-        
-        # Keep running
-        while self.running:
-            time.sleep(0.1)
-        
+
+        # Block on an Event rather than polling with sleep(0.1) — the old
+        # loop wasted CPU and added up to 100ms of shutdown latency.
+        self._stop_event.wait()
+
         # Cleanup
         self.mqtt.loop_stop()
         self.mqtt.disconnect()
@@ -678,13 +713,13 @@ def main():
     import signal
     
     service = LLMMechanic()
-    
+
     def handle_signal(sig, frame):
-        service.running = False
-    
+        service.stop()
+
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
-    
+
     service.start()
 
 

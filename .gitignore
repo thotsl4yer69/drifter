@@ -14,6 +14,10 @@ calibration.json
 settings.json
 tpms_sensors.json
 data/
+# ...but the mechanic knowledge-base lives under src/data/mechanic and
+# IS source code — track it explicitly.
+!src/data/
+!src/data/**
 reports/
 .vscode/
 .idea/

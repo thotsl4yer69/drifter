@@ -4,8 +4,9 @@ After=network.target drifter-canbridge.service
 Wants=network.target
 
 [Service]
+User=drifter
+Group=drifter
 Type=simple
-User=root
 WorkingDirectory=/opt/drifter
 Environment=PYTHONPATH=/opt/drifter
 Environment=OLLAMA_HOST=localhost
@@ -15,6 +16,16 @@ Restart=always
 RestartSec=10
 KillMode=process
 TimeoutStopSec=10
+
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

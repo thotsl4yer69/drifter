@@ -21,8 +21,7 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS, DRIFTER_DIR,
     VOSK_MODEL_DIR, WAKE_WORD_MODEL, WAKE_WORD_THRESHOLD,
-    PTT_GPIO_PIN, VOICE_SILENCE_TIMEOUT, VOICE_MAX_RECORD,
-)
+    PTT_GPIO_PIN, VOICE_SILENCE_TIMEOUT, VOICE_MAX_RECORD, make_mqtt_client,)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -245,7 +244,7 @@ def on_connect(client, userdata, flags, rc):
 def setup_mqtt():
     """Create and connect MQTT client."""
     global mqtt_client
-    mqtt_client = mqtt.Client(client_id="drifter-voicein")
+    mqtt_client = make_mqtt_client("drifter-voicein")
     mqtt_client.on_connect = on_connect
 
     connected = False

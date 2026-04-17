@@ -11,7 +11,7 @@
 # UNCAGED TECHNOLOGY — EST 1991
 # ============================================
 
-set -e
+set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'

@@ -22,8 +22,7 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     WARDRIVE_LOG_DIR, WIFI_SCAN_INTERVAL,
-    BT_SCAN_INTERVAL, BT_SCAN_DURATION,
-)
+    BT_SCAN_INTERVAL, BT_SCAN_DURATION, make_mqtt_client,)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +34,12 @@ log = logging.getLogger(__name__)
 running = True
 
 # ── Session state ──
+# Wi-Fi and Bluetooth scans run in their own daemon threads (see main()),
+# and publish_snapshot / save_session_log iterate the dicts from the main
+# thread. A regular dict iteration raises RuntimeError if another thread
+# mutates the dict mid-iteration — _session_lock avoids that.
+_session_lock = threading.Lock()
+
 session_networks = OrderedDict()    # bssid → network dict
 session_bt_devices = OrderedDict()  # addr → device dict
 session_start = time.time()
@@ -171,21 +176,33 @@ def scan_bluetooth() -> list:
 # ═══════════════════════════════════════════════════════════════════
 
 def update_session(wifi_networks: list, bt_devices: list):
-    """Merge scan results into session state."""
+    """Merge scan results into session state (called from scan threads)."""
     global latest_wifi_scan, latest_bt_scan
-    if wifi_networks:
-        latest_wifi_scan = wifi_networks
-    if bt_devices:
-        latest_bt_scan = bt_devices
     now = time.time()
-    for net in wifi_networks:
-        bssid = net.get('bssid', '')
-        if bssid:
-            session_networks[bssid] = {**net, 'last_seen': now}
-    for dev in bt_devices:
-        addr = dev.get('addr', '')
-        if addr:
-            session_bt_devices[addr] = {**dev, 'last_seen': now}
+    with _session_lock:
+        if wifi_networks:
+            latest_wifi_scan = wifi_networks
+        if bt_devices:
+            latest_bt_scan = bt_devices
+        for net in wifi_networks:
+            bssid = net.get('bssid', '')
+            if bssid:
+                session_networks[bssid] = {**net, 'last_seen': now}
+        for dev in bt_devices:
+            addr = dev.get('addr', '')
+            if addr:
+                session_bt_devices[addr] = {**dev, 'last_seen': now}
+
+
+def _snapshot_session():
+    """Return a thread-safe snapshot of session state for publishing/logging."""
+    with _session_lock:
+        return {
+            'unique_ssids': len(session_networks),
+            'unique_bt': len(session_bt_devices),
+            'wifi': list(session_networks.values()),
+            'bluetooth': list(session_bt_devices.values()),
+        }
 
 
 def save_session_log():
@@ -194,14 +211,12 @@ def save_session_log():
         WARDRIVE_LOG_DIR.mkdir(parents=True, exist_ok=True)
         sid = time.strftime('%Y%m%d_%H%M%S', time.localtime(session_start))
         path = WARDRIVE_LOG_DIR / f'wardrive_{sid}.json'
+        snap = _snapshot_session()
         data = {
             'session_start': session_start,
             'session_end': time.time(),
             'duration_s': round(time.time() - session_start),
-            'unique_ssids': len(session_networks),
-            'unique_bt': len(session_bt_devices),
-            'wifi': list(session_networks.values()),
-            'bluetooth': list(session_bt_devices.values()),
+            **snap,
         }
         path.write_text(json.dumps(data, indent=2))
         log.info(f"Session log saved: {path.name} "
@@ -215,49 +230,57 @@ def save_session_log():
 # ═══════════════════════════════════════════════════════════════════
 
 def do_wifi_scan(mqtt_client):
-    """Scan Wi-Fi and publish results."""
+    """Scan Wi-Fi and publish results (runs in a daemon thread)."""
     networks = scan_wifi()
     update_session(networks, [])
+    with _session_lock:
+        session_total = len(session_networks)
     mqtt_client.publish(TOPICS['wardrive_wifi'], json.dumps({
         'scan': networks,
-        'session_total': len(session_networks),
+        'session_total': session_total,
         'ts': time.time(),
     }), retain=True)
     if networks:
-        log.info(f"Wi-Fi: {len(networks)} visible, "
-                 f"{len(session_networks)} unique this session")
+        log.info("Wi-Fi: %d visible, %d unique this session",
+                 len(networks), session_total)
 
 
 def do_bt_scan(mqtt_client):
-    """Scan Bluetooth and publish results."""
+    """Scan Bluetooth and publish results (runs in a daemon thread)."""
     devices = scan_bluetooth()
     update_session([], devices)
     classic = [d for d in devices if d['type'] == 'classic']
     ble = [d for d in devices if d['type'] == 'ble']
+    with _session_lock:
+        session_total = len(session_bt_devices)
     mqtt_client.publish(TOPICS['wardrive_bt'], json.dumps({
         'devices': devices,
         'classic_count': len(classic),
         'ble_count': len(ble),
-        'session_total': len(session_bt_devices),
+        'session_total': session_total,
         'ts': time.time(),
     }), retain=True)
     if devices:
-        log.info(f"Bluetooth: {len(classic)} classic + {len(ble)} BLE, "
-                 f"{len(session_bt_devices)} unique this session")
+        log.info("Bluetooth: %d classic + %d BLE, %d unique this session",
+                 len(classic), len(ble), session_total)
 
 
 def publish_snapshot(mqtt_client):
     """Publish session summary."""
-    mqtt_client.publish(TOPICS['wardrive_snapshot'], json.dumps({
-        'session_start': session_start,
-        'duration_s': round(time.time() - session_start),
-        'unique_ssids': len(session_networks),
-        'unique_bt': len(session_bt_devices),
-        'top_networks': sorted(
+    with _session_lock:
+        top_networks = sorted(
             session_networks.values(),
             key=lambda n: n.get('signal_dbm', -999),
             reverse=True,
-        )[:10],
+        )[:10]
+        unique_ssids = len(session_networks)
+        unique_bt = len(session_bt_devices)
+    mqtt_client.publish(TOPICS['wardrive_snapshot'], json.dumps({
+        'session_start': session_start,
+        'duration_s': round(time.time() - session_start),
+        'unique_ssids': unique_ssids,
+        'unique_bt': unique_bt,
+        'top_networks': top_networks,
         'ts': time.time(),
     }), retain=True)
 
@@ -278,7 +301,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    mqtt_client = mqtt.Client(client_id="drifter-wardrive")
+    mqtt_client = make_mqtt_client("drifter-wardrive")
 
     connected = False
     while not connected and running:

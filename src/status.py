@@ -14,8 +14,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS, SERVICES as ALL_SERVICES,
-    LEVEL_NAMES, LOG_DIR, CALIBRATION_FILE
-)
+    LEVEL_NAMES, LOG_DIR, CALIBRATION_FILE, make_mqtt_client)
 
 COLLECT_SECONDS = 2
 
@@ -41,7 +40,10 @@ collected = {}
 def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload)
-        collected[msg.topic] = data
+        # Downstream code uses .get(...) — only store dict payloads so a
+        # rogue publisher sending a bare JSON number/string cannot crash us.
+        if isinstance(data, dict):
+            collected[msg.topic] = data
     except (json.JSONDecodeError, ValueError):
         pass
 
@@ -60,7 +62,7 @@ def get_service_status(name):
 
 def collect_mqtt():
     """Connect to local MQTT and collect one round of retained values."""
-    client = mqtt.Client(client_id="drifter-status")
+    client = make_mqtt_client("drifter-status")
     client.on_message = on_message
     try:
         client.connect(MQTT_HOST, MQTT_PORT, 10)

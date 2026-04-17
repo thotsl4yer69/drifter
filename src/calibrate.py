@@ -23,8 +23,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, CALIBRATION_FILE, CALIBRATION_DEFAULTS,
-    LEVEL_NAMES, TOPICS
-)
+    LEVEL_NAMES, TOPICS, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -207,7 +206,7 @@ def run_calibration(auto=False):
     signal.signal(signal.SIGINT, _handle_signal)
 
     # Connect to MQTT
-    client = mqtt.Client(client_id="drifter-calibrate")
+    client = make_mqtt_client("drifter-calibrate")
     client.on_message = collector.on_message
 
     try:
@@ -288,7 +287,7 @@ def run_calibration(auto=False):
 
     # Publish calibration event
     try:
-        pub = mqtt.Client(client_id="drifter-cal-pub")
+        pub = make_mqtt_client("drifter-cal-pub")
         pub.connect(MQTT_HOST, MQTT_PORT, 10)
         try:
             pub.publish(TOPICS['calibration'], json.dumps(cal), retain=True)

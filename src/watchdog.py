@@ -16,8 +16,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, SERVICES, TOPICS,
-    WATCHDOG_INTERVAL, WATCHDOG_MQTT_TIMEOUT, DRIFTER_DIR
-)
+    WATCHDOG_INTERVAL, WATCHDOG_MQTT_TIMEOUT, DRIFTER_DIR, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,6 +88,9 @@ def get_system_metrics():
         return {}
 
 
+WATCHDOG_START_TIME = time.time()
+
+
 def on_message(client, userdata, msg):
     """Track last message time per topic."""
     last_mqtt_data[msg.topic] = time.time()
@@ -108,6 +110,11 @@ def check_health(mqtt_client):
     issues = []
 
     # Check each service
+    # Healthy systemd states. 'deactivating' and 'reloading' are brief
+    # transients; the rest ('failed', 'unknown', empty output from a stuck
+    # systemctl call) should be surfaced as issues.
+    HEALTHY_STATES = {'active', 'activating', 'inactive',
+                      'deactivating', 'reloading'}
     for svc in SERVICES:
         status = get_service_status(svc)
         health['services'][svc] = status
@@ -115,16 +122,21 @@ def check_health(mqtt_client):
         if status == 'failed':
             issues.append(f"{svc} is FAILED")
             restart_service(svc)
-        elif status not in ('active', 'activating'):
-            # Could be 'inactive' if not enabled — don't restart those
-            if status != 'inactive':
-                issues.append(f"{svc} is {status}")
+        elif status not in HEALTHY_STATES:
+            issues.append(f"{svc} is {status or 'unreachable'}")
 
-    # Check MQTT data freshness (only for critical topics)
+    # Check MQTT data freshness (only for critical topics).
+    # After an initial grace period, flag topics that have NEVER received a
+    # message — that usually means the upstream publisher (canbridge) is dead.
+    grace_elapsed = now - WATCHDOG_START_TIME > WATCHDOG_MQTT_TIMEOUT
     critical_topics = ['drifter/engine/rpm', 'drifter/snapshot']
     for topic in critical_topics:
         last_time = last_mqtt_data.get(topic)
-        if last_time and now - last_time > WATCHDOG_MQTT_TIMEOUT:
+        if last_time is None:
+            if grace_elapsed:
+                health['mqtt_stale'].append(topic)
+                issues.append(f"No data ever received on {topic}")
+        elif now - last_time > WATCHDOG_MQTT_TIMEOUT:
             health['mqtt_stale'].append(topic)
             issues.append(f"Stale data on {topic} ({now - last_time:.0f}s)")
 
@@ -162,7 +174,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-watchdog")
+    client = make_mqtt_client("drifter-watchdog")
     client.on_message = on_message
 
     connected = False

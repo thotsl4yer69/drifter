@@ -16,8 +16,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, NANOB_HOST, NANOB_PORT, NANOB_USER,
-    HOME_CHECK_INTERVAL, LOG_DIR, CALIBRATION_FILE
-)
+    HOME_CHECK_INTERVAL, LOG_DIR, CALIBRATION_FILE, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +51,7 @@ def connect_home():
     """Connect to nanob MQTT broker."""
     global home_client
     try:
-        home_client = mqtt.Client(client_id="drifter-sync")
+        home_client = make_mqtt_client("drifter-sync")
         home_client.username_pw_set(NANOB_USER)
         home_client.connect(NANOB_HOST, NANOB_PORT, 60)
         home_client.loop_start()
@@ -178,13 +177,20 @@ def _rsync_file(local_path, remote_dir):
 def on_local_message(client, userdata, msg):
     """Forward drifter messages to nanob."""
     global home_client
-    if home_client and is_home:
-        try:
-            # Republish under sentient namespace
-            remote_topic = msg.topic.replace("drifter/", "sentient/vehicle/drifter/")
-            home_client.publish(remote_topic, msg.payload)
-        except Exception:
-            pass
+    if not (home_client and is_home):
+        return
+    try:
+        topic = msg.topic
+        # Only rewrite the leading "drifter/" prefix. str.replace rewrites
+        # every occurrence, which would mangle any topic that legitimately
+        # contains the substring "drifter/" past the first segment.
+        if topic.startswith("drifter/"):
+            remote_topic = "sentient/vehicle/drifter/" + topic[len("drifter/"):]
+        else:
+            remote_topic = topic
+        home_client.publish(remote_topic, msg.payload)
+    except Exception as e:
+        log.debug(f"Forward to nanob failed for {msg.topic}: {e}")
 
 
 def main():
@@ -202,7 +208,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     # Connect to local broker
-    local = mqtt.Client(client_id="drifter-homesync")
+    local = make_mqtt_client("drifter-homesync")
     local.on_message = on_local_message
 
     connected = False

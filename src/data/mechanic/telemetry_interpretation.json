@@ -1,0 +1,38 @@
+{
+  "coolant_temp": {
+    "normal_range": "85-100°C",
+    "cold": "Below 80°C — thermostat not yet open, engine in warm-up enrichment",
+    "hot_warning": "Above 105°C — thermostat housing, water pump, fan, or coolant level issue",
+    "critical": "Above 115°C — PULL OVER IMMEDIATELY. Engine damage imminent.",
+    "stuck_low": "Never reaches 85°C — thermostat stuck open. Poor fuel economy, P0125."
+  },
+  "rpm": {
+    "warm_idle": "650-780 RPM",
+    "cold_idle": "1000-1400 RPM (below 40°C coolant)",
+    "hunting": "RPM oscillating ±100 RPM at idle — vacuum leak, throttle body, IAC issue",
+    "high_idle": "Above 900 RPM warm — vacuum leak, throttle body carbon, sticking ISC",
+    "rough_idle": "RPM drops below 600 — misfire, vacuum leak, fuel delivery issue"
+  },
+  "fuel_trims": {
+    "stft_normal": "-5% to +5%",
+    "stft_lean": "Above +10% — possible vacuum leak, fuel pressure low, MAF underreporting",
+    "stft_rich": "Below -10% — possible purge valve stuck open, fuel pressure high, injector leak",
+    "ltft_normal": "-8% to +8%",
+    "ltft_lean": "Above +15% — chronic vacuum leak or failing MAF. Check both banks.",
+    "ltft_rich": "Below -15% — chronic rich condition. Check purge valve, fuel pressure.",
+    "bank_imbalance": "If Bank 1 and Bank 2 trims differ by >5%, suspect bank-specific leak",
+    "both_banks_lean": "Both banks lean = common vacuum leak (intake manifold, PCV, brake booster)",
+    "one_bank_lean": "One bank lean = bank-specific leak (valve cover gasket, runner gasket)"
+  },
+  "voltage": {
+    "engine_running": "13.8-14.4V — normal alternator output",
+    "key_on_engine_off": "12.4-12.7V — healthy battery",
+    "low_running": "Below 13.5V running — alternator weak, belt slipping, diode failure",
+    "high_running": "Above 14.8V — voltage regulator fault, overcharging, battery damage risk",
+    "very_low": "Below 11V — battery critically low, engine may stall, power steering heavy"
+  },
+  "vehicle_speed": {
+    "unit": "km/h (Australian spec)",
+    "cruise_range": "60-110 km/h for cruise control operation"
+  }
+}

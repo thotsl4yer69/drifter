@@ -92,19 +92,19 @@ def test_monitored_sensors_list_not_empty():
     assert 'stft_b1' in MONITORED_SENSORS
 
 
-def test_check_sensor_rejects_non_numeric_value():
-    """_check_sensor must not crash when MQTT delivers a non-numeric value."""
+def test_check_sensor_rejects_non_finite_value():
+    """SensorWindow.check must reject NaN/Inf instead of producing bogus anomalies."""
     monitor = AnomalyMonitor()
     monitor.current_coolant = 90.0
     monitor.current_session_id = "TEST"
     for _ in range(10):
         monitor.windows['stft_b1'].add(2.0)
-    # Simulate the value coercion guard added in _on_message:
-    # _check_sensor itself receives a float, so test the guard in _on_message
-    # indirectly by verifying SensorWindow.check handles boundary values.
-    result = monitor.windows['stft_b1'].check(float('inf'))
-    # inf z-score → should still return a result dict, not crash
-    assert result is not None
+    # Non-finite values must be rejected — they'd poison z-score math.
+    assert monitor.windows['stft_b1'].check(float('inf')) is None
+    assert monitor.windows['stft_b1'].check(float('-inf')) is None
+    assert monitor.windows['stft_b1'].check(float('nan')) is None
+    # A sane outlier still flags.
+    assert monitor.windows['stft_b1'].check(50.0) is not None
 
 
 def test_float_coercion_in_on_message(monkeypatch):
@@ -121,3 +121,47 @@ def test_float_coercion_in_on_message(monkeypatch):
     monitor._on_message(None, None, FakeMsg())
     assert 'coolant' in MONITORED_SENSORS
     assert 'voltage' in MONITORED_SENSORS
+
+
+def test_cold_start_does_not_contaminate_baseline():
+    """Cold-start readings must NOT enter the rolling baseline.
+
+    Regression: the previous cold-start filter added suppressed values to the
+    sensor window, which skewed the mean once warmup completed and produced
+    spurious anomalies on the first few warm samples.
+    """
+    monitor = AnomalyMonitor()
+    monitor.current_session_id = "TEST"
+    # Cold phase: spike values that should be *ignored* by the baseline.
+    monitor.current_coolant = 30.0  # cold
+    for v in [50.0, 60.0, 40.0, 55.0, 45.0, 50.0, 52.0, 48.0, 51.0, 49.0]:
+        monitor._check_sensor('stft_b1', v)
+    # Window should still be empty — cold-start readings must not pollute it.
+    assert len(monitor.windows['stft_b1'].window) == 0
+
+
+def test_non_dict_payload_is_ignored():
+    """_on_message must not crash on bare JSON primitives (int/str/array)."""
+    monitor = AnomalyMonitor()
+    monitor.current_session_id = "TEST"
+
+    class FakeMsg:
+        topic = 'drifter/engine/stft1'
+        payload = b'"just_a_string"'
+
+    # Should not raise
+    monitor._on_message(None, None, FakeMsg())
+
+
+def test_sensor_window_floor_prevents_zero_std_zscore_storm():
+    """A constant-value sensor at 0 must not produce huge z-scores on noise.
+
+    Regression: old formula produced std = max(0.01, |mean|*0.01). For a
+    sensor pinned at 0, std=0.01 → a reading of 0.5 gave z=50 (critical).
+    """
+    w = SensorWindow(window_size=10)
+    for _ in range(10):
+        w.add(0.0)
+    # 0.5 is within normal sensor noise — should NOT flag as critical.
+    result = w.check(0.5)
+    assert result is None or result.get('severity') != 'critical'

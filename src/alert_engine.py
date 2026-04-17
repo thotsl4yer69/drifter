@@ -23,8 +23,7 @@ from config import (
     THRESHOLDS, CALIBRATION_DEFAULTS, TOPICS, XTYPE_DTC_LOOKUP,
     WARMUP_COOLANT_THRESHOLD, WARMUP_TIME_MAX, WARMUP_COOLANT_TARGET,
     THERMOSTAT_OPEN_C, COOLANT_NORMAL_LOW, COOLANT_NORMAL_HIGH,
-    MAF_IDLE_MIN, MAF_IDLE_MAX, IDLE_RPM_WARM_LOW, IDLE_RPM_WARM_HIGH,
-)
+    MAF_IDLE_MIN, MAF_IDLE_MAX, IDLE_RPM_WARM_LOW, IDLE_RPM_WARM_HIGH, make_mqtt_client,)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -993,7 +992,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     # ── MQTT ──
-    client = mqtt.Client(client_id="drifter-alerts")
+    client = make_mqtt_client("drifter-alerts")
     client.on_message = on_message
 
     connected = False

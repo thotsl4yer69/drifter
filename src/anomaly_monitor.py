@@ -20,8 +20,7 @@ import db
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     ANOMALY_ROLLING_WINDOW, ANOMALY_WARN_Z, ANOMALY_HIGH_Z, ANOMALY_CRITICAL_Z,
-    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD,
-)
+    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD, make_mqtt_client,)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANOMALY] %(message)s',
                     datefmt='%H:%M:%S')
@@ -53,13 +52,23 @@ class SensorWindow:
     def add(self, value: float):
         self.window.append(value)
 
+    # Absolute floor to prevent divide-by-near-zero when sensors are pinned.
+    # 0.5 covers typical noise floors for %, °C, RPM (×10), voltage (×10), etc.
+    _STD_FLOOR = 0.5
+
     def check(self, value: float) -> Optional[dict]:
         """Return anomaly dict if value is anomalous, else None."""
         if len(self.window) < self.MIN_READINGS:
             return None
+        # Reject non-finite incoming values — they would pollute z-score math.
+        if not math.isfinite(value):
+            return None
         mean = sum(self.window) / len(self.window)
         variance = sum((x - mean) ** 2 for x in self.window) / len(self.window)
-        std = math.sqrt(variance) if variance > 0 else max(0.01, abs(mean) * 0.01)
+        # Floor stddev to avoid infinite z-scores on constant sensors and
+        # to prevent the old `max(0.01, |mean|*0.01)` trap where mean=0
+        # produced std=0.01 → any tiny jitter looked like a critical anomaly.
+        std = max(math.sqrt(variance), self._STD_FLOOR)
         z = abs(value - mean) / std
         if z < ANOMALY_WARN_Z:
             return None
@@ -84,12 +93,14 @@ class AnomalyMonitor:
         self.running = True
 
         db.init_db()
-        self.client = mqtt.Client(client_id="drifter-anomaly-monitor")
+        self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
 
     def _on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload)
+            if not isinstance(data, dict):
+                return
             topic = msg.topic
             value = data.get('value')
             if value is None:
@@ -97,6 +108,9 @@ class AnomalyMonitor:
             try:
                 value = float(value)
             except (TypeError, ValueError):
+                return
+            # Reject non-finite values (NaN / ±Inf) — they corrupt stddev math.
+            if not math.isfinite(value):
                 return
 
             # Track state for context snapshots
@@ -125,8 +139,18 @@ class AnomalyMonitor:
                 for e in events:
                     db.insert_anomaly_event(e)
                     if e['severity'] == 'critical':
-                        self.client.publish(TOPICS.get('alert_message', 'drifter/alert/message'),
-                                            json.dumps({'message': f"Critical anomaly: {sensor_name}"}))
+                        # Match the schema used by alert_engine so downstream
+                        # consumers (realdash_bridge, voice_alerts, dashboard)
+                        # do not KeyError on missing fields.
+                        from config import LEVEL_AMBER, LEVEL_NAMES
+                        self.client.publish(
+                            TOPICS.get('alert_message', 'drifter/alert/message'),
+                            json.dumps({
+                                'level': LEVEL_AMBER,
+                                'name': LEVEL_NAMES[LEVEL_AMBER],
+                                'message': f"Critical anomaly: {sensor_name} z={e['z_score']:.1f}",
+                                'ts': time.time(),
+                            }))
 
             # RPM: update window + check instability
             if sensor_name == 'rpm':
@@ -150,7 +174,9 @@ class AnomalyMonitor:
         if not self.current_session_id:
             return []
         if self.current_coolant < WARMUP_COOLANT_THRESHOLD:
-            self.windows[sensor_name].add(value)
+            # Do NOT add cold-start readings to the warm-engine baseline —
+            # fuel trims, IAT, MAF etc. are radically different below warmup
+            # temperature and would poison the z-score baseline once warm.
             return []  # suppressed during cold start
         result = self.windows[sensor_name].check(value)
         self.windows[sensor_name].add(value)

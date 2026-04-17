@@ -21,8 +21,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, LOG_DIR, TOPICS,
-    BUFFER_FLUSH_INTERVAL, MAX_LOG_SIZE_MB
-)
+    BUFFER_FLUSH_INTERVAL, MAX_LOG_SIZE_MB, make_mqtt_client)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -304,7 +303,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-logger")
+    client = make_mqtt_client("drifter-logger")
     client.on_message = on_message
 
     connected = False

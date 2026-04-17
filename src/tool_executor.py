@@ -76,8 +76,12 @@ BLOCKED_PATTERNS = [
     'iptables -F', 'iptables --flush',
 ]
 
-# Shell metacharacters that should not appear in user-supplied arguments
-_SHELL_META = re.compile(r'[;&|`$(){}]')
+# Shell metacharacters that should not appear in user-supplied arguments.
+# Covers command separators (; &), pipes (|), command substitution (` $(...)),
+# group/subshell delimiters ({ } ( )), redirection (< > ), globs (* ? [ ]),
+# home expansion (~), newline/carriage-return (which shell treats as ;), and
+# backslash (for \n escape sequences).
+_SHELL_META = re.compile(r'[;&|`$(){}<>\*\?\[\]~\\\n\r]')
 
 # ═══════════════════════════════════════════════════════════════════
 #  RF / Network Command Mappings

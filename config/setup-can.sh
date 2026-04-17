@@ -2,6 +2,8 @@
 # MZ1312 DRIFTER — CAN Interface Auto-Setup
 # Detects USB2CANFD and brings up socketcan interface
 
+set -o pipefail
+
 BITRATE=500000
 
 # Check if can0 already exists and is up
@@ -17,7 +19,9 @@ if ip link show can0 &>/dev/null; then
     exit 0
 fi
 
-# Check for slcan devices (some USB2CANFD variants use serial)
+# Check for slcan devices (some USB2CANFD variants use serial).
+# nullglob so non-matching patterns expand to nothing (not a literal "*").
+shopt -s nullglob
 for DEV in /dev/ttyACM* /dev/ttyUSB*; do
     if [ -e "$DEV" ]; then
         # Try slcand
@@ -30,6 +34,7 @@ for DEV in /dev/ttyACM* /dev/ttyUSB*; do
         fi
     fi
 done
+shopt -u nullglob
 
 echo "DRIFTER: No CAN interface found — will retry on next start"
 exit 0
