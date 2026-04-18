@@ -168,6 +168,7 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
 | `drifter-alerts` | Diagnostic rule engine (23 rules) | Yes |
 | `drifter-logger` | Telemetry → JSON logs with drive session detection | Yes |
 | `drifter-voice` | Piper TTS voice alerts | Yes |
+| `drifter-vivi` | Vivi voice assistant — two-way conversation (STT + LLM + TTS) | Yes |
 | `drifter-hotspot` | Wi-Fi AP for phone | Yes |
 | `drifter-homesync` | MQTT bridge + rsync log sync to nanob | Yes |
 | `drifter-watchdog` | Service health monitor + auto-restart | Yes |
@@ -216,6 +217,12 @@ drifter/rf/spectrum         # JSON: spectrum sweep results
 drifter/rf/emergency        # JSON: emergency band activity scan
 drifter/rf/status           # JSON: RF module status
 drifter/rf/command          # JSON: commands (tpms_learn, assign, scan)
+
+# ── Vivi Voice Assistant ──
+drifter/vivi/query          # JSON: {query: "..."} or plain string — send a question
+drifter/vivi/response       # JSON: {query, response, ts} — Vivi's answer
+drifter/vivi/status         # JSON: {status, mode, ts} — idle/listening/thinking/speaking
+drifter/audio/wav           # JSON: {text, wav_b64, source, ts} — TTS audio (base64 WAV)
 ```
 
 ## Diagnostic Rules

@@ -482,6 +482,12 @@ TOPICS = {
     'analysis_report': 'drifter/analysis/report',
     'analysis_request': 'drifter/analysis/request',
     'anomaly_event': 'drifter/anomaly/event',
+    # Vivi voice assistant
+    'vivi_query': 'drifter/vivi/query',
+    'vivi_response': 'drifter/vivi/response',
+    'vivi_status': 'drifter/vivi/status',
+    # Audio (shared with voice_alerts)
+    'audio_wav': 'drifter/audio/wav',
 }
 
 # ── LLM Analyst ──
@@ -512,6 +518,7 @@ SERVICES = [
     "drifter-anomaly",
     "drifter-analyst",
     "drifter-voice",
+    "drifter-vivi",
     "drifter-hotspot",
     "drifter-homesync",
     "drifter-watchdog",

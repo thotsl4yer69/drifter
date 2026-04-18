@@ -168,7 +168,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -193,6 +193,14 @@ fi
 mkdir -p "${DRIFTER_DIR}/realdash"
 cp "${REPO_DIR}/realdash/drifter_channels.xml" "${DRIFTER_DIR}/realdash/"
 ok "RealDash channel map deployed"
+
+# Vivi config (don't overwrite if already customised)
+if [ ! -f "${DRIFTER_DIR}/vivi.yaml" ]; then
+    cp "${REPO_DIR}/config/vivi.yaml" "${DRIFTER_DIR}/"
+    ok "vivi.yaml deployed"
+else
+    ok "vivi.yaml already present — not overwriting"
+fi
 
 # Log & session directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions
@@ -269,7 +277,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
