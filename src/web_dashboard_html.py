@@ -259,6 +259,11 @@ body{
 [data-theme="light"] .alert-amber{background:linear-gradient(180deg,rgba(217,119,6,.12),rgba(217,119,6,.03))}
 [data-theme="light"] .alert-red{background:linear-gradient(180deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
 [data-theme="light"] .hw-overlay,[data-theme="light"] .disconnected{background:var(--bg)}
+[data-theme="light"] .dot-off{background:#b5bcc5}
+[data-theme="light"] .disconnected{
+  border-color:rgba(220,38,38,.35);
+  box-shadow:0 20px 60px -10px rgba(0,0,0,.18),0 0 30px rgba(220,38,38,.1);
+}
 
 /* Disconnected overlay */
 .disconnected{
