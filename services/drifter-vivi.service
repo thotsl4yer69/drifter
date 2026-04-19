@@ -1,0 +1,17 @@
+[Unit]
+Description=MZ1312 DRIFTER Vivi Voice Assistant
+After=nanomq.service sound.target
+Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/vivi.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
