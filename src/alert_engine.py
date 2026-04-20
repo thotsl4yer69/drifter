@@ -39,6 +39,17 @@ calibration = dict(CALIBRATION_DEFAULTS)
 engine_start_time = 0.0     # When RPM first went above 300
 warmup_complete = False       # Set True when coolant reaches WARMUP_COOLANT_TARGET
 
+# ── Data Readiness Gate ──
+# Rules must not fire until we have collected enough real data to be meaningful.
+# Both a minimum wall-clock window (30 s) and a minimum MQTT message count must
+# be satisfied before any alert rule is allowed to evaluate.
+MIN_SAMPLES = 100            # Minimum buffer depth required for per-rule guards
+DATA_READY_SECONDS = 30      # Wall-clock seconds of data collection required
+DATA_READY_MESSAGES = 60     # MQTT messages required before alerts fire
+_startup_time = time.time()  # Recorded once at import; reset in main()
+_mqtt_message_count = 0      # Incremented in on_message()
+_data_ready = False          # Latches True once both conditions are met
+
 # ── Rolling Buffer (60 seconds of data at ~10Hz) ──
 BUFFER_SIZE = 600
 
@@ -178,7 +189,6 @@ def rule_vacuum_leak_both(state: VehicleState):
 def rule_coolant_critical(state: VehicleState):
     """Coolant temperature critical."""
     coolant = state.latest(state.coolant)
-    trend = state.trend(state.coolant, ts_buf=state.coolant_ts)
 
     if coolant is None:
         return None
@@ -193,10 +203,16 @@ def rule_coolant_critical(state: VehicleState):
                 f"Coolant high: {coolant}°C. Monitor closely. "
                 f"Check thermostat, fan relay, coolant level.")
 
-    if coolant > 100 and trend * 60 > THRESHOLDS['coolant_rise_rate']:
-        return (LEVEL_AMBER,
-                f"Coolant rising fast: {coolant}°C (+{trend * 60:.1f}°C/min). "
-                f"Monitor closely. May indicate thermostat sticking or fan failure.")
+    # Trend-based check needs enough samples to produce a meaningful rate.
+    # trend() returns 0 when n < 10, so a single spurious high reading could
+    # produce a non-zero result once a second sample arrives.  Require
+    # MIN_SAMPLES in the coolant buffer before this branch can fire.
+    if coolant > 100 and len(state.coolant) >= MIN_SAMPLES:
+        trend = state.trend(state.coolant, ts_buf=state.coolant_ts)
+        if trend * 60 > THRESHOLDS['coolant_rise_rate']:
+            return (LEVEL_AMBER,
+                    f"Coolant rising fast: {coolant}°C (+{trend * 60:.1f}°C/min). "
+                    f"Monitor closely. May indicate thermostat sticking or fan failure.")
     return None
 
 
@@ -405,7 +421,16 @@ def rule_active_dtcs(state: VehicleState):
 
 
 def rule_stalled(state: VehicleState):
-    """Engine stall detection (RPM drops to 0 while voltage present)."""
+    """Engine stall detection (RPM drops to 0 while voltage present).
+
+    Requires at least MIN_SAMPLES readings in the RPM buffer before firing so
+    that a freshly-started alert engine with sparse data cannot trigger a false
+    stall alert when the buffer is still nearly empty.
+    """
+    # Need a deep history to distinguish a real stall from startup noise.
+    if len(state.rpm) < MIN_SAMPLES:
+        return None
+
     rpm = state.latest(state.rpm)
     voltage = state.latest(state.voltage)
 
@@ -745,6 +770,14 @@ def rule_xtype_alternator_age(state: VehicleState):
 def rule_xtype_warmup_progress(state: VehicleState):
     """Track warmup progression and inform the driver.
     After warm-up completes, report normal operating status once.
+
+    Mid-drive restart recovery: if on startup we already see a warm coolant
+    temperature and live RPM, assume the engine was already running when the
+    alert engine process restarted (e.g. a Pi reboot mid-drive).  In that case
+    we pre-set engine_start_time to now and mark warmup_complete immediately so
+    that the stuck-open thermostat rule (which compares against engine_start_time)
+    does not falsely fire, and the cold-start rule does not suppress warm-engine
+    alerts.
     """
     global warmup_complete, engine_start_time
 
@@ -754,7 +787,19 @@ def rule_xtype_warmup_progress(state: VehicleState):
     if coolant is None or rpm is None:
         return None
 
-    # Track engine start
+    # Mid-drive restart recovery: first time we see data that looks like a
+    # running warm engine, restore state without waiting for the normal
+    # start-from-cold sequence.
+    if engine_start_time == 0 and rpm > 600 and coolant > 70:
+        engine_start_time = time.time()
+        warmup_complete = True
+        log.info(
+            f"Mid-drive restart detected: coolant={coolant:.0f}°C, "
+            f"RPM={rpm:.0f}. Engine state restored — warmup assumed complete."
+        )
+        return None
+
+    # Track engine start (cold start path)
     if rpm > 300 and engine_start_time == 0:
         engine_start_time = time.time()
 
@@ -825,7 +870,8 @@ _clear_counters = {}  # rule_name -> consecutive-clear count
 
 def on_message(client, userdata, msg):
     """Ingest telemetry from CAN bridge."""
-    global state
+    global state, _mqtt_message_count
+    _mqtt_message_count += 1
     try:
         data = json.loads(msg.payload)
         topic = msg.topic
@@ -892,11 +938,26 @@ def evaluate_rules(mqtt_client):
       - alert_level / alert_message: the highest-severity alert (retained)
       - drifter/alert/active: list of ALL currently-active alerts (retained)
     """
-    global current_alert_level, current_alert_msg, last_alert_time
+    global current_alert_level, current_alert_msg, last_alert_time, _data_ready
 
     now = time.time()
     if now - last_alert_time < ALERT_COOLDOWN:
         return
+
+    # ── Global data readiness gate ──────────────────────────────────────────
+    # Skip all rule evaluation until we have collected enough real MQTT
+    # messages AND enough wall-clock time has elapsed since startup.  This
+    # prevents false alerts when the process starts with empty buffers or
+    # when CAN data is sparse immediately after boot.
+    if not _data_ready:
+        elapsed = now - _startup_time
+        if elapsed < DATA_READY_SECONDS or _mqtt_message_count < DATA_READY_MESSAGES:
+            return
+        _data_ready = True
+        log.info(
+            f"Data readiness gate cleared: {elapsed:.0f}s elapsed, "
+            f"{_mqtt_message_count} messages received. Alert rules now active."
+        )
 
     # Evaluate every rule and collect results under lock so the MQTT
     # callback thread cannot mutate VehicleState mid-evaluation.
@@ -1012,6 +1073,12 @@ def main():
     for domain in ('engine', 'vehicle', 'power', 'diag', 'rf/tpms'):
         client.subscribe(f"drifter/{domain}/#")
     client.loop_start()
+
+    # Reset the data readiness clock now that we are actually receiving data.
+    global _startup_time, _data_ready, _mqtt_message_count
+    _startup_time = time.time()
+    _data_ready = False
+    _mqtt_message_count = 0
 
     log.info("Alert Engine is LIVE — monitoring telemetry")
 

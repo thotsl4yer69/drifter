@@ -1,0 +1,62 @@
+{
+  "title": "DRIFTER Production Readiness Sweep",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "RealDash bridge stops broadcasting false zeros for missing sensors",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "realdash_bridge.py uses None (not 0) as default for missing sensor values",
+        "Frame packing functions skip or use last-known-good value instead of 0 for missing data",
+        "No RealDash frame sends 0 for a sensor that has never reported a value"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Alert engine does not fire false positives without real CAN data",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "All alert rules return None when insufficient data samples exist (minimum buffer guards)",
+        "Engine stall detection (rpm==0) requires minimum 100 samples before firing",
+        "No alerts fire when system starts with no CAN adapter connected",
+        "Engine state globals (warmup_complete, engine_start_time) are safe across system restarts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Telemetry cache includes freshness timestamps",
+      "priority": 3,
+      "passes": true,
+      "acceptanceCriteria": [
+        "tool_executor.py telemetry cache includes _last_updated_ts for each sensor value",
+        "Mechanic LLM responses include data age when telemetry is older than 60 seconds",
+        "Stale telemetry (>5 min) is flagged as potentially outdated in mechanic responses"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Dashboard UI works without CAN hardware (no blocking overlays, no phantom data)",
+      "priority": 4,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Hardware overlay has a SKIP button to dismiss without CAN data (already done)",
+        "No diagnostic banners or alerts appear without real sensor data",
+        "All gauge values show -- until real data arrives (no zeros masquerading as readings)",
+        "curl http://localhost:8080 returns page, curl /mechanic returns page, both with no fake alerts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Remove empty placeholder modules and dead code",
+      "priority": 5,
+      "passes": true,
+      "acceptanceCriteria": [
+        "field_ops_kb.py either contains real entries or is removed/disabled cleanly",
+        "No TODO placeholders remain in deployed Python files that affect runtime behavior",
+        "voice_input.py references cleaned up (replaced by vivi.py)"
+      ]
+    }
+  ]
+}

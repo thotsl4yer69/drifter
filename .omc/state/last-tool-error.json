@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"pkill -f firefox-esr 2>/dev/null; DISPLAY=:0 nohup /opt/drifter/start-hud.sh > /dev/null 2>&1 & echo \\\"HUD launching\\\"\",\"description\":\"Kill old Firefox and launch HUD kiosk\"}",
+  "error": "Exit code 144",
+  "timestamp": "2026-04-20T08:53:48.464Z",
+  "retry_count": 1
+}

@@ -108,6 +108,7 @@ NETWORK_COMMANDS = {
 # ═══════════════════════════════════════════════════════════════════
 
 _telemetry_cache = {}
+_telemetry_timestamps = {}
 _telemetry_lock = threading.Lock()
 
 
@@ -118,6 +119,7 @@ def update_telemetry_cache(topic: str, payload: str):
             _telemetry_cache[topic] = json.loads(payload)
         except (json.JSONDecodeError, TypeError):
             _telemetry_cache[topic] = payload
+        _telemetry_timestamps[topic] = time.time()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -215,7 +217,7 @@ def _request_confirmation(command: str, risk: str, mqtt_client) -> bool:
     else:
         prompt = f"Confirm command: {command}. Say yes to proceed or no to cancel."
 
-    voice_topic = TOPICS.get('voice_command', 'drifter/voice/command')
+    voice_topic = TOPICS.get('vivi_response', 'drifter/vivi/response')
     mqtt_client.publish(voice_topic, json.dumps({
         'type': 'confirm_tool',
         'command': command,
@@ -365,20 +367,52 @@ def _handle_get_vehicle_telemetry(arguments: dict) -> dict:
     sensor = arguments.get('sensor', 'all')
 
     with _telemetry_lock:
+        if not _telemetry_cache:
+            return {
+                'success': True,
+                'output': 'No live telemetry available - vehicle may not be connected',
+                'risk_level': 'LOW',
+                'command': '',
+            }
+
         if sensor == 'all':
-            data = dict(_telemetry_cache)
+            raw = dict(_telemetry_cache)
+            timestamps = dict(_telemetry_timestamps)
         else:
             topic = TOPICS.get(sensor)
             if topic and topic in _telemetry_cache:
-                data = {sensor: _telemetry_cache[topic]}
+                raw = {sensor: _telemetry_cache[topic]}
+                timestamps = {sensor: _telemetry_timestamps.get(topic, 0)}
             else:
                 # Try partial match
-                data = {k: v for k, v in _telemetry_cache.items() if sensor in k}
+                raw = {k: v for k, v in _telemetry_cache.items() if sensor in k}
+                timestamps = {k: _telemetry_timestamps.get(k, 0) for k in raw}
 
-    if not data:
-        return {'success': True, 'output': 'No telemetry data available (cache empty)', 'risk_level': 'LOW', 'command': ''}
+    if not raw:
+        return {
+            'success': True,
+            'output': f'No telemetry data found for sensor: {sensor}',
+            'risk_level': 'LOW',
+            'command': '',
+        }
 
-    output = json.dumps(data, indent=2, default=str)
+    now = time.time()
+    annotated = {}
+    for key, value in raw.items():
+        ts = timestamps.get(key, 0)
+        age_sec = now - ts if ts else None
+
+        if age_sec is None:
+            annotated[key] = f"{value} (age unknown)"
+        elif age_sec >= 300:
+            age_min = int(age_sec // 60)
+            annotated[key] = f"{value} WARNING: STALE DATA - last updated {age_min} minutes ago"
+        elif age_sec >= 60:
+            annotated[key] = f"{value} ({int(age_sec)} seconds ago)"
+        else:
+            annotated[key] = value
+
+    output = json.dumps(annotated, indent=2, default=str)
     if len(output) > 2000:
         output = output[:2000] + '\n... [truncated]'
     return {'success': True, 'output': output, 'risk_level': 'LOW', 'command': f'telemetry({sensor})'}

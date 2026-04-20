@@ -1,0 +1,25 @@
+# DRIFTER Production Readiness — Progress
+
+## Completed
+- US-001: realdash_bridge.py — None defaults, _last_known fallback, _has_real_data gate, pack functions skip missing
+- US-002: alert_engine.py — MIN_SAMPLES=100 guards, 30s+60msg data readiness gate, mid-drive restart recovery
+- US-003: tool_executor.py — _telemetry_timestamps dict, age annotations >60s, stale warnings >5min, empty cache message
+- US-004: web_dashboard_html.py — SKIP button on hw-overlay, gauges show --, no phantom alerts
+- US-005: field_ops_kb.py — TODOs removed, empty list retained (imported by llm_mechanic)
+- BONUS: voice_input.py + tool_executor.py — voice_command→vivi_status/vivi_response topic migration
+- BONUS: voice_alerts.py — voice_command→vivi_response subscription fix
+
+## Files Modified
+- src/realdash_bridge.py
+- src/alert_engine.py
+- src/tool_executor.py
+- src/web_dashboard_html.py
+- src/field_ops_kb.py
+- src/voice_alerts.py
+- src/voice_input.py
+
+## Learnings
+- MQTT retained messages persist across service restarts — must clear when deploying topic changes
+- RealDash TCP CAN protocol requires valid 16-byte frames — can't send partial/null frames
+- Alert engine needs both time-based AND message-count gates to prevent false positives on startup
+- voice_command topic was removed in vivi merge but references survived in 3 files

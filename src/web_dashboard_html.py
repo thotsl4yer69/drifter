@@ -662,8 +662,9 @@ details[open] summary::before{content:"▾ "}
     <h2>DRIFTER</h2>
     <div class="hw-sub">HARDWARE STATUS</div>
   </div>
-  <div class="hw-list" id="hw-list"></div>
-  <div class="hw-services" id="hw-services"></div>
+  <div class="hw-list" id="hw-list" style="flex:1;overflow-y:auto;min-height:0"></div>
+  <div class="hw-services" id="hw-services" style="flex:1;overflow-y:auto;min-height:0"></div>
+  <div style="flex-shrink:0;text-align:center;padding:16px;border-top:1px solid var(--border)"><button onclick="hwOverlayDismissed=true;document.getElementById('hw-overlay').classList.add('fade-out')" style="background:var(--accent);color:#000;border:none;padding:14px 48px;border-radius:8px;font-size:16px;font-weight:700;letter-spacing:2px;cursor:pointer;min-height:48px">SKIP</button></div>
 </div>
 
 <script>
@@ -676,6 +677,14 @@ let audioCtx = null;
 let lastDataTime = 0;
 let hwOverlayDismissed = false;
 let hwPollTimer = null;
+// Auto-dismiss hardware overlay after 5 seconds so dashboard is always accessible
+setTimeout(()=>{
+  if(!hwOverlayDismissed){
+    hwOverlayDismissed=true;
+    const ol=document.getElementById('hw-overlay');
+    if(ol) ol.classList.add('fade-out');
+  }
+}, 5000);
 let wsRetryDelay = 2000;
 const WS_RETRY_MAX = 16000;
 

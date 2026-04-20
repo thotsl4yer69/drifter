@@ -4,15 +4,8 @@ MZ1312 DRIFTER — Field Operations Knowledge Base
 Emergency comms, RF operations, Kali tools, survival procedures.
 Used by MechanicRAG for LLM context retrieval.
 UNCAGED TECHNOLOGY — EST 1991
-
-TODO: Populate with full knowledge entries across 4 domains:
-  - emergency_comms: Australian UHF CB, RFDS HF, Marine VHF, aviation, PMR446, EPIRB, Morse
-  - rf_operations: RTL-SDR tools, signal ID, TPMS, ADS-B, antenna theory, Australian freq table
-  - kali_tools: nmap, aircrack-ng, kismet, bettercap, tcpdump, hashcat, metasploit, etc.
-  - survival: vehicle shelter, water, signaling, navigation, first aid, snake bite, bushfire
 """
 
-# Placeholder — full entries to be populated in follow-up
 FIELD_OPS_ENTRIES = []
 
 
