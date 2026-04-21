@@ -10,7 +10,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
@@ -52,10 +52,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   --safe-top:env(safe-area-inset-top,0px);
   /* Motion */
   --ease:cubic-bezier(.4,0,.2,1);
+  /* Type scale */
+  --fs-xs:11px;--fs-sm:13px;--fs-md:15px;--fs-lg:20px;
+  --fs-val:28px;--fs-val-lg:44px;
 }
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
-  font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   font-feature-settings:'tnum' 1,'ss01' 1;
   overflow-x:hidden;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;
   padding-bottom:calc(64px + var(--safe-bottom));
@@ -72,12 +75,12 @@ body{
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
 }
 .header h1{font-size:20px;letter-spacing:8px;color:var(--accent);font-weight:700;text-shadow:0 0 18px var(--accent-glow)}
-.header .sub{font-size:10px;color:var(--text-mute);margin-top:3px;letter-spacing:2px}
+.header .sub{font-size:var(--fs-xs);color:var(--text-mute);margin-top:3px;letter-spacing:2px}
 
 /* Status bar */
 .status-bar{
   display:flex;justify-content:space-between;align-items:center;
-  padding:8px 16px;font-size:11px;letter-spacing:1px;
+  padding:8px 16px;font-size:var(--fs-sm);letter-spacing:1px;
   border-bottom:1px solid var(--border);background:var(--bg-elev);
 }
 .status-dot{
@@ -118,13 +121,13 @@ body{
   box-shadow:0 0 0 1px var(--accent-glow),0 0 24px -4px var(--accent-glow);
   transition:none;
 }
-.card .label{font-size:10px;color:var(--text-mute);text-transform:uppercase;letter-spacing:1.8px;font-weight:600}
-.card .value{font-size:28px;font-weight:700;margin:6px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1;transition:color .25s var(--ease)}
-.card .unit{font-size:10px;color:var(--text-mute);letter-spacing:.5px}
+.card .label{font-size:var(--fs-xs);color:var(--text-mute);text-transform:uppercase;letter-spacing:1.8px;font-weight:600}
+.card .value{font-size:var(--fs-val);font-weight:700;margin:6px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1;transition:color .25s var(--ease)}
+.card .unit{font-size:var(--fs-xs);color:var(--text-mute);letter-spacing:.5px}
 .card .bar{height:4px;background:#1a2229;border-radius:3px;margin-top:8px;overflow:hidden}
 .card .bar-fill{height:100%;border-radius:3px;transition:width .35s var(--ease),background .35s var(--ease)}
-.card.lg .value{font-size:44px;letter-spacing:-1px}
-.card.med .value{font-size:34px}
+.card.lg .value{font-size:var(--fs-val-lg);letter-spacing:-1px}
+.card.med .value{font-size:32px}
 
 /* RPM tachometer bar */
 .bar-zones{position:relative;height:5px;background:#1a2229;border-radius:3px;margin-top:8px;overflow:hidden}
@@ -150,13 +153,13 @@ body{
   border:1px solid var(--border);border-radius:var(--radius);
   padding:10px 12px;display:flex;justify-content:space-between;align-items:center;
 }
-.tpms-card .pos{font-size:10px;color:var(--text-mute);font-weight:700;letter-spacing:2px;text-transform:uppercase}
-.tpms-card .psi{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
-.tpms-card .temp{font-size:11px;color:var(--text-mute);font-variant-numeric:tabular-nums}
+.tpms-card .pos{font-size:var(--fs-xs);color:var(--text-mute);font-weight:700;letter-spacing:2px;text-transform:uppercase}
+.tpms-card .psi{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.tpms-card .temp{font-size:var(--fs-xs);color:var(--text-mute);font-variant-numeric:tabular-nums}
 
 /* Section headers */
 .section{
-  padding:18px 16px 6px;font-size:10px;color:var(--text-mute);
+  padding:18px 16px 6px;font-size:var(--fs-xs);color:var(--text-mute);
   text-transform:uppercase;letter-spacing:3px;font-weight:600;
   display:flex;align-items:center;gap:10px;
 }
@@ -191,9 +194,9 @@ body{
 
 /* Chips */
 .chip{
-  padding:7px 12px;background:var(--card);border:1px solid var(--border);
-  border-radius:999px;color:var(--text-dim);font-family:inherit;font-size:11px;
-  cursor:pointer;white-space:nowrap;
+  padding:10px 14px;background:var(--card);border:1px solid var(--border);
+  border-radius:999px;color:var(--text-dim);font-family:inherit;font-size:var(--fs-sm);
+  cursor:pointer;white-space:nowrap;min-height:44px;display:inline-flex;align-items:center;
   transition:border-color .15s var(--ease),color .15s var(--ease),background .15s var(--ease);
 }
 .chip:active,.chip.active{
@@ -212,14 +215,14 @@ body{
 }
 .tabbar a,.tabbar button{
   background:transparent;border:0;outline:0;cursor:pointer;
-  color:var(--text-dim);font-family:inherit;font-size:10px;letter-spacing:1px;
-  text-decoration:none;padding:8px 6px;
+  color:var(--text-dim);font-family:inherit;font-size:var(--fs-xs);letter-spacing:1px;
+  text-decoration:none;padding:6px 8px;min-height:48px;
   display:flex;flex-direction:column;align-items:center;gap:4px;
   transition:color .15s var(--ease);
 }
 .tabbar a:active,.tabbar button:active,.tabbar a.active,.tabbar button.active{color:var(--accent)}
 .tabbar .ico{
-  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round;display:block;
   transition:transform .2s var(--ease);
 }
@@ -265,6 +268,22 @@ body{
   box-shadow:0 20px 60px -10px rgba(0,0,0,.18),0 0 30px rgba(220,38,38,.1);
 }
 
+/* Responsive */
+@media(max-width:480px){
+  :root{--fs-val:24px;--fs-val-lg:36px}
+  .grid{grid-template-columns:repeat(auto-fit,minmax(min(140px,45vw),1fr));gap:8px;padding:8px}
+  .card{padding:10px 8px}
+  .tpms-grid{gap:6px;padding:0 8px}
+  .tabbar{padding:8px 4px calc(8px + var(--safe-bottom))}
+}
+@media(min-width:481px) and (max-height:340px){
+  :root{--fs-val:22px;--fs-val-lg:32px}
+  .header{padding-top:6px;padding-bottom:4px}
+  .header h1{font-size:16px}
+  .section{padding:10px 16px 4px}
+  .card{padding:8px}
+}
+
 /* Disconnected overlay */
 .disconnected{
   position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
@@ -301,9 +320,9 @@ body{
 
 /* Help tooltip */
 .help-icon{
-  display:inline-block;width:15px;height:15px;border-radius:50%;
-  background:var(--card);color:var(--text-mute);font-size:9px;text-align:center;
-  line-height:15px;cursor:pointer;margin-left:4px;vertical-align:middle;
+  display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;
+  background:var(--card);color:var(--text-mute);font-size:13px;
+  line-height:32px;cursor:pointer;margin-left:4px;vertical-align:middle;
   border:1px solid var(--border);user-select:none;font-weight:700;
   transition:color .15s var(--ease),border-color .15s var(--ease);
 }
@@ -1426,7 +1445,7 @@ MECHANIC_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
 <title>DRIFTER MECHANIC</title>
@@ -1452,10 +1471,13 @@ MECHANIC_HTML = r"""<!DOCTYPE html>
   --safe-bottom:env(safe-area-inset-bottom,0px);
   --safe-top:env(safe-area-inset-top,0px);
   --ease:cubic-bezier(.4,0,.2,1);
+  /* Type scale */
+  --fs-xs:11px;--fs-sm:13px;--fs-md:15px;--fs-lg:20px;
+  --fs-val:28px;--fs-val-lg:44px;
 }
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
-  font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   font-feature-settings:'tnum' 1,'ss01' 1;
   overflow-x:hidden;max-width:820px;margin:0 auto;-webkit-font-smoothing:antialiased;
   padding-bottom:calc(72px + var(--safe-bottom));
@@ -1485,8 +1507,9 @@ body{
 }
 .nav::-webkit-scrollbar{display:none}
 .nav a{
-  padding:8px 14px;font-size:11px;color:var(--text-dim);text-decoration:none;
-  white-space:nowrap;letter-spacing:1.5px;font-weight:600;
+  padding:10px 16px;font-size:11px;color:var(--text-dim);text-decoration:none;
+  white-space:nowrap;letter-spacing:1.5px;font-weight:600;min-height:44px;
+  display:inline-flex;align-items:center;
   background:var(--card);border:1px solid var(--border);border-radius:999px;
   transition:color .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease);
 }
@@ -1577,13 +1600,13 @@ body{
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
 }
 .tabbar a{
-  color:var(--text-dim);font-family:inherit;font-size:10px;letter-spacing:1px;
-  text-decoration:none;padding:8px 6px;
+  color:var(--text-dim);font-family:inherit;font-size:var(--fs-xs);letter-spacing:1px;
+  text-decoration:none;padding:6px 8px;min-height:48px;
   display:flex;flex-direction:column;align-items:center;gap:4px;
 }
 .tabbar a.active,.tabbar a:active{color:var(--accent)}
 .tabbar .ico{
-  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round;display:block;
   transition:transform .2s var(--ease);
 }
@@ -1856,7 +1879,7 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050708">
 <title>DRIFTER SETTINGS</title>
@@ -1882,10 +1905,13 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
   --safe-bottom:env(safe-area-inset-bottom,0px);
   --safe-top:env(safe-area-inset-top,0px);
   --ease:cubic-bezier(.4,0,.2,1);
+  /* Type scale */
+  --fs-xs:11px;--fs-sm:13px;--fs-md:15px;--fs-lg:20px;
+  --fs-val:28px;--fs-val-lg:44px;
 }
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
-  font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   font-feature-settings:'tnum' 1,'ss01' 1;
   overflow-x:hidden;-webkit-font-smoothing:antialiased;
   padding:calc(18px + var(--safe-top)) 16px calc(96px + var(--safe-bottom));
@@ -1925,8 +1951,8 @@ h1{
 .field input[type="text"],
 .field select{
   background:var(--bg);border:1px solid var(--border);color:var(--text);
-  font-family:inherit;font-size:13px;padding:8px 10px;
-  border-radius:var(--radius-sm);width:150px;outline:none;
+  font-family:inherit;font-size:13px;padding:10px 12px;
+  border-radius:var(--radius-sm);width:100%;max-width:280px;min-height:44px;outline:none;
   font-variant-numeric:tabular-nums;
   transition:border-color .15s var(--ease),box-shadow .15s var(--ease);
 }
@@ -2000,13 +2026,13 @@ h1{
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
 }
 .tabbar a{
-  color:var(--text-dim);font-family:inherit;font-size:10px;letter-spacing:1px;
-  text-decoration:none;padding:8px 6px;
+  color:var(--text-dim);font-family:inherit;font-size:var(--fs-xs);letter-spacing:1px;
+  text-decoration:none;padding:6px 8px;min-height:48px;
   display:flex;flex-direction:column;align-items:center;gap:4px;
 }
 .tabbar a.active,.tabbar a:active{color:var(--accent)}
 .tabbar .ico{
-  width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+  width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round;display:block;
   transition:transform .2s var(--ease);
 }

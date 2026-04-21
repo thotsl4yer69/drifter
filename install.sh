@@ -145,9 +145,9 @@ fi
 
 # Pull the mechanic model
 if command -v ollama &>/dev/null; then
-    step 5 "Pulling LLM model (qwen3.5:7b)"
-    ollama pull qwen3.5:7b 2>/dev/null && ok "LLM model ready (qwen3.5:7b)" || \
-        warn "Could not pull LLM model — run 'ollama pull qwen3.5:7b' manually"
+    step 5 "Pulling LLM model (qwen2.5:7b)"
+    ollama pull qwen2.5:7b 2>/dev/null && ok "LLM model ready (qwen2.5:7b)" || \
+        warn "Could not pull LLM model — run 'ollama pull qwen2.5:7b' manually"
 fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──

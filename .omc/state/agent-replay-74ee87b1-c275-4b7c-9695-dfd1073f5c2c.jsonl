@@ -1,0 +1,5 @@
+{"t":0,"agent":"a26999c","agent_type":"code-reviewer","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"aa081d2","agent_type":"security-reviewer","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a77ca06","agent_type":"verifier","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"aa081d2","agent_type":"security-reviewer","event":"agent_stop","success":true,"duration_ms":166978}
+{"t":0,"agent":"a26999c","agent_type":"code-reviewer","event":"agent_stop","success":true,"duration_ms":773931}

@@ -104,7 +104,7 @@ def _call_ollama(prompt: str) -> dict:
         "format": "json",
         "options": {
             "temperature": 0.3,
-            "num_predict": 1000,
+            "num_predict": 400,
         },
     }
     resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
@@ -222,7 +222,7 @@ def _chat_ollama(prompt: str) -> dict:
         "stream": False,
         "options": {
             "temperature": 0.7,
-            "num_predict": 500,
+            "num_predict": 200,
         },
     }
     resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)

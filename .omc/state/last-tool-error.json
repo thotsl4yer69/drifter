@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"pkill -f firefox-esr 2>/dev/null; DISPLAY=:0 nohup /opt/drifter/start-hud.sh > /dev/null 2>&1 & echo \\\"HUD launching\\\"\",\"description\":\"Kill old Firefox and launch HUD kiosk\"}",
-  "error": "Exit code 144",
-  "timestamp": "2026-04-20T08:53:48.464Z",
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"/home/kali/drifter/src/web_dashboard_html.py\"}",
+  "error": "File content (47493 tokens) exceeds maximum allowed tokens (25000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+  "timestamp": "2026-04-21T10:05:10.774Z",
   "retry_count": 1
 }

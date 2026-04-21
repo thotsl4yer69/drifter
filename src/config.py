@@ -590,6 +590,11 @@ TOPICS = {
     'vivi_status': 'drifter/vivi/status',
     # Audio (shared with voice_alerts)
     'audio_wav': 'drifter/audio/wav',
+    # Flipper Zero
+    'flipper_status': 'drifter/flipper/status',
+    'flipper_command': 'drifter/flipper/command',
+    'flipper_result': 'drifter/flipper/result',
+    'flipper_subghz': 'drifter/flipper/subghz',
 }
 
 # ── LLM Analyst ──
@@ -603,8 +608,8 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # ── LLM Backend (Ollama — local, offline) ──
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:7b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 LLM_PRIMARY = os.getenv("LLM_PRIMARY", "ollama")  # "ollama" = offline-first, "groq" = cloud-first
 
 # ── Voice Input (STT) ──
@@ -652,4 +657,5 @@ SERVICES = [
     "drifter-dashboard",
     "drifter-fbmirror",
     "drifter-voicein",
+    "drifter-flipper",
 ]

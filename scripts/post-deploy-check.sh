@@ -176,7 +176,7 @@ if command -v ollama &>/dev/null; then
     if ollama list 2>/dev/null | grep -q "qwen"; then
         ok "LLM model available"
     else
-        warn "No LLM model pulled — run: ollama pull qwen3.5:7b"
+        warn "No LLM model pulled — run: ollama pull qwen2.5:7b"
     fi
 else
     warn "Ollama not installed — LLM mechanic unavailable (offline AI disabled)"
