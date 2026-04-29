@@ -212,7 +212,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 7 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -220,6 +220,12 @@ for f in $SRC_FILES; do
     fi
 done
 ok "Python services deployed to ${DRIFTER_DIR}"
+
+# Fleet-contract operator CLI: /usr/local/bin/drifter → /opt/drifter/diagnose.py
+if [ -f "${REPO_DIR}/bin/drifter" ]; then
+    install -m 0755 "${REPO_DIR}/bin/drifter" /usr/local/bin/drifter
+    ok "drifter CLI installed (/usr/local/bin/drifter)"
+fi
 
 # Data files
 if [ -f "${REPO_DIR}/src/knowledge_base.json" ]; then

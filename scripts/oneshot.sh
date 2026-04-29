@@ -92,14 +92,14 @@ fi
 ok "venv at $DRIFTER_DIR/venv"
 stage_ok 10
 
-# ── Install fleet-contract artefacts (idempotent) ────────────
-# diagnose.py and bin/drifter are part of the contract layer added on top
-# of install.sh; install.sh itself doesn't deploy them yet, so we copy
-# them here. Once install.sh learns about /opt/drifter/diagnose.py this
-# block can collapse.
-install -m 0755 "$REPO_DIR/src/diagnose.py"  "$DRIFTER_DIR/diagnose.py"
-install -m 0755 "$REPO_DIR/bin/drifter"      "/usr/local/bin/drifter"
-ok "drifter CLI installed → /usr/local/bin/drifter"
+# Belt-and-braces: install.sh already deploys diagnose.py and the
+# /usr/local/bin/drifter wrapper, but we re-install here in case
+# someone bypassed install.sh with --skip-apt + a stale install dir.
+if [ ! -f "$DRIFTER_DIR/diagnose.py" ] || [ ! -x /usr/local/bin/drifter ]; then
+    install -m 0755 "$REPO_DIR/src/diagnose.py"  "$DRIFTER_DIR/diagnose.py"
+    install -m 0755 "$REPO_DIR/bin/drifter"      /usr/local/bin/drifter
+    ok "drifter CLI re-installed (was missing)"
+fi
 
 # ════════════════════════════════════════════════════════════════
 # STAGE 20 — diagnose (pre-flight)

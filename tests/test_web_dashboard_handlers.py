@@ -64,3 +64,91 @@ def test_build_query_context_skips_nominal_alert():
 def test_dtc_regex_still_enforced():
     assert h._DTC_RE.match('P0301')
     assert not h._DTC_RE.match('../etc/passwd')
+
+
+# ── /healthz contract ──────────────────────────────────────────────────
+
+def _reset_healthz_cache():
+    h._healthz_cache.update(ts=0.0, payload=None, http_status=200)
+
+
+def test_healthz_route_registered():
+    """Fleet contract: /healthz must dispatch via the exact-match table."""
+    assert '/healthz' in h.DashboardHandler._EXACT_GET_ROUTES
+    assert h.DashboardHandler._EXACT_GET_ROUTES['/healthz'] is \
+        h.DashboardHandler._get_healthz
+
+
+def test_healthz_payload_all_active(monkeypatch):
+    """Every service active → status=ok, http=200."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 200
+    assert payload['status'] == 'ok'
+    assert payload['services_failed'] == []
+    assert all(payload['services'].values())
+    assert 'ts' in payload
+    assert 'mqtt_connected' in payload
+    assert 'telemetry_fresh' in payload
+
+
+def test_healthz_payload_one_failed(monkeypatch):
+    """One failed unit → status=degraded, http=503, listed in services_failed."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(
+        h, '_systemctl_active',
+        lambda u: u != 'drifter-canbridge',
+    )
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 503
+    assert payload['status'] == 'degraded'
+    assert 'drifter-canbridge' in payload['services_failed']
+
+
+def test_healthz_payload_caches(monkeypatch):
+    """Within TTL, repeat calls don't re-poke systemctl."""
+    _reset_healthz_cache()
+    calls = {'n': 0}
+
+    def fake_active(_u):
+        calls['n'] += 1
+        return True
+
+    monkeypatch.setattr(h, '_systemctl_active', fake_active)
+    state.mqtt_client = None
+
+    h._healthz_payload()
+    n_first = calls['n']
+    h._healthz_payload()  # second call within TTL — should hit cache
+    assert calls['n'] == n_first
+
+
+def test_healthz_payload_telemetry_fresh(monkeypatch):
+    """Recent _last_update flips telemetry_fresh to True."""
+    import time as _time
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
+    state.mqtt_client = None
+    state.latest_state.clear()
+    state.latest_state['_last_update'] = _time.time()
+    payload, _ = h._healthz_payload()
+    assert payload['telemetry_fresh'] is True
+
+
+def test_healthz_payload_mqtt_shim_works_without_is_connected(monkeypatch):
+    """Old paho clients lack is_connected() — must not raise."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
+
+    class FakeOldPaho:
+        pass  # no is_connected attribute
+
+    state.mqtt_client = FakeOldPaho()
+    payload, _ = h._healthz_payload()
+    assert payload['mqtt_connected'] is False
+    state.mqtt_client = None
