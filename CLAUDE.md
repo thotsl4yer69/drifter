@@ -8,6 +8,11 @@ This file is the operator-facing handoff per the fleet `DEPLOY_CONTRACT.md`. For
 agent-facing architecture details see [`AGENTS.md`](AGENTS.md). For wiring see
 [`docs/WIRING.md`](docs/WIRING.md).
 
+**Doing the deploy?** → start at [`docs/FIELD_DEPLOY.md`](docs/FIELD_DEPLOY.md).
+That file is the literal copy-paste runbook. The block to paste into the
+fleet repo's `inventory.yaml` lives at
+[`docs/fleet-inventory-drifter.yaml`](docs/fleet-inventory-drifter.yaml).
+
 ---
 
 ## Contract artefacts in this repo
@@ -15,7 +20,7 @@ agent-facing architecture details see [`AGENTS.md`](AGENTS.md). For wiring see
 | Artefact | Path | Purpose |
 |---|---|---|
 | One-shot deploy | [`scripts/oneshot.sh`](scripts/oneshot.sh) | Stage-gated wrapper around `install.sh` (10 apt+venv → 20 diagnose → 30 smoke → 40 enable services → curl /healthz) |
-| Diagnose CLI | [`src/diagnose.py`](src/diagnose.py) + [`bin/drifter`](bin/drifter) | `drifter diagnose` — JSON or text fleet-contract probe |
+| Operator CLI | [`src/diagnose.py`](src/diagnose.py) + [`bin/drifter`](bin/drifter) | `drifter {diagnose,status,logs,restart,healthz,version}` |
 | Health endpoint | `/healthz` on `drifter-dashboard` (port 8080) | Returns 200/503 + JSON of services + telemetry freshness |
 | This file | `CLAUDE.md` | Operator handoff |
 
@@ -69,16 +74,23 @@ Returns JSON shaped like:
 HTTP **200** when no services failed, **503** otherwise. Cached for 2s server-side
 so high-rate probing is cheap.
 
-## `drifter diagnose`
+## `drifter` operator CLI
 
-Shell:
+Installed by `install.sh` to `/usr/local/bin/drifter`. Subcommands:
 
 ```bash
-drifter diagnose            # text output
-drifter diagnose --json     # machine-readable
+drifter diagnose [--json]                # full fleet-contract probe
+drifter status   [--json]                # one line per service
+drifter healthz  [--json]                # probe local /healthz, pretty-print
+drifter logs <service> [-n N] [-f]       # journalctl -u drifter-<service>
+drifter restart [<service>|all]          # systemctl restart
+drifter version                          # deployed git rev / branch
 ```
 
-Checks performed:
+Service names accept both short (`canbridge`) and full (`drifter-canbridge`)
+forms. `restart` with no argument restarts every unit in `SERVICES`.
+
+`drifter diagnose` checks performed:
 
 1. Every unit in [`src/config.py`](src/config.py) `SERVICES` is `systemctl is-active`.
 2. CAN bus: `can0` (or `slcan0`) link is `UP`/`UNKNOWN` and candump sees a frame in 750ms (warn-only if no frames — ECU might just be off).
@@ -152,16 +164,11 @@ need to happen there (and on the live Pi) for the node to flip from
    sudo ./scripts/oneshot.sh
    ```
    Expected last line: `DEPLOY: ok`.
-3. **Update fleet inventory.** In `thotsl4yer69/fleet/inventory.yaml`:
-   ```yaml
-   drifter:
-     ssh_host: kali@<pi-ip>           # was 10.246.228.156 last; chase with arp -a
-     repo: git@github.com:thotsl4yer69/drifter.git
-     branch: main                      # or claude/drifter-fleet-compliant-GSdKl until merged
-     deploy: scripts/oneshot.sh
-     healthz: http://10.42.0.1:8080/healthz
-     status: yellow                    # bump to green once `mesh deploy drifter` is exit 0
-   ```
+3. **Update fleet inventory.** Paste the full block from
+   [`docs/fleet-inventory-drifter.yaml`](docs/fleet-inventory-drifter.yaml)
+   into `thotsl4yer69/fleet/inventory.yaml`. Replace `<pi-ip>` with
+   whatever `arp -a` reveals (last known: `10.246.228.156`). Keep
+   `status: yellow` until `mesh deploy drifter` returns exit 0.
 4. **Run `mesh deploy drifter` from a separate machine.** Verify exit 0
    and `mesh status drifter` returns `ok`.
 

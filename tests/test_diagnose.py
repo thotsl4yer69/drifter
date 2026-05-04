@@ -226,3 +226,152 @@ def test_check_dashboard_healthz_unreachable(monkeypatch):
     monkeypatch.setattr(diagnose, 'DASHBOARD_PORT', 1)  # privileged, never listening
     r = diagnose.check_dashboard_healthz()
     assert r.ok is False
+
+
+# ── Field-operator subcommands ────────────────────────────────────
+
+def test_resolve_unit_short_name():
+    assert diagnose._resolve_unit('canbridge') == 'drifter-canbridge'
+
+
+def test_resolve_unit_full_name():
+    assert diagnose._resolve_unit('drifter-canbridge') == 'drifter-canbridge'
+
+
+def test_status_subcommand_all_active(capsys, monkeypatch):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
+    monkeypatch.setattr(
+        diagnose, '_run',
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout='active', stderr=''),
+    )
+    rc = diagnose.main(['status', '--json'])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    from config import SERVICES
+    assert set(payload.keys()) == set(SERVICES)
+    assert all(v == 'active' for v in payload.values())
+
+
+def test_status_subcommand_one_failed(capsys, monkeypatch):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
+
+    def fake_run(cmd, **_):
+        unit = cmd[-1]
+        out = 'inactive' if unit == 'drifter-canbridge' else 'active'
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr='')
+
+    monkeypatch.setattr(diagnose, '_run', fake_run)
+    rc = diagnose.main(['status', '--json'])
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['drifter-canbridge'] == 'inactive'
+
+
+def test_logs_subcommand_invokes_journalctl(monkeypatch):
+    """logs should shell out to journalctl with the resolved unit name."""
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda x: '/bin/journalctl')
+    captured = {}
+
+    def fake_call(cmd):
+        captured['cmd'] = cmd
+        return 0
+
+    monkeypatch.setattr(diagnose.subprocess, 'call', fake_call)
+    rc = diagnose.main(['logs', 'canbridge', '-n', '10'])
+    assert rc == 0
+    assert captured['cmd'][:5] == ['journalctl', '-u', 'drifter-canbridge', '-n', '10']
+
+
+def test_logs_subcommand_no_journalctl(capsys, monkeypatch):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: None)
+    rc = diagnose.main(['logs', 'canbridge'])
+    assert rc == 2
+
+
+def test_restart_subcommand_default_restarts_all(monkeypatch, capsys):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
+    calls = []
+
+    def fake_run(cmd, **_):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout='', stderr='')
+
+    monkeypatch.setattr(diagnose, '_run', fake_run)
+    rc = diagnose.main(['restart'])
+    assert rc == 0
+    from config import SERVICES
+    targets = [c[-1] for c in calls]
+    assert set(targets) == set(SERVICES)
+
+
+def test_restart_subcommand_one_service(monkeypatch):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
+    calls = []
+    monkeypatch.setattr(
+        diagnose, '_run',
+        lambda cmd, **kw: (calls.append(cmd) or
+                           subprocess.CompletedProcess(cmd, 0, stdout='', stderr='')),
+    )
+    rc = diagnose.main(['restart', 'dashboard'])
+    assert rc == 0
+    assert calls == [['systemctl', 'restart', 'drifter-dashboard']]
+
+
+def test_restart_subcommand_failure_reported(monkeypatch):
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
+    monkeypatch.setattr(
+        diagnose, '_run',
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout='', stderr='nope'),
+    )
+    rc = diagnose.main(['restart', 'dashboard'])
+    assert rc == 1
+
+
+def test_healthz_subcommand_unreachable(capsys, monkeypatch):
+    monkeypatch.setattr(diagnose, 'DASHBOARD_PORT', 1)
+    rc = diagnose.main(['healthz'])
+    assert rc == 2
+
+
+def test_healthz_subcommand_200(monkeypatch, capsys):
+    """Bind a fake HTTP-ish server, return a 200 + JSON body."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('127.0.0.1', 0))
+    sock.listen(1)
+    port = sock.getsockname()[1]
+
+    body = b'{"status":"ok","services_failed":[]}'
+    response = (
+        b'HTTP/1.0 200 OK\r\n'
+        b'Content-Type: application/json\r\n'
+        b'Content-Length: ' + str(len(body)).encode() + b'\r\n'
+        b'\r\n' + body
+    )
+
+    def _serve():
+        try:
+            conn, _ = sock.accept()
+            conn.recv(1024)
+            conn.sendall(response)
+            conn.close()
+        except OSError:
+            pass
+
+    threading.Thread(target=_serve, daemon=True).start()
+    try:
+        rc = diagnose.main(['healthz', '--port', str(port), '--json'])
+    finally:
+        sock.close()
+    assert rc == 0
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert parsed['status'] == 'ok'
+
+
+def test_version_subcommand_prints_something(capsys):
+    rc = diagnose.main(['version'])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'drifter' in out
+    assert 'UNCAGED' in out

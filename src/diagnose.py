@@ -290,6 +290,166 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0 if all(r.ok or not r.fatal for r in results) else 1
 
 
+# ── Field-operator subcommands (status / logs / restart / healthz / version) ──
+
+def _resolve_unit(name: str) -> str:
+    """Accept both 'canbridge' and 'drifter-canbridge'; return the systemd unit."""
+    return name if name.startswith('drifter-') else f'drifter-{name}'
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """One-line-per-service status. Designed for at-the-car triage."""
+    if not shutil.which('systemctl'):
+        print(f"{RED}systemctl not available — not on a systemd host{NC}", file=sys.stderr)
+        return 2
+    rows = []
+    for svc in SERVICES:
+        try:
+            r = _run(['systemctl', 'is-active', svc], timeout=2)
+            state = r.stdout.strip() or 'unknown'
+        except subprocess.SubprocessError:
+            state = 'error'
+        rows.append((svc, state))
+    if args.json:
+        print(json.dumps({s: st for s, st in rows}, indent=2))
+        return 0 if all(st == 'active' for _, st in rows) else 1
+    width = max(len(s) for s, _ in rows)
+    for svc, state in rows:
+        if state == 'active':
+            tag = f"{GREEN}●{NC} active"
+        elif state in ('activating', 'reloading'):
+            tag = f"{AMBER}●{NC} {state}"
+        else:
+            tag = f"{RED}●{NC} {state}"
+        print(f"  {svc:<{width}}   {tag}")
+    bad = [s for s, st in rows if st != 'active']
+    if bad:
+        print(f"\n  {RED}{len(bad)} service(s) not active:{NC} {', '.join(bad)}")
+        print(f"  Try: drifter logs <name>    or    drifter restart <name>")
+        return 1
+    print(f"\n  {GREEN}all {len(rows)} services active{NC}")
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    """Tail journalctl for one drifter unit. Defaults to last 50 lines."""
+    if not shutil.which('journalctl'):
+        print("journalctl not available", file=sys.stderr)
+        return 2
+    unit = _resolve_unit(args.service)
+    cmd = ['journalctl', '-u', unit, '-n', str(args.lines), '--no-pager']
+    if args.follow:
+        cmd.append('-f')
+    # Inherit stdout/stderr so journalctl colour + paging works as the user
+    # expects. We don't capture — this is a TTY tool.
+    try:
+        return subprocess.call(cmd)
+    except KeyboardInterrupt:
+        return 130
+
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    """Restart one service or every drifter-* service."""
+    if not shutil.which('systemctl'):
+        print("systemctl not available", file=sys.stderr)
+        return 2
+    targets = SERVICES if args.service in (None, 'all') else [_resolve_unit(args.service)]
+    rc = 0
+    for svc in targets:
+        print(f"  restarting {svc}...", end=' ', flush=True)
+        try:
+            r = _run(['systemctl', 'restart', svc], timeout=15)
+        except subprocess.TimeoutExpired:
+            print(f"{RED}TIMEOUT{NC}")
+            rc = 1
+            continue
+        if r.returncode == 0:
+            print(f"{GREEN}OK{NC}")
+        else:
+            print(f"{RED}FAIL{NC} ({r.stderr.strip() or r.stdout.strip()})")
+            rc = 1
+    return rc
+
+
+def cmd_healthz(args: argparse.Namespace) -> int:
+    """Curl-equivalent for /healthz — works without the curl binary."""
+    host, port = args.host, args.port
+    try:
+        with socket.create_connection((host, port), timeout=3) as s:
+            s.sendall(f'GET /healthz HTTP/1.0\r\nHost: {host}\r\n\r\n'.encode())
+            data = b''
+            s.settimeout(3)
+            while True:
+                try:
+                    chunk = s.recv(8192)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+                if len(data) > 64 * 1024:
+                    break
+    except OSError as e:
+        print(f"{RED}cannot reach {host}:{port}: {e}{NC}", file=sys.stderr)
+        return 2
+
+    head, _, body = data.partition(b'\r\n\r\n')
+    status_line = head.split(b'\r\n', 1)[0].decode(errors='replace')
+    code = 0
+    try:
+        code = int(status_line.split()[1])
+    except (IndexError, ValueError):
+        pass
+
+    if args.json:
+        # Best-effort JSON pass-through. If body isn't JSON, dump raw.
+        try:
+            print(json.dumps(json.loads(body.decode()), indent=2))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            sys.stdout.buffer.write(body)
+        return 0 if code == 200 else 1
+
+    colour = GREEN if code == 200 else RED
+    print(f"  {colour}{status_line}{NC}")
+    try:
+        parsed = json.loads(body.decode())
+        for k, v in parsed.items():
+            if isinstance(v, dict):
+                print(f"  {k}:")
+                for sk, sv in v.items():
+                    mark = f"{GREEN}✓{NC}" if sv else f"{RED}✗{NC}"
+                    print(f"    {mark} {sk}")
+            else:
+                print(f"  {k}: {v}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        sys.stdout.buffer.write(body)
+    return 0 if code == 200 else 1
+
+
+def cmd_version(args: argparse.Namespace) -> int:
+    """Print the deployed git rev so the operator knows what's on the Pi."""
+    rev = 'unknown'
+    branch = 'unknown'
+    # Try the repo first (dev), fall back to /opt/drifter/VERSION (deployed).
+    for repo_dir in (Path(__file__).resolve().parent.parent, Path('/opt/drifter')):
+        try:
+            r = _run(['git', '-C', str(repo_dir), 'rev-parse', '--short', 'HEAD'], timeout=2)
+            if r.returncode == 0 and r.stdout.strip():
+                rev = r.stdout.strip()
+                br = _run(['git', '-C', str(repo_dir), 'rev-parse',
+                           '--abbrev-ref', 'HEAD'], timeout=2)
+                branch = br.stdout.strip() or 'unknown'
+                break
+        except (subprocess.SubprocessError, FileNotFoundError):
+            continue
+    version_file = Path('/opt/drifter/VERSION')
+    if version_file.is_file() and rev == 'unknown':
+        rev = version_file.read_text().strip()
+    print(f"drifter {rev} ({branch})")
+    print("MZ1312 UNCAGED TECHNOLOGY — EST 1991")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog='drifter',
@@ -300,6 +460,30 @@ def main(argv: list[str] | None = None) -> int:
     p_diag = sub.add_parser('diagnose', help='Run fleet-contract diagnostics')
     p_diag.add_argument('--json', action='store_true', help='Emit JSON instead of text')
     p_diag.set_defaults(func=cmd_diagnose)
+
+    p_status = sub.add_parser('status', help='One-line-per-service status overview')
+    p_status.add_argument('--json', action='store_true', help='Emit JSON instead of text')
+    p_status.set_defaults(func=cmd_status)
+
+    p_logs = sub.add_parser('logs', help='Tail journalctl for one drifter unit')
+    p_logs.add_argument('service', help="Service name (e.g. 'canbridge' or 'drifter-canbridge')")
+    p_logs.add_argument('-n', '--lines', type=int, default=50, help='Lines to show (default 50)')
+    p_logs.add_argument('-f', '--follow', action='store_true', help='Follow new log lines')
+    p_logs.set_defaults(func=cmd_logs)
+
+    p_rs = sub.add_parser('restart', help='Restart one service or all drifter-* services')
+    p_rs.add_argument('service', nargs='?', default='all',
+                      help="Service name or 'all' (default: all)")
+    p_rs.set_defaults(func=cmd_restart)
+
+    p_h = sub.add_parser('healthz', help='Probe /healthz on the local dashboard')
+    p_h.add_argument('--host', default='127.0.0.1')
+    p_h.add_argument('--port', type=int, default=DASHBOARD_PORT)
+    p_h.add_argument('--json', action='store_true', help='Emit raw JSON body')
+    p_h.set_defaults(func=cmd_healthz)
+
+    p_v = sub.add_parser('version', help='Print deployed git rev / branch')
+    p_v.set_defaults(func=cmd_version)
 
     args = parser.parse_args(argv)
     return args.func(args)
