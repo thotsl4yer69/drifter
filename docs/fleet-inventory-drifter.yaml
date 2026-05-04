@@ -1,0 +1,57 @@
+# DRIFTER — fleet inventory entry
+#
+# Paste this block into thotsl4yer69/fleet/inventory.yaml under the
+# `nodes:` mapping (or wherever the contract puts per-node entries).
+# Replace <pi-ip> with whatever `arp -a` reveals on your LAN.
+# Once `mesh deploy drifter` returns 0 and `mesh status drifter` is ok,
+# bump status: yellow → green.
+
+drifter:
+  ssh_host:    kali@<pi-ip>                  # last known: 10.246.228.156
+  ssh_user:    kali
+  repo:        git@github.com:thotsl4yer69/drifter.git
+  branch:      claude/drifter-fleet-compliant-GSdKl   # → main once merged
+  workdir:     /home/kali/drifter
+
+  # ── DEPLOY_CONTRACT artefacts ──────────────────────────────────────
+  deploy:      scripts/oneshot.sh            # stage gates 10/20/30/40 → /healthz
+  diagnose:    drifter diagnose --json       # /usr/local/bin/drifter installed by oneshot.sh
+  healthz:     http://10.42.0.1:8080/healthz # 200 = ok, 503 = degraded; 2s server-side cache
+
+  # ── Operational metadata ───────────────────────────────────────────
+  vehicle:     "2004 Jaguar X-Type 2.5 V6 (AJ-V6)"
+  hardware:    "Raspberry Pi 4 / Kali ARM64"
+  hotspot:     MZ1312_DRIFTER                # WPA2 PSK: uncaged1312
+  hotspot_ip:  10.42.0.1/24
+  ports:
+    dashboard: 8080
+    ws_telem:  8081
+    ws_audio:  8082
+    realdash:  35000                         # TCP, not UDP
+    mqtt:      1883
+
+  # ── Service inventory (15) ─────────────────────────────────────────
+  services:
+    - drifter-canbridge
+    - drifter-alerts
+    - drifter-logger
+    - drifter-anomaly
+    - drifter-analyst
+    - drifter-voice
+    - drifter-hotspot
+    - drifter-homesync
+    - drifter-watchdog
+    - drifter-realdash
+    - drifter-rf
+    - drifter-wardrive
+    - drifter-dashboard
+    - drifter-fbmirror
+    - drifter-voicein
+
+  # ── Status: yellow until end-to-end mesh deploy round-trips ────────
+  status: yellow
+  notes: |
+    Contract layer landed in branch claude/drifter-fleet-compliant-GSdKl.
+    Spec-vs-code discrepancies documented in CLAUDE.md:
+      - dashboard is http.server (not FastAPI) — /healthz added inline
+      - RealDash is TCP 35000 (not UDP)
