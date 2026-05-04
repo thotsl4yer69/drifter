@@ -10,12 +10,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
+import time
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from config import (
-    load_settings, save_settings, XTYPE_DTC_LOOKUP,
+    load_settings, save_settings, XTYPE_DTC_LOOKUP, SERVICES,
 )
 from mechanic import (
     search as mechanic_search, VEHICLE_SPECS, COMMON_PROBLEMS,
@@ -35,6 +37,54 @@ MAX_POST_BODY = 64 * 1024
 # OBD-II / manufacturer DTC format — P/C/B/U followed by four hex digits.
 # Anything else on /api/mechanic/dtc/:code is rejected.
 _DTC_RE = re.compile(r'^[PCBU][0-9A-F]{4}$')
+
+# /healthz cache — systemctl is cheap but we hit it 15× per probe.
+# The fleet contract pings /healthz frequently; cache for 2s.
+_HEALTHZ_TTL = 2.0
+_healthz_cache: dict = {'ts': 0.0, 'payload': None, 'http_status': 200}
+
+
+def _systemctl_active(unit: str) -> bool:
+    """Return True if `systemctl is-active <unit>` reports 'active'."""
+    try:
+        r = subprocess.run(
+            ['systemctl', 'is-active', unit],
+            capture_output=True, text=True, timeout=2,
+        )
+        return r.stdout.strip() == 'active'
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
+
+
+def _healthz_payload() -> tuple[dict, int]:
+    """Build the /healthz payload + HTTP status. Cached for _HEALTHZ_TTL."""
+    now = time.time()
+    if (_healthz_cache['payload'] is not None
+            and now - _healthz_cache['ts'] < _HEALTHZ_TTL):
+        return _healthz_cache['payload'], _healthz_cache['http_status']
+
+    services = {svc: _systemctl_active(svc) for svc in SERVICES}
+    failed = [s for s, ok in services.items() if not ok]
+
+    mqtt_ok = state.mqtt_client is not None and getattr(
+        state.mqtt_client, 'is_connected', lambda: False)()
+
+    # Telemetry freshness: any topic updated in the last 30s = bus alive.
+    last_seen = state.latest_state.get('_last_update', 0)
+    telemetry_fresh = (now - last_seen) < 30 if last_seen else False
+
+    payload = {
+        'status':           'ok' if not failed else 'degraded',
+        'ts':               now,
+        'services':         services,
+        'services_failed':  failed,
+        'mqtt_connected':   mqtt_ok,
+        'telemetry_fresh':  telemetry_fresh,
+        'ws_clients':       len(state.ws_clients),
+    }
+    http_status = 200 if not failed else 503
+    _healthz_cache.update(ts=now, payload=payload, http_status=http_status)
+    return payload, http_status
 
 # Static files served with no extra rewriting. All live at /opt/drifter/*.
 _STATIC_FILES = {
@@ -124,6 +174,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             'bluetooth': state.latest_state.get('wardrive_bt', {}),
             'adsb':      state.latest_state.get('rf_adsb', {}),
         })
+
+    def _get_healthz(self, parsed):
+        """Fleet contract healthz: 200 if all services active, 503 if any failed."""
+        payload, http_status = _healthz_payload()
+        body = json.dumps(payload, default=str).encode()
+        self.send_response(http_status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _serve_dtc_lookup(self, parsed):
         code = parsed.path.rsplit('/', 1)[-1].upper()
@@ -371,6 +432,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/index.html':                DashboardHandler._serve_dashboard_page,
     '/mechanic':                  DashboardHandler._serve_mechanic_page,
     '/settings':                  DashboardHandler._serve_settings_page,
+    '/healthz':                   DashboardHandler._get_healthz,
     '/api/settings':              DashboardHandler._get_settings,
     '/api/state':                 DashboardHandler._get_state,
     '/api/hardware':              DashboardHandler._get_hardware,
