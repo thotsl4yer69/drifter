@@ -44,16 +44,24 @@ _HEALTHZ_TTL = 2.0
 _healthz_cache: dict = {'ts': 0.0, 'payload': None, 'http_status': 200}
 
 
-def _systemctl_active(unit: str) -> bool:
-    """Return True if `systemctl is-active <unit>` reports 'active'."""
+def _systemctl_active_map(units: list[str]) -> dict[str, bool]:
+    """One batched `systemctl is-active u1 u2 …` instead of N forks.
+
+    /healthz is hit by the fleet probe at high rate; the cached miss path
+    must finish in <1s, not 15× systemctl exec time.
+    """
+    if not units:
+        return {}
     try:
         r = subprocess.run(
-            ['systemctl', 'is-active', unit],
-            capture_output=True, text=True, timeout=2,
+            ['systemctl', 'is-active', *units],
+            capture_output=True, text=True, timeout=5,
         )
-        return r.stdout.strip() == 'active'
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return False
+        return {u: False for u in units}
+    lines = r.stdout.strip().splitlines() if r.stdout else []
+    states = lines + [''] * (len(units) - len(lines))
+    return {u: s == 'active' for u, s in zip(units, states)}
 
 
 def _healthz_payload() -> tuple[dict, int]:
@@ -63,7 +71,7 @@ def _healthz_payload() -> tuple[dict, int]:
             and now - _healthz_cache['ts'] < _HEALTHZ_TTL):
         return _healthz_cache['payload'], _healthz_cache['http_status']
 
-    services = {svc: _systemctl_active(svc) for svc in SERVICES}
+    services = _systemctl_active_map(list(SERVICES))
     failed = [s for s, ok in services.items() if not ok]
 
     mqtt_ok = state.mqtt_client is not None and getattr(
@@ -176,7 +184,6 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         })
 
     def _get_healthz(self, parsed):
-        """Fleet contract healthz: 200 if all services active, 503 if any failed."""
         payload, http_status = _healthz_payload()
         body = json.dumps(payload, default=str).encode()
         self.send_response(http_status)

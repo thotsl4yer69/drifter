@@ -635,6 +635,7 @@ ANALYST_BASELINE_SESSIONS = 10
 # ── Services ──
 # Canonical list of 15 active systemd services.
 # drifter-llm was superseded by drifter-analyst and is disabled in install.sh.
+SERVICE_PREFIX = "drifter-"
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",

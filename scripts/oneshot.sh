@@ -29,7 +29,7 @@
 #   sudo ./scripts/oneshot.sh --strict     # fail on any diagnose warning
 # ============================================================
 
-set -eo pipefail
+set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DRIFTER_DIR="/opt/drifter"
@@ -57,11 +57,11 @@ else
     CYAN=''; RED=''; GREEN=''; AMBER=''; NC=''
 fi
 
-stage_start() { printf "${CYAN}STAGE %s START — %s${NC}\n" "$1" "$2"; }
-stage_ok()    { printf "${GREEN}STAGE %s OK${NC}\n\n" "$1"; }
-stage_fail()  { printf "${RED}STAGE %s FAIL — %s${NC}\n" "$1" "$2"; exit "$1"; }
-note()        { printf "  ${AMBER}!${NC} %s\n" "$1"; }
-ok()          { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
+stage_start() { printf '%bSTAGE %s START — %s%b\n' "$CYAN" "$1" "$2" "$NC"; }
+stage_ok()    { printf '%bSTAGE %s OK%b\n\n' "$GREEN" "$1" "$NC"; }
+stage_fail()  { printf '%bSTAGE %s FAIL — %s%b\n' "$RED" "$1" "$2" "$NC"; exit "$1"; }
+note()        { printf '  %b!%b %s\n' "$AMBER" "$NC" "$1"; }
+ok()          { printf '  %b✓%b %s\n' "$GREEN" "$NC" "$1"; }
 
 # ── Preflight ────────────────────────────────────────────────
 if [ "$EUID" -ne 0 ]; then
@@ -136,12 +136,12 @@ stage_ok 30
 # STAGE 40 — enable services
 # ════════════════════════════════════════════════════════════════
 stage_start 40 "systemctl enable + start"
-SERVICES=(
-    drifter-canbridge drifter-alerts drifter-logger drifter-anomaly
-    drifter-analyst drifter-voice drifter-hotspot drifter-homesync
-    drifter-watchdog drifter-realdash drifter-rf drifter-wardrive
-    drifter-dashboard drifter-fbmirror drifter-voicein
-)
+# Single source of truth: src/config.py SERVICES.
+SERVICES_STR="$(PYTHONPATH="$REPO_DIR/src" python3 -c 'from config import SERVICES; print(" ".join(SERVICES))')"
+read -r -a SERVICES <<< "$SERVICES_STR"
+if [ "${#SERVICES[@]}" -lt 1 ]; then
+    stage_fail 40 "could not load SERVICES from src/config.py"
+fi
 systemctl daemon-reload
 for svc in "${SERVICES[@]}"; do
     if ! systemctl enable "$svc" >/dev/null 2>&1; then

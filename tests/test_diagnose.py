@@ -122,17 +122,13 @@ def test_main_check_raising_is_caught(capsys, monkeypatch):
 # ── Individual probes ─────────────────────────────────────────────
 
 def test_check_systemd_units_returns_one_result_per_service(monkeypatch):
-    """Stub `systemctl is-active` so we don't poke the host."""
+    """Stub the batched systemctl helper so we don't poke the host."""
     monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/usr/bin/systemctl')
-
-    def fake_run(cmd, **_):
-        # cmd is ['systemctl', 'is-active', '<unit>']
-        unit = cmd[-1]
-        out = 'active' if unit == 'drifter-canbridge' else 'inactive'
-        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr='')
-
-    monkeypatch.setattr(diagnose.subprocess, 'run', fake_run)
-
+    monkeypatch.setattr(
+        diagnose, '_systemctl_is_active',
+        lambda units, **_: {u: ('active' if u == 'drifter-canbridge' else 'inactive')
+                            for u in units},
+    )
     from config import SERVICES
     results = diagnose.check_systemd_units()
     assert len(results) == len(SERVICES)
@@ -241,8 +237,8 @@ def test_resolve_unit_full_name():
 def test_status_subcommand_all_active(capsys, monkeypatch):
     monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
     monkeypatch.setattr(
-        diagnose, '_run',
-        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout='active', stderr=''),
+        diagnose, '_systemctl_is_active',
+        lambda units, **_: {u: 'active' for u in units},
     )
     rc = diagnose.main(['status', '--json'])
     assert rc == 0
@@ -254,13 +250,11 @@ def test_status_subcommand_all_active(capsys, monkeypatch):
 
 def test_status_subcommand_one_failed(capsys, monkeypatch):
     monkeypatch.setattr(diagnose.shutil, 'which', lambda _: '/bin/systemctl')
-
-    def fake_run(cmd, **_):
-        unit = cmd[-1]
-        out = 'inactive' if unit == 'drifter-canbridge' else 'active'
-        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr='')
-
-    monkeypatch.setattr(diagnose, '_run', fake_run)
+    monkeypatch.setattr(
+        diagnose, '_systemctl_is_active',
+        lambda units, **_: {u: ('inactive' if u == 'drifter-canbridge' else 'active')
+                            for u in units},
+    )
     rc = diagnose.main(['status', '--json'])
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)

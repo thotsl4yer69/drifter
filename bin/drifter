@@ -1,6 +1,4 @@
 #!/bin/bash
-# DRIFTER operator CLI wrapper.
-# Installed at /usr/local/bin/drifter by scripts/oneshot.sh.
-# Routes to /opt/drifter/diagnose.py running in the project venv.
+# Wrapper installed at /usr/local/bin/drifter; routes to /opt/drifter/diagnose.py.
 set -eo pipefail
 exec /opt/drifter/venv/bin/python3 /opt/drifter/diagnose.py "$@"

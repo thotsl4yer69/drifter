@@ -25,19 +25,18 @@ from typing import Callable
 
 try:
     from config import (
-        SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
+        SERVICES, SERVICE_PREFIX, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
     )
 except ImportError:
     # Allow running from repo root for dev — point at src/ on sys.path.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from config import (  # type: ignore
-        SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
+        SERVICES, SERVICE_PREFIX, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
     )
 
 DASHBOARD_PORT = 8080
 WS_TELEMETRY_PORT = 8081
 
-# ANSI colour codes — drop them when stdout isn't a tty.
 if sys.stdout.isatty():
     GREEN, RED, AMBER, CYAN, NC = (
         '\033[0;32m', '\033[0;31m', '\033[0;33m', '\033[0;36m', '\033[0m')
@@ -65,67 +64,104 @@ def _run(cmd: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
+def _systemctl_is_active(units: list[str], timeout: float = 5.0) -> dict[str, str]:
+    """Batched `systemctl is-active u1 u2 …` — one fork instead of N.
+
+    Returns {unit: state-string}. Missing systemctl → all units mapped to
+    'unknown'. systemctl prints one state per line in the same order, and
+    exits non-zero if any unit isn't active — we still parse stdout fully.
+    """
+    if not units:
+        return {}
+    if not shutil.which('systemctl'):
+        return {u: 'unknown' for u in units}
+    try:
+        r = _run(['systemctl', 'is-active', *units], timeout=timeout)
+    except subprocess.SubprocessError:
+        return {u: 'error' for u in units}
+    lines = r.stdout.strip().splitlines() if r.stdout else []
+    # Pad with 'unknown' if systemctl returned fewer lines than units (shouldn't
+    # happen, but defensive — never raise IndexError on a degraded host).
+    states = lines + ['unknown'] * (len(units) - len(lines))
+    return dict(zip(units, states))
+
+
+def _http_get(host: str, port: int, path: str, timeout: float = 3.0) -> tuple[int, bytes]:
+    """Tiny urllib wrapper. Returns (status_code, body). 0 on connect error."""
+    import urllib.request
+    import urllib.error
+    url = f'http://{host}:{port}{path}'
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        # 5xx still gives us a status + body (e.g. /healthz 503 with JSON).
+        return e.code, e.read() if hasattr(e, 'read') else b''
+    except (urllib.error.URLError, OSError):
+        return 0, b''
+
+
 # ── Checks ───────────────────────────────────────────────────────────
 
 def check_systemd_units() -> list[CheckResult]:
     """Every service in config.SERVICES must report `active`."""
-    results = []
     if not shutil.which('systemctl'):
         return [CheckResult('systemd', False, 'systemctl not available')]
-    for svc in SERVICES:
-        try:
-            r = _run(['systemctl', 'is-active', svc], timeout=2)
-            active = r.stdout.strip() == 'active'
-            results.append(CheckResult(
-                f'service:{svc}', active,
-                '' if active else f'state={r.stdout.strip() or "unknown"}',
-            ))
-        except subprocess.SubprocessError as e:
-            results.append(CheckResult(f'service:{svc}', False, str(e)))
-    return results
+    states = _systemctl_is_active(list(SERVICES), timeout=5)
+    return [
+        CheckResult(
+            f'service:{svc}',
+            state == 'active',
+            '' if state == 'active' else f'state={state}',
+        )
+        for svc, state in states.items()
+    ]
+
+
+def _link_state(iface: str) -> str | None:
+    """Return the link state for `iface`, or None if it doesn't exist."""
+    try:
+        r = _run(['ip', '-brief', 'link', 'show', iface], timeout=2)
+    except subprocess.SubprocessError:
+        return None
+    if r.returncode != 0:
+        return None
+    parts = r.stdout.split()
+    return parts[1] if len(parts) > 1 else 'UNKNOWN'
 
 
 def check_can_bridge() -> CheckResult:
-    """can0 must exist + be UP. If candump is available, sniff briefly for
-    any frame as a soft round-trip indicator (the ECU on the OBD-II bus
-    answers 0x7DF requests; we just confirm the wire is alive)."""
+    """can0 (or slcan0 fallback) must exist + be UP. If candump is available,
+    sniff briefly for any frame as a soft round-trip indicator — the ECU on
+    the OBD-II bus answers 0x7DF requests; we just confirm the wire is alive.
+    """
     if not shutil.which('ip'):
         return CheckResult('can0', False, 'iproute2 not installed')
-    try:
-        r = _run(['ip', '-brief', 'link', 'show', 'can0'], timeout=2)
-    except subprocess.SubprocessError as e:
-        return CheckResult('can0', False, str(e))
-    if r.returncode != 0:
-        # Fallback: slcan adapter exposes itself as slcan0 instead of can0.
-        try:
-            r = _run(['ip', '-brief', 'link', 'show', 'slcan0'], timeout=2)
-        except subprocess.SubprocessError as e:
-            return CheckResult('can0', False, str(e))
-        if r.returncode != 0:
-            return CheckResult('can0', False, 'no can0 / slcan0 interface')
-    parts = r.stdout.split()
-    state = parts[1] if len(parts) > 1 else 'UNKNOWN'
+    iface = 'can0'
+    state = _link_state(iface)
+    if state is None:
+        iface = 'slcan0'
+        state = _link_state(iface)
+    if state is None:
+        return CheckResult('can0', False, 'no can0 / slcan0 interface')
     if state not in ('UP', 'UNKNOWN'):
         return CheckResult('can0', False, f'link state={state}')
 
-    # Soft round-trip: candump for 750ms. Any frame = bus alive.
     if not shutil.which('candump'):
         return CheckResult('can0', True, f'link {state} (no candump for round-trip)')
-    iface = parts[0].rstrip(':') if parts else 'can0'
     try:
         r = _run(['candump', '-T', '750', '-n', '1', iface], timeout=3)
-        # candump exits 0 when -n 1 fires; non-zero when timeout — that's fine,
-        # we treat absence of frames as "warn" not "fail" since the ECU may
-        # be off (key out of ignition).
-        saw_frame = bool(r.stdout.strip())
-        return CheckResult(
-            'can0', True,
-            f'link {state}, frames {"seen" if saw_frame else "none in 750ms (ECU may be off)"}',
-        )
     except subprocess.TimeoutExpired:
         return CheckResult('can0', True, f'link {state} (no frames in 3s)')
     except subprocess.SubprocessError as e:
         return CheckResult('can0', True, f'link {state} ({e})')
+    # candump exits 0 when -n 1 fires; non-zero on timeout — both are fine.
+    # Absence of frames is warn-not-fail since the ECU may be off.
+    saw_frame = bool(r.stdout.strip())
+    return CheckResult(
+        'can0', True,
+        f'link {state}, frames {"seen" if saw_frame else "none in 750ms (ECU may be off)"}',
+    )
 
 
 def check_realdash_socket() -> CheckResult:
@@ -211,29 +247,14 @@ def check_mqtt_broker() -> CheckResult:
 def check_dashboard_healthz() -> CheckResult:
     """Sanity-poke /healthz on the dashboard. This is the contract probe
     the fleet `mesh status` uses, so it has to round-trip locally too."""
-    try:
-        with socket.create_connection(('127.0.0.1', DASHBOARD_PORT), timeout=2) as s:
-            s.sendall(b'GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n')
-            data = b''
-            s.settimeout(2)
-            while True:
-                try:
-                    chunk = s.recv(4096)
-                except socket.timeout:
-                    break
-                if not chunk:
-                    break
-                data += chunk
-                if len(data) > 16384:
-                    break
-        head, _, _ = data.partition(b'\r\n')
-        if b'200' in head:
-            return CheckResult('healthz', True, head.decode(errors='replace').strip())
-        if b'503' in head:
-            return CheckResult('healthz', False, 'dashboard returned 503 (degraded)')
-        return CheckResult('healthz', False, f'unexpected response: {head[:80]!r}')
-    except OSError as e:
-        return CheckResult('healthz', False, f'127.0.0.1:{DASHBOARD_PORT}: {e}')
+    code, _ = _http_get('127.0.0.1', DASHBOARD_PORT, '/healthz', timeout=2)
+    if code == 200:
+        return CheckResult('healthz', True, 'HTTP 200')
+    if code == 503:
+        return CheckResult('healthz', False, 'dashboard returned 503 (degraded)')
+    if code == 0:
+        return CheckResult('healthz', False, f'127.0.0.1:{DASHBOARD_PORT} unreachable')
+    return CheckResult('healthz', False, f'unexpected HTTP {code}')
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
@@ -294,7 +315,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
 def _resolve_unit(name: str) -> str:
     """Accept both 'canbridge' and 'drifter-canbridge'; return the systemd unit."""
-    return name if name.startswith('drifter-') else f'drifter-{name}'
+    return name if name.startswith(SERVICE_PREFIX) else f'{SERVICE_PREFIX}{name}'
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -302,19 +323,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     if not shutil.which('systemctl'):
         print(f"{RED}systemctl not available — not on a systemd host{NC}", file=sys.stderr)
         return 2
-    rows = []
-    for svc in SERVICES:
-        try:
-            r = _run(['systemctl', 'is-active', svc], timeout=2)
-            state = r.stdout.strip() or 'unknown'
-        except subprocess.SubprocessError:
-            state = 'error'
-        rows.append((svc, state))
+    states = _systemctl_is_active(list(SERVICES), timeout=5)
     if args.json:
-        print(json.dumps({s: st for s, st in rows}, indent=2))
-        return 0 if all(st == 'active' for _, st in rows) else 1
-    width = max(len(s) for s, _ in rows)
-    for svc, state in rows:
+        print(json.dumps(states, indent=2))
+        return 0 if all(st == 'active' for st in states.values()) else 1
+    width = max(len(s) for s in states)
+    for svc, state in states.items():
         if state == 'active':
             tag = f"{GREEN}●{NC} active"
         elif state in ('activating', 'reloading'):
@@ -322,12 +336,12 @@ def cmd_status(args: argparse.Namespace) -> int:
         else:
             tag = f"{RED}●{NC} {state}"
         print(f"  {svc:<{width}}   {tag}")
-    bad = [s for s, st in rows if st != 'active']
+    bad = [s for s, st in states.items() if st != 'active']
     if bad:
         print(f"\n  {RED}{len(bad)} service(s) not active:{NC} {', '.join(bad)}")
         print(f"  Try: drifter logs <name>    or    drifter restart <name>")
         return 1
-    print(f"\n  {GREEN}all {len(rows)} services active{NC}")
+    print(f"\n  {GREEN}all {len(states)} services active{NC}")
     return 0
 
 
@@ -373,46 +387,26 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
 def cmd_healthz(args: argparse.Namespace) -> int:
     """Curl-equivalent for /healthz — works without the curl binary."""
-    host, port = args.host, args.port
-    try:
-        with socket.create_connection((host, port), timeout=3) as s:
-            s.sendall(f'GET /healthz HTTP/1.0\r\nHost: {host}\r\n\r\n'.encode())
-            data = b''
-            s.settimeout(3)
-            while True:
-                try:
-                    chunk = s.recv(8192)
-                except socket.timeout:
-                    break
-                if not chunk:
-                    break
-                data += chunk
-                if len(data) > 64 * 1024:
-                    break
-    except OSError as e:
-        print(f"{RED}cannot reach {host}:{port}: {e}{NC}", file=sys.stderr)
+    code, body = _http_get(args.host, args.port, '/healthz', timeout=3)
+    if code == 0:
+        print(f"{RED}cannot reach {args.host}:{args.port}{NC}", file=sys.stderr)
         return 2
 
-    head, _, body = data.partition(b'\r\n\r\n')
-    status_line = head.split(b'\r\n', 1)[0].decode(errors='replace')
-    code = 0
     try:
-        code = int(status_line.split()[1])
-    except (IndexError, ValueError):
-        pass
+        parsed = json.loads(body.decode())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        parsed = None
 
     if args.json:
-        # Best-effort JSON pass-through. If body isn't JSON, dump raw.
-        try:
-            print(json.dumps(json.loads(body.decode()), indent=2))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        if parsed is not None:
+            print(json.dumps(parsed, indent=2))
+        else:
             sys.stdout.buffer.write(body)
         return 0 if code == 200 else 1
 
     colour = GREEN if code == 200 else RED
-    print(f"  {colour}{status_line}{NC}")
-    try:
-        parsed = json.loads(body.decode())
+    print(f"  {colour}HTTP {code}{NC}")
+    if parsed is not None:
         for k, v in parsed.items():
             if isinstance(v, dict):
                 print(f"  {k}:")
@@ -421,7 +415,7 @@ def cmd_healthz(args: argparse.Namespace) -> int:
                     print(f"    {mark} {sk}")
             else:
                 print(f"  {k}: {v}")
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    else:
         sys.stdout.buffer.write(body)
     return 0 if code == 200 else 1
 
@@ -455,15 +449,15 @@ def main(argv: list[str] | None = None) -> int:
         prog='drifter',
         description='DRIFTER fleet-contract operator CLI.',
     )
+    json_parent = argparse.ArgumentParser(add_help=False)
+    json_parent.add_argument('--json', action='store_true',
+                             help='Emit JSON instead of text')
     sub = parser.add_subparsers(dest='cmd', required=True)
 
-    p_diag = sub.add_parser('diagnose', help='Run fleet-contract diagnostics')
-    p_diag.add_argument('--json', action='store_true', help='Emit JSON instead of text')
-    p_diag.set_defaults(func=cmd_diagnose)
-
-    p_status = sub.add_parser('status', help='One-line-per-service status overview')
-    p_status.add_argument('--json', action='store_true', help='Emit JSON instead of text')
-    p_status.set_defaults(func=cmd_status)
+    sub.add_parser('diagnose', help='Run fleet-contract diagnostics',
+                   parents=[json_parent]).set_defaults(func=cmd_diagnose)
+    sub.add_parser('status', help='One-line-per-service status overview',
+                   parents=[json_parent]).set_defaults(func=cmd_status)
 
     p_logs = sub.add_parser('logs', help='Tail journalctl for one drifter unit')
     p_logs.add_argument('service', help="Service name (e.g. 'canbridge' or 'drifter-canbridge')")
@@ -476,14 +470,14 @@ def main(argv: list[str] | None = None) -> int:
                       help="Service name or 'all' (default: all)")
     p_rs.set_defaults(func=cmd_restart)
 
-    p_h = sub.add_parser('healthz', help='Probe /healthz on the local dashboard')
+    p_h = sub.add_parser('healthz', help='Probe /healthz on the local dashboard',
+                         parents=[json_parent])
     p_h.add_argument('--host', default='127.0.0.1')
     p_h.add_argument('--port', type=int, default=DASHBOARD_PORT)
-    p_h.add_argument('--json', action='store_true', help='Emit raw JSON body')
     p_h.set_defaults(func=cmd_healthz)
 
-    p_v = sub.add_parser('version', help='Print deployed git rev / branch')
-    p_v.set_defaults(func=cmd_version)
+    sub.add_parser('version', help='Print deployed git rev / branch'
+                   ).set_defaults(func=cmd_version)
 
     args = parser.parse_args(argv)
     return args.func(args)
