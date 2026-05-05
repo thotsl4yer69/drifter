@@ -51,7 +51,7 @@ done
 
 # ── 2. Source files deployed ──
 echo -e "\n${AMBER}[2/8] Deployed Files${NC}"
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py"
 MISSING=0
 for f in $SRC_FILES; do
     if [ ! -f "/opt/drifter/$f" ]; then
@@ -60,7 +60,7 @@ for f in $SRC_FILES; do
     fi
 done
 if [ $MISSING -eq 0 ]; then
-    ok "All 22 Python modules deployed"
+    ok "All 21 Python modules deployed"
 fi
 
 if [ -x /usr/local/bin/drifter ]; then
@@ -182,7 +182,7 @@ if command -v ollama &>/dev/null; then
     if ollama list 2>/dev/null | grep -q "qwen"; then
         ok "LLM model available"
     else
-        warn "No LLM model pulled — run: ollama pull qwen3.5:7b"
+        warn "No LLM model pulled — run: ollama pull qwen2.5:7b"
     fi
 else
     warn "Ollama not installed — LLM mechanic unavailable (offline AI disabled)"

@@ -27,7 +27,13 @@ def reset_alert_state():
     alert_engine._clear_counters.clear()
     alert_engine.engine_start_time = 0.0
     alert_engine.warmup_complete = False
+    # Bypass the data-readiness gate so tests that fill state directly can fire rules.
+    alert_engine._data_ready = True
+    alert_engine._mqtt_message_count = alert_engine.DATA_READY_MESSAGES
     yield
+    # Restore gate state so it doesn't leak across test modules.
+    alert_engine._data_ready = False
+    alert_engine._mqtt_message_count = 0
 
 
 def fill(buf, value, count=100, ts_buf=None):

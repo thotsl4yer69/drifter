@@ -334,7 +334,7 @@ class TestActiveDTCs:
 
 class TestStalled:
     def test_stall_detected(self, state):
-        for _ in range(7):
+        for _ in range(97):
             state.rpm.append(750)
         for _ in range(3):
             state.rpm.append(0)

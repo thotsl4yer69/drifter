@@ -341,7 +341,7 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
     rc = getattr(reason_code, 'value', reason_code)
     if rc == 0:
         log.info("Connected to MQTT broker")
-        client.publish(TOPICS['voice_command'], json.dumps({
+        client.publish(TOPICS.get('vivi_status', 'drifter/vivi/status'), json.dumps({
             "status": "Voice input online",
             "timestamp": time.time(),
         }))

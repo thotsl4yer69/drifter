@@ -29,16 +29,25 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── State ──
+# All values start as None — None means "never received", 0 is a real value.
 latest = {
-    'rpm': 0, 'coolant': 0, 'stft1': 0, 'stft2': 0,
-    'speed': 0, 'throttle': 0, 'load': 0, 'voltage': 0,
-    'ltft1': 0, 'ltft2': 0, 'iat': 0, 'maf': 0,
-    'o2_b1s1': 0, 'o2_b2s1': 0, 'timing': 0, 'baro': 0,
-    'fuel_lvl': 0, 'run_time': 0,
-    'alert_level': 0,
-    'tpms_fl_psi': 0, 'tpms_fr_psi': 0, 'tpms_rl_psi': 0, 'tpms_rr_psi': 0,
-    'tpms_fl_temp': 0, 'tpms_fr_temp': 0, 'tpms_rl_temp': 0, 'tpms_rr_temp': 0,
+    'rpm': None, 'coolant': None, 'stft1': None, 'stft2': None,
+    'speed': None, 'throttle': None, 'load': None, 'voltage': None,
+    'ltft1': None, 'ltft2': None, 'iat': None, 'maf': None,
+    'o2_b1s1': None, 'o2_b2s1': None, 'timing': None, 'baro': None,
+    'fuel_lvl': None, 'run_time': None,
+    'alert_level': None,
+    'tpms_fl_psi': None, 'tpms_fr_psi': None, 'tpms_rl_psi': None, 'tpms_rr_psi': None,
+    'tpms_fl_temp': None, 'tpms_fr_temp': None, 'tpms_rl_temp': None, 'tpms_rr_temp': None,
 }
+
+# Last known good values — held across gaps so RealDash display stays stable.
+_last_known = {}
+
+# Set to True once at least one real CAN message has arrived.
+# No frames are sent to RealDash until this is True.
+_has_real_data = False
+
 alert_message = ""
 clients = []
 clients_lock = threading.Lock()
@@ -46,6 +55,14 @@ running = True
 
 # RealDash frame header: 0x44, 0x33, 0x22, 0x11
 REALDASH_HEADER = bytes([0x44, 0x33, 0x22, 0x11])
+
+
+def _get(key):
+    """Return latest value for key, falling back to last known. Returns None if never seen."""
+    v = latest.get(key)
+    if v is not None:
+        return v
+    return _last_known.get(key)
 
 
 def build_frame(frame_id, data_bytes):
@@ -62,11 +79,21 @@ def build_frame(frame_id, data_bytes):
 
 
 def pack_engine_frame():
-    """Frame 0x110: RPM, Coolant, STFT1, STFT2."""
-    rpm = int(latest['rpm'] * 4)  # RealDash expects raw OBD value
-    coolant = int((latest['coolant'] + 40) * 10)  # Scale for precision
-    stft1 = int((latest['stft1'] + 100) * 100)    # Offset and scale (±100% → 0-20000)
-    stft2 = int((latest['stft2'] + 100) * 100)
+    """Frame 0x110: RPM, Coolant, STFT1, STFT2.
+    Returns None if none of the sensors have ever reported.
+    """
+    rpm_v = _get('rpm')
+    coolant_v = _get('coolant')
+    stft1_v = _get('stft1')
+    stft2_v = _get('stft2')
+
+    if all(v is None for v in (rpm_v, coolant_v, stft1_v, stft2_v)):
+        return None
+
+    rpm = int((rpm_v or 0) * 4)           # RealDash expects raw OBD value
+    coolant = int(((coolant_v or 0) + 40) * 10)   # Scale for precision
+    stft1 = int(((stft1_v or 0) + 100) * 100)     # Offset and scale (±100% → 0-20000)
+    stft2 = int(((stft2_v or 0) + 100) * 100)
 
     data = struct.pack('>HhHH',
                        max(0, min(65535, rpm)),
@@ -77,11 +104,21 @@ def pack_engine_frame():
 
 
 def pack_vehicle_frame():
-    """Frame 0x120: Speed, Throttle, Load, Voltage."""
-    speed = int(latest['speed'])
-    throttle = int(latest['throttle'] * 10)
-    load = int(latest['load'] * 10)
-    voltage = int(latest['voltage'] * 100)
+    """Frame 0x120: Speed, Throttle, Load, Voltage.
+    Returns None if none of the sensors have ever reported.
+    """
+    speed_v = _get('speed')
+    throttle_v = _get('throttle')
+    load_v = _get('load')
+    voltage_v = _get('voltage')
+
+    if all(v is None for v in (speed_v, throttle_v, load_v, voltage_v)):
+        return None
+
+    speed = int(speed_v or 0)
+    throttle = int((throttle_v or 0) * 10)
+    load = int((load_v or 0) * 10)
+    voltage = int((voltage_v or 0) * 100)
 
     data = struct.pack('>HHHH',
                        max(0, min(65535, speed)),
@@ -92,11 +129,21 @@ def pack_vehicle_frame():
 
 
 def pack_extended_frame():
-    """Frame 0x130: LTFT1, LTFT2, IAT, MAF."""
-    ltft1 = int((latest['ltft1'] + 100) * 100)
-    ltft2 = int((latest['ltft2'] + 100) * 100)
-    iat = int((latest['iat'] + 40) * 10)
-    maf = int(latest['maf'] * 100)
+    """Frame 0x130: LTFT1, LTFT2, IAT, MAF.
+    Returns None if none of the sensors have ever reported.
+    """
+    ltft1_v = _get('ltft1')
+    ltft2_v = _get('ltft2')
+    iat_v = _get('iat')
+    maf_v = _get('maf')
+
+    if all(v is None for v in (ltft1_v, ltft2_v, iat_v, maf_v)):
+        return None
+
+    ltft1 = int(((ltft1_v or 0) + 100) * 100)
+    ltft2 = int(((ltft2_v or 0) + 100) * 100)
+    iat = int(((iat_v or 0) + 40) * 10)
+    maf = int((maf_v or 0) * 100)
 
     data = struct.pack('>HHHH',
                        max(0, min(65535, ltft1)),
@@ -107,8 +154,13 @@ def pack_extended_frame():
 
 
 def pack_alert_frame():
-    """Frame 0x300: Alert level (1 byte)."""
-    data = struct.pack('B', latest['alert_level'])
+    """Frame 0x300: Alert level (1 byte).
+    Returns None if alert_level has never been received.
+    """
+    level_v = _get('alert_level')
+    if level_v is None:
+        return None
+    data = struct.pack('B', level_v)
     return build_frame(0x300, data)
 
 
@@ -125,11 +177,21 @@ def pack_alert_text_frame():
 
 
 def pack_tpms_frame():
-    """Frame 0x140: TPMS — FL PSI, FR PSI, RL PSI, RR PSI (scaled ×10)."""
-    fl = int(latest['tpms_fl_psi'] * 10)
-    fr = int(latest['tpms_fr_psi'] * 10)
-    rl = int(latest['tpms_rl_psi'] * 10)
-    rr = int(latest['tpms_rr_psi'] * 10)
+    """Frame 0x140: TPMS — FL PSI, FR PSI, RL PSI, RR PSI (scaled ×10).
+    Returns None if no TPMS pressure has ever been received.
+    """
+    fl_v = _get('tpms_fl_psi')
+    fr_v = _get('tpms_fr_psi')
+    rl_v = _get('tpms_rl_psi')
+    rr_v = _get('tpms_rr_psi')
+
+    if all(v is None for v in (fl_v, fr_v, rl_v, rr_v)):
+        return None
+
+    fl = int((fl_v or 0) * 10)
+    fr = int((fr_v or 0) * 10)
+    rl = int((rl_v or 0) * 10)
+    rr = int((rr_v or 0) * 10)
 
     data = struct.pack('>HHHH',
                        max(0, min(65535, fl)),
@@ -140,11 +202,21 @@ def pack_tpms_frame():
 
 
 def pack_extra_engine_frame():
-    """Frame 0x160: O2 B1S1, O2 B2S1, Timing Advance, Barometric Pressure."""
-    o2_b1 = int(latest['o2_b1s1'] * 10000)   # 0-1.275V → 0-12750
-    o2_b2 = int(latest['o2_b2s1'] * 10000)
-    timing = int((latest['timing'] + 64) * 100)  # -64 to +64° → 0-12800
-    baro = int(latest['baro'] * 10)               # kPa × 10
+    """Frame 0x160: O2 B1S1, O2 B2S1, Timing Advance, Barometric Pressure.
+    Returns None if none of the sensors have ever reported.
+    """
+    o2_b1_v = _get('o2_b1s1')
+    o2_b2_v = _get('o2_b2s1')
+    timing_v = _get('timing')
+    baro_v = _get('baro')
+
+    if all(v is None for v in (o2_b1_v, o2_b2_v, timing_v, baro_v)):
+        return None
+
+    o2_b1 = int((o2_b1_v or 0) * 10000)        # 0-1.275V → 0-12750
+    o2_b2 = int((o2_b2_v or 0) * 10000)
+    timing = int(((timing_v or 0) + 64) * 100)  # -64 to +64° → 0-12800
+    baro = int((baro_v or 0) * 10)              # kPa × 10
 
     data = struct.pack('>HHHH',
                        max(0, min(65535, o2_b1)),
@@ -155,9 +227,17 @@ def pack_extra_engine_frame():
 
 
 def pack_vehicle_extra_frame():
-    """Frame 0x170: Fuel Level, Engine Run Time."""
-    fuel = int(latest['fuel_lvl'] * 100)    # 0-100% → 0-10000
-    run_time = int(latest['run_time'])       # seconds
+    """Frame 0x170: Fuel Level, Engine Run Time.
+    Returns None if neither sensor has ever reported.
+    """
+    fuel_v = _get('fuel_lvl')
+    run_time_v = _get('run_time')
+
+    if fuel_v is None and run_time_v is None:
+        return None
+
+    fuel = int((fuel_v or 0) * 100)        # 0-100% → 0-10000
+    run_time = int(run_time_v or 0)         # seconds
 
     data = struct.pack('>HH',
                        max(0, min(65535, fuel)),
@@ -166,11 +246,21 @@ def pack_vehicle_extra_frame():
 
 
 def pack_tpms_temp_frame():
-    """Frame 0x150: TPMS temps — FL, FR, RL, RR (°C × 10, offset +40)."""
-    fl = int((latest['tpms_fl_temp'] + 40) * 10)
-    fr = int((latest['tpms_fr_temp'] + 40) * 10)
-    rl = int((latest['tpms_rl_temp'] + 40) * 10)
-    rr = int((latest['tpms_rr_temp'] + 40) * 10)
+    """Frame 0x150: TPMS temps — FL, FR, RL, RR (°C × 10, offset +40).
+    Returns None if no TPMS temp has ever been received.
+    """
+    fl_v = _get('tpms_fl_temp')
+    fr_v = _get('tpms_fr_temp')
+    rl_v = _get('tpms_rl_temp')
+    rr_v = _get('tpms_rr_temp')
+
+    if all(v is None for v in (fl_v, fr_v, rl_v, rr_v)):
+        return None
+
+    fl = int(((fl_v or 0) + 40) * 10)
+    fr = int(((fr_v or 0) + 40) * 10)
+    rl = int(((rl_v or 0) + 40) * 10)
+    rr = int(((rr_v or 0) + 40) * 10)
 
     data = struct.pack('>HHHH',
                        max(0, min(65535, fl)),
@@ -182,57 +272,71 @@ def pack_tpms_temp_frame():
 
 def on_mqtt_message(client, userdata, msg):
     """Update latest values from MQTT."""
-    global alert_message
+    global alert_message, _has_real_data
     try:
         data = json.loads(msg.payload)
         topic = msg.topic
 
+        def _update(key, value):
+            """Store value in latest and _last_known, mark real data arrived."""
+            global _has_real_data
+            if value is not None:
+                latest[key] = value
+                _last_known[key] = value
+                _has_real_data = True
+
         if topic.endswith('/rpm'):
-            latest['rpm'] = data.get('value', 0)
+            _update('rpm', data.get('value'))
         elif topic.endswith('/coolant'):
-            latest['coolant'] = data.get('value', 0)
+            _update('coolant', data.get('value'))
         elif topic.endswith('/stft1'):
-            latest['stft1'] = data.get('value', 0)
+            _update('stft1', data.get('value'))
         elif topic.endswith('/stft2'):
-            latest['stft2'] = data.get('value', 0)
+            _update('stft2', data.get('value'))
         elif topic.endswith('/ltft1'):
-            latest['ltft1'] = data.get('value', 0)
+            _update('ltft1', data.get('value'))
         elif topic.endswith('/ltft2'):
-            latest['ltft2'] = data.get('value', 0)
+            _update('ltft2', data.get('value'))
         elif topic.endswith('/load'):
-            latest['load'] = data.get('value', 0)
+            _update('load', data.get('value'))
         elif topic.endswith('/speed'):
-            latest['speed'] = data.get('value', 0)
+            _update('speed', data.get('value'))
         elif topic.endswith('/throttle'):
-            latest['throttle'] = data.get('value', 0)
+            _update('throttle', data.get('value'))
         elif topic.endswith('/voltage'):
-            latest['voltage'] = data.get('value', 0)
+            _update('voltage', data.get('value'))
         elif topic.endswith('/iat'):
-            latest['iat'] = data.get('value', 0)
+            _update('iat', data.get('value'))
         elif topic.endswith('/maf'):
-            latest['maf'] = data.get('value', 0)
+            _update('maf', data.get('value'))
         elif topic.endswith('/o2_b1s1'):
-            latest['o2_b1s1'] = data.get('value', 0)
+            _update('o2_b1s1', data.get('value'))
         elif topic.endswith('/o2_b2s1'):
-            latest['o2_b2s1'] = data.get('value', 0)
+            _update('o2_b2s1', data.get('value'))
         elif topic.endswith('/timing'):
-            latest['timing'] = data.get('value', 0)
+            _update('timing', data.get('value'))
         elif topic.endswith('/baro'):
-            latest['baro'] = data.get('value', 0)
+            _update('baro', data.get('value'))
         elif topic.endswith('/fuel_lvl'):
-            latest['fuel_lvl'] = data.get('value', 0)
+            _update('fuel_lvl', data.get('value'))
         elif topic.endswith('/run_time'):
-            latest['run_time'] = data.get('value', 0)
+            _update('run_time', data.get('value'))
         elif topic.endswith('/alert/level'):
-            latest['alert_level'] = data.get('level', 0)
+            level = data.get('level')
+            if level is not None:
+                latest['alert_level'] = level
+                _last_known['alert_level'] = level
+                _has_real_data = True
         elif topic.endswith('/alert/message'):
             alert_message = data.get('message', '')
         # TPMS
         elif '/rf/tpms/' in topic:
             pos = topic.split('/')[-1]  # fl, fr, rl, rr
             if pos in ('fl', 'fr', 'rl', 'rr'):
-                latest[f'tpms_{pos}_psi'] = data.get('pressure_psi', 0)
-                latest[f'tpms_{pos}_temp'] = data.get('temp_c', 0)
+                psi = data.get('pressure_psi')
+                temp = data.get('temp_c')
+                _update(f'tpms_{pos}_psi', psi)
+                _update(f'tpms_{pos}_temp', temp)
 
     except (json.JSONDecodeError, KeyError):
         pass
@@ -249,18 +353,30 @@ def handle_client(conn, addr):
         text_frame_counter = 0
         while running:
             try:
-                # Send all frames
-                frames = (
-                    pack_engine_frame() +
-                    pack_vehicle_frame() +
-                    pack_extended_frame() +
-                    pack_extra_engine_frame() +
-                    pack_vehicle_extra_frame() +
-                    pack_alert_frame() +
-                    pack_tpms_frame() +
-                    pack_tpms_temp_frame()
-                )
-                conn.sendall(frames)
+                # Don't send anything until at least one real sensor reading has arrived.
+                if not _has_real_data:
+                    time.sleep(0.05)
+                    continue
+
+                # Build all frames, skipping any that have no data yet.
+                frame_builders = [
+                    pack_engine_frame,
+                    pack_vehicle_frame,
+                    pack_extended_frame,
+                    pack_extra_engine_frame,
+                    pack_vehicle_extra_frame,
+                    pack_alert_frame,
+                    pack_tpms_frame,
+                    pack_tpms_temp_frame,
+                ]
+                frames = b''
+                for builder in frame_builders:
+                    result = builder()
+                    if result is not None:
+                        frames += result
+
+                if frames:
+                    conn.sendall(frames)
 
                 # Send text frame less frequently (every ~500ms = every 10th iteration)
                 text_frame_counter += 1

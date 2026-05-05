@@ -224,9 +224,9 @@ def on_message(client, userdata, msg):
                 speak(response)
             return
 
-        # Voice command (tool confirmation requests, status messages)
-        if topic == TOPICS.get('voice_command'):
-            message = data.get('message', '')
+        # Vivi response (voice assistant replies)
+        if topic == TOPICS.get('vivi_response'):
+            message = data.get('message', data.get('response', ''))
             if message:
                 speak(message)
             return
@@ -294,7 +294,7 @@ def main():
 
     client.subscribe(TOPICS['alert_message'])
     client.subscribe(TOPICS['llm_response'])
-    client.subscribe(TOPICS['voice_command'])
+    client.subscribe(TOPICS['vivi_response'])
     client.loop_start()
 
     # Startup announcement — X-Type specific

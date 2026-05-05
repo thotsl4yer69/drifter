@@ -17,7 +17,7 @@
 html,body{
   width:100vw;height:100vh;overflow:hidden;
   background:var(--bg);color:var(--amber);
-  font-family:'Courier New','Lucida Console',monospace;
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   cursor:none;user-select:none;-webkit-user-select:none;
   -webkit-font-smoothing:none;
 }
@@ -44,7 +44,7 @@ html,body{
 .topbar{
   height:22px;display:flex;align-items:center;justify-content:space-between;
   padding:0 10px;border-bottom:1px solid var(--border);
-  font-size:10px;letter-spacing:2px;font-weight:bold;
+  font-size:11px;letter-spacing:2px;font-weight:bold;
   background:linear-gradient(180deg,#0D0800 0%,#000 100%);
   position:relative;z-index:10;
 }
@@ -95,7 +95,7 @@ html,body{
 }
 .page-dot.active{background:var(--amber);box-shadow:0 0 4px var(--amber-glow)}
 .page-label{
-  position:absolute;right:10px;font-size:8px;letter-spacing:2px;
+  position:absolute;right:10px;font-size:9px;letter-spacing:2px;
   color:var(--amber-dim);
 }
 
@@ -120,14 +120,14 @@ html,body{
   text-shadow:0 0 20px var(--amber-glow),0 0 40px rgba(255,149,0,0.2);
   font-variant-numeric:tabular-nums;letter-spacing:-2px;
 }
-.speed-unit{font-size:10px;color:var(--amber-dim);letter-spacing:4px;margin-top:-2px}
+.speed-unit{font-size:11px;color:var(--amber-dim);letter-spacing:4px;margin-top:-2px}
 .rpm-readout{
   position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
   font-size:13px;color:var(--amber);letter-spacing:1px;
   text-shadow:0 0 8px var(--amber-glow);
   font-variant-numeric:tabular-nums;
 }
-.rpm-readout span{font-size:8px;color:var(--amber-dim);margin-left:2px}
+.rpm-readout span{font-size:10px;color:var(--amber-dim);margin-left:2px}
 
 .drive-right{
   width:218px;height:100%;display:flex;flex-direction:column;
@@ -141,7 +141,7 @@ html,body{
   display:flex;justify-content:space-between;align-items:baseline;
   margin-bottom:4px;
 }
-.gauge-card .g-label{font-size:8px;color:var(--amber-dim);letter-spacing:2px}
+.gauge-card .g-label{font-size:10px;color:var(--amber-dim);letter-spacing:2px}
 .gauge-card .g-value{
   font-size:22px;font-weight:bold;line-height:1;
   text-shadow:0 0 8px var(--amber-glow);
@@ -160,7 +160,7 @@ html,body{
 /* Alert box on drive page */
 .drive-alert{
   background:var(--panel);border:1px solid var(--border);
-  border-radius:4px;padding:5px 8px;font-size:9px;
+  border-radius:4px;padding:5px 8px;font-size:11px;
   color:var(--amber-dim);letter-spacing:1px;line-height:1.3;
   min-height:32px;display:flex;align-items:center;
   overflow:hidden;
@@ -194,7 +194,7 @@ html,body{
 .tyre-box{
   position:absolute;text-align:center;width:120px;
 }
-.tyre-box .t-pos{font-size:9px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:1px}
+.tyre-box .t-pos{font-size:11px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:1px}
 .tyre-box .t-psi{
   font-size:28px;font-weight:bold;line-height:1;
   text-shadow:0 0 8px var(--amber-glow);
@@ -236,7 +236,7 @@ html,body{
   background:var(--panel);border:1px solid var(--border);
   border-radius:4px;padding:4px 6px;text-align:center;
 }
-.eng-cell .e-label{font-size:7px;color:var(--amber-dim);letter-spacing:1px;margin-bottom:2px}
+.eng-cell .e-label{font-size:9px;color:var(--amber-dim);letter-spacing:1px;margin-bottom:2px}
 .eng-cell .e-value{
   font-size:18px;font-weight:bold;line-height:1;
   text-shadow:0 0 8px var(--amber-glow);
@@ -254,13 +254,13 @@ html,body{
   border-top:1px solid var(--border);
 }
 .engine-footer .ef-item{text-align:center}
-.engine-footer .ef-label{font-size:7px;color:var(--amber-dim);letter-spacing:1px}
+.engine-footer .ef-label{font-size:9px;color:var(--amber-dim);letter-spacing:1px}
 .engine-footer .ef-value{
   font-size:15px;font-weight:bold;
   text-shadow:0 0 6px var(--amber-glow);
   font-variant-numeric:tabular-nums;
 }
-.engine-footer .ef-unit{font-size:7px;color:var(--amber-dim)}
+.engine-footer .ef-unit{font-size:8px;color:var(--amber-dim)}
 
 /* ═══════════════════════════════════════════════ */
 /*  PAGE 3 — STATUS                               */
@@ -967,7 +967,7 @@ function drawTach(rpm) {
   ctx.shadowBlur = 0;
 
   // Tick labels: 0-7 (thousands)
-  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.font = 'bold 9px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let k = 0; k <= 7; k++) {

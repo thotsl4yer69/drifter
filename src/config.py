@@ -589,6 +589,17 @@ TOPICS = {
     'voice_command': 'drifter/voice/command',
     'voice_status':  'drifter/voice/status',
     'hud_navigate':  'drifter/hud/navigate',
+    # Vivi voice assistant
+    'vivi_query': 'drifter/vivi/query',
+    'vivi_response': 'drifter/vivi/response',
+    'vivi_status': 'drifter/vivi/status',
+    # Audio (shared with voice_alerts)
+    'audio_wav': 'drifter/audio/wav',
+    # Flipper Zero
+    'flipper_status': 'drifter/flipper/status',
+    'flipper_command': 'drifter/flipper/command',
+    'flipper_result': 'drifter/flipper/result',
+    'flipper_subghz': 'drifter/flipper/subghz',
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
@@ -645,6 +656,7 @@ SERVICES = [
     "drifter-anomaly",
     "drifter-analyst",
     "drifter-voice",
+    "drifter-vivi",
     "drifter-hotspot",
     "drifter-homesync",
     "drifter-watchdog",
@@ -654,4 +666,5 @@ SERVICES = [
     "drifter-dashboard",
     "drifter-fbmirror",
     "drifter-voicein",
+    "drifter-flipper",
 ]
