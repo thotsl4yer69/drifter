@@ -112,6 +112,61 @@ def publish_transcript(transcript, source="wake_word"):
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Intent classification — nav vs. LLM query
+# ═══════════════════════════════════════════════════════════════════
+
+_PAGE_MAP = {
+    'drive': 0, 'driving': 0, 'speed': 0, 'main': 0, 'home': 0,
+    'tyre': 1, 'tyres': 1, 'tire': 1, 'tires': 1, 'pressure': 1, 'wheels': 1,
+    'engine': 2, 'rpm': 2, 'throttle': 2, 'boost': 2,
+    'status': 3, 'system': 3, 'health': 3, 'services': 3,
+    'rf': 4, 'radio': 4, 'sdr': 4, 'signal': 4, 'tpms': 4, 'frequency': 4,
+    'scan': 5, 'wardrive': 5, 'wifi': 5, 'networks': 5, 'bluetooth': 5,
+}
+
+
+def _classify_voice(text: str):
+    """Returns ('navigate', value) or ('query', text). value is int or 'next'/'prev'."""
+    words = text.lower().split()
+    if any(w in ('next', 'forward') for w in words):
+        return ('navigate', 'next')
+    if any(w in ('previous', 'back', 'prev', 'last') for w in words):
+        return ('navigate', 'prev')
+    for w in words:
+        if w in _PAGE_MAP:
+            return ('navigate', _PAGE_MAP[w])
+    return ('query', text)
+
+
+def _pub_voice_status(state: str):
+    """Publish mic/voice state to HUD. Safe to call any time."""
+    if mqtt_client:
+        try:
+            mqtt_client.publish(TOPICS['voice_status'], json.dumps({'state': state, 'ts': time.time()}))
+        except Exception:
+            pass
+
+
+def route_transcript(text: str):
+    """Classify and route a voice transcript — page nav or LLM mechanic query."""
+    if not text.strip():
+        return
+    intent, value = _classify_voice(text)
+    if intent == 'navigate':
+        mqtt_client.publish(TOPICS['hud_navigate'], json.dumps({'page': value, 'ts': time.time()}))
+        log.info(f"Nav command → page={value}")
+        _pub_voice_status('idle')
+    else:
+        _pub_voice_status('processing')
+        mqtt_client.publish(TOPICS['llm_query'], json.dumps({
+            'query': text,
+            'session_id': 'voice',
+            'ts': time.time(),
+        }))
+        log.info(f"LLM query: {text[:60]}")
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  STT Recording (Vosk)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -119,6 +174,7 @@ def record_and_transcribe(stream, recognizer, silence_threshold, source="wake_wo
     """Record audio from stream until silence, then return Vosk transcript."""
     from vosk import KaldiRecognizer
 
+    _pub_voice_status('listening')
     beep()
 
     recognizer.AcceptWaveform(b'\x00' * 2)  # reset state
@@ -152,8 +208,10 @@ def record_and_transcribe(stream, recognizer, silence_threshold, source="wake_wo
 
     if text:
         publish_transcript(text, source)
+        route_transcript(text)
     else:
         log.info("No speech recognized in utterance")
+        _pub_voice_status('idle')
 
     return text
 

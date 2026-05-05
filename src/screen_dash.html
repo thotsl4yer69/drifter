@@ -507,6 +507,31 @@ html,body{
   transition:opacity 0.5s;
 }
 .kbd-hint.show{opacity:1}
+
+/* ═══ MIC / VOICE STATUS dot (bottom bar) ═══ */
+.mic-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#333;display:inline-block;
+  margin-left:8px;vertical-align:middle;
+  transition:background 0.3s,box-shadow 0.3s;
+}
+.mic-dot.listening{background:var(--green);box-shadow:0 0 6px rgba(0,204,68,0.8);animation:mic-pulse 0.8s infinite}
+.mic-dot.processing{background:var(--amber);box-shadow:0 0 6px var(--amber-glow);animation:mic-pulse 1.2s infinite}
+.mic-dot.speaking{background:#00aaff;box-shadow:0 0 6px rgba(0,170,255,0.6);animation:mic-pulse 0.6s infinite}
+@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ═══ AI RESPONSE overlay (bottom, auto-dismiss 8s) ═══ */
+.ai-overlay{
+  position:fixed;bottom:28px;left:10px;right:10px;
+  background:rgba(0,0,0,0.9);border:1px solid var(--amber-dim);
+  border-radius:4px;padding:8px 12px;z-index:9980;
+  display:none;font-size:11px;color:var(--amber);
+  letter-spacing:1px;line-height:1.5;
+  text-shadow:0 0 6px var(--amber-glow);
+}
+.ai-overlay.show{display:block;animation:ai-fade 0.35s ease}
+.ai-label{font-size:7px;letter-spacing:3px;color:var(--amber-dim);margin-bottom:4px}
+@keyframes ai-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -544,6 +569,12 @@ html,body{
 
 <!-- First-boot keyboard hint -->
 <div class="kbd-hint" id="kbd-hint">PRESS &nbsp;[H]&nbsp; FOR CONTROLS</div>
+
+<!-- AI response overlay (shown on LLM response, auto-dismiss 8s) -->
+<div class="ai-overlay" id="ai-overlay">
+  <div class="ai-label">DRIFTER AI</div>
+  <div id="ai-text"></div>
+</div>
 
 <!-- Scaled HUD root -->
 <div id="hud-root">
@@ -817,6 +848,7 @@ html,body{
   <div class="page-dot" id="dot-4"></div>
   <div class="page-dot" id="dot-5"></div>
   <span class="auto-ind" id="auto-ind">AUTO</span>
+  <span class="mic-dot" id="mic-dot" title="voice"></span>
   <span class="page-label" id="page-label">DRIVE</span>
 </div>
 
@@ -1346,6 +1378,29 @@ function handleMsg(msg) {
   }
   else if (topic.endsWith('/wardrive/bt') && data.unique_count !== undefined) {
     S.btCount = data.unique_count;
+  }
+  else if (topic.endsWith('/hud/navigate')) {
+    const p = data.page;
+    if (p === 'next') goToPage((currentPage + 1) % PAGES);
+    else if (p === 'prev') goToPage((currentPage - 1 + PAGES) % PAGES);
+    else if (typeof p === 'number') goToPage(p);
+  }
+  else if (topic.endsWith('/voice/status')) {
+    const dot = document.getElementById('mic-dot');
+    if (dot) dot.className = 'mic-dot ' + (data.state || 'idle');
+  }
+  else if (topic.endsWith('/llm/response')) {
+    const resp = (data.response || '').trim();
+    if (resp && data.query !== 'boot_greeting') {
+      const el = document.getElementById('ai-text');
+      const overlay = document.getElementById('ai-overlay');
+      if (el) el.textContent = resp.slice(0, 400);
+      if (overlay) {
+        overlay.classList.add('show');
+        clearTimeout(overlay._aiTimer);
+        overlay._aiTimer = setTimeout(() => overlay.classList.remove('show'), 8000);
+      }
+    }
   }
   else if (topic.endsWith('/system/watchdog')) {
     const sys = data.system || {};

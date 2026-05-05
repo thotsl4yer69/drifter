@@ -587,6 +587,8 @@ TOPICS = {
     # Voice Input
     'voice_transcript': 'drifter/voice/transcript',
     'voice_command': 'drifter/voice/command',
+    'voice_status':  'drifter/voice/status',
+    'hud_navigate':  'drifter/hud/navigate',
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',

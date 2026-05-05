@@ -61,6 +61,15 @@ def _resolve_piper_bin():
 PIPER_BIN = _resolve_piper_bin()
 
 
+def _pub_voice_status(state: str):
+    """Publish TTS speaking state to HUD. Safe to call with _mqtt_client=None."""
+    if _mqtt_client and 'voice_status' in TOPICS:
+        try:
+            _mqtt_client.publish(TOPICS['voice_status'], json.dumps({'state': state, 'ts': time.time()}))
+        except Exception:
+            pass
+
+
 def check_piper():
     """Check if piper TTS is available."""
     global piper_available
@@ -179,6 +188,7 @@ def speak(text):
         spoke = False
         try:
             if _generate_wav(text, wav_path):
+                _pub_voice_status('speaking')
                 if _play_local(wav_path):
                     spoke = True
                 if _publish_wav(text, wav_path):
@@ -195,6 +205,8 @@ def speak(text):
             log.warning("TTS timeout")
         except Exception as e:
             log.error("TTS error: %s", e)
+        finally:
+            _pub_voice_status('idle')
     finally:
         _speak_lock.release()
 
