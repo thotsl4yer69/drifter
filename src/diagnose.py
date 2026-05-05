@@ -67,6 +67,15 @@ def _run(cmd: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
 
 # ── Checks ───────────────────────────────────────────────────────────
 
+# Services that require optional hardware (Flipper Zero, voice models, etc.)
+# and should not fail the deploy contract when that hardware is absent.
+_HARDWARE_OPTIONAL_SERVICES = frozenset({
+    'drifter-vivi',    # requires Ollama + faster-whisper + piper + audio input
+    'drifter-flipper', # requires Flipper Zero connected via UART/USB
+    'drifter-voicein', # requires wake-word model or GPIO PTT button
+})
+
+
 def check_systemd_units() -> list[CheckResult]:
     """Every service in config.SERVICES must report `active`."""
     results = []
@@ -76,9 +85,11 @@ def check_systemd_units() -> list[CheckResult]:
         try:
             r = _run(['systemctl', 'is-active', svc], timeout=2)
             active = r.stdout.strip() == 'active'
+            fatal = svc not in _HARDWARE_OPTIONAL_SERVICES
             results.append(CheckResult(
                 f'service:{svc}', active,
                 '' if active else f'state={r.stdout.strip() or "unknown"}',
+                fatal=fatal,
             ))
         except subprocess.SubprocessError as e:
             results.append(CheckResult(f'service:{svc}', False, str(e)))
@@ -102,7 +113,7 @@ def check_can_bridge() -> CheckResult:
         except subprocess.SubprocessError as e:
             return CheckResult('can0', False, str(e))
         if r.returncode != 0:
-            return CheckResult('can0', False, 'no can0 / slcan0 interface')
+            return CheckResult('can0', False, 'no can0 / slcan0 interface', fatal=False)
     parts = r.stdout.split()
     state = parts[1] if len(parts) > 1 else 'UNKNOWN'
     if state not in ('UP', 'UNKNOWN'):
