@@ -194,18 +194,62 @@ def check_ptt():
 # ═══════════════════════════════════════════════════════════════════
 
 def create_wake_word_model():
-    """Load OpenWakeWord model. Returns model or None."""
+    """Load OpenWakeWord model. Returns model or None.
+
+    Tries the configured ``WAKE_WORD_MODEL`` first, then falls back to
+    built-in models bundled with openwakeword (hey_jarvis, alexa, …) so
+    the service still starts when a custom model isn't trained yet.
+    """
     global oww_available
     try:
         from openwakeword.model import Model
-        oww_model = Model(wakeword_models=[WAKE_WORD_MODEL])
-        oww_available = True
-        log.info(f"Wake word model loaded: {WAKE_WORD_MODEL}")
-        return oww_model
-    except Exception as e:
-        log.warning(f"OpenWakeWord not available — PTT-only mode: {e}")
+        import openwakeword as _oww
+        import os as _os
+    except ImportError as e:
+        log.warning(f"openwakeword not installed: {e}")
         oww_available = False
         return None
+
+    res_dir = _os.path.join(_os.path.dirname(_oww.__file__), 'resources', 'models')
+    candidates = []
+    if WAKE_WORD_MODEL:
+        candidates.append(WAKE_WORD_MODEL)  # raw config (path or name)
+        for suffix in ('.onnx', '_v0.1.onnx', '.tflite', '_v0.1.tflite'):
+            candidates.append(_os.path.join(res_dir, f"{WAKE_WORD_MODEL}{suffix}"))
+    # Built-in fallbacks (always available with openwakeword>=0.4)
+    for name in ('hey_jarvis_v0.1', 'alexa_v0.1', 'hey_mycroft_v0.1'):
+        candidates.append(_os.path.join(res_dir, f"{name}.onnx"))
+
+    seen = set()
+    last_err = None
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        # If it looks like a file path, only try when it exists
+        if ('/' in path or path.endswith(('.onnx', '.tflite'))) and not _os.path.isfile(path):
+            continue
+        try:
+            oww_model = Model(wakeword_models=[path])
+            oww_available = True
+            log.info(f"Wake word model loaded: {_os.path.basename(path) or path}")
+            return oww_model
+        except Exception as e:
+            last_err = e
+            continue
+
+    # Final fallback: load the entire default model bundle
+    try:
+        oww_model = Model()
+        oww_available = True
+        log.info("Wake word model loaded (openwakeword default bundle)")
+        return oww_model
+    except Exception as e:
+        last_err = e
+
+    log.warning(f"OpenWakeWord could not load any model — PTT-only mode: {last_err}")
+    oww_available = False
+    return None
 
 
 def check_wake_word(oww_model, audio_chunk):
@@ -229,8 +273,14 @@ def check_wake_word(oww_model, audio_chunk):
 #  MQTT
 # ═══════════════════════════════════════════════════════════════════
 
-def on_connect(client, userdata, flags, rc):
-    """MQTT on-connect callback."""
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    """MQTT on-connect callback (paho-mqtt v2 callback API).
+
+    paho-mqtt v2 passes a ``ReasonCode`` object plus ``properties``;
+    v1 passes a plain int. ``properties`` defaults to None so this
+    signature works with both APIs.
+    """
+    rc = getattr(reason_code, 'value', reason_code)
     if rc == 0:
         log.info("Connected to MQTT broker")
         client.publish(TOPICS['voice_command'], json.dumps({

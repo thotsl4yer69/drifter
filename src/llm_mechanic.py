@@ -328,7 +328,7 @@ class OllamaClient:
         Max 5 iterations to prevent infinite loops.
         """
         import urllib.request
-        from config import OLLAMA_TIMEOUT
+        from config import OLLAMA_TIMEOUT, OLLAMA_KEEP_ALIVE
 
         if not self.available:
             return "[LLM offline - install Ollama and pull model]"
@@ -352,6 +352,7 @@ class OllamaClient:
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
+                "keep_alive": OLLAMA_KEEP_ALIVE,
                 "options": {
                     "temperature": temperature,
                     "num_predict": max_tokens
@@ -697,6 +698,17 @@ class LLMMechanic:
         log.info("LLM Mechanic is LIVE")
         log.info(f"Model: {OLLAMA_MODEL}")
         log.info("Send queries to: drifter/llm/query")
+
+        # Boot greeting — speaks via drifter-voice TTS so the driver knows
+        # the AI is online without having to ask first.
+        try:
+            self.mqtt.publish('drifter/llm/response', json.dumps({
+                "response": "DRIFTER online. Voice and diagnostics ready.",
+                "query": "boot_greeting",
+                "ts": time.time(),
+            }))
+        except Exception as _e:
+            log.debug(f"Boot greeting publish failed: {_e}")
 
         # Block on an Event rather than polling with sleep(0.1) — the old
         # loop wasted CPU and added up to 100ms of shutdown latency.

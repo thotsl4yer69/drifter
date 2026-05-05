@@ -41,12 +41,31 @@ last_spoken_msg = ""
 piper_available = False
 _mqtt_client = None  # Set in main() — reused by speak() for audio bridge
 
+# Resolve the correct piper TTS binary. The Debian package "piper" is a GTK
+# gaming-device configurator, not a TTS engine — so we prefer piper from the
+# venv (installed via "pip install piper-tts"), with a couple of common
+# fallbacks before /usr/bin/piper.
+def _resolve_piper_bin():
+    import shutil as _shutil
+    candidates = [
+        '/opt/drifter/venv/bin/piper',
+        str(Path(__file__).resolve().parent / 'venv' / 'bin' / 'piper'),
+        '/usr/local/bin/piper',
+    ]
+    for c in candidates:
+        if Path(c).is_file():
+            return c
+    found = _shutil.which('piper')
+    return found if found else 'piper'
+
+PIPER_BIN = _resolve_piper_bin()
+
 
 def check_piper():
     """Check if piper TTS is available."""
     global piper_available
     try:
-        result = subprocess.run(['piper', '--help'], capture_output=True, timeout=5)
+        result = subprocess.run([PIPER_BIN, '--help'], capture_output=True, timeout=5)
         # Verify model file exists
         if not PIPER_MODEL_PATH.exists():
             log.warning(f"Piper model not found at {PIPER_MODEL_PATH}")
@@ -85,7 +104,7 @@ def _generate_wav(text, wav_path):
     if piper_available:
         model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
         process = subprocess.Popen(
-            ['piper', '--model', model_arg, '--output_file', str(wav_path)],
+            [PIPER_BIN, '--model', model_arg, '--output_file', str(wav_path)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         process.communicate(input=text.encode(), timeout=10)

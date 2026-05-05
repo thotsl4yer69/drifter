@@ -381,6 +381,132 @@ html,body{
 .hw-footer .svc-ok{color:var(--green)}
 .hw-footer .svc-fail{color:var(--red)}
 .hw-footer .svc-off{color:#333}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 4 — RF                                   */
+/* ═══════════════════════════════════════════════ */
+.rf-layout{padding:6px 10px;height:100%;display:flex;flex-direction:column;gap:5px}
+.rf-title{font-size:10px;letter-spacing:3px;color:var(--amber-dim);text-align:center;margin-bottom:2px}
+.rf-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.rf-cell{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:5px 8px;
+}
+.rf-cell .r-label{font-size:7px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:2px}
+.rf-cell .r-value{
+  font-size:18px;font-weight:bold;line-height:1;
+  text-shadow:0 0 8px var(--amber-glow);font-variant-numeric:tabular-nums;
+}
+.rf-cell .r-sub{font-size:8px;color:var(--amber-dim);margin-top:2px;letter-spacing:1px}
+.rf-cell .r-state{font-size:11px;font-weight:bold;color:var(--amber);text-shadow:0 0 6px var(--amber-glow)}
+.rf-cell .r-state.ok{color:var(--green);text-shadow:0 0 6px rgba(0,204,68,0.4)}
+.rf-cell .r-state.off{color:#552200}
+.rf-spectrum{
+  flex:1;background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:5px 8px;display:flex;flex-direction:column;
+}
+.rf-spectrum .r-label{font-size:7px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:3px}
+.rf-bars{flex:1;display:flex;align-items:flex-end;gap:1px;padding:2px 0}
+.rf-bar{
+  flex:1;background:var(--amber-dim);min-height:1px;
+  transition:height 0.3s,background 0.3s;
+}
+.rf-bar.hot{background:var(--red);box-shadow:0 0 4px var(--red-glow)}
+
+/* ═══════════════════════════════════════════════ */
+/*  PAGE 5 — SCAN (wardrive)                       */
+/* ═══════════════════════════════════════════════ */
+.scan-layout{padding:6px 10px;height:100%;display:flex;flex-direction:column;gap:4px}
+.scan-title{font-size:10px;letter-spacing:3px;color:var(--amber-dim);text-align:center;margin-bottom:2px}
+.scan-summary{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;
+}
+.scan-stat{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:4px 6px;text-align:center;
+}
+.scan-stat .s-label{font-size:7px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:2px}
+.scan-stat .s-value{
+  font-size:18px;font-weight:bold;line-height:1;
+  text-shadow:0 0 8px var(--amber-glow);font-variant-numeric:tabular-nums;
+}
+.scan-stat .s-unit{font-size:8px;color:var(--amber-dim);margin-top:1px}
+.scan-list-wrap{
+  flex:1;background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:5px 8px;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.scan-list-label{font-size:7px;color:var(--amber-dim);letter-spacing:2px;margin-bottom:3px}
+.scan-list{flex:1;overflow:hidden;font-size:9px;line-height:1.45}
+.scan-row{
+  display:grid;grid-template-columns:1fr auto auto;gap:8px;
+  padding:1px 0;color:var(--amber);
+}
+.scan-row .ss-ssid{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  letter-spacing:1px;
+}
+.scan-row .ss-sig{color:var(--amber-dim);font-variant-numeric:tabular-nums;min-width:36px;text-align:right}
+.scan-row .ss-sec{color:var(--amber-dim);font-size:8px;min-width:30px;text-align:right}
+.scan-row.weak .ss-ssid{color:var(--amber-dim)}
+.scan-empty{color:var(--amber-dim);font-size:9px;letter-spacing:1px;text-align:center;padding:14px 0}
+
+/* ═══ HELP OVERLAY (no-touch keyboard reference) ═══ */
+.help-overlay{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:rgba(0,0,0,0.94);z-index:9996;
+  display:none;flex-direction:column;
+  align-items:center;justify-content:center;
+}
+.help-overlay.active{display:flex}
+.help-title{
+  font-size:16px;letter-spacing:8px;color:var(--amber);
+  text-shadow:0 0 12px var(--amber-glow);margin-bottom:4px;
+}
+.help-sub{
+  font-size:8px;letter-spacing:4px;color:var(--amber-dim);
+  margin-bottom:18px;
+}
+.help-grid{
+  display:grid;grid-template-columns:auto 1fr;gap:7px 18px;
+  font-size:11px;align-items:center;
+}
+.help-key{
+  color:var(--amber);font-weight:bold;letter-spacing:2px;
+  text-shadow:0 0 6px var(--amber-glow);text-align:right;
+  font-variant-numeric:tabular-nums;
+  min-width:62px;
+}
+.help-desc{color:var(--amber-dim);letter-spacing:1px}
+.help-hint{
+  position:absolute;bottom:22px;font-size:8px;
+  color:var(--amber-dim);letter-spacing:3px;
+}
+
+/* Auto-cycle indicator (in bottombar) */
+.auto-ind{
+  font-size:8px;letter-spacing:2px;color:var(--amber-dim);
+  margin-left:8px;padding:1px 5px;
+  border:1px solid var(--amber-dim);border-radius:2px;
+}
+.auto-ind.on{
+  color:#000;background:var(--amber);border-color:var(--amber);
+  box-shadow:0 0 6px var(--amber-glow);
+  animation:auto-blink 1.6s infinite;
+}
+@keyframes auto-blink{0%,100%{opacity:1}50%{opacity:0.55}}
+
+/* First-boot keyboard hint banner */
+.kbd-hint{
+  position:fixed;top:30px;left:50%;transform:translateX(-50%);
+  font-size:9px;letter-spacing:3px;color:var(--amber);
+  text-shadow:0 0 6px var(--amber-glow);
+  border:1px solid var(--amber-dim);padding:4px 12px;border-radius:2px;
+  background:rgba(0,0,0,0.7);z-index:9990;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.5s;
+}
+.kbd-hint.show{opacity:1}
 </style>
 </head>
 <body>
@@ -399,6 +525,25 @@ html,body{
 <div class="crt-lines"></div>
 <div class="crt-vignette"></div>
 <div class="red-alert-border" id="red-border"></div>
+
+<!-- Help overlay (toggle with H or ?) -->
+<div class="help-overlay" id="help-overlay">
+  <div class="help-title">CONTROLS</div>
+  <div class="help-sub">MZ1312 DRIFTER &mdash; KEYBOARD NAV</div>
+  <div class="help-grid">
+    <div class="help-key">&larr; &rarr;</div><div class="help-desc">PREV / NEXT PAGE</div>
+    <div class="help-key">1 .. 6</div><div class="help-desc">DRIVE / TYRES / ENGINE / STATUS / RF / SCAN</div>
+    <div class="help-key">SPACE</div><div class="help-desc">TOGGLE AUTO-CYCLE (8s)</div>
+    <div class="help-key">H or ?</div><div class="help-desc">SHOW / HIDE THIS HELP</div>
+    <div class="help-key">F</div><div class="help-desc">FULLSCREEN</div>
+    <div class="help-key">R</div><div class="help-desc">RELOAD HUD</div>
+    <div class="help-key">ESC</div><div class="help-desc">DISMISS HELP / OVERLAYS</div>
+  </div>
+  <div class="help-hint">PRESS ANY KEY TO DISMISS</div>
+</div>
+
+<!-- First-boot keyboard hint -->
+<div class="kbd-hint" id="kbd-hint">PRESS &nbsp;[H]&nbsp; FOR CONTROLS</div>
 
 <!-- Scaled HUD root -->
 <div id="hud-root">
@@ -600,6 +745,67 @@ html,body{
       </div>
     </div>
   </div>
+
+  <!-- PAGE 4: RF (RTL-SDR / TPMS / ADS-B) -->
+  <div class="page" id="page-4">
+    <div class="rf-layout">
+      <div class="rf-title">RF — RTL-SDR</div>
+      <div class="rf-grid">
+        <div class="rf-cell">
+          <div class="r-label">SDR DONGLE</div>
+          <div class="r-state" id="rv-sdr">CHECKING</div>
+          <div class="r-sub" id="rv-sdr-sub">&nbsp;</div>
+        </div>
+        <div class="rf-cell">
+          <div class="r-label">TPMS</div>
+          <div class="r-value" id="rv-tpms-count">0</div>
+          <div class="r-sub">SENSORS PAIRED</div>
+        </div>
+        <div class="rf-cell">
+          <div class="r-label">RTL-433</div>
+          <div class="r-state" id="rv-rtl433">--</div>
+          <div class="r-sub">315/433 MHz</div>
+        </div>
+        <div class="rf-cell">
+          <div class="r-label">ADS-B</div>
+          <div class="r-value" id="rv-adsb">--</div>
+          <div class="r-sub" id="rv-adsb-sub">AIRCRAFT 1090 MHz</div>
+        </div>
+      </div>
+      <div class="rf-spectrum">
+        <div class="r-label">SPECTRUM SCAN</div>
+        <div class="rf-bars" id="rf-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 5: SCAN (wardrive Wi-Fi + Bluetooth) -->
+  <div class="page" id="page-5">
+    <div class="scan-layout">
+      <div class="scan-title">SCAN — WARDRIVE</div>
+      <div class="scan-summary">
+        <div class="scan-stat">
+          <div class="s-label">WI-FI</div>
+          <div class="s-value" id="sv-wifi-count">0</div>
+          <div class="s-unit">SSIDS</div>
+        </div>
+        <div class="scan-stat">
+          <div class="s-label">BLUETOOTH</div>
+          <div class="s-value" id="sv-bt-count">0</div>
+          <div class="s-unit">DEVICES</div>
+        </div>
+        <div class="scan-stat">
+          <div class="s-label">SESSION</div>
+          <div class="s-value" id="sv-scan-dur">--</div>
+          <div class="s-unit">RUNTIME</div>
+        </div>
+      </div>
+      <div class="scan-list-wrap">
+        <div class="scan-list-label">TOP NETWORKS</div>
+        <div class="scan-list" id="scan-list"><div class="scan-empty">WAITING FOR DATA</div></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Bottom bar -->
@@ -608,6 +814,9 @@ html,body{
   <div class="page-dot" id="dot-1"></div>
   <div class="page-dot" id="dot-2"></div>
   <div class="page-dot" id="dot-3"></div>
+  <div class="page-dot" id="dot-4"></div>
+  <div class="page-dot" id="dot-5"></div>
+  <span class="auto-ind" id="auto-ind">AUTO</span>
   <span class="page-label" id="page-label">DRIVE</span>
 </div>
 
@@ -660,15 +869,20 @@ const S = {
         rl:{psi:null,temp:null},rr:{psi:null,temp:null}},
   dtcStored:[], dtcPending:[],
   cpuTemp:0, diskPct:0, diskFree:'', memPct:0, uptime:'',
+  // RF (page 4)
+  rfSdr:null, rfRtl433:null, rfDump1090:null, rfTpmsCount:0,
+  rfAdsb:0, rfSpectrum:[], rfSpectrumTs:0,
+  // Wardrive scan (page 5)
+  wifiCount:0, btCount:0, scanDuration:0, topNetworks:[],
   connected:false, lastUpdate:0
 };
 
 // Display state (smoothed)
 let dRpm = 0, dSpeed = 0;
 let lastDrawnRpm = -1;  // dirty flag for tach canvas
-const PAGE_NAMES = ['DRIVE','TYRES','ENGINE','STATUS'];
+const PAGE_NAMES = ['DRIVE','TYRES','ENGINE','STATUS','RF','SCAN'];
 let currentPage = 0;
-const PAGES = 4;
+const PAGES = 6;
 
 // ═══════════════════════════════════════════════════
 //  TACHOMETER (canvas)
@@ -936,6 +1150,112 @@ function updateStatusUI() {
   setEl('sv-up', S.uptime || '--');
 }
 
+function updateRfUI() {
+  // SDR dongle state
+  const sdrEl = document.getElementById('rv-sdr');
+  const sdrSubEl = document.getElementById('rv-sdr-sub');
+  if (S.rfSdr === true) {
+    sdrEl.textContent = 'ONLINE';
+    sdrEl.className = 'r-state ok';
+    sdrSubEl.textContent = 'RTL2832U DETECTED';
+  } else if (S.rfSdr === false) {
+    sdrEl.textContent = 'OFFLINE';
+    sdrEl.className = 'r-state off';
+    sdrSubEl.textContent = 'PLUG IN DONGLE';
+  } else {
+    sdrEl.textContent = 'WAIT';
+    sdrEl.className = 'r-state';
+    sdrSubEl.textContent = 'AWAITING STATUS';
+  }
+  // TPMS sensor count
+  setEl('rv-tpms-count', String(S.rfTpmsCount || 0));
+  // RTL-433 daemon
+  const rtlEl = document.getElementById('rv-rtl433');
+  if (S.rfRtl433 === true) { rtlEl.textContent = 'OK'; rtlEl.className = 'r-state ok'; }
+  else if (S.rfRtl433 === false) { rtlEl.textContent = 'OFF'; rtlEl.className = 'r-state off'; }
+  else { rtlEl.textContent = '--'; rtlEl.className = 'r-state'; }
+  // ADS-B
+  const adsbEl = document.getElementById('rv-adsb');
+  const adsbSubEl = document.getElementById('rv-adsb-sub');
+  if (S.rfDump1090 === false) {
+    adsbEl.textContent = '--';
+    adsbSubEl.textContent = 'DUMP1090 NOT INSTALLED';
+  } else {
+    adsbEl.textContent = String(S.rfAdsb || 0);
+    adsbSubEl.textContent = 'AIRCRAFT 1090 MHz';
+  }
+  // Spectrum bars
+  const bars = document.getElementById('rf-bars');
+  const targetCount = 60;
+  // Reuse children if same count, else rebuild
+  if (bars.childElementCount !== targetCount) {
+    bars.textContent = '';
+    for (let i = 0; i < targetCount; i++) {
+      const b = document.createElement('div');
+      b.className = 'rf-bar';
+      bars.appendChild(b);
+    }
+  }
+  const spec = S.rfSpectrum || [];
+  for (let i = 0; i < targetCount; i++) {
+    const child = bars.children[i];
+    if (!child) continue;
+    const sample = spec[i];
+    let pct = 2;
+    let hot = false;
+    if (sample) {
+      // Accept multiple shapes: number, {dbm}, {power_dbm}, {power}
+      const dbm = (typeof sample === 'number') ? sample
+        : (sample.dbm ?? sample.power_dbm ?? sample.power ?? -90);
+      // Map -100..-30 dBm → 2..100%
+      pct = Math.max(2, Math.min(100, ((dbm + 100) / 70) * 100));
+      hot = dbm > -55;
+    }
+    child.style.height = pct + '%';
+    child.classList.toggle('hot', hot);
+  }
+}
+
+function updateScanUI() {
+  setEl('sv-wifi-count', String(S.wifiCount || 0));
+  setEl('sv-bt-count', String(S.btCount || 0));
+  // Duration as Hh Mm
+  if (S.scanDuration > 0) {
+    const h = Math.floor(S.scanDuration / 3600);
+    const m = Math.floor((S.scanDuration % 3600) / 60);
+    setEl('sv-scan-dur', h > 0 ? h + 'h' + m + 'm' : m + 'm');
+  } else {
+    setEl('sv-scan-dur', '--');
+  }
+  // Top networks list — use textContent to prevent XSS from SSIDs
+  const list = document.getElementById('scan-list');
+  list.textContent = '';
+  if (!S.topNetworks || S.topNetworks.length === 0) {
+    const e = document.createElement('div');
+    e.className = 'scan-empty';
+    e.textContent = S.connected ? 'NO NETWORKS YET' : 'WAITING FOR DATA';
+    list.appendChild(e);
+    return;
+  }
+  S.topNetworks.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'scan-row' + ((n.signal_pct || 0) < 30 ? ' weak' : '');
+    const ssid = document.createElement('span');
+    ssid.className = 'ss-ssid';
+    ssid.textContent = n.ssid || '<hidden>';
+    const sig = document.createElement('span');
+    sig.className = 'ss-sig';
+    sig.textContent = (n.signal_dbm != null) ? (n.signal_dbm + 'dBm') : ((n.signal_pct || 0) + '%');
+    const sec = document.createElement('span');
+    sec.className = 'ss-sec';
+    sec.textContent = (n.security || '').replace('WPA1 WPA2', 'WPA').replace(/\s+/g, '/');
+    row.appendChild(ssid);
+    row.appendChild(sig);
+    row.appendChild(sec);
+    list.appendChild(row);
+  });
+}
+
 function updateAlertIndicator() {
   const ind = document.getElementById('alert-ind');
   const border = document.getElementById('red-border');
@@ -998,6 +1318,34 @@ function handleMsg(msg) {
   else if (topic.endsWith('/diag/dtc') || topic.endsWith('/dtc')) {
     S.dtcStored = data.stored || [];
     S.dtcPending = data.pending || [];
+  }
+  else if (topic.endsWith('/rf/status')) {
+    if (data.sdr_detected !== undefined) S.rfSdr = !!data.sdr_detected;
+    if (data.rtl433_installed !== undefined) S.rfRtl433 = !!data.rtl433_installed;
+    if (data.dump1090_installed !== undefined) S.rfDump1090 = !!data.dump1090_installed;
+    if (data.tpms_sensors !== undefined) S.rfTpmsCount = data.tpms_sensors;
+  }
+  else if (topic.endsWith('/rf/spectrum')) {
+    // Array of {freq_mhz, power_dbm} or similar — trim to 60 bars max
+    const samples = Array.isArray(data.scan) ? data.scan : (Array.isArray(data) ? data : []);
+    S.rfSpectrum = samples.slice(0, 60);
+    S.rfSpectrumTs = Date.now();
+  }
+  else if (topic.endsWith('/rf/adsb')) {
+    if (Array.isArray(data.aircraft)) S.rfAdsb = data.aircraft.length;
+    else if (data.count !== undefined) S.rfAdsb = data.count;
+  }
+  else if (topic.endsWith('/wardrive/snapshot')) {
+    if (data.unique_ssids !== undefined) S.wifiCount = data.unique_ssids;
+    if (data.unique_bt !== undefined) S.btCount = data.unique_bt;
+    if (data.duration_s !== undefined) S.scanDuration = data.duration_s;
+    if (Array.isArray(data.top_networks)) S.topNetworks = data.top_networks.slice(0, 6);
+  }
+  else if (topic.endsWith('/wardrive/wifi') && data.unique_count !== undefined) {
+    S.wifiCount = data.unique_count;
+  }
+  else if (topic.endsWith('/wardrive/bt') && data.unique_count !== undefined) {
+    S.btCount = data.unique_count;
   }
   else if (topic.endsWith('/system/watchdog')) {
     const sys = data.system || {};
@@ -1091,10 +1439,140 @@ document.addEventListener('touchend', (e) => {
   }
 }, {passive: true});
 
-// Keyboard nav (for testing)
+// ═══════════════════════════════════════════════════
+//  AUDIO BRIDGE — plays TTS WAV bytes from drifter-voice
+//  Source: drifter-dashboard fanouts ws://host:8082 (binary)
+// ═══════════════════════════════════════════════════
+const AUDIO_WS_URL = 'ws://' + location.hostname + ':8082';
+let audioCtx = null;
+let audioWs = null;
+let audioEnabled = false;
+
+function connectAudio() {
+  if (!audioCtx) return;
+  try { audioWs = new WebSocket(AUDIO_WS_URL); }
+  catch (e) { setTimeout(connectAudio, 5000); return; }
+  audioWs.binaryType = 'arraybuffer';
+  audioWs.onmessage = (e) => {
+    if (!audioEnabled || !audioCtx) return;
+    audioCtx.decodeAudioData(e.data.slice(0)).then(buf => {
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    }).catch(() => {});
+  };
+  audioWs.onclose = () => setTimeout(connectAudio, 5000);
+  audioWs.onerror = () => { try { audioWs.close(); } catch (e) {} };
+}
+
+function enableAudio() {
+  if (audioEnabled) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    audioEnabled = true;
+    connectAudio();
+  } catch (e) {}
+}
+
+// ═══════════════════════════════════════════════════
+//  AUTO-CYCLE NAVIGATION (no-touch fallback)
+// ═══════════════════════════════════════════════════
+let autoCycle = false;
+let autoCycleTimer = null;
+const AUTO_CYCLE_MS = 8000;
+
+function setAutoCycle(on) {
+  autoCycle = !!on;
+  const ind = document.getElementById('auto-ind');
+  if (ind) ind.classList.toggle('on', autoCycle);
+  if (autoCycleTimer) { clearInterval(autoCycleTimer); autoCycleTimer = null; }
+  if (autoCycle) {
+    autoCycleTimer = setInterval(() => {
+      goToPage((currentPage + 1) % PAGES);
+    }, AUTO_CYCLE_MS);
+  }
+}
+
+function toggleHelp(force) {
+  const ol = document.getElementById('help-overlay');
+  if (!ol) return;
+  if (typeof force === 'boolean') ol.classList.toggle('active', force);
+  else ol.classList.toggle('active');
+}
+
+function dismissHwOverlay() {
+  if (hwDismissed) return;
+  hwDismissed = true;
+  const ol = document.getElementById('hw-overlay');
+  if (ol) { ol.classList.add('done'); setTimeout(() => { ol.style.display = 'none'; }, 600); }
+  if (hwTimer) { clearInterval(hwTimer); hwTimer = null; }
+}
+
+// ═══════════════════════════════════════════════════
+//  KEYBOARD NAVIGATION (primary input — no touchscreen)
+// ═══════════════════════════════════════════════════
+let firstInput = false;
+function ensureFirstInput() {
+  if (firstInput) return;
+  firstInput = true;
+  // Request fullscreen + wake-lock on first user input (any key or touch)
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').catch(() => {});
+  }
+  // Unlock the audio bridge — browser policy requires user gesture before
+  // AudioContext can play. First keypress is that gesture.
+  enableAudio();
+  // Any input dismisses the hardware overlay early
+  dismissHwOverlay();
+}
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') goToPage(currentPage - 1);
-  if (e.key === 'ArrowRight') goToPage(currentPage + 1);
+  ensureFirstInput();
+  const k = e.key;
+
+  // If help overlay is open, any key closes it (return after dismiss)
+  const helpEl = document.getElementById('help-overlay');
+  if (helpEl && helpEl.classList.contains('active')) {
+    toggleHelp(false);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ArrowLeft' || k === 'PageUp') {
+    setAutoCycle(false);  // any manual nav cancels auto-cycle
+    goToPage(currentPage - 1);
+    e.preventDefault();
+  } else if (k === 'ArrowRight' || k === 'PageDown' || k === 'Tab') {
+    setAutoCycle(false);
+    goToPage(currentPage + 1);
+    e.preventDefault();
+  } else if (k === '1') { setAutoCycle(false); goToPage(0); }
+  else if (k === '2') { setAutoCycle(false); goToPage(1); }
+  else if (k === '3') { setAutoCycle(false); goToPage(2); }
+  else if (k === '4') { setAutoCycle(false); goToPage(3); }
+  else if (k === '5') { setAutoCycle(false); goToPage(4); }
+  else if (k === '6') { setAutoCycle(false); goToPage(5); }
+  else if (k === ' ' || k === 'Spacebar') {
+    setAutoCycle(!autoCycle);
+    e.preventDefault();
+  }
+  else if (k === 'h' || k === 'H' || k === '?') { toggleHelp(true); e.preventDefault(); }
+  else if (k === 'r' || k === 'R') { location.reload(); }
+  else if (k === 'f' || k === 'F') {
+    if (document.fullscreenElement) {
+      document.exitFullscreen && document.exitFullscreen().catch(() => {});
+    } else if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }
+  else if (k === 'Escape') {
+    toggleHelp(false);
+  }
 });
 
 // ═══════════════════════════════════════════════════
@@ -1117,6 +1595,8 @@ function render() {
   else if (currentPage === 1) updateTyresUI();
   else if (currentPage === 2) updateEngineUI();
   else if (currentPage === 3) updateStatusUI();
+  else if (currentPage === 4) updateRfUI();
+  else if (currentPage === 5) updateScanUI();
 
   requestAnimationFrame(render);
 }
@@ -1176,18 +1656,21 @@ function boot() {
     }, 500);
   }, 1800);
 
-  // Prevent screen sleep
+  // Prevent screen sleep (best-effort; some browsers require a user gesture)
   if ('wakeLock' in navigator) {
     navigator.wakeLock.request('screen').catch(() => {});
   }
 
-  // Request fullscreen on first touch
-  document.addEventListener('touchstart', function fs() {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    }
-    document.removeEventListener('touchstart', fs);
-  }, {once: true});
+  // Touchstart fallback — still useful if a touch device is ever wired in
+  document.addEventListener('touchstart', () => ensureFirstInput(), {once: true, passive: true});
+
+  // Show keyboard hint banner shortly after boot, fade after 5s
+  setTimeout(() => {
+    const hint = document.getElementById('kbd-hint');
+    if (!hint) return;
+    hint.classList.add('show');
+    setTimeout(() => hint.classList.remove('show'), 5000);
+  }, 2200);
 
   // Start
   connect();
