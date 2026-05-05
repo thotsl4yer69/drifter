@@ -63,7 +63,7 @@ PIPER_BIN = _resolve_piper_bin()
 
 def _pub_voice_status(state: str):
     """Publish TTS speaking state to HUD. Safe to call with _mqtt_client=None."""
-    if _mqtt_client and 'voice_status' in TOPICS:
+    if _mqtt_client:
         try:
             _mqtt_client.publish(TOPICS['voice_status'], json.dumps({'state': state, 'ts': time.time()}))
         except Exception:

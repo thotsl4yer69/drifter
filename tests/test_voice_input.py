@@ -91,9 +91,7 @@ class TestRouteTranscript:
     def test_nav_intent_publishes_to_hud_navigate(self, reset_mqtt):
         from config import TOPICS
         voice_input.route_transcript("show engine")
-        calls = [str(c) for c in reset_mqtt.publish.call_args_list]
-        topics_called = [reset_mqtt.publish.call_args_list[i][0][0]
-                         for i in range(reset_mqtt.publish.call_count)]
+        topics_called = [c[0][0] for c in reset_mqtt.publish.call_args_list]
         assert TOPICS['hud_navigate'] in topics_called
 
     def test_nav_intent_payload_has_page(self, reset_mqtt):
@@ -109,8 +107,7 @@ class TestRouteTranscript:
     def test_query_intent_publishes_to_llm_query(self, reset_mqtt):
         from config import TOPICS
         voice_input.route_transcript("why is the coolant temp so high")
-        topics_called = [reset_mqtt.publish.call_args_list[i][0][0]
-                         for i in range(reset_mqtt.publish.call_count)]
+        topics_called = [c[0][0] for c in reset_mqtt.publish.call_args_list]
         assert TOPICS['llm_query'] in topics_called
 
     def test_query_payload_has_query_text(self, reset_mqtt):
@@ -135,8 +132,7 @@ class TestRouteTranscript:
     def test_next_page_nav(self, reset_mqtt):
         from config import TOPICS
         voice_input.route_transcript("next")
-        topics_called = [reset_mqtt.publish.call_args_list[i][0][0]
-                         for i in range(reset_mqtt.publish.call_count)]
+        topics_called = [c[0][0] for c in reset_mqtt.publish.call_args_list]
         assert TOPICS['hud_navigate'] in topics_called
         for call in reset_mqtt.publish.call_args_list:
             if call[0][0] == TOPICS['hud_navigate']:
