@@ -508,17 +508,53 @@ html,body{
 }
 .kbd-hint.show{opacity:1}
 
-/* ═══ MIC / VOICE STATUS dot (bottom bar) ═══ */
-.mic-dot{
-  width:8px;height:8px;border-radius:50%;
-  background:#333;display:inline-block;
-  margin-left:8px;vertical-align:middle;
-  transition:background 0.3s,box-shadow 0.3s;
+/* ═══ MIC THOT — animated voice mascot (bottom bar) ═══ */
+.mic-thot{
+  display:inline-block;width:16px;height:20px;
+  vertical-align:middle;margin-left:8px;
+  cursor:default;transition:filter 0.3s;
 }
-.mic-dot.listening{background:var(--green);box-shadow:0 0 6px rgba(0,204,68,0.8);animation:mic-pulse 0.8s infinite}
-.mic-dot.processing{background:var(--amber);box-shadow:0 0 6px var(--amber-glow);animation:mic-pulse 1.2s infinite}
-.mic-dot.speaking{background:#00aaff;box-shadow:0 0 6px rgba(0,170,255,0.6);animation:mic-pulse 0.6s infinite}
-@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.thot-face{width:100%;height:100%;overflow:visible}
+/* structural */
+.thot-head{fill:#1a1a1a;stroke:#444;stroke-width:0.4;transition:stroke 0.3s}
+.thot-wire{stroke:#555;stroke-width:0.5}
+.thot-bead{fill:#555;transition:fill 0.3s}
+.thot-eye{fill:#777;transition:fill 0.3s}
+.thot-mouth{stroke:#777;stroke-width:0.6;stroke-linecap:round;fill:none}
+.thot-squint{stroke:#777;stroke-width:0.6;stroke-linecap:round;fill:none}
+.thot-smirk{stroke:#777;stroke-width:0.5;stroke-linecap:round;fill:none}
+.thot-mouth-o{fill:#777;transition:fill 0.3s}
+.thot-mouth-open{fill:#888;transform-origin:5px 9px;transition:fill 0.3s}
+/* expression layer visibility */
+.expr-listen,.expr-proc,.expr-speak{display:none}
+.expr-idle{display:block}
+/* ── listening ── */
+.mic-thot.listening .expr-idle{display:none}
+.mic-thot.listening .expr-listen{display:block}
+.mic-thot.listening .thot-head{stroke:var(--green)}
+.mic-thot.listening .thot-bead{fill:var(--green);animation:thot-pulse 0.8s infinite}
+.mic-thot.listening .thot-eye-l{fill:var(--green)}
+.mic-thot.listening .thot-mouth-o{fill:#aaa}
+.mic-thot.listening{filter:drop-shadow(0 0 3px rgba(0,204,68,0.5))}
+/* ── processing ── */
+.mic-thot.processing .expr-idle{display:none}
+.mic-thot.processing .expr-proc{display:block}
+.mic-thot.processing .thot-head{stroke:var(--amber)}
+.mic-thot.processing .thot-bead{fill:var(--amber);animation:thot-pulse 0.6s infinite alternate}
+.mic-thot.processing .thot-squint{stroke:var(--amber);animation:thot-blink 1.4s ease-in-out infinite}
+.mic-thot.processing{filter:drop-shadow(0 0 3px rgba(255,187,0,0.5))}
+/* ── speaking ── */
+.mic-thot.speaking .expr-idle{display:none}
+.mic-thot.speaking .expr-speak{display:block}
+.mic-thot.speaking .thot-head{stroke:#00aaff}
+.mic-thot.speaking .thot-bead{fill:#00aaff;animation:thot-pulse 0.5s infinite}
+.mic-thot.speaking .thot-eye-s{fill:#00aaff}
+.mic-thot.speaking .thot-mouth-open{animation:thot-talk 0.35s ease-in-out infinite}
+.mic-thot.speaking{filter:drop-shadow(0 0 3px rgba(0,170,255,0.5))}
+/* animations */
+@keyframes thot-pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+@keyframes thot-blink{0%,75%,100%{opacity:1}40%,60%{opacity:0.05}}
+@keyframes thot-talk{0%,100%{transform:scaleY(0.35)}50%{transform:scaleY(1)}}
 
 /* ═══ AI RESPONSE overlay (bottom, auto-dismiss 8s) ═══ */
 .ai-overlay{
@@ -848,7 +884,33 @@ html,body{
   <div class="page-dot" id="dot-4"></div>
   <div class="page-dot" id="dot-5"></div>
   <span class="auto-ind" id="auto-ind">AUTO</span>
-  <span class="mic-dot" id="mic-dot" title="voice"></span>
+  <span class="mic-thot" id="mic-thot" title="voice">
+    <svg class="thot-face" viewBox="0 0 10 14" xmlns="http://www.w3.org/2000/svg">
+      <line class="thot-wire" x1="5" y1="1.7" x2="5" y2="3.5"/>
+      <circle class="thot-bead" cx="5" cy="0.9" r="0.9"/>
+      <rect class="thot-head" x="1" y="3.5" width="8" height="9.5" rx="1.5"/>
+      <g class="expr-idle">
+        <circle class="thot-eye" cx="3.5" cy="7" r="0.8"/>
+        <circle class="thot-eye" cx="6.5" cy="7" r="0.8"/>
+        <path class="thot-mouth" d="M3.5 9.8 Q5 10.8 6.5 9.8"/>
+      </g>
+      <g class="expr-listen">
+        <circle class="thot-eye thot-eye-l" cx="3.5" cy="7" r="0.8"/>
+        <circle class="thot-eye" cx="6.5" cy="7" r="0.8"/>
+        <circle class="thot-mouth-o" cx="5" cy="10" r="0.85"/>
+      </g>
+      <g class="expr-proc">
+        <path class="thot-squint" d="M2.9 6.6 L4.1 7.4"/>
+        <path class="thot-squint" d="M5.9 6.6 L7.1 7.4"/>
+        <path class="thot-smirk" d="M3.5 9.8 Q5 9.2 6.5 9.8"/>
+      </g>
+      <g class="expr-speak">
+        <circle class="thot-eye" cx="3.5" cy="7" r="0.8"/>
+        <circle class="thot-eye thot-eye-s" cx="6.5" cy="7" r="0.8"/>
+        <ellipse class="thot-mouth-open" cx="5" cy="10" rx="1.2" ry="0.65"/>
+      </g>
+    </svg>
+  </span>
   <span class="page-label" id="page-label">DRIVE</span>
 </div>
 
@@ -1386,8 +1448,8 @@ function handleMsg(msg) {
     else if (typeof p === 'number') goToPage(p);
   }
   else if (topic.endsWith('/voice/status')) {
-    const dot = document.getElementById('mic-dot');
-    if (dot) dot.className = 'mic-dot ' + (data.state || 'idle');
+    const dot = document.getElementById('mic-thot');
+    if (dot) dot.className = 'mic-thot ' + (data.state || 'idle');
   }
   else if (topic.endsWith('/llm/response')) {
     const resp = (data.response || '').trim();
