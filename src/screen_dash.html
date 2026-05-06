@@ -284,17 +284,22 @@ html,body{
 }
 .dtc-code.pending{background:#1a1500;color:var(--amber)}
 .dtc-none{font-size:10px;color:var(--green-dim)}
-.sys-grid{
-  display:grid;grid-template-columns:1fr 1fr;gap:4px;
-  margin-top:6px;
-}
-.sys-cell{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:3px 8px;font-size:10px;
-  background:var(--panel);border:1px solid var(--border);border-radius:3px;
-}
-.sys-cell .s-label{color:var(--amber-dim);letter-spacing:1px}
-.sys-cell .s-value{color:var(--amber);font-weight:bold;font-variant-numeric:tabular-nums}
+/* ═══ SERVICE CHIP GRID (STATUS page) ═══ */
+.svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;flex:1;overflow:hidden}
+.svc-chip{display:flex;align-items:center;gap:4px;padding:3px 5px;border-radius:3px;background:#111;border:1px solid #1e1e1e;font-size:8.5px;color:#888;letter-spacing:0.3px}
+.svc-dot{width:5px;height:5px;border-radius:50%;background:#555;flex-shrink:0}
+.svc-name{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.svc-chip.ok{color:#aaa}
+.svc-chip.ok .svc-dot{background:#4caf50;box-shadow:0 0 4px rgba(76,175,80,0.5)}
+.svc-chip.fail{color:#ff8888;border-color:#3a1111}
+.svc-chip.fail .svc-dot{background:#ff4444;box-shadow:0 0 4px rgba(255,68,68,0.5)}
+.svc-chip.warn{color:#ffdd88;border-color:#2a2000}
+.svc-chip.warn .svc-dot{background:#ffbb00;box-shadow:0 0 4px rgba(255,187,0,0.4);animation:svc-pulse 1.2s infinite}
+@keyframes svc-pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+/* ═══ SYS FOOTER STRIP (STATUS page) ═══ */
+.sys-footer{display:flex;justify-content:space-around;padding:4px;border-top:1px solid #1a1a1a;flex-shrink:0;font-size:8.5px}
+.sf-label{color:#444;letter-spacing:1px;margin-right:3px}
+.sf-val{color:#777}
 
 /* ═══ BOOT SEQUENCE ═══ */
 .boot-overlay{
@@ -804,11 +809,30 @@ html,body{
         <div class="dtc-label">DIAGNOSTIC TROUBLE CODES</div>
         <div id="dtc-list"><span class="dtc-none">NO DATA</span></div>
       </div>
-      <div class="sys-grid">
-        <div class="sys-cell"><span class="s-label">CPU</span><span class="s-value" id="sv-cpu">--</span></div>
-        <div class="sys-cell"><span class="s-label">MEM</span><span class="s-value" id="sv-mem">--</span></div>
-        <div class="sys-cell"><span class="s-label">DISK</span><span class="s-value" id="sv-disk">--</span></div>
-        <div class="sys-cell"><span class="s-label">UP</span><span class="s-value" id="sv-up">--</span></div>
+      <div class="svc-grid" id="svc-grid">
+        <div class="svc-chip" id="svc-canbridge"><span class="svc-dot"></span><span class="svc-name">canbridge</span></div>
+        <div class="svc-chip" id="svc-alerts"><span class="svc-dot"></span><span class="svc-name">alerts</span></div>
+        <div class="svc-chip" id="svc-logger"><span class="svc-dot"></span><span class="svc-name">logger</span></div>
+        <div class="svc-chip" id="svc-anomaly"><span class="svc-dot"></span><span class="svc-name">anomaly</span></div>
+        <div class="svc-chip" id="svc-analyst"><span class="svc-dot"></span><span class="svc-name">analyst</span></div>
+        <div class="svc-chip" id="svc-voice"><span class="svc-dot"></span><span class="svc-name">voice</span></div>
+        <div class="svc-chip" id="svc-vivi"><span class="svc-dot"></span><span class="svc-name">vivi</span></div>
+        <div class="svc-chip" id="svc-hotspot"><span class="svc-dot"></span><span class="svc-name">hotspot</span></div>
+        <div class="svc-chip" id="svc-homesync"><span class="svc-dot"></span><span class="svc-name">homesync</span></div>
+        <div class="svc-chip" id="svc-watchdog"><span class="svc-dot"></span><span class="svc-name">watchdog</span></div>
+        <div class="svc-chip" id="svc-realdash"><span class="svc-dot"></span><span class="svc-name">realdash</span></div>
+        <div class="svc-chip" id="svc-rf"><span class="svc-dot"></span><span class="svc-name">rf</span></div>
+        <div class="svc-chip" id="svc-wardrive"><span class="svc-dot"></span><span class="svc-name">wardrive</span></div>
+        <div class="svc-chip" id="svc-dashboard"><span class="svc-dot"></span><span class="svc-name">dashboard</span></div>
+        <div class="svc-chip" id="svc-fbmirror"><span class="svc-dot"></span><span class="svc-name">fbmirror</span></div>
+        <div class="svc-chip" id="svc-voicein"><span class="svc-dot"></span><span class="svc-name">voicein</span></div>
+        <div class="svc-chip" id="svc-flipper"><span class="svc-dot"></span><span class="svc-name">flipper</span></div>
+      </div>
+      <div class="sys-footer">
+        <span><span class="sf-label">CPU</span><span class="sf-val" id="sf-cpu">--</span></span>
+        <span><span class="sf-label">MEM</span><span class="sf-val" id="sf-mem">--</span></span>
+        <span><span class="sf-label">DISK</span><span class="sf-val" id="sf-disk">--</span></span>
+        <span><span class="sf-label">UP</span><span class="sf-val" id="sf-up">--</span></span>
       </div>
     </div>
   </div>
@@ -968,7 +992,8 @@ const S = {
   rfAdsb:0, rfSpectrum:[], rfSpectrumTs:0,
   // Wardrive scan (page 5)
   wifiCount:0, btCount:0, scanDuration:0, topNetworks:[],
-  connected:false, lastUpdate:0
+  connected:false, lastUpdate:0,
+  svcStates:{}
 };
 
 // Display state (smoothed)
@@ -1237,11 +1262,21 @@ function updateStatusUI() {
     });
   }
 
-  // System
-  setEl('sv-cpu', S.cpuTemp > 0 ? Math.round(S.cpuTemp) + '\u00B0C' : '--');
-  setEl('sv-mem', S.memPct > 0 ? Math.round(S.memPct) + '%' : '--');
-  setEl('sv-disk', S.diskPct > 0 ? Math.round(S.diskPct) + '%' : '--');
-  setEl('sv-up', S.uptime || '--');
+  // Service chips
+  ['canbridge','alerts','logger','anomaly','analyst','voice',
+   'vivi','hotspot','homesync','watchdog','realdash','rf',
+   'wardrive','dashboard','fbmirror','voicein','flipper'].forEach(name => {
+    const el = document.getElementById('svc-' + name);
+    if (!el) return;
+    const state = S.svcStates['drifter-' + name];
+    el.className = 'svc-chip' +
+      (state === 'active' ? ' ok' : state === 'failed' ? ' fail' : state ? ' warn' : '');
+  });
+  // Sys footer
+  setEl('sf-cpu', S.cpuTemp > 0 ? Math.round(S.cpuTemp) + '\u00B0C' : '--');
+  setEl('sf-mem', S.memPct > 0 ? Math.round(S.memPct) + '%' : '--');
+  setEl('sf-disk', S.diskPct > 0 ? Math.round(S.diskPct) + '%' : '--');
+  setEl('sf-up', S.uptime || '--');
 }
 
 function updateRfUI() {
@@ -1466,6 +1501,7 @@ function handleMsg(msg) {
   }
   else if (topic.endsWith('/system/watchdog')) {
     const sys = data.system || {};
+    if (data.services && typeof data.services === 'object') S.svcStates = data.services;
     if (sys.cpu_temp) S.cpuTemp = sys.cpu_temp;
     if (sys.disk_percent) S.diskPct = sys.disk_percent;
     if (sys.disk_free_gb) S.diskFree = sys.disk_free_gb;
