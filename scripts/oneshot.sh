@@ -138,9 +138,9 @@ stage_ok 30
 stage_start 40 "systemctl enable + start"
 SERVICES=(
     drifter-canbridge drifter-alerts drifter-logger drifter-anomaly
-    drifter-analyst drifter-voice drifter-hotspot drifter-homesync
+    drifter-analyst drifter-voice drifter-vivi drifter-hotspot drifter-homesync
     drifter-watchdog drifter-realdash drifter-rf drifter-wardrive
-    drifter-dashboard drifter-fbmirror drifter-voicein
+    drifter-dashboard drifter-fbmirror drifter-voicein drifter-flipper
 )
 systemctl daemon-reload
 for svc in "${SERVICES[@]}"; do

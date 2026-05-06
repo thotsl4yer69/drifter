@@ -320,41 +320,95 @@ drifter/
 ├── README.md               # This file
 ├── LICENSE                  # MIT
 ├── src/
-│   ├── config.py           # Central configuration (thresholds, paths, topics)
-│   ├── can_bridge.py       # CAN → MQTT bridge (Mode 01 + DTC reads)
-│   ├── alert_engine.py     # Diagnostic rules (23 rules)
-│   ├── logger.py           # Telemetry logger (drive sessions, gzip compression)
-│   ├── voice_alerts.py     # TTS voice alerts
-│   ├── home_sync.py        # Home network sync (MQTT bridge + rsync)
-│   ├── status.py           # CLI status / health check dashboard
-│   ├── calibrate.py        # Auto-calibration tool (learns engine baselines)
-│   ├── watchdog.py         # Service health monitor + auto-restart
-│   ├── realdash_bridge.py  # MQTT → RealDash TCP CAN frame bridge
-│   └── rf_monitor.py       # RTL-SDR: TPMS, spectrum scan, emergency bands
-├── services/
+│   ├── config.py                # Central configuration (thresholds, paths, topics)
+│   ├── can_bridge.py            # CAN → MQTT bridge (Mode 01 + DTC reads)
+│   ├── alert_engine.py          # Diagnostic rules (23 rules)
+│   ├── logger.py                # Telemetry logger (drive sessions, gzip compression)
+│   ├── voice_alerts.py          # TTS voice alerts
+│   ├── voice_input.py           # Wake-word / PTT STT → intent routing
+│   ├── vivi.py                  # Vivi voice assistant (STT → Ollama → TTS)
+│   ├── home_sync.py             # Home network sync (MQTT bridge + rsync)
+│   ├── status.py                # CLI status / health check dashboard
+│   ├── calibrate.py             # Auto-calibration tool (learns engine baselines)
+│   ├── watchdog.py              # Service health monitor + auto-restart
+│   ├── realdash_bridge.py       # MQTT → RealDash TCP CAN frame bridge
+│   ├── rf_monitor.py            # RTL-SDR: TPMS, spectrum scan, emergency bands
+│   ├── wardrive.py              # Wi-Fi + Bluetooth passive scan logger
+│   ├── flipper_bridge.py        # Flipper Zero serial bridge → MQTT
+│   ├── anomaly_monitor.py       # Statistical anomaly detection
+│   ├── session_analyst.py       # Post-drive session analysis + trend reports
+│   ├── db.py                    # SQLite session + telemetry store
+│   ├── llm_mechanic.py          # Ollama LLM mechanic with RAG + tool calling
+│   ├── llm_client.py            # LLM provider abstraction (Ollama / Groq / Anthropic)
+│   ├── tool_executor.py         # Risk-gated tool execution for LLM mechanic
+│   ├── mechanic.py              # X-Type offline knowledge base + RAG search
+│   ├── field_ops_kb.py          # Field operations knowledge base
+│   ├── diagnose.py              # Fleet-contract diagnostic probe (drifter diagnose)
+│   ├── web_dashboard.py         # HTTP dashboard server (port 8080) + /healthz
+│   ├── web_dashboard_handlers.py# Route handlers + healthz payload builder
+│   ├── web_dashboard_html.py    # HUD HTML/JS generator
+│   ├── web_dashboard_state.py   # Shared dashboard state (telemetry, alerts)
+│   ├── web_dashboard_audio.py   # Audio WebSocket bridge (port 8082)
+│   ├── web_dashboard_hardware.py# Hardware info helpers
+│   ├── screen_dash.html         # Standalone HUD for Pi display
+│   └── fbmirror.c               # Framebuffer mirror for SPI LCD
+├── services/                    # 17 active + 1 disabled systemd units
 │   ├── drifter-canbridge.service
 │   ├── drifter-alerts.service
 │   ├── drifter-logger.service
 │   ├── drifter-voice.service
+│   ├── drifter-vivi.service
+│   ├── drifter-voicein.service
 │   ├── drifter-hotspot.service
 │   ├── drifter-homesync.service
 │   ├── drifter-watchdog.service
 │   ├── drifter-realdash.service
-│   └── drifter-rf.service
+│   ├── drifter-rf.service
+│   ├── drifter-wardrive.service
+│   ├── drifter-flipper.service
+│   ├── drifter-anomaly.service
+│   ├── drifter-analyst.service
+│   ├── drifter-dashboard.service
+│   ├── drifter-fbmirror.service
+│   └── drifter-llm.service      # disabled — superseded by drifter-analyst
 ├── config/
-│   ├── nanomq.conf         # MQTT broker config
-│   ├── setup-can.sh        # CAN interface auto-setup
-│   ├── 80-can.rules        # udev rules for USB CAN
-│   └── boot-config.txt     # Lines to add to /boot/firmware/config.txt
+│   ├── nanomq.conf              # MQTT broker config
+│   ├── vivi.yaml                # Vivi voice assistant config
+│   ├── setup-can.sh             # CAN interface auto-setup
+│   ├── 80-can.rules             # udev rules for USB CAN
+│   └── boot-config.txt          # Lines to add to /boot/firmware/config.txt
 ├── realdash/
-│   └── drifter_channels.xml # RealDash channel map
+│   └── drifter_channels.xml     # RealDash channel map
 ├── scripts/
-│   └── test-bench.sh       # MQTT test scenarios (idle, vacuum, overheat, alternator, X-Type)
+│   ├── oneshot.sh               # Stage-gated deploy wrapper
+│   └── test-bench.sh            # MQTT test scenarios (idle, vacuum, overheat, alternator, X-Type)
 ├── tests/
-│   └── test_alert_engine.py # Unit tests for diagnostic rules
-├── conftest.py             # pytest path config
+│   ├── test_alert_engine.py     # Diagnostic rule unit tests
+│   ├── test_alert_hysteresis.py # Alert de-bounce / hysteresis tests
+│   ├── test_anomaly_monitor.py
+│   ├── test_can_bridge.py
+│   ├── test_config.py
+│   ├── test_db.py
+│   ├── test_diagnose.py
+│   ├── test_home_sync.py
+│   ├── test_llm_client.py
+│   ├── test_mechanic.py
+│   ├── test_realdash_bridge.py
+│   ├── test_session_analyst.py
+│   ├── test_settings.py
+│   ├── test_status.py
+│   ├── test_tool_executor.py
+│   ├── test_vivi.py
+│   ├── test_voice_input.py
+│   ├── test_wardrive.py
+│   ├── test_watchdog.py
+│   ├── test_web_dashboard.py
+│   └── test_web_dashboard_handlers.py
+├── bin/
+│   └── drifter                  # Fleet-contract CLI (drifter diagnose)
+├── conftest.py                  # pytest path config
 └── docs/
-    └── WIRING.md           # Physical wiring guide
+    └── WIRING.md                # Physical wiring guide
 ```
 
 ## Dependencies

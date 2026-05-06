@@ -61,8 +61,7 @@ apt-get install -y -qq \
     jq \
     rsync \
     librtlsdr-dev \
-    rtl-sdr \
-    slcand 2>/dev/null
+    rtl-sdr 2>/dev/null
 ok "Core packages installed"
 
 # Install rtl_433 (433 MHz signal decoder)
@@ -352,7 +351,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

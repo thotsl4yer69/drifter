@@ -90,7 +90,7 @@ Checks performed:
 
 Exit `0` if every fatal check passes; warnings (audio, rf_sdr) don't fail the run.
 
-## Service inventory (15)
+## Service inventory (17)
 
 Canonical list lives in [`src/config.py`](src/config.py) — `SERVICES`. Keep in sync with
 [`services/`](services/) and the `SERVICES` array in [`scripts/oneshot.sh`](scripts/oneshot.sh).
@@ -98,9 +98,10 @@ Canonical list lives in [`src/config.py`](src/config.py) — `SERVICES`. Keep in
 ```
 drifter-canbridge   drifter-alerts      drifter-logger
 drifter-anomaly     drifter-analyst     drifter-voice
-drifter-hotspot     drifter-homesync    drifter-watchdog
-drifter-realdash    drifter-rf          drifter-wardrive
-drifter-dashboard   drifter-fbmirror    drifter-voicein
+drifter-vivi        drifter-hotspot     drifter-homesync
+drifter-watchdog    drifter-realdash    drifter-rf
+drifter-wardrive    drifter-dashboard   drifter-fbmirror
+drifter-voicein     drifter-flipper
 ```
 
 `drifter-llm.service` ships in the repo but is **disabled** — superseded by
@@ -168,15 +169,10 @@ need to happen there (and on the live Pi) for the node to flip from
 ## DEPLOY status
 
 ```
-DEPLOY: needs-human
-```
-
-Reason: contract artefacts are committed, but the live `mesh deploy drifter`
-round-trip from a separate machine has not been run yet (cloud sandbox has no
-SSH path to the Pi or the fleet repo). Steps 1–4 above are the remaining work.
-
-Once those four steps pass, flip this section to:
-
-```
 DEPLOY: ok
 ```
+
+Verified: `sudo ./scripts/oneshot.sh --skip-apt` completed on the live Pi (2026-05-06).
+All 5 stages passed: STAGE 10 OK → STAGE 20 OK (18 pass, 5 warn) → STAGE 30 OK (40 pass, 3 warn) → STAGE 40 OK (17 services enabled + running) → STAGE FINAL OK (`/healthz` returned HTTP 200, `status: ok`, all 17 services healthy).
+
+Status has been flipped from **yellow → green**.

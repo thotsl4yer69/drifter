@@ -92,7 +92,7 @@ sudo ./install.sh && sudo reboot
 - **No hardcoded MQTT host/port** — always use `MQTT_HOST`, `MQTT_PORT` from config
 - **No class-based services** — flat `main()` + `if __name__ == '__main__': main()` pattern
 - **Signal handlers inside `main()`** — never at module level (prevents import side effects)
-- **15 systemd services** must match `SERVICES` list in config and `services/*.service` files
+- **17 systemd services** must match `SERVICES` list in config and `services/*.service` files
 - **install.sh** `SRC_FILES` variable must list all `.py` files for deployment
 - **RealDash XML** frame IDs and conversions must match `realdash_bridge.py` pack functions exactly
 - **DTC codes**: add to `XTYPE_DTC_LOOKUP` in config with `desc`, `cause`, `action`, `severity` keys
