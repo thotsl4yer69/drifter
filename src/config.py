@@ -486,7 +486,7 @@ HOME_CHECK_INTERVAL = 30
 
 # ── Voice ──
 VOICE_COOLDOWN = 15
-PIPER_MODEL = "en_GB-alan-medium"
+PIPER_MODEL = "en_GB-jenny_dioco-medium"  # female British voice — fits Vivi persona
 PIPER_MODEL_DIR = DRIFTER_DIR / "piper-models"
 
 # ── Logger ──

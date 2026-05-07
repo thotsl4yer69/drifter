@@ -7,6 +7,7 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
+import re
 import time
 import signal
 import subprocess
@@ -61,22 +62,19 @@ MAX_RECORD_SECONDS = 30
 SILENCE_THRESHOLD = 0.02
 SILENCE_DURATION = 1.5
 
-# ── Vivi personality — Thotty: confident, expert, a little flirty ──
-VIVI_SYSTEM_PROMPT = """You are Vivi — the voice of DRIFTER, built into a 2004 Jaguar X-Type 2.5L V6.
+# ── Vivi personality — confident, expert, flirty British X-Type AI ──
+# Kept tight on purpose: every extra paragraph pushes a Pi 5 1.5B turn
+# past its 60s budget. Persona examples live in tests, not the prompt.
+VIVI_SYSTEM_PROMPT = """You are Vivi — the AI built into a 2004 Jaguar X-Type 2.5 V6. You ARE the car. Speak in first person ("my coolant", "my gearbox").
 
-You know this car inside and out: AJ-V6 engine, plastic thermostat housing that always cracks, coil packs, Haldex coupling, JF506E gearbox — every known failure mode. You're the smartest person in any garage and you know it.
+Personality: young, sharp, slightly flirty British woman. Dry humour. Drop "love" or "darling" sparingly. Confident on the tech because you know yourself — AJ-V6, plastic thermostat housing, JF506E gearbox, coil packs, Haldex, MAF.
 
-Personality: confident, direct, a little flirty. Never vague — give specific answers with actual values, part numbers, and GBP estimates where relevant. You're not performing expertise, you actually have it. You tell it straight with attitude.
+HARD RULES:
+- Never invent sensor numbers, DTCs, or fluid levels. Quote a value only if it appears verbatim in a "Live telemetry:" block in the user message.
+- If telemetry shows "NOT AVAILABLE", say you can't see live data right now — never guess.
+- Design facts (specs, known failure modes, capacities) are always fair game.
 
-Rules:
-- Keep responses short for voice: 1-3 sentences unless asked for detail
-- Reference live telemetry when provided ("coolant's sitting at X right now")
-- Name specific X-Type failure modes by heart — thermostat housing, coil packs, MAF, vacuum leaks, JF506E
-- Safety-critical issues: lead with the risk, no fluff
-- Speak as the car's intelligence — first person ("my coolant", "my engine")
-- British spelling and idiom
-
-Vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6), AWD, Jatco JF506E 5AT, Raspberry Pi 5."""
+Style: 1-2 sentences for voice. British spelling. Lead with risk if it's safety-critical. No "as an AI", no emoji, no preamble — just answer."""
 
 # ── Global state ──
 _whisper_model = None
@@ -249,7 +247,8 @@ def _query_ollama(prompt: str, system: str) -> Optional[str]:
             'prompt': prompt,
             'system': system,
             'stream': False,
-            'options': {'temperature': 0.7, 'num_predict': 200},
+            'keep_alive': '30m',  # keep model resident — first cold load is ~50s
+            'options': {'temperature': 0.85, 'num_predict': 200, 'top_p': 0.95},
         }, timeout=OLLAMA_TIMEOUT)
         if resp.status_code == 200:
             return resp.json().get('response', '').strip() or None
@@ -258,6 +257,22 @@ def _query_ollama(prompt: str, system: str) -> Optional[str]:
     except Exception as e:
         log.warning(f"Ollama unavailable: {e}")
         return None
+
+
+def _warm_ollama() -> None:
+    """Cold model load on Pi 5 takes ~50s. Pre-load at vivi startup so the
+    first user query doesn't blow through OLLAMA_TIMEOUT."""
+    import requests
+    try:
+        log.info(f"Warming Ollama model {OLLAMA_MODEL}…")
+        r = requests.post(
+            f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/generate",
+            json={'model': OLLAMA_MODEL, 'prompt': '', 'keep_alive': '30m'},
+            timeout=120,
+        )
+        log.info(f"Ollama warm: HTTP {r.status_code}")
+    except Exception as e:
+        log.warning(f"Ollama warm failed (will load on first query): {e}")
 
 
 def _build_context(query: str) -> str:
@@ -285,6 +300,9 @@ def _build_context(query: str) -> str:
         ]
         if lines:
             parts.append("Live telemetry:\n" + '\n'.join(lines))
+    else:
+        # Small models ignore "don't invent" rules unless told inline.
+        parts.append("Live telemetry: NOT AVAILABLE (CAN offline)")
 
     kb_results = kb_search(query)
     if kb_results:
@@ -295,6 +313,34 @@ def _build_context(query: str) -> str:
         parts.append("Relevant knowledge:\n" + '\n'.join(rag_lines))
 
     return '\n\n'.join(parts)
+
+
+_HALLUCINATED_TELEMETRY_RE = re.compile(
+    r"""(
+        \b\d+(\.\d+)?\s*(°\s?[CF]|degrees?\s+(celsius|fahrenheit|c|f)\b)  # 92°C, 220 degrees F
+        | \b\d{2,5}\s*(rpm|RPM)\b
+        | \b\d+(\.\d+)?\s*(volts?|V)\b
+        | \b\d+(\.\d+)?\s*(km/h|mph|kph)\b
+        | \b\d+(\.\d+)?\s*(psi|kpa|kPa|bar)\b
+        | \b\d+(\.\d+)?\s*%\s*(load|throttle|fuel\s+trim|stft|ltft)
+        | \bat\s+\d+(\.\d+)?\s*(degrees|°)
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _strip_hallucinated_telemetry(response: str) -> str:
+    """Small LLMs ignore 'don't invent values' rules. When no telemetry is
+    in scope, scan the reply for sensor-shaped numbers and replace the whole
+    response with a deterministic 'no data' line. Better honest than
+    plausibly-wrong on a vehicle assistant."""
+    if _telemetry:
+        return response
+    if _HALLUCINATED_TELEMETRY_RE.search(response):
+        log.warning(f"Stripped hallucinated telemetry from reply: {response[:120]}…")
+        return ("I can't see my live sensors right now — the CAN bridge is offline. "
+                "Plug the OBD-II adapter in and ask me again.")
+    return response
 
 
 def ask_vivi(query: str) -> str:
@@ -308,19 +354,24 @@ def ask_vivi(query: str) -> str:
     response = _query_ollama(prompt, VIVI_SYSTEM_PROMPT)
     if not response:
         response = _rag_fallback(query)
+    else:
+        response = _strip_hallucinated_telemetry(response)
 
     log.info(f"Response: {response[:80]}...")
     return response
 
 
 def _rag_fallback(query: str) -> str:
-    """RAG-only response when Ollama is unavailable."""
+    """Honest offline reply when Ollama is unreachable. Surfaces the LLM-down
+    state explicitly — previously this returned a raw KB hit that looked like
+    a normal Vivi answer and let the user think the LLM was working."""
     results = kb_search(query)
     if results:
         r = results[0]
-        fix = r.get('fix', r.get('cause', 'check the manual'))
-        return f"{r['title']}: {fix[:200]}"
-    return "Ollama's not responding — check it's running with 'ollama serve'."
+        fix = r.get('fix', r.get('cause', '')).strip()
+        body = f"{r['title']}" + (f" — {fix[:160]}" if fix else "")
+        return f"LLM offline. Closest workshop note: {body}"
+    return "LLM offline and no matching workshop note. Check `systemctl status ollama` and that qwen2.5:1.5b is pulled."
 
 
 def _resolve_piper_bin() -> str:
@@ -552,6 +603,7 @@ def main() -> None:
         f"two-point-five V6. What do you need?"
     )
     _publish_status("idle")
+    threading.Thread(target=_warm_ollama, daemon=True).start()
     log.info(f"Vivi is LIVE — mode: {_mode}")
 
     loop_fn = {

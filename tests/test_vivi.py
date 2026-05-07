@@ -150,12 +150,14 @@ def test_build_context_includes_rag(monkeypatch):
 
 
 def test_build_context_empty_when_no_data(monkeypatch):
-    """_build_context returns empty string when no telemetry or RAG results."""
+    """When telemetry is empty, _build_context emits an explicit
+    'NOT AVAILABLE' marker so small LLMs don't invent sensor values."""
     import vivi
     monkeypatch.setattr(vivi, '_telemetry', {})
     with patch('vivi.kb_search', return_value=[]):
         ctx = vivi._build_context("hello")
-    assert ctx == ''
+    assert 'NOT AVAILABLE' in ctx
+    assert 'CAN' in ctx
 
 
 # ── transcribe ──

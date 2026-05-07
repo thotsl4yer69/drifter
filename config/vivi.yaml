@@ -11,10 +11,10 @@ mode: ptt
 wake_word: "hey vivi"
 
 # ── LLM backend (local Ollama) ──
-# Pi 5 (8GB) can't run 7B fast enough for conversational TTS — first
-# token lands past the 60s read timeout. qwen2.5:1.5b is the practical
-# Vivi model on this hardware; qwen2.5:7b stays installed for the
-# session-analyst service which doesn't have a turn-time budget.
+# qwen2.5:1.5b is the only model that consistently finishes a Vivi turn
+# inside the 60s budget on Pi 5 (8GB, CPU-only). 3b times out under the
+# heavier persona prompt; 7b is hopeless. 3b stays installed for any
+# slower offline use; session-analyst keeps 7b.
 ollama_model: qwen2.5:1.5b
 ollama_host: localhost
 ollama_port: 11434
