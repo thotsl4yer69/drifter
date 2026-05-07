@@ -87,11 +87,15 @@ _mode = MODE_PTT
 _wake_word = WAKE_WORD
 
 
+AUDIO_INPUT_DEVICE = "auto"  # vivi.yaml override: int index, name substring, or "auto"
+
+
 def _load_config() -> None:
     """Load vivi.yaml config, fall back to module defaults silently."""
     global OLLAMA_MODEL, OLLAMA_HOST, OLLAMA_PORT, OLLAMA_TIMEOUT
     global WHISPER_MODEL, WHISPER_COMPUTE_TYPE
     global _mode, _wake_word, MAX_RECORD_SECONDS, SILENCE_THRESHOLD, SILENCE_DURATION
+    global AUDIO_INPUT_DEVICE
     try:
         import yaml
         if VIVI_CONFIG_PATH.exists():
@@ -107,7 +111,8 @@ def _load_config() -> None:
             MAX_RECORD_SECONDS = cfg.get('max_recording_seconds', MAX_RECORD_SECONDS)
             SILENCE_THRESHOLD = cfg.get('silence_threshold', SILENCE_THRESHOLD)
             SILENCE_DURATION = cfg.get('silence_duration', SILENCE_DURATION)
-            log.info(f"Config: mode={_mode}, model={OLLAMA_MODEL}, whisper={WHISPER_MODEL}")
+            AUDIO_INPUT_DEVICE = cfg.get('audio_input_device', AUDIO_INPUT_DEVICE)
+            log.info(f"Config: mode={_mode}, model={OLLAMA_MODEL}, whisper={WHISPER_MODEL}, mic={AUDIO_INPUT_DEVICE}")
         else:
             log.info(f"vivi.yaml not found at {VIVI_CONFIG_PATH} — using defaults")
     except ImportError:
@@ -132,6 +137,43 @@ def _get_whisper():
         return _whisper_model
 
 
+def _find_sd_input_device():
+    """Resolve AUDIO_INPUT_DEVICE (int index, name substring, or 'auto') to a
+    sounddevice index. ALSA has no `default` PCM on this image — passing
+    device=None raises. 'auto' picks the first input-capable card."""
+    try:
+        import sounddevice as sd
+    except ImportError:
+        return None
+    sel = AUDIO_INPUT_DEVICE
+    devices = list(sd.query_devices())
+
+    def _accepts_sample_rate(idx):
+        # USB sticks like C-Media are 44.1/48k native; ALSA's plug layers
+        # (sysdefault, pulse, plughw) resample down to 16k. Filter so we
+        # land on a device that won't reject our requested rate.
+        try:
+            sd.check_input_settings(device=idx, channels=CHANNELS,
+                                    samplerate=SAMPLE_RATE, dtype='float32')
+            return True
+        except Exception:
+            return False
+
+    if isinstance(sel, int):
+        if 0 <= sel < len(devices) and int(devices[sel].get('max_input_channels', 0)) >= 1:
+            return sel
+        log.warning(f"audio_input_device={sel} out of range or has no input — auto")
+    elif isinstance(sel, str) and sel != "auto":
+        for idx, info in enumerate(devices):
+            if int(info.get('max_input_channels', 0)) >= 1 and sel.lower() in info.get('name', '').lower():
+                return idx
+        log.warning(f"audio_input_device={sel!r} not found — auto")
+    for idx, info in enumerate(devices):
+        if int(info.get('max_input_channels', 0)) >= 1 and _accepts_sample_rate(idx):
+            return idx
+    return None
+
+
 def record_audio(max_seconds: float = MAX_RECORD_SECONDS) -> Optional[bytes]:
     """Record from mic until silence or max_seconds. Returns float32 PCM bytes or None."""
     try:
@@ -144,10 +186,15 @@ def record_audio(max_seconds: float = MAX_RECORD_SECONDS) -> Optional[bytes]:
     AUDIO_DIR.mkdir(exist_ok=True)
     frames = []
     silence_start = None
+    dev_idx = _find_sd_input_device()
+    if dev_idx is None:
+        log.error("No input-capable audio device found")
+        return None
 
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS,
-                            dtype='float32', blocksize=1024) as stream:
+                            dtype='float32', blocksize=1024,
+                            device=dev_idx) as stream:
             start = time.time()
             while True:
                 chunk, _ = stream.read(1024)

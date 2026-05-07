@@ -32,6 +32,23 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Audio constants ──
+VIVI_CONFIG_PATH = DRIFTER_DIR / "vivi.yaml"
+AUDIO_INPUT_DEVICE = "auto"  # vivi.yaml override: int index, name substring, or "auto"
+
+
+def _load_audio_device_from_yaml():
+    """vivi.yaml owns the mic device setting (shared with vivi). Read once
+    at startup; missing yaml or pyyaml → keep AUDIO_INPUT_DEVICE='auto'."""
+    global AUDIO_INPUT_DEVICE
+    try:
+        import yaml
+        if VIVI_CONFIG_PATH.exists():
+            cfg = yaml.safe_load(VIVI_CONFIG_PATH.read_text()) or {}
+            AUDIO_INPUT_DEVICE = cfg.get('audio_input_device', AUDIO_INPUT_DEVICE)
+    except Exception:
+        pass
+
+
 SAMPLE_RATE = 16000
 CHANNELS = 1
 CHUNK_SIZE = 4000          # 250ms at 16kHz
@@ -378,6 +395,8 @@ def main():
     global running
 
     log.info("DRIFTER Voice Input Service starting...")
+    _load_audio_device_from_yaml()
+    log.info(f"audio_input_device={AUDIO_INPUT_DEVICE}")
 
     def _shutdown(sig, frame):
         global running
@@ -420,20 +439,64 @@ def main():
         return
 
     # ── PyAudio mic stream ──
+    # ALSA has no `default` PCM on this image, so pa.open() with no index
+    # raises "Invalid input device". Probe device list and pick the first
+    # input-capable card explicitly. Survives USB re-enumeration.
     import pyaudio
     pa = pyaudio.PyAudio()
     stream = None
 
+    def _find_input_device():
+        sel = AUDIO_INPUT_DEVICE
+        candidates = []
+        for idx in range(pa.get_device_count()):
+            try:
+                info = pa.get_device_info_by_index(idx)
+            except Exception:
+                continue
+            if int(info.get('maxInputChannels', 0)) < 1:
+                continue
+            # PyAudio enumerates raw `hw:0,0` (no resampling) ahead of
+            # ALSA's plug layers. The C-Media USB stick is 44.1/48k native;
+            # filter to devices that accept our (SAMPLE_RATE, mono, int16)
+            # so we land on `sysdefault`/`plughw` which auto-resample.
+            try:
+                if not pa.is_format_supported(
+                    float(SAMPLE_RATE), input_device=idx,
+                    input_channels=CHANNELS, input_format=pyaudio.paInt16,
+                ):
+                    continue
+            except Exception:
+                continue
+            candidates.append((idx, info.get('name', f'device {idx}')))
+        if not candidates:
+            return None, None
+        if isinstance(sel, int):
+            for idx, name in candidates:
+                if idx == sel:
+                    return idx, name
+            log.warning(f"audio_input_device={sel} not input-capable — using auto")
+        elif isinstance(sel, str) and sel != "auto":
+            for idx, name in candidates:
+                if sel.lower() in name.lower():
+                    return idx, name
+            log.warning(f"audio_input_device={sel!r} not found — using auto")
+        return candidates[0]
+
     while running and stream is None:
         try:
+            dev_idx, dev_name = _find_input_device()
+            if dev_idx is None:
+                raise OSError("no input-capable audio device found")
             stream = pa.open(
                 format=pyaudio.paInt16,
                 channels=CHANNELS,
                 rate=SAMPLE_RATE,
                 input=True,
+                input_device_index=dev_idx,
                 frames_per_buffer=CHUNK_SIZE,
             )
-            log.info("Microphone stream opened")
+            log.info(f"Microphone stream opened on device {dev_idx}: {dev_name}")
         except Exception as e:
             log.error(f"No microphone detected — retrying in 30s: {e}")
             for _ in range(30):

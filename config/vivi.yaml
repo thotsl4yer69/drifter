@@ -27,3 +27,10 @@ audio_channels: 1
 max_recording_seconds: 30
 silence_threshold: 0.02      # RMS below this = silence
 silence_duration: 1.5        # Seconds of silence before stopping recording
+
+# ── Audio input device ──
+# Used by both vivi (sounddevice) and voicein (pyaudio).
+# `auto` picks the first input-capable device — survives USB re-ordering.
+# Override with a substring of the device name (e.g. "USB Audio") or an
+# integer index from `arecord -l` / pa.get_device_info_by_index() output.
+audio_input_device: auto
