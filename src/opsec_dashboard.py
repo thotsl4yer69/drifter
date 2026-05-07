@@ -70,6 +70,7 @@ PROBES: dict[str, list[str]] = {
     'kismet-version':   ['kismet', '--version'],
     'nmap-version':     ['nmap', '--version'],
     'masscan-version':  ['masscan', '--version'],
+    'bettercap-version':['bettercap', '-version'],
     'aircrack-help':    ['aircrack-ng', '--help'],
     'airmon-ng':        ['airmon-ng'],
 }
