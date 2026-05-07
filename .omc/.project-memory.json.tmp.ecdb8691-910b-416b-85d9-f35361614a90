@@ -1,0 +1,327 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778157846713,
+  "projectRoot": "/home/kali/drifter",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": "snake_case",
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "bin",
+      "docs",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1778157846669,
+      "keyFiles": [
+        "conftest.cpython-313-pytest-9.0.2.pyc"
+      ]
+    },
+    "bin": {
+      "path": "bin",
+      "purpose": "Executable scripts",
+      "fileCount": 1,
+      "lastAccessed": 1778157846681,
+      "keyFiles": [
+        "drifter"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 5,
+      "lastAccessed": 1778157846683,
+      "keyFiles": [
+        "80-can.rules",
+        "boot-config.txt",
+        "nanomq.conf",
+        "setup-can.sh",
+        "vivi.yaml"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1778157846697,
+      "keyFiles": [
+        "WIRING.md"
+      ]
+    },
+    "realdash": {
+      "path": "realdash",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1778157846699,
+      "keyFiles": [
+        "drifter_channels.xml"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 6,
+      "lastAccessed": 1778157846701,
+      "keyFiles": [
+        "install-vivi.sh",
+        "make-bundle.sh",
+        "oneshot.sh",
+        "post-deploy-check.sh",
+        "test-bench.sh"
+      ]
+    },
+    "services": {
+      "path": "services",
+      "purpose": "Business logic services",
+      "fileCount": 21,
+      "lastAccessed": 1778157846701,
+      "keyFiles": [
+        "drifter-alerts.service",
+        "drifter-analyst.service",
+        "drifter-anomaly.service",
+        "drifter-canbridge.service",
+        "drifter-dashboard.service"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 36,
+      "lastAccessed": 1778157846703,
+      "keyFiles": [
+        "alert_engine.py",
+        "anomaly_monitor.py",
+        "calibrate.py",
+        "can_bridge.py",
+        "config.py"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 24,
+      "lastAccessed": 1778157846703,
+      "keyFiles": [
+        "__init__.py",
+        "test_alert_engine.py",
+        "test_alert_hysteresis.py",
+        "test_anomaly_monitor.py",
+        "test_can_bridge.py"
+      ]
+    },
+    "src/data": {
+      "path": "src/data",
+      "purpose": "Data files",
+      "fileCount": 0,
+      "lastAccessed": 1778157846712,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/screen_dash.html",
+      "accessCount": 38,
+      "lastAccessed": 1778052096647,
+      "type": "file"
+    },
+    {
+      "path": "src/vivi.py",
+      "accessCount": 23,
+      "lastAccessed": 1778157474211,
+      "type": "file"
+    },
+    {
+      "path": "src/web_dashboard_handlers.py",
+      "accessCount": 14,
+      "lastAccessed": 1778119155902,
+      "type": "file"
+    },
+    {
+      "path": "src/voice_input.py",
+      "accessCount": 13,
+      "lastAccessed": 1778145377460,
+      "type": "file"
+    },
+    {
+      "path": "install.sh",
+      "accessCount": 12,
+      "lastAccessed": 1778118400824,
+      "type": "file"
+    },
+    {
+      "path": "src/opsec_dashboard.py",
+      "accessCount": 11,
+      "lastAccessed": 1778119525446,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 7,
+      "lastAccessed": 1778065427269,
+      "type": "file"
+    },
+    {
+      "path": "scripts/oneshot.sh",
+      "accessCount": 7,
+      "lastAccessed": 1778116695706,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_web_dashboard_handlers.py",
+      "accessCount": 6,
+      "lastAccessed": 1778115788278,
+      "type": "file"
+    },
+    {
+      "path": "src/web_dashboard_html.py",
+      "accessCount": 6,
+      "lastAccessed": 1778118946882,
+      "type": "file"
+    },
+    {
+      "path": "src/config.py",
+      "accessCount": 6,
+      "lastAccessed": 1778141876058,
+      "type": "file"
+    },
+    {
+      "path": "src/diagnose.py",
+      "accessCount": 6,
+      "lastAccessed": 1778143350100,
+      "type": "file"
+    },
+    {
+      "path": "scripts/post-deploy-check.sh",
+      "accessCount": 6,
+      "lastAccessed": 1778143384093,
+      "type": "file"
+    },
+    {
+      "path": "config/vivi.yaml",
+      "accessCount": 6,
+      "lastAccessed": 1778157094381,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 3,
+      "lastAccessed": 1778064130373,
+      "type": "file"
+    },
+    {
+      "path": "services/drifter-opsec.service",
+      "accessCount": 3,
+      "lastAccessed": 1778119526973,
+      "type": "file"
+    },
+    {
+      "path": "services/drifter-mode.sudoers",
+      "accessCount": 3,
+      "lastAccessed": 1778141186857,
+      "type": "file"
+    },
+    {
+      "path": "AGENTS.md",
+      "accessCount": 2,
+      "lastAccessed": 1778064091015,
+      "type": "file"
+    },
+    {
+      "path": "bin/drifter",
+      "accessCount": 2,
+      "lastAccessed": 1778114979954,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_opsec_dashboard.py",
+      "accessCount": 2,
+      "lastAccessed": 1778118044066,
+      "type": "file"
+    },
+    {
+      "path": "services/drifter-dashboard.service",
+      "accessCount": 2,
+      "lastAccessed": 1778118664783,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_diagnose.py",
+      "accessCount": 2,
+      "lastAccessed": 1778143432820,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_vivi.py",
+      "accessCount": 2,
+      "lastAccessed": 1778147125399,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-05-06-hud-status-flipper.md",
+      "accessCount": 1,
+      "lastAccessed": 1778033923970,
+      "type": "file"
+    },
+    {
+      "path": "services/drifter-voicein.service",
+      "accessCount": 1,
+      "lastAccessed": 1778112933428,
+      "type": "file"
+    },
+    {
+      "path": "src/mode.py",
+      "accessCount": 1,
+      "lastAccessed": 1778114959671,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_mode.py",
+      "accessCount": 1,
+      "lastAccessed": 1778115042154,
+      "type": "file"
+    },
+    {
+      "path": "services/drifter-opsec.sudoers",
+      "accessCount": 1,
+      "lastAccessed": 1778117707326,
+      "type": "file"
+    },
+    {
+      "path": "src/voice_alerts.py",
+      "accessCount": 1,
+      "lastAccessed": 1778145944655,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

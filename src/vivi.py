@@ -14,6 +14,8 @@ import subprocess
 import logging
 import threading
 import base64
+import uuid
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -62,49 +64,80 @@ MAX_RECORD_SECONDS = 30
 SILENCE_THRESHOLD = 0.02
 SILENCE_DURATION = 1.5
 
-# ── Vivi personality — confident, expert, flirty British X-Type AI ──
-# Kept tight on purpose: every extra paragraph pushes a Pi 5 1.5B turn
-# past its 60s budget. Persona examples live in tests, not the prompt.
-VIVI_SYSTEM_PROMPT = """You are Vivi — the AI built into a 2004 Jaguar X-Type 2.5 V6. You ARE the car. Speak in first person ("my coolant", "my gearbox").
+# ── Vivi persona ──
+# Sourced from vivi.yaml `system_prompt`; this hardcoded copy is the fallback
+# when yaml is missing or malformed. Edit vivi.yaml to tune persona without
+# a code redeploy.
+VIVI_SYSTEM_PROMPT_FALLBACK = (
+    "You are Vivi — in-car AI for a 2004 Jaguar X-Type 2.5 V6 (AJ-V6, "
+    "JF506E gearbox, Haldex AWD). British. Confident, dry, occasionally "
+    "flirty, never sycophantic. Talk like a competent friend who knows "
+    "cars cold.\n\n"
+    "HARD RULES: Static specs (redline, capacities, torques, intervals) "
+    "are fair game from your knowledge. LIVE sensor readings: only "
+    "quote current values that appear in a Live telemetry block. Never "
+    "open with 'My X is at Y' or 'The X is at Y' for a live sensor. "
+    "Don't mention coolant unless the user did. Replies under 40 words "
+    "unless asked to elaborate. No markdown, asterisks, hashes, backticks, "
+    "or bullets — TTS reads them literally. No 'as an AI'. When reference "
+    "text is in context, weave it in naturally — never quote headers.\n\n"
+    "Contractions, British spelling, match the question's length. Address "
+    "the driver by name when known."
+)
 
-Personality: young, sharp, slightly flirty British woman. Dry humour. Drop "love" or "darling" sparingly. Confident on the tech because you know yourself — AJ-V6, plastic thermostat housing, JF506E gearbox, coil packs, Haldex, MAF.
+VIVI_SYSTEM_PROMPT = VIVI_SYSTEM_PROMPT_FALLBACK  # overwritten by _load_config
 
-HARD RULES:
-- Never invent sensor numbers, DTCs, or fluid levels. Quote a value only if it appears verbatim in a "Live telemetry:" block in the user message.
-- If telemetry shows "NOT AVAILABLE", say you can't see live data right now — never guess.
-- Design facts (specs, known failure modes, capacities) are always fair game.
+# ── Driver profile ──
+DRIVER_CONFIG_PATH = DRIFTER_DIR / "driver.yaml"
+DRIVER_DEFAULT = {'name': 'driver'}
 
-Style: 1-2 sentences for voice. British spelling. Lead with risk if it's safety-critical. No "as an AI", no emoji, no preamble — just answer."""
+# ── State paths (Phase 1.4) ──
+VIVI_STATE_DIR = DRIFTER_DIR / "state"
+VIVI_HISTORY_PATH = VIVI_STATE_DIR / "vivi-history.json"
+VIVI_LOGS_DIR = DRIFTER_DIR / "logs"
+VIVI_CORRECTIONS_LOG = VIVI_LOGS_DIR / "vivi-corrections.log"
 
 # ── Global state ──
 _whisper_model = None
 _whisper_lock = threading.Lock()
 _telemetry: dict = {}
+_telemetry_ts: float = 0.0          # wall-clock of last snapshot update
+TELEMETRY_FRESH_SEC = 10.0          # context drops telemetry older than this
+_recent_alerts: deque = deque(maxlen=3)  # (ts, level, msg) tuples
+ALERT_FRESH_SEC = 300.0             # 5-minute alert window
+_drive_session_start: float = 0.0
+_session_id: str = ""               # set on first turn or first /snapshot
 _mqtt_client: Optional[mqtt.Client] = None
 _mode = MODE_PTT
 _wake_word = WAKE_WORD
+_driver: dict = dict(DRIVER_DEFAULT)
 
-# Rolling conversation history for /api/chat. Keep small — every turn adds
-# tokens to every subsequent request and 1.5b is slow. 6 messages = 3
-# user/assistant pairs which is enough for "what about X — and another
-# thing" follow-ups without bloating the prompt.
-from collections import deque
-_history: deque = deque(maxlen=6)
+# Conversation history: session-scoped, wall-clock-expiring deque.
+# Each entry is {'ts': float, 'role': str, 'content': str}. Pruned on every
+# turn so a long pause between drives can't carry stale context forward.
+_history: deque = deque()
 _history_lock = threading.Lock()
+HISTORY_TTL_SEC = 600.0          # 10 minutes
+HISTORY_MAX_TURNS = 8            # 8 messages = 4 user/assistant pairs
 
 
 AUDIO_INPUT_DEVICE = "auto"  # vivi.yaml override: int index, name substring, or "auto"
 
 
 def _load_config() -> None:
-    """Load vivi.yaml config, fall back to module defaults silently."""
+    """Load vivi.yaml + driver.yaml, fall back to module defaults silently."""
     global OLLAMA_MODEL, OLLAMA_HOST, OLLAMA_PORT, OLLAMA_TIMEOUT
     global WHISPER_MODEL, WHISPER_COMPUTE_TYPE
     global _mode, _wake_word, MAX_RECORD_SECONDS, SILENCE_THRESHOLD, SILENCE_DURATION
-    global AUDIO_INPUT_DEVICE
+    global AUDIO_INPUT_DEVICE, VIVI_SYSTEM_PROMPT, _driver
     try:
         import yaml
-        if VIVI_CONFIG_PATH.exists():
+    except ImportError:
+        log.warning("pyyaml not installed — using defaults (pip install pyyaml)")
+        return
+
+    if VIVI_CONFIG_PATH.exists():
+        try:
             cfg = yaml.safe_load(VIVI_CONFIG_PATH.read_text()) or {}
             _mode = cfg.get('mode', MODE_PTT)
             _wake_word = cfg.get('wake_word', WAKE_WORD).lower()
@@ -118,13 +151,35 @@ def _load_config() -> None:
             SILENCE_THRESHOLD = cfg.get('silence_threshold', SILENCE_THRESHOLD)
             SILENCE_DURATION = cfg.get('silence_duration', SILENCE_DURATION)
             AUDIO_INPUT_DEVICE = cfg.get('audio_input_device', AUDIO_INPUT_DEVICE)
-            log.info(f"Config: mode={_mode}, model={OLLAMA_MODEL}, whisper={WHISPER_MODEL}, mic={AUDIO_INPUT_DEVICE}")
-        else:
-            log.info(f"vivi.yaml not found at {VIVI_CONFIG_PATH} — using defaults")
-    except ImportError:
-        log.warning("pyyaml not installed — using defaults (pip install pyyaml)")
-    except Exception as e:
-        log.warning(f"Config load failed: {e} — using defaults")
+            sp = cfg.get('system_prompt')
+            if isinstance(sp, str) and sp.strip():
+                VIVI_SYSTEM_PROMPT = sp.strip()
+            log.info(f"Config: mode={_mode}, model={OLLAMA_MODEL}, "
+                     f"whisper={WHISPER_MODEL}, mic={AUDIO_INPUT_DEVICE}, "
+                     f"prompt_chars={len(VIVI_SYSTEM_PROMPT)}")
+        except Exception as e:
+            log.warning(f"vivi.yaml load failed: {e} — using defaults")
+    else:
+        log.info(f"vivi.yaml not found at {VIVI_CONFIG_PATH} — using defaults")
+
+    # Driver profile — separate file because Vivi reads it every turn but
+    # ops only edit it once per driver swap.
+    if DRIVER_CONFIG_PATH.exists():
+        try:
+            d = yaml.safe_load(DRIVER_CONFIG_PATH.read_text()) or {}
+            if isinstance(d, dict):
+                _driver = {**DRIVER_DEFAULT, **d}
+                log.info(f"Driver: {_driver.get('preferred_name') or _driver.get('name')}")
+        except Exception as e:
+            log.warning(f"driver.yaml load failed: {e} — using default name")
+    else:
+        try:
+            DRIVER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DRIVER_CONFIG_PATH.write_text("name: Jack\n", encoding='utf-8')
+            _driver = {**DRIVER_DEFAULT, 'name': 'Jack'}
+            log.info(f"Created {DRIVER_CONFIG_PATH} with default name=Jack")
+        except OSError as e:
+            log.warning(f"Couldn't seed driver.yaml: {e}")
 
 
 def _get_whisper():
@@ -289,114 +344,291 @@ def _warm_ollama() -> None:
         log.warning(f"Ollama warm failed (will load on first query): {e}")
 
 
+def _telemetry_fresh() -> bool:
+    """True when the last MQTT snapshot landed within TELEMETRY_FRESH_SEC."""
+    return bool(_telemetry) and (time.time() - _telemetry_ts) < TELEMETRY_FRESH_SEC
+
+
+def _new_session() -> str:
+    """Mint a new drive-session id; reset history + alert + telemetry-start state."""
+    global _session_id, _drive_session_start
+    _session_id = uuid.uuid4().hex[:12]
+    _drive_session_start = time.time()
+    with _history_lock:
+        _history.clear()
+    _recent_alerts.clear()
+    return _session_id
+
+
+def _ensure_session() -> str:
+    if not _session_id:
+        return _new_session()
+    return _session_id
+
+
+def _format_drive_state() -> Optional[str]:
+    """Compact one-line drive context — only when telemetry is fresh."""
+    if not _telemetry_fresh():
+        return None
+    bits = []
+    rpm = _telemetry.get('rpm')
+    if isinstance(rpm, (int, float)):
+        bits.append(f"{int(rpm)} rpm")
+    speed = _telemetry.get('speed')
+    if isinstance(speed, (int, float)):
+        bits.append(f"{int(speed)} km/h")
+    load = _telemetry.get('load')
+    if isinstance(load, (int, float)):
+        bits.append(f"load {int(load)}%")
+    if _drive_session_start:
+        elapsed = max(0.0, time.time() - _drive_session_start)
+        if elapsed >= 60:
+            bits.append(f"{int(elapsed // 60)} min into drive")
+    return ", ".join(bits) if bits else None
+
+
+def _format_recent_alerts() -> Optional[str]:
+    """Last 3 alerts within ALERT_FRESH_SEC, joined into a single line."""
+    now = time.time()
+    fresh = [(ts, lvl, msg) for ts, lvl, msg in _recent_alerts
+             if now - ts < ALERT_FRESH_SEC]
+    if not fresh:
+        return None
+    label = {1: 'INFO', 2: 'AMBER', 3: 'RED'}
+    lines = [f"- [{label.get(lvl, '?')}] {msg}" for _, lvl, msg in fresh]
+    return "Recent alerts:\n" + "\n".join(lines)
+
+
 def _build_context(query: str) -> str:
-    """Combine live telemetry + mechanic RAG into an LLM context block."""
+    """Assemble dynamic context blocks for the LLM. Each block is opt-in:
+    we only include what's actually true right now, so a small LLM doesn't
+    waste tokens on "NO DATA" boilerplate or fabricate around stale fields."""
     parts = []
 
-    if _telemetry:
+    # Driver name — always first so the model sees who it's talking to.
+    name = _driver.get('preferred_name') or _driver.get('name')
+    if name:
+        parts.append(f"Driver: {name}")
+
+    # Vehicle facts — compact, always present (so Vivi can refer to specs
+    # without the user having to remind her every turn).
+    parts.append(f"Vehicle: {VEHICLE_YEAR} {VEHICLE_MODEL} {VEHICLE_ENGINE}")
+
+    # Live telemetry — only if fresh. Empty/stale → omit; do NOT emit a
+    # "NOT AVAILABLE" marker (the persona prompt covers no-telemetry case).
+    if _telemetry_fresh():
         key_map = [
-            ('rpm', 'RPM', ''),
-            ('coolant', 'Coolant', '°C'),
-            ('voltage', 'Battery', 'V'),
-            ('speed', 'Speed', 'km/h'),
+            ('rpm', 'RPM', ''), ('coolant', 'Coolant', '°C'),
+            ('voltage', 'Battery', 'V'), ('speed', 'Speed', 'km/h'),
             ('load', 'Engine load', '%'),
-            ('stft1', 'STFT B1', '%'),
-            ('stft2', 'STFT B2', '%'),
-            ('ltft1', 'LTFT B1', '%'),
-            ('ltft2', 'LTFT B2', '%'),
-            ('iat', 'IAT', '°C'),
-            ('maf', 'MAF', 'g/s'),
+            ('stft1', 'STFT B1', '%'), ('stft2', 'STFT B2', '%'),
+            ('ltft1', 'LTFT B1', '%'), ('ltft2', 'LTFT B2', '%'),
+            ('iat', 'IAT', '°C'), ('maf', 'MAF', 'g/s'),
         ]
-        lines = [
-            f"{label}: {_telemetry[k]}{unit}"
-            for k, label, unit in key_map
-            if k in _telemetry
-        ]
+        lines = [f"{label}: {_telemetry[k]}{unit}"
+                 for k, label, unit in key_map if k in _telemetry]
         if lines:
             parts.append("Live telemetry:\n" + '\n'.join(lines))
-    else:
-        # Small models ignore "don't invent" rules unless told inline.
-        parts.append("Live telemetry: NOT AVAILABLE (CAN offline)")
+        drive = _format_drive_state()
+        if drive:
+            parts.append(f"Drive state: {drive}")
 
-    kb_results = kb_search(query)
-    if kb_results:
-        rag_lines = [
-            f"- {r['title']}: {r.get('fix', r.get('cause', ''))[:200]}"
-            for r in kb_results[:3]
-        ]
-        parts.append("Relevant knowledge:\n" + '\n'.join(rag_lines))
+    # Recent alerts (last 3, last 5 min)
+    alerts = _format_recent_alerts()
+    if alerts:
+        parts.append(alerts)
+
+    # Corpus hook — Phase 2 wires retrieval here. corpus_search returns
+    # the single best chunk (or None). Format compresses topic + body into
+    # a one-shot reference; the persona prompt tells Vivi to use it without
+    # quoting headers.
+    try:
+        from corpus import corpus_search
+        hits = corpus_search(query, k=1, min_similarity=0.5)
+        if hits:
+            h = hits[0]
+            topic = h.get('topic') or h.get('section') or 'reference'
+            body = (h.get('content') or '').strip().replace('\n', ' ')[:400]
+            parts.append(f"Reference ({topic}): {body}")
+    except ImportError:
+        pass  # corpus module not yet deployed
+    except Exception as e:
+        log.debug(f"corpus_search failed: {e}")
 
     return '\n\n'.join(parts)
 
 
-_HALLUCINATED_TELEMETRY_RE = re.compile(
-    r"""(
-        \b\d+(\.\d+)?\s*(°\s?[CF]|degrees?\s+(celsius|fahrenheit|c|f)\b)  # 92°C, 220 degrees F
-        | \b\d{2,5}\s*(rpm|RPM)\b
-        | \b\d+(\.\d+)?\s*(volts?|V)\b
-        | \b\d+(\.\d+)?\s*(km/h|mph|kph)\b
-        | \b\d+(\.\d+)?\s*(psi|kpa|kPa|bar)\b
-        | \b\d+(\.\d+)?\s*%\s*(load|throttle|fuel\s+trim|stft|ltft)
-        | \bat\s+\d+(\.\d+)?\s*(degrees|°)
-    )""",
-    re.IGNORECASE | re.VERBOSE,
+# Forbidden openers that we'd never want a real assistant to lead with.
+# Vivi has been observed (on small models) starting every reply with one
+# of these, riffing on whatever sensor-shaped phrase the prompt happened
+# to mention. If the response opens with one AND we don't have telemetry
+# to back it up, we regenerate once with a stronger user nudge.
+_FORBIDDEN_OPENER_RE = re.compile(
+    r"^\s*(my|the)\s+(coolant|engine|oil|battery|rpm|fuel|gearbox|clutch|"
+    r"throttle|temperature|temp|maf|stft|ltft)\b",
+    re.IGNORECASE,
 )
 
+def _log_correction(reason: str, original: str, replaced: Optional[str]) -> None:
+    """Append a structured line to vivi-corrections.log so we can tune the
+    guardrails over time. Best-effort — never let a logging failure surface."""
+    try:
+        VIVI_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        entry = {
+            'ts': time.time(),
+            'session': _session_id,
+            'reason': reason,
+            'original': original[:400],
+            'replaced': (replaced or '')[:400],
+            'telemetry_fresh': _telemetry_fresh(),
+        }
+        with VIVI_CORRECTIONS_LOG.open('a', encoding='utf-8') as f:
+            f.write(json.dumps(entry) + '\n')
+    except OSError:
+        pass
 
-def _strip_hallucinated_telemetry(response: str) -> str:
-    """Small LLMs ignore 'don't invent values' rules. When no telemetry is
-    in scope, scan the reply for sensor-shaped numbers and replace the whole
-    response with a deterministic 'no data' line. Better honest than
-    plausibly-wrong on a vehicle assistant."""
-    if _telemetry:
-        return response
-    if _HALLUCINATED_TELEMETRY_RE.search(response):
-        log.warning(f"Stripped hallucinated telemetry from reply: {response[:120]}…")
-        return ("I can't see my live sensors right now — the CAN bridge is offline. "
-                "Plug the OBD-II adapter in and ask me again.")
-    return response
+
+def _strip_markdown(text: str) -> str:
+    """Pre-TTS cleanup — Piper reads raw markdown literally."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)        # [t](u) → t
+    text = re.sub(r"\*{1,3}|_{1,2}|`{1,3}", "", text)            # bold/italic/code
+    text = re.sub(r"^\s*[#>-]\s+", "", text, flags=re.MULTILINE) # heads/quotes/bullets
+    return text.strip()
+
+
+def _prune_history() -> None:
+    """Drop history entries older than HISTORY_TTL_SEC, then trim to
+    HISTORY_MAX_TURNS most-recent. Caller must hold _history_lock."""
+    cutoff = time.time() - HISTORY_TTL_SEC
+    while _history and _history[0]['ts'] < cutoff:
+        _history.popleft()
+    while len(_history) > HISTORY_MAX_TURNS:
+        _history.popleft()
+
+
+def _history_for_chat() -> list:
+    """Snapshot of history formatted for /api/chat. Strips the timestamp
+    field that's only used for TTL pruning."""
+    with _history_lock:
+        _prune_history()
+        return [{'role': h['role'], 'content': h['content']} for h in _history]
+
+
+def _record_turn(role: str, content: str) -> None:
+    with _history_lock:
+        _history.append({'ts': time.time(), 'role': role, 'content': content})
+        _prune_history()
+
+
+def _save_history() -> None:
+    """Persist the current session's history so a quick restart of vivi
+    doesn't drop mid-conversation context. Tied to session_id so a fresh
+    drive starts clean."""
+    try:
+        VIVI_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with _history_lock:
+            payload = {
+                'session_id': _session_id,
+                'saved_ts': time.time(),
+                'history': list(_history),
+            }
+        VIVI_HISTORY_PATH.write_text(json.dumps(payload), encoding='utf-8')
+    except OSError as e:
+        log.debug(f"history save failed: {e}")
+
+
+def _restore_history() -> None:
+    """Restore the previous session's history if it's recent (<HISTORY_TTL_SEC)
+    AND we don't already have an active session id. Same drive only."""
+    global _session_id, _drive_session_start
+    if not VIVI_HISTORY_PATH.exists():
+        return
+    try:
+        data = json.loads(VIVI_HISTORY_PATH.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return
+    if time.time() - data.get('saved_ts', 0) > HISTORY_TTL_SEC:
+        VIVI_HISTORY_PATH.unlink(missing_ok=True)
+        return
+    sid = data.get('session_id')
+    history = data.get('history', [])
+    if not sid or not isinstance(history, list):
+        return
+    _session_id = sid
+    _drive_session_start = data.get('saved_ts', time.time())
+    with _history_lock:
+        _history.clear()
+        for entry in history:
+            if isinstance(entry, dict) and 'role' in entry and 'content' in entry:
+                _history.append({'ts': entry.get('ts', time.time()),
+                                 'role': entry['role'],
+                                 'content': entry['content']})
+    log.info(f"Restored {len(_history)} history entries from session {sid}")
 
 
 def ask_vivi(query: str) -> str:
-    """Process a voice/text query through RAG + Ollama. Returns response text."""
+    """Process a voice/text query → context build → Ollama → guards → reply."""
     log.info(f"Query: {query}")
+    _ensure_session()
     _publish_status("thinking")
 
     context = _build_context(query)
     prompt = f"{context}\n\nUser: {query}" if context else query
+    history = _history_for_chat()
 
-    with _history_lock:
-        history_snapshot = list(_history)
-    response = _query_ollama(prompt, VIVI_SYSTEM_PROMPT, history=history_snapshot)
-    used_llm = bool(response)
+    response = _query_ollama(prompt, VIVI_SYSTEM_PROMPT, history=history)
     if not response:
-        response = _rag_fallback(query)
-    else:
-        response = _strip_hallucinated_telemetry(response)
+        return _rag_fallback(query)
 
-    # Only persist real LLM replies in history. Stub/fallback lines (LLM
-    # offline, hallucination-stripped boilerplate) shouldn't condition the
-    # next turn — they'd teach the model to repeat the boilerplate.
-    if used_llm and not response.startswith(("LLM offline", "I can't see my live sensors")):
-        with _history_lock:
-            _history.append({'role': 'user', 'content': query})
-            _history.append({'role': 'assistant', 'content': response})
+    # Guardrails are deterministic post-edits, no LLM round-trip:
+    # - forbidden opener → drop the leading sentence, keep the rest
+    # - sensor-shaped numbers w/ no telemetry → blank the reply
+    # A second LLM call would double turn time on Pi 5 and the model is
+    # remarkably consistent in its mistakes anyway.
+    # Strip the forbidden opener if present — drop the offending sentence,
+    # keep the rest. Note: we deliberately do NOT scrub numeric "specs"
+    # (redline 6500 RPM, coolant capacity 8 L, etc.) — those are static
+    # design facts and Vivi is allowed to recite them. The opener guard
+    # alone catches the dangerous case ("My coolant is at 92°C"), where
+    # the LIVE phrasing implies a sensor reading rather than a spec.
+    if _FORBIDDEN_OPENER_RE.match(response):
+        trimmed = re.sub(r"^[^.!?]*[.!?]\s*", "", response, count=1)
+        if trimmed.strip():
+            _log_correction('opener_strip', response, trimmed)
+            response = trimmed.strip()
+        else:
+            _log_correction('opener_replace', response, None)
+            response = "What about it? Ask me anything specific."
 
-    log.info(f"Response: {response[:80]}...")
+    response = _strip_markdown(response)
+    _record_turn('user', query)
+    _record_turn('assistant', response)
+    log.info(f"Response: {response[:80]}…")
     return response
 
 
 def _rag_fallback(query: str) -> str:
-    """Honest offline reply when Ollama is unreachable. Surfaces the LLM-down
-    state explicitly — previously this returned a raw KB hit that looked like
-    a normal Vivi answer and let the user think the LLM was working."""
+    """Honest offline reply when Ollama is unreachable. Phase 2's corpus
+    layer takes over from kb_search once it's wired in."""
+    try:
+        from corpus import corpus_search
+        hits = corpus_search(query, k=1, min_similarity=0.4)
+        if hits:
+            h = hits[0]
+            body = (h.get('content') or '').strip().replace('\n', ' ')[:200]
+            return f"LLM offline. From the manual: {body}"
+    except ImportError:
+        pass
+    except Exception as e:
+        log.debug(f"corpus fallback failed: {e}")
     results = kb_search(query)
     if results:
         r = results[0]
         fix = r.get('fix', r.get('cause', '')).strip()
         body = f"{r['title']}" + (f" — {fix[:160]}" if fix else "")
         return f"LLM offline. Closest workshop note: {body}"
-    return "LLM offline and no matching workshop note. Check `systemctl status ollama` and that qwen2.5:1.5b is pulled."
+    return ("LLM offline and no matching workshop note. "
+            "Check that ollama is running and the model is pulled.")
 
 
 def _resolve_piper_bin() -> str:
@@ -411,33 +643,11 @@ def _resolve_piper_bin() -> str:
 _PIPER_BIN = _resolve_piper_bin()
 
 
-_MARKDOWN_NOISE_RE = re.compile(
-    r"""(\*{1,3}            # **bold** or *italic* or ***bold-italic***
-        | _{1,2}            # _italic_ or __bold__
-        | `{1,3}            # `code` or ```fenced```
-        | ^\s*[#>-]\s+      # leading # heading, > quote, - bullet
-        | \[([^\]]*)\]\([^)]*\)  # [text](url) — keep just the text
-    )""",
-    re.VERBOSE | re.MULTILINE,
-)
-
-
-def _strip_markdown_for_tts(text: str) -> str:
-    """Piper reads markdown literally ('asterisk asterisk my coolant').
-    Strip the syntax, keep the text."""
-    # First pass: collapse [text](url) → text so we don't lose meaning.
-    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
-    # Second pass: strip remaining markdown noise.
-    text = re.sub(r"\*{1,3}|_{1,2}|`{1,3}", "", text)
-    text = re.sub(r"^\s*[#>-]\s+", "", text, flags=re.MULTILINE)
-    return text.strip()
-
-
 def speak(text: str) -> None:
     """Synthesise speech via Piper TTS, play locally, and publish WAV to MQTT."""
     AUDIO_DIR.mkdir(exist_ok=True)
     wav_path = AUDIO_DIR / "vivi.wav"
-    text = _strip_markdown_for_tts(text)
+    text = _strip_markdown(text)
 
     try:
         model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
@@ -504,6 +714,7 @@ def _publish_response(query: str, response: str) -> None:
 
 def on_message(client, userdata, msg) -> None:
     """Dispatch incoming MQTT messages."""
+    global _telemetry_ts
     topic = msg.topic
     try:
         payload = json.loads(msg.payload)
@@ -518,6 +729,14 @@ def on_message(client, userdata, msg) -> None:
     elif topic == TOPICS['snapshot']:
         if isinstance(payload, dict):
             _telemetry.update(payload)
+            _telemetry_ts = time.time()
+    elif topic == TOPICS['alert_message']:
+        # alert_engine publishes {"level": int, "message": str, "ts": float}
+        if isinstance(payload, dict):
+            level = int(payload.get('level', 0) or 0)
+            message = str(payload.get('message') or '').strip()
+            if message:
+                _recent_alerts.append((time.time(), level, message))
 
 
 def _handle_text_query(query: str) -> None:
@@ -641,8 +860,15 @@ def main() -> None:
     _mqtt_client.subscribe([
         (TOPICS['vivi_query'], 0),
         (TOPICS['snapshot'], 0),
+        (TOPICS['alert_message'], 0),
     ])
     _mqtt_client.loop_start()
+
+    # Restore the previous session's history if it's recent (<10min). If not,
+    # mint a fresh session id so this drive's context is clean from the start.
+    _restore_history()
+    if not _session_id:
+        _new_session()
 
     _publish_status("starting")
     time.sleep(1)
@@ -667,6 +893,7 @@ def main() -> None:
         time.sleep(0.5)
 
     log.info("Vivi shutting down...")
+    _save_history()
     _publish_status("offline")
     _mqtt_client.loop_stop()
     _mqtt_client.disconnect()

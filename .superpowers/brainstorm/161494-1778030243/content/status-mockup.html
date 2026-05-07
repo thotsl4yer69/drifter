@@ -1,0 +1,183 @@
+<h2>STATUS Page — Proposed Redesign</h2>
+<p class="subtitle">Mockup at HUD proportions (480×320). Click chips to toggle state.</p>
+
+<style>
+.hud-frame {
+  width:480px; height:320px; background:#0a0a0a;
+  border:1px solid #333; border-radius:4px;
+  font-family:'Courier New',monospace;
+  display:flex; flex-direction:column;
+  margin:16px auto; overflow:hidden;
+  box-shadow:0 0 30px rgba(0,0,0,0.6);
+}
+/* top bar */
+.h-topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:4px 10px; background:#0d0d0d; border-bottom:1px solid #1e1e1e;
+  flex-shrink:0;
+}
+.h-id { font-size:10px; color:#555; letter-spacing:2px; }
+.h-conn { font-size:9px; color:#4caf50; display:flex; align-items:center; gap:4px; }
+.h-conn-dot { width:5px; height:5px; border-radius:50%; background:#4caf50; }
+.h-alert-ind { font-size:9px; padding:1px 6px; border-radius:2px; border:1px solid #4caf50; color:#4caf50; }
+
+/* page body */
+.h-body { flex:1; display:flex; flex-direction:column; padding:6px 8px 0; gap:5px; overflow:hidden; }
+
+/* alert box */
+.h-alert-box {
+  padding:4px 8px; border:1px solid #333; border-radius:3px;
+  font-size:10px; color:#4caf50; letter-spacing:0.5px;
+  flex-shrink:0;
+}
+.h-alert-box.amber { color:#ffbb00; border-color:#ffbb00; }
+.h-alert-box.red { color:#ff4444; border-color:#ff4444; }
+
+/* dtc */
+.h-dtc { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.h-dtc-label { font-size:8px; color:#555; letter-spacing:1px; flex-shrink:0; }
+.h-dtc-val { font-size:9px; color:#555; }
+.h-dtc-code { font-size:9px; color:#ff9800; background:#1a1200; padding:1px 4px; border-radius:2px; margin-right:2px; }
+
+/* service grid */
+.h-svc-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:3px;
+  flex:1; overflow:hidden;
+}
+.h-svc-chip {
+  display:flex; align-items:center; gap:4px;
+  padding:3px 5px; border-radius:3px; background:#111;
+  border:1px solid #1e1e1e; cursor:pointer; transition:all 0.15s;
+  font-size:8.5px; color:#888; letter-spacing:0.3px;
+  user-select:none;
+}
+.h-svc-chip:hover { background:#161616; }
+.h-svc-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; background:#555; }
+.h-svc-chip.ok .h-svc-dot { background:#4caf50; box-shadow:0 0 4px rgba(76,175,80,0.5); }
+.h-svc-chip.ok { color:#aaa; }
+.h-svc-chip.fail .h-svc-dot { background:#ff4444; box-shadow:0 0 4px rgba(255,68,68,0.5); }
+.h-svc-chip.fail { color:#ff8888; border-color:#3a1111; }
+.h-svc-chip.warn .h-svc-dot { background:#ffbb00; box-shadow:0 0 4px rgba(255,187,0,0.4); animation:pulse-dot 1.2s infinite; }
+.h-svc-chip.warn { color:#ffdd88; border-color:#2a2000; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* sys footer */
+.h-sys-footer {
+  display:flex; justify-content:space-around; align-items:center;
+  padding:4px 4px 5px; border-top:1px solid #1a1a1a; flex-shrink:0;
+}
+.h-sys-item { display:flex; gap:4px; align-items:baseline; }
+.h-sys-label { font-size:7.5px; color:#444; letter-spacing:1px; }
+.h-sys-val { font-size:9px; color:#777; }
+
+/* bottom bar */
+.h-bottombar {
+  display:flex; align-items:center; justify-content:center; gap:5px;
+  padding:3px 8px; background:#0d0d0d; border-top:1px solid #1a1a1a; flex-shrink:0;
+}
+.h-dot { width:5px; height:5px; border-radius:50%; background:#333; }
+.h-dot.active { background:#00ccff; }
+.h-page-label { font-size:8px; color:#555; letter-spacing:2px; margin-left:auto; }
+</style>
+
+<div class="hud-frame">
+  <div class="h-topbar">
+    <span class="h-id">MZ1312</span>
+    <span class="h-conn"><span class="h-conn-dot"></span>WS</span>
+    <span class="h-alert-ind">OK</span>
+  </div>
+
+  <div class="h-body">
+    <div class="h-alert-box" id="mock-alert">SYSTEMS NOMINAL</div>
+
+    <div class="h-dtc">
+      <span class="h-dtc-label">DTC</span>
+      <span class="h-dtc-val" id="mock-dtc">NO CODES</span>
+    </div>
+
+    <div class="h-svc-grid" id="mock-svc-grid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <div class="h-sys-footer">
+    <div class="h-sys-item"><span class="h-sys-label">CPU</span><span class="h-sys-val">47°C</span></div>
+    <div class="h-sys-item"><span class="h-sys-label">MEM</span><span class="h-sys-val">62%</span></div>
+    <div class="h-sys-item"><span class="h-sys-label">DISK</span><span class="h-sys-val">31%</span></div>
+    <div class="h-sys-item"><span class="h-sys-label">UP</span><span class="h-sys-val">3h20m</span></div>
+  </div>
+
+  <div class="h-bottombar">
+    <div class="h-dot"></div><div class="h-dot"></div><div class="h-dot"></div>
+    <div class="h-dot active"></div>
+    <div class="h-dot"></div><div class="h-dot"></div>
+    <span class="h-page-label">STATUS</span>
+  </div>
+</div>
+
+<p class="subtitle" style="text-align:center;margin-top:8px;">Click any service chip to toggle its state (ok → fail → warn → ok)</p>
+
+<div style="display:flex;gap:16px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+  <button onclick="setAllOk()" style="padding:6px 14px;background:#1a2a1a;color:#4caf50;border:1px solid #4caf50;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;">ALL OK</button>
+  <button onclick="setOneFail()" style="padding:6px 14px;background:#2a1a1a;color:#ff4444;border:1px solid #ff4444;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;">SIMULATE FAILURE</button>
+  <button onclick="setAlertAmber()" style="padding:6px 14px;background:#2a2000;color:#ffbb00;border:1px solid #ffbb00;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;">AMBER ALERT</button>
+</div>
+
+<script>
+const SERVICES = [
+  'canbridge','alerts','logger','anomaly','analyst',
+  'voice','vivi','hotspot','homesync','watchdog',
+  'realdash','rf','wardrive','dashboard','fbmirror',
+  'voicein','flipper'
+];
+const STATES = ['ok','fail','warn'];
+
+function buildGrid() {
+  const grid = document.getElementById('mock-svc-grid');
+  grid.innerHTML = '';
+  SERVICES.forEach(name => {
+    const chip = document.createElement('div');
+    chip.className = 'h-svc-chip ok';
+    chip.dataset.state = 'ok';
+    chip.dataset.name = name;
+    chip.innerHTML = `<span class="h-svc-dot"></span><span>${name}</span>`;
+    chip.onclick = () => {
+      const states = STATES;
+      const cur = states.indexOf(chip.dataset.state);
+      const next = states[(cur+1) % states.length];
+      chip.dataset.state = next;
+      chip.className = 'h-svc-chip ' + next;
+    };
+    grid.appendChild(chip);
+  });
+}
+
+function setAllOk() {
+  document.querySelectorAll('.h-svc-chip').forEach(c => {
+    c.dataset.state = 'ok'; c.className = 'h-svc-chip ok';
+  });
+  const a = document.getElementById('mock-alert');
+  a.textContent = 'SYSTEMS NOMINAL'; a.className = 'h-alert-box';
+}
+
+function setOneFail() {
+  setAllOk();
+  const chips = document.querySelectorAll('.h-svc-chip');
+  const idx = Math.floor(Math.random() * chips.length);
+  chips[idx].dataset.state = 'fail';
+  chips[idx].className = 'h-svc-chip fail';
+  const a = document.getElementById('mock-alert');
+  a.textContent = 'SERVICE FAULT — drifter-' + chips[idx].dataset.name;
+  a.className = 'h-alert-box red';
+}
+
+function setAlertAmber() {
+  const a = document.getElementById('mock-alert');
+  a.textContent = 'AMBER — STFT B1 +14.2% idle, possible vacuum leak';
+  a.className = 'h-alert-box amber';
+  const dtc = document.getElementById('mock-dtc');
+  dtc.innerHTML = '<span class="h-dtc-code">P0171</span><span class="h-dtc-code pending">P0174</span>';
+}
+
+buildGrid();
+</script>

@@ -86,9 +86,10 @@ def test_ask_vivi_calls_ollama(monkeypatch):
 
 
 def test_ask_vivi_passes_context_to_ollama(monkeypatch):
-    """ask_vivi should inject telemetry context into the Ollama prompt."""
-    import vivi
+    """ask_vivi should inject fresh telemetry into the Ollama prompt."""
+    import vivi, time as _t
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 780, 'coolant': 95})
+    monkeypatch.setattr(vivi, '_telemetry_ts', _t.time())  # fresh
     monkeypatch.setattr(vivi, '_mqtt_client', None)
     captured = {}
     def fake_ollama(prompt, system, history=None):
@@ -96,8 +97,7 @@ def test_ask_vivi_passes_context_to_ollama(monkeypatch):
         captured['history'] = history
         return "Looks fine."
     with patch('vivi._query_ollama', side_effect=fake_ollama):
-        with patch('vivi.kb_search', return_value=[]):
-            vivi.ask_vivi("why is it rough")
+        vivi.ask_vivi("why is it rough")
     assert '780' in captured['prompt'] or '95' in captured['prompt']
 
 
@@ -130,35 +130,61 @@ def test_ask_vivi_message_when_nothing_available(monkeypatch):
 
 # ── _build_context ──
 
-def test_build_context_includes_telemetry(monkeypatch):
-    """_build_context must include live telemetry values."""
-    import vivi
+def test_build_context_includes_fresh_telemetry(monkeypatch):
+    """Live telemetry block appears when _telemetry_ts is recent."""
+    import vivi, time as _t
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 820, 'coolant': 93, 'voltage': 14.1})
-    with patch('vivi.kb_search', return_value=[]):
-        ctx = vivi._build_context("anything")
+    monkeypatch.setattr(vivi, '_telemetry_ts', _t.time())
+    ctx = vivi._build_context("anything")
     assert '820' in ctx
     assert '93' in ctx
+    assert 'Live telemetry' in ctx
 
 
-def test_build_context_includes_rag(monkeypatch):
-    """_build_context must include mechanic RAG results."""
+def test_build_context_omits_stale_telemetry(monkeypatch):
+    """Stale telemetry (>10s) is dropped entirely — no NO DATA marker."""
+    import vivi, time as _t
+    monkeypatch.setattr(vivi, '_telemetry', {'rpm': 820})
+    monkeypatch.setattr(vivi, '_telemetry_ts', _t.time() - 60)
+    ctx = vivi._build_context("anything")
+    assert '820' not in ctx
+    assert 'Live telemetry' not in ctx
+
+
+def test_build_context_includes_driver_name(monkeypatch):
+    """Driver name from driver.yaml lands at the top of the context."""
     import vivi
+    monkeypatch.setattr(vivi, '_driver', {'name': 'Jack', 'preferred_name': 'Jack'})
     monkeypatch.setattr(vivi, '_telemetry', {})
-    kb_hit = [{'title': 'Thermostat Housing', 'fix': 'Replace with aluminium housing.'}]
-    with patch('vivi.kb_search', return_value=kb_hit):
-        ctx = vivi._build_context("coolant leak")
-    assert 'Thermostat' in ctx
+    ctx = vivi._build_context("hi")
+    assert 'Driver: Jack' in ctx
 
 
-def test_build_context_empty_when_no_data(monkeypatch):
-    """When telemetry is empty, _build_context emits an explicit
-    'NOT AVAILABLE' marker so small LLMs don't invent sensor values."""
+def test_build_context_includes_recent_alerts(monkeypatch):
+    """Alerts from drifter/alert/message in the last 5min show up in context."""
+    import vivi, time as _t
+    from collections import deque
+    fake_alerts = deque([(
+        _t.time() - 30, 3, 'Coolant 110°C — pull over'
+    )], maxlen=3)
+    monkeypatch.setattr(vivi, '_recent_alerts', fake_alerts)
+    monkeypatch.setattr(vivi, '_telemetry', {})
+    ctx = vivi._build_context("what's that")
+    assert 'Recent alerts' in ctx
+    assert 'Coolant 110' in ctx
+
+
+def test_build_context_minimal_when_no_data(monkeypatch):
+    """No telemetry, no alerts → context is just driver + vehicle line.
+    No 'NOT AVAILABLE' filler — the persona prompt already covers it."""
     import vivi
+    from collections import deque
     monkeypatch.setattr(vivi, '_telemetry', {})
-    with patch('vivi.kb_search', return_value=[]):
-        ctx = vivi._build_context("hello")
-    assert 'NOT AVAILABLE' in ctx
-    assert 'CAN' in ctx
+    monkeypatch.setattr(vivi, '_recent_alerts', deque(maxlen=3))
+    ctx = vivi._build_context("hello")
+    assert 'NOT AVAILABLE' not in ctx
+    assert 'Live telemetry' not in ctx
+    assert 'Vehicle:' in ctx
 
 
 # ── transcribe ──

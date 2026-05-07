@@ -1,0 +1,114 @@
+<h2>DRIFTER HUD — Current State</h2>
+<p class="subtitle">6 pages, 480×320 layout scaled to screen. Which areas do you want to improve?</p>
+
+<style>
+.hud-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin:20px 0; }
+.hud-page { background:#111; border:1px solid #333; border-radius:6px; padding:12px; cursor:pointer; transition:border-color 0.2s; }
+.hud-page:hover { border-color:#555; }
+.hud-page.selected { border-color:#00ccff; background:#0a1a22; }
+.page-num { font-size:10px; color:#555; font-family:monospace; text-transform:uppercase; }
+.page-name { font-size:15px; font-weight:700; color:#e0e0e0; margin:4px 0; letter-spacing:1px; }
+.page-items { font-size:11px; color:#888; line-height:1.6; }
+.page-items span { display:block; }
+.page-tag { display:inline-block; font-size:9px; padding:1px 5px; border-radius:3px; margin-top:6px; font-family:monospace; }
+.tag-solid { background:#1a3a1a; color:#4caf50; }
+.tag-thin { background:#2a2a1a; color:#ffbb00; }
+.tag-missing { background:#2a1a1a; color:#ff5555; }
+.also-section { margin-top:20px; border-top:1px solid #222; padding-top:16px; }
+.also-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:10px; }
+.also-card { background:#111; border:1px solid #333; border-radius:6px; padding:10px 12px; cursor:pointer; transition:border-color 0.2s; }
+.also-card:hover { border-color:#555; }
+.also-card.selected { border-color:#00ccff; background:#0a1a22; }
+.also-title { font-size:13px; font-weight:600; color:#ccc; }
+.also-desc { font-size:11px; color:#777; margin-top:3px; }
+</style>
+
+<div class="hud-grid" id="pages-grid" data-multiselect>
+  <div class="hud-page" data-choice="drive" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 0</div>
+    <div class="page-name">DRIVE</div>
+    <div class="page-items">
+      <span>Canvas tachometer + speed overlay</span>
+      <span>Coolant, battery, load, throttle bars</span>
+      <span>Alert message strip</span>
+    </div>
+    <span class="page-tag tag-solid">Primary view</span>
+  </div>
+
+  <div class="hud-page" data-choice="tyres" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 1</div>
+    <div class="page-name">TYRES</div>
+    <div class="page-items">
+      <span>Car silhouette with 4 wheel positions</span>
+      <span>PSI + temp per corner</span>
+      <span>TPMS via RTL-SDR 433 MHz</span>
+    </div>
+    <span class="page-tag tag-thin">No color alert on wheels</span>
+  </div>
+
+  <div class="hud-page" data-choice="engine" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 2</div>
+    <div class="page-name">ENGINE</div>
+    <div class="page-items">
+      <span>STFT/LTFT B1&amp;B2, load, MAF</span>
+      <span>O2 B1/B2, timing advance</span>
+      <span>IAT, fuel level, baro, run time</span>
+    </div>
+    <span class="page-tag tag-solid">Data-dense</span>
+  </div>
+
+  <div class="hud-page" data-choice="status" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 3</div>
+    <div class="page-name">STATUS</div>
+    <div class="page-items">
+      <span>Active alert + DTC codes</span>
+      <span>CPU temp, RAM, disk, uptime</span>
+      <span>No service health grid</span>
+    </div>
+    <span class="page-tag tag-missing">17 services not shown</span>
+  </div>
+
+  <div class="hud-page" data-choice="rf" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 4</div>
+    <div class="page-name">RF</div>
+    <div class="page-items">
+      <span>SDR dongle state, TPMS count</span>
+      <span>RTL-433 status, ADS-B aircraft count</span>
+      <span>60-bar spectrum visualiser</span>
+    </div>
+    <span class="page-tag tag-solid">RTL-SDR</span>
+  </div>
+
+  <div class="hud-page" data-choice="scan" onclick="toggleSelect(this)">
+    <div class="page-num">PAGE 5</div>
+    <div class="page-name">SCAN</div>
+    <div class="page-items">
+      <span>Wi-Fi SSID count, BT device count</span>
+      <span>Session duration</span>
+      <span>Top networks list</span>
+    </div>
+    <span class="page-tag tag-solid">Wardrive</span>
+  </div>
+</div>
+
+<div class="also-section">
+  <div class="label">Also worth looking at</div>
+  <div class="also-grid" id="also-grid" data-multiselect>
+    <div class="also-card" data-choice="flipper" onclick="toggleSelect(this)">
+      <div class="also-title">Flipper Zero HUD page</div>
+      <div class="also-desc">flipper_bridge.py + drifter-flipper.service exist but there's no HUD page for it</div>
+    </div>
+    <div class="also-card" data-choice="drive-layout" onclick="toggleSelect(this)">
+      <div class="also-title">DRIVE page layout</div>
+      <div class="also-desc">Fuel level and run-time only appear on ENGINE — could be worth surfacing on the main DRIVE view</div>
+    </div>
+    <div class="also-card" data-choice="alerts" onclick="toggleSelect(this)">
+      <div class="also-title">Alert history / log</div>
+      <div class="also-desc">Alerts flash and dismiss — no way to review the last N alerts on screen</div>
+    </div>
+    <div class="also-card" data-choice="session" onclick="toggleSelect(this)">
+      <div class="also-title">Drive session summary</div>
+      <div class="also-desc">Session data (max RPM, distance, alert count) logs to disk but isn't visible in the HUD</div>
+    </div>
+  </div>
+</div>
