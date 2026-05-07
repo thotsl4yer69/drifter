@@ -191,8 +191,9 @@ echo -e "\n${AMBER}[7/8] Optional Components${NC}"
 # TTS
 if command -v piper &>/dev/null; then
     ok "Piper TTS installed"
-    if [ -f /opt/drifter/piper-models/en_GB-alan-medium.onnx ]; then
-        ok "Piper voice model present"
+    voice=$(ls /opt/drifter/piper-models/*.onnx 2>/dev/null | head -1)
+    if [ -n "$voice" ]; then
+        ok "Piper voice model present ($(basename "$voice" .onnx))"
     else
         warn "Piper voice model missing — voice alerts will use espeak-ng fallback"
     fi

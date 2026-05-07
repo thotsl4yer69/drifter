@@ -116,20 +116,23 @@ else
     }
 fi
 
-# Download Piper voice model
+# Download Piper voice model — Jenny (female British) matches Vivi's persona.
+# en_GB-alan-medium ships pre-existing on some installs; we keep it untouched
+# so the legacy voice_alerts service still resolves it, but Vivi's PIPER_MODEL
+# in src/config.py points at jenny_dioco.
 PIPER_MODEL_DIR="${DRIFTER_DIR}/piper-models"
-PIPER_MODEL_NAME="en_GB-alan-medium"
+PIPER_MODEL_NAME="en_GB-jenny_dioco-medium"
 PIPER_MODEL_FILE="${PIPER_MODEL_DIR}/${PIPER_MODEL_NAME}.onnx"
 PIPER_JSON_FILE="${PIPER_MODEL_DIR}/${PIPER_MODEL_NAME}.onnx.json"
 
 if [ -f "$PIPER_MODEL_FILE" ]; then
-    ok "Piper voice model already present"
+    ok "Piper voice model already present (${PIPER_MODEL_NAME})"
 else
     mkdir -p "$PIPER_MODEL_DIR"
-    PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium"
+    PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium"
     curl -sL "${PIPER_BASE_URL}/${PIPER_MODEL_NAME}.onnx" -o "$PIPER_MODEL_FILE" 2>/dev/null && \
     curl -sL "${PIPER_BASE_URL}/${PIPER_MODEL_NAME}.onnx.json" -o "$PIPER_JSON_FILE" 2>/dev/null && \
-    ok "Piper voice model downloaded (en_GB-alan-medium)" || \
+    ok "Piper voice model downloaded (${PIPER_MODEL_NAME})" || \
     warn "Could not download Piper model — voice will use espeak-ng fallback"
 fi
 
@@ -142,11 +145,15 @@ else
         warn "Ollama installation failed — LLM mechanic will be unavailable"
 fi
 
-# Pull the mechanic model
+# Pull LLM models
+# qwen2.5:7b — session_analyst (offline, no turn budget, smarter)
+# qwen2.5:3b — Vivi conversational turns on Pi 5 (~25-40s end-to-end)
 if command -v ollama &>/dev/null; then
-    step 5 "Pulling LLM model (qwen2.5:7b)"
-    ollama pull qwen2.5:7b 2>/dev/null && ok "LLM model ready (qwen2.5:7b)" || \
-        warn "Could not pull LLM model — run 'ollama pull qwen2.5:7b' manually"
+    step 5 "Pulling LLM models (qwen2.5:7b for analyst, qwen2.5:3b for Vivi)"
+    ollama pull qwen2.5:7b 2>/dev/null && ok "qwen2.5:7b ready (analyst)" || \
+        warn "Could not pull qwen2.5:7b — run 'ollama pull qwen2.5:7b' manually"
+    ollama pull qwen2.5:3b 2>/dev/null && ok "qwen2.5:3b ready (Vivi)" || \
+        warn "Could not pull qwen2.5:3b — run 'ollama pull qwen2.5:3b' manually"
 fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──
