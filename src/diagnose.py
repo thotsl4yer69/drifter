@@ -26,13 +26,28 @@ from typing import Callable
 try:
     from config import (
         SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
+        MODES, MODE_STATE_PATH, DEFAULT_MODE,
     )
 except ImportError:
     # Allow running from repo root for dev — point at src/ on sys.path.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from config import (  # type: ignore
         SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
+        MODES, MODE_STATE_PATH, DEFAULT_MODE,
     )
+
+
+def _active_mode() -> str:
+    try:
+        return Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip() or DEFAULT_MODE
+    except OSError:
+        return DEFAULT_MODE
+
+
+def _expected_services() -> set[str]:
+    """Services that must be active in the currently-armed persona.
+    Out-of-mode services are checked but reported non-fatal."""
+    return MODES.get(_active_mode(), set(SERVICES))
 
 DASHBOARD_PORT = 8080
 WS_TELEMETRY_PORT = 8081
@@ -77,29 +92,38 @@ _HARDWARE_OPTIONAL_SERVICES = frozenset({
 
 
 def check_systemd_units() -> list[CheckResult]:
-    """Every service in config.SERVICES must report `active`."""
+    """Every in-mode service must report `active`. Out-of-mode services
+    (e.g. drifter-canbridge while persona=foot) are checked non-fatal."""
     results = []
     if not shutil.which('systemctl'):
         return [CheckResult('systemd', False, 'systemctl not available')]
+    expected = _expected_services()
     for svc in SERVICES:
+        in_mode = svc in expected
         try:
             r = _run(['systemctl', 'is-active', svc], timeout=2)
             active = r.stdout.strip() == 'active'
-            fatal = svc not in _HARDWARE_OPTIONAL_SERVICES
-            results.append(CheckResult(
-                f'service:{svc}', active,
-                '' if active else f'state={r.stdout.strip() or "unknown"}',
-                fatal=fatal,
-            ))
+            fatal = in_mode and svc not in _HARDWARE_OPTIONAL_SERVICES
+            msg = '' if active else f'state={r.stdout.strip() or "unknown"}'
+            if not in_mode:
+                msg = f'out-of-mode ({_active_mode()}) — {msg}' if msg else f'out-of-mode ({_active_mode()})'
+            results.append(CheckResult(f'service:{svc}', active, msg, fatal=fatal))
         except subprocess.SubprocessError as e:
-            results.append(CheckResult(f'service:{svc}', False, str(e)))
+            results.append(CheckResult(f'service:{svc}', False, str(e), fatal=in_mode))
     return results
 
 
 def check_can_bridge() -> CheckResult:
     """can0 must exist + be UP. If candump is available, sniff briefly for
     any frame as a soft round-trip indicator (the ECU on the OBD-II bus
-    answers 0x7DF requests; we just confirm the wire is alive)."""
+    answers 0x7DF requests; we just confirm the wire is alive). Skipped
+    when drifter-canbridge is not in the active persona's service set."""
+    if 'drifter-canbridge' not in _expected_services():
+        return CheckResult(
+            'can0', True,
+            f'skipped (out-of-mode: {_active_mode()})',
+            fatal=False,
+        )
     if not shutil.which('ip'):
         return CheckResult('can0', False, 'iproute2 not installed')
     try:
@@ -141,7 +165,14 @@ def check_can_bridge() -> CheckResult:
 
 def check_realdash_socket() -> CheckResult:
     """RealDash bridge listens TCP on REALDASH_TCP_PORT (default 35000).
-    Connect-and-close is the cheapest reachability probe."""
+    Connect-and-close is the cheapest reachability probe. Skipped when
+    drifter-realdash is not in the active persona's service set."""
+    if 'drifter-realdash' not in _expected_services():
+        return CheckResult(
+            'realdash', True,
+            f'skipped (out-of-mode: {_active_mode()})',
+            fatal=False,
+        )
     try:
         with socket.create_connection(('127.0.0.1', REALDASH_TCP_PORT), timeout=2):
             return CheckResult(

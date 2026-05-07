@@ -105,16 +105,42 @@ fi
 # ── 4. systemd services ──
 echo -e "\n${AMBER}[4/8] systemd Services${NC}"
 SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec"
+# Active persona — services NOT in this mode are reported but non-fatal.
+# config.py owns the canonical mapping; ask it directly so the bash side
+# can't drift out of sync. Falls back to "all services in mode" if the
+# resolver is unavailable (e.g. fresh checkout pre-install).
+EXPECTED_SERVICES=$(/opt/drifter/venv/bin/python3 -c "
+import sys; sys.path.insert(0, '/opt/drifter')
+from config import MODES, MODE_STATE_PATH, DEFAULT_MODE
+from pathlib import Path
+try:
+    m = (Path(MODE_STATE_PATH).read_text().strip() or DEFAULT_MODE)
+except OSError:
+    m = DEFAULT_MODE
+print(' '.join(sorted(MODES.get(m, set()))))
+" 2>/dev/null) || EXPECTED_SERVICES="$SERVICES"
+ACTIVE_MODE=$(cat /opt/drifter/mode.state 2>/dev/null || echo drive)
+ok "active persona: $ACTIVE_MODE"
 for svc in $SERVICES; do
+    in_mode=0
+    case " $EXPECTED_SERVICES " in *" $svc "*) in_mode=1 ;; esac
     if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
         if systemctl is-active --quiet "$svc" 2>/dev/null; then
             ok "$svc: enabled + running"
         else
             STATUS=$(systemctl is-active "$svc" 2>/dev/null)
-            warn "$svc: enabled but $STATUS"
+            if [ "$in_mode" = "1" ]; then
+                fail "$svc: enabled but $STATUS"
+            else
+                warn "$svc: $STATUS (out-of-mode)"
+            fi
         fi
     else
-        fail "$svc: not enabled"
+        if [ "$in_mode" = "1" ]; then
+            fail "$svc: not enabled"
+        else
+            warn "$svc: disabled (out-of-mode)"
+        fi
     fi
 done
 

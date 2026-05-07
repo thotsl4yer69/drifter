@@ -150,18 +150,37 @@ def test_check_systemd_units_when_systemctl_missing(monkeypatch):
 
 
 def test_check_can_bridge_no_iproute(monkeypatch):
+    # Force drive mode so the canbridge check actually runs (foot mode skips it).
+    monkeypatch.setattr(diagnose, '_expected_services', lambda: {'drifter-canbridge'})
     monkeypatch.setattr(diagnose.shutil, 'which', lambda x: None)
     r = diagnose.check_can_bridge()
     assert r.ok is False
     assert 'iproute2' in r.message
 
 
+def test_check_can_bridge_skipped_out_of_mode(monkeypatch):
+    monkeypatch.setattr(diagnose, '_expected_services', lambda: {'drifter-flipper'})
+    r = diagnose.check_can_bridge()
+    assert r.ok is True
+    assert r.fatal is False
+    assert 'out-of-mode' in r.message
+
+
 def test_check_realdash_socket_unreachable(monkeypatch):
     """If the bridge isn't running, we get a fatal failure with the port."""
+    monkeypatch.setattr(diagnose, '_expected_services', lambda: {'drifter-realdash'})
     monkeypatch.setattr(diagnose, 'REALDASH_TCP_PORT', 1)  # privileged, never listening
     r = diagnose.check_realdash_socket()
     assert r.ok is False
     assert '127.0.0.1:1' in r.message
+
+
+def test_check_realdash_socket_skipped_out_of_mode(monkeypatch):
+    monkeypatch.setattr(diagnose, '_expected_services', lambda: {'drifter-flipper'})
+    r = diagnose.check_realdash_socket()
+    assert r.ok is True
+    assert r.fatal is False
+    assert 'out-of-mode' in r.message
 
 
 def test_check_realdash_socket_reachable():
