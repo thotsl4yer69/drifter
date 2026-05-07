@@ -200,7 +200,7 @@ def test_speak_calls_piper(monkeypatch):
             vivi.speak("Thermostat housing is leaking again.")
     mock_popen.assert_called_once()
     cmd = mock_popen.call_args[0][0]
-    assert 'piper' in cmd
+    assert cmd[0].endswith('piper'), f"first arg should resolve to piper binary, got {cmd[0]!r}"
 
 
 def test_speak_publishes_wav(monkeypatch):

@@ -323,6 +323,18 @@ def _rag_fallback(query: str) -> str:
     return "Ollama's not responding — check it's running with 'ollama serve'."
 
 
+def _resolve_piper_bin() -> str:
+    """Pick the venv's piper-tts binary. The Debian /usr/bin/piper is a GTK
+    gaming-device configurator and silently rejects --model."""
+    for c in ('/opt/drifter/venv/bin/piper', '/usr/local/bin/piper'):
+        if Path(c).is_file():
+            return c
+    return 'piper'
+
+
+_PIPER_BIN = _resolve_piper_bin()
+
+
 def speak(text: str) -> None:
     """Synthesise speech via Piper TTS, play locally, and publish WAV to MQTT."""
     AUDIO_DIR.mkdir(exist_ok=True)
@@ -331,12 +343,15 @@ def speak(text: str) -> None:
     try:
         model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
         proc = subprocess.Popen(
-            ['piper', '--model', model_arg, '--output_file', str(wav_path)],
+            [_PIPER_BIN, '--model', model_arg, '--output_file', str(wav_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        proc.communicate(input=text.encode(), timeout=10)
+        # Piper on Pi 5 spends ~3-7s synthesising a Vivi-length sentence;
+        # 10s was tight enough that long replies hit TimeoutExpired *after*
+        # the wav was already written but before aplay was invoked.
+        proc.communicate(input=text.encode(), timeout=30)
     except subprocess.TimeoutExpired:
         log.warning("Piper TTS timeout")
         return
