@@ -104,22 +104,22 @@ class TestRouteTranscript:
                 return
         pytest.fail("hud_navigate not published")
 
-    def test_query_intent_publishes_to_llm_query(self, reset_mqtt):
+    def test_query_intent_publishes_to_vivi_query(self, reset_mqtt):
         from config import TOPICS
         voice_input.route_transcript("why is the coolant temp so high")
         topics_called = [c[0][0] for c in reset_mqtt.publish.call_args_list]
-        assert TOPICS['llm_query'] in topics_called
+        assert TOPICS['vivi_query'] in topics_called
 
     def test_query_payload_has_query_text(self, reset_mqtt):
         from config import TOPICS
         text = "what does the coolant warning light mean"
         voice_input.route_transcript(text)
         for call in reset_mqtt.publish.call_args_list:
-            if call[0][0] == TOPICS['llm_query']:
+            if call[0][0] == TOPICS['vivi_query']:
                 payload = json.loads(call[0][1])
                 assert payload['query'] == text
                 return
-        pytest.fail("llm_query not published")
+        pytest.fail("vivi_query not published")
 
     def test_empty_transcript_does_nothing(self, reset_mqtt):
         voice_input.route_transcript("")

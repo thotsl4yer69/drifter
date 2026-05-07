@@ -179,7 +179,6 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
 | `drifter-analyst` | Drive session analysis and reporting | Yes |
 | `drifter-voicein` | Vosk STT + OpenWakeWord voice input | Yes |
 | `drifter-fbmirror` | Framebuffer mirror for SPI LCD HUD | Yes |
-| `drifter-llm` | LLM mechanic (Ollama) — conversational diagnosis | No (optional) |
 
 ## MQTT Topics
 
@@ -338,9 +337,7 @@ drifter/
 │   ├── anomaly_monitor.py       # Statistical anomaly detection
 │   ├── session_analyst.py       # Post-drive session analysis + trend reports
 │   ├── db.py                    # SQLite session + telemetry store
-│   ├── llm_mechanic.py          # Ollama LLM mechanic with RAG + tool calling
 │   ├── llm_client.py            # LLM provider abstraction (Ollama / Groq / Anthropic)
-│   ├── tool_executor.py         # Risk-gated tool execution for LLM mechanic
 │   ├── mechanic.py              # X-Type offline knowledge base + RAG search
 │   ├── field_ops_kb.py          # Field operations knowledge base
 │   ├── diagnose.py              # Fleet-contract diagnostic probe (drifter diagnose)
@@ -369,8 +366,7 @@ drifter/
 │   ├── drifter-anomaly.service
 │   ├── drifter-analyst.service
 │   ├── drifter-dashboard.service
-│   ├── drifter-fbmirror.service
-│   └── drifter-llm.service      # disabled — superseded by drifter-analyst
+│   └── drifter-fbmirror.service
 ├── config/
 │   ├── nanomq.conf              # MQTT broker config
 │   ├── vivi.yaml                # Vivi voice assistant config

@@ -434,8 +434,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 def build_query_context(query: str) -> str:
     """Assemble the prompt the LLM sees when you ask a question in the UI.
 
-    Exposed at module scope so tests and the standalone llm_mechanic
-    service can reuse it without instantiating a handler.
+    Exposed at module scope so tests can reuse it without instantiating
+    a handler.
     """
     def _v(key):
         d = state.latest_state.get(key, {})

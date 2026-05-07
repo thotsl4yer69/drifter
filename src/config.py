@@ -577,9 +577,6 @@ TOPICS = {
     'wardrive_bt': 'drifter/wardrive/bt',
     'wardrive_status': 'drifter/wardrive/status',
     'wardrive_snapshot': 'drifter/wardrive/snapshot',
-    # LLM Mechanic
-    'llm_query': 'drifter/llm/query',
-    'llm_response': 'drifter/llm/response',
     # Analyst
     'analysis_report': 'drifter/analysis/report',
     'analysis_request': 'drifter/analysis/request',
@@ -629,11 +626,6 @@ PTT_GPIO_PIN = 17                    # GPIO pin for push-to-talk button
 VOICE_SILENCE_TIMEOUT = 1.5          # seconds of silence to end recording
 VOICE_MAX_RECORD = 30                # max seconds per utterance
 
-# ── Tool Executor ──
-TOOL_EXEC_TIMEOUT = 30               # seconds per command
-TOOL_EXEC_LONG_TIMEOUT = 300         # for long scans
-TOOL_CONFIRM_TIMEOUT = 15            # seconds to wait for voice confirmation
-
 # ── Anomaly Detection ──
 ANOMALY_ROLLING_WINDOW = 60        # readings per sensor
 ANOMALY_WARN_Z = 2.5
@@ -648,7 +640,6 @@ ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
 # Canonical list of 18 active systemd services.
-# drifter-llm was superseded by drifter-analyst and is disabled in install.sh.
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",

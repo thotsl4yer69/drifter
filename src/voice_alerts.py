@@ -217,20 +217,6 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload)
         topic = msg.topic
 
-        # LLM conversational response — speak it
-        if topic == TOPICS.get('llm_response'):
-            response = data.get('response', '')
-            if response:
-                speak(response)
-            return
-
-        # Vivi response (voice assistant replies)
-        if topic == TOPICS.get('vivi_response'):
-            message = data.get('message', data.get('response', ''))
-            if message:
-                speak(message)
-            return
-
         # Alert messages
         level = data.get('level', 0)
         message = data.get('message', '')
@@ -293,8 +279,6 @@ def main():
         return
 
     client.subscribe(TOPICS['alert_message'])
-    client.subscribe(TOPICS['llm_response'])
-    client.subscribe(TOPICS['vivi_response'])
     client.loop_start()
 
     # Startup announcement — X-Type specific

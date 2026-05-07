@@ -8,7 +8,7 @@ Brand: **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 **19 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.  
 Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, and service list.
 
-**Data flow**: `can_bridge.py` → MQTT (NanoMQ) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `llm_mechanic.py` / `anomaly_monitor.py` / `session_analyst.py` / `vivi.py`  
+**Data flow**: `can_bridge.py` → MQTT (NanoMQ) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `anomaly_monitor.py` / `session_analyst.py` / `vivi.py`  
 **MQTT topics** use the `TOPICS` dict from config — never hardcode topic strings. Hierarchy: `drifter/{domain}/{metric}`.  
 **RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.  
 **Web Dashboard**: HTTP on port 8080, WebSocket telemetry on 8081, audio on 8082.  

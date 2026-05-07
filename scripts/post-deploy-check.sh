@@ -51,7 +51,7 @@ done
 
 # ── 2. Source files deployed ──
 echo -e "\n${AMBER}[2/8] Deployed Files${NC}"
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py"
 MISSING=0
 for f in $SRC_FILES; do
     if [ ! -f "/opt/drifter/$f" ]; then
@@ -151,11 +151,10 @@ for svc in $SERVICES; do
     fi
 done
 
-# Confirm drifter-llm is disabled (superseded)
-if systemctl is-enabled --quiet drifter-llm 2>/dev/null; then
-    warn "drifter-llm is still enabled (should be disabled — superseded by drifter-analyst)"
-else
-    ok "drifter-llm correctly disabled"
+# drifter-llm.service was deleted (superseded by drifter-analyst). Warn if a
+# leftover unit file exists from an older deploy.
+if [ -f /etc/systemd/system/drifter-llm.service ]; then
+    warn "stale unit /etc/systemd/system/drifter-llm.service — install.sh should remove this on next run"
 fi
 
 # ── 5. CAN interface ──

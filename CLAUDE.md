@@ -104,8 +104,8 @@ drifter-wardrive    drifter-dashboard   drifter-fbmirror
 drifter-voicein     drifter-flipper
 ```
 
-`drifter-llm.service` ships in the repo but is **disabled** — superseded by
-`drifter-analyst`. `install.sh` runs `systemctl disable --now drifter-llm`.
+`drifter-llm.service` was removed (superseded by `drifter-analyst`); `install.sh`
+will tear down a leftover unit file from older deploys.
 
 ## Network layout
 

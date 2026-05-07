@@ -176,16 +176,12 @@ def route_transcript(text: str):
         _pub_voice_status('idle')
     else:
         _pub_voice_status('processing')
-        # Vivi owns the spoken-response chain: LLM → TTS → audio out.
-        # llm_query is published in parallel so the analyst/dashboard can
-        # log the same transcript without subscribing to vivi_query.
         payload = json.dumps({
             'query': text,
             'session_id': 'voice',
             'ts': time.time(),
         })
         mqtt_client.publish(TOPICS['vivi_query'], payload)
-        mqtt_client.publish(TOPICS['llm_query'], payload)
         log.info(f"Vivi query: {text[:60]}")
 
 
