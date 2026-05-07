@@ -10,3 +10,13 @@ drifter ALL=(root) NOPASSWD: /usr/sbin/ip link set dev wlan[0-9] up
 drifter ALL=(root) NOPASSWD: /usr/sbin/ip link set dev wlan[0-9] address [0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]
 drifter ALL=(root) NOPASSWD: /usr/bin/systemctl stop drifter-flipper
 drifter ALL=(root) NOPASSWD: /usr/bin/systemctl stop drifter-wardrive
+
+# Monitor-mode helpers — surfaced via the OPSEC dashboard's /api/tool/airmon-ng
+# entry. airmon-ng needs root to flip wlan iface into monitor mode and back.
+# Allowlist only the four subcommands we actually use; full root via airmon-ng
+# would be a privilege-escalation path (it can run arbitrary kill on the
+# default interface), so we constrain the args.
+drifter ALL=(root) NOPASSWD: /usr/sbin/airmon-ng check
+drifter ALL=(root) NOPASSWD: /usr/sbin/airmon-ng check kill
+drifter ALL=(root) NOPASSWD: /usr/sbin/airmon-ng start wlan[0-9]
+drifter ALL=(root) NOPASSWD: /usr/sbin/airmon-ng stop wlan[0-9]mon

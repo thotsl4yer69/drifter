@@ -48,55 +48,151 @@ MAX_POST_BODY = 4 * 1024
 TOOL_TIMEOUT_SEC = 30
 
 # ── Allowlisted commands ────────────────────────────────────────────────────
-# Quick probes — no args from web, fixed argv.
+# Quick probes — no args from web, fixed argv. Read-only / no-side-effect.
 PROBES: dict[str, list[str]] = {
-    'iwconfig':       ['iwconfig'],
-    'ip-addr':        ['ip', '-brief', 'addr'],
-    'ip-link':        ['ip', '-brief', 'link'],
-    'arp':            ['ip', 'neigh'],
-    'lsusb':          ['lsusb'],
-    'lspci':          ['lspci'],
-    'uname':          ['uname', '-a'],
-    'free':           ['free', '-h'],
-    'uptime':         ['uptime'],
-    'kismet-version': ['kismet', '--version'],
-    'nmap-version':   ['nmap', '--version'],
-    'aircrack-help':  ['aircrack-ng', '--help'],
+    # System / iface state
+    'iwconfig':         ['iwconfig'],
+    'iw-dev':           ['iw', 'dev'],
+    'ip-addr':          ['ip', '-brief', 'addr'],
+    'ip-link':          ['ip', '-brief', 'link'],
+    'ip-route':         ['ip', '-brief', 'route'],
+    'arp':              ['ip', 'neigh'],
+    'nmcli-radio':      ['nmcli', 'radio'],
+    'lsusb':            ['lsusb'],
+    'lspci':            ['lspci'],
+    'uname':            ['uname', '-a'],
+    'free':             ['free', '-h'],
+    'uptime':           ['uptime'],
+    # SDR hardware checks
+    'rtl-test':         ['rtl_test', '-t'],
+    'hackrf-info':      ['hackrf_info'],
+    # Toolchain version sanity
+    'kismet-version':   ['kismet', '--version'],
+    'nmap-version':     ['nmap', '--version'],
+    'masscan-version':  ['masscan', '--version'],
+    'aircrack-help':    ['aircrack-ng', '--help'],
+    'airmon-ng':        ['airmon-ng'],
 }
 
 # Configurable tools — argv template; user-supplied args appended via
 # shlex.split. Each user arg is treated as a single token; no shell metas.
-# The 'arg_pattern' regex is informational only (UI hint).
 TOOLS: dict[str, dict] = {
+    # ── Network discovery ─────────────────────────────────────────────────
     'nmap': {
         'argv':      ['nmap'],
         'default':   '-sn 10.42.0.0/24',
         'hint':      'target / flags (e.g. -sV 10.42.0.5)',
-        'timeout':   60,
+        'timeout':   120,
     },
     'nmap-fast': {
         'argv':      ['nmap', '-T4', '-F'],
         'default':   '10.42.0.0/24',
         'hint':      'target subnet/host',
-        'timeout':   60,
+        'timeout':   120,
     },
+    'masscan': {
+        'argv':      ['masscan', '--rate=1000'],
+        'default':   '-p80,443,22 10.42.0.0/24',
+        'hint':      'flags + target (e.g. -p1-65535 10.42.0.5)',
+        'timeout':   180,
+    },
+    # ── Wi-Fi recon ───────────────────────────────────────────────────────
     'iwlist-scan': {
         'argv':      ['iwlist'],
         'default':   'wlan0 scanning',
         'hint':      'iface scanning',
+        'timeout':   30,
+    },
+    'nmcli-wifi': {
+        'argv':      ['nmcli', '-t', '-f',
+                      'SSID,BSSID,SIGNAL,CHAN,SECURITY', 'device', 'wifi'],
+        'default':   'list',
+        'hint':      'list | rescan',
         'timeout':   20,
     },
+    'airmon-ng': {
+        'argv':      ['sudo', '-n', '/usr/sbin/airmon-ng'],
+        'default':   'check',
+        'hint':      'check | start wlan1 | stop wlan1mon',
+        'timeout':   20,
+    },
+    'kismet-info': {
+        'argv':      ['kismet', '--list-server-modules'],
+        'default':   '',
+        'hint':      '(no args needed)',
+        'timeout':   10,
+    },
+    # ── Bluetooth ─────────────────────────────────────────────────────────
     'hcitool': {
         'argv':      ['hcitool'],
         'default':   'scan',
-        'hint':      'subcommand',
+        'hint':      'subcommand (scan | inq | lescan)',
         'timeout':   30,
     },
+    'bluetoothctl': {
+        'argv':      ['bluetoothctl', '--timeout', '10'],
+        'default':   'devices',
+        'hint':      'subcommand (devices | scan on)',
+        'timeout':   15,
+    },
+    # ── SDR ───────────────────────────────────────────────────────────────
+    # rtl_power: spectrum sweep. Output written to stdout as CSV.
+    # Default sweeps 433MHz ISM band for 30s in 1MHz bins.
+    'rtl_power': {
+        'argv':      ['rtl_power', '-f', '430M:435M:25k', '-i', '1', '-e', '30s'],
+        'default':   '',
+        'hint':      'override flags (e.g. -f 88M:108M:200k -e 60s)',
+        'timeout':   90,
+    },
+    'rtl_433-once': {
+        'argv':      ['rtl_433', '-T', '20', '-F', 'json'],
+        'default':   '',
+        'hint':      'extra rtl_433 flags',
+        'timeout':   30,
+    },
+    # ── DNS / WHOIS / route ──────────────────────────────────────────────
+    'dig': {
+        'argv':      ['dig', '+short'],
+        'default':   'example.com',
+        'hint':      'host [type]',
+        'timeout':   15,
+    },
+    'whois': {
+        'argv':      ['whois'],
+        'default':   'example.com',
+        'hint':      'domain or IP',
+        'timeout':   20,
+    },
+    'traceroute': {
+        'argv':      ['traceroute', '-n', '-w', '2', '-q', '1'],
+        'default':   '8.8.8.8',
+        'hint':      'host',
+        'timeout':   30,
+    },
+    'mtr-report': {
+        'argv':      ['mtr', '-r', '-c', '5', '-n'],
+        'default':   '8.8.8.8',
+        'hint':      'host',
+        'timeout':   30,
+    },
+    # ── Web recon ─────────────────────────────────────────────────────────
     'curl': {
         'argv':      ['curl', '-sS', '-m', '10'],
         'default':   'https://ipinfo.io',
-        'hint':      'url',
+        'hint':      'url + curl flags',
         'timeout':   15,
+    },
+    'whatweb': {
+        'argv':      ['whatweb', '--quiet', '--no-errors'],
+        'default':   'http://10.42.0.1:8080',
+        'hint':      'url',
+        'timeout':   30,
+    },
+    'nikto': {
+        'argv':      ['nikto', '-Tuning', '12345b', '-maxtime', '60s', '-h'],
+        'default':   'http://10.42.0.1:8080',
+        'hint':      'target url',
+        'timeout':   90,
     },
 }
 
