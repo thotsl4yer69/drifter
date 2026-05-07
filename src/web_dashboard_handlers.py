@@ -138,8 +138,6 @@ def _healthz_payload() -> tuple[dict, int]:
 
 # Static files served with no extra rewriting. All live at /opt/drifter/*.
 _STATIC_FILES = {
-    '/screen':       ('/opt/drifter/screen_dash.html',    'text/html; charset=utf-8',       None),
-    '/screen.html':  ('/opt/drifter/screen_dash.html',    'text/html; charset=utf-8',       None),
     '/realdash.xml': ('/opt/drifter/drifter_channels.xml', 'application/xml',
                        'attachment; filename="drifter_channels.xml"'),
 }

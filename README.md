@@ -347,9 +347,8 @@ drifter/
 │   ├── web_dashboard_state.py   # Shared dashboard state (telemetry, alerts)
 │   ├── web_dashboard_audio.py   # Audio WebSocket bridge (port 8082)
 │   ├── web_dashboard_hardware.py# Hardware info helpers
-│   ├── screen_dash.html         # Standalone HUD for Pi display
 │   └── fbmirror.c               # Framebuffer mirror for SPI LCD
-├── services/                    # 17 active + 1 disabled systemd units
+├── services/                    # 18 active systemd units
 │   ├── drifter-canbridge.service
 │   ├── drifter-alerts.service
 │   ├── drifter-logger.service
@@ -393,7 +392,6 @@ drifter/
 │   ├── test_session_analyst.py
 │   ├── test_settings.py
 │   ├── test_status.py
-│   ├── test_tool_executor.py
 │   ├── test_vivi.py
 │   ├── test_voice_input.py
 │   ├── test_wardrive.py

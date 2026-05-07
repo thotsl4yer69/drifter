@@ -75,12 +75,6 @@ else
     fail "Missing: knowledge_base.json"
 fi
 
-if [ -f /opt/drifter/screen_dash.html ]; then
-    ok "Screen HUD deployed"
-else
-    warn "Missing: screen_dash.html (optional)"
-fi
-
 # ── 3. MQTT broker ──
 echo -e "\n${AMBER}[3/8] MQTT Broker${NC}"
 if systemctl is-active --quiet nanomq 2>/dev/null; then

@@ -246,10 +246,8 @@ if [ -d "${REPO_DIR}/src/data/mechanic" ]; then
     ok "Mechanic knowledge base deployed ($(ls "${REPO_DIR}/src/data/mechanic" | wc -l) files)"
 fi
 
-# Screen HUD
-cp "${REPO_DIR}/src/screen_dash.html" "${DRIFTER_DIR}/"
-cp "${REPO_DIR}/src/start-hud.sh" "${DRIFTER_DIR}/" 2>/dev/null && chmod +x "${DRIFTER_DIR}/start-hud.sh"
-ok "Screen HUD deployed"
+# (Old kiosk-mode SPI HUD removed — drifter-fbmirror mirrors fb0→fb1
+# directly in C, no HTML required, no Firefox-on-the-Pi layer needed.)
 
 # Framebuffer mirror (SPI LCD support)
 if [ -f "${REPO_DIR}/src/fbmirror.c" ]; then

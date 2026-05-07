@@ -125,4 +125,3 @@ MQTT client_id: `drifter-vivi`. Log tag: `[VIVI]`.
 - Home sync uses `NANOB_USER` ("sentient") with `username_pw_set()` (no password)
 - Wi-Fi hotspot: SSID `MZ1312_DRIFTER`, PSK `uncaged1312`, subnet `10.42.0.1/24`
 - RTL-SDR decodes only — no transmit capability. Emergency bands detected but encrypted traffic (TETRA) is not decoded
-- LLM tool execution (`tool_executor.py`) has risk-level gating — dangerous commands require explicit authorization
