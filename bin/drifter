@@ -1,6 +1,21 @@
 #!/bin/bash
-# DRIFTER operator CLI wrapper.
+# DRIFTER operator CLI.
 # Installed at /usr/local/bin/drifter by scripts/oneshot.sh.
-# Routes to /opt/drifter/diagnose.py running in the project venv.
+# Routes the first argument to the matching module under /opt/drifter.
 set -eo pipefail
-exec /opt/drifter/venv/bin/python3 /opt/drifter/diagnose.py "$@"
+
+PY=/opt/drifter/venv/bin/python3
+
+case "${1:-}" in
+    mode)
+        shift
+        exec "$PY" /opt/drifter/mode.py "$@"
+        ;;
+    diagnose|"")
+        exec "$PY" /opt/drifter/diagnose.py "$@"
+        ;;
+    *)
+        # Unknown verb — fall through to diagnose so its argparse owns the error.
+        exec "$PY" /opt/drifter/diagnose.py "$@"
+        ;;
+esac

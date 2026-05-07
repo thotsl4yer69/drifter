@@ -75,10 +75,15 @@ def _reset_healthz_cache():
 
 
 @pytest.fixture(autouse=True)
-def _fresh_heartbeats(monkeypatch):
-    """Default to fresh heartbeats so unrelated tests don't trip the
-    capability override — the bug-fix test below opts back into a stale one."""
+def _fresh_heartbeats(monkeypatch, tmp_path):
+    """Default to fresh heartbeats AND a tmp-isolated mode state so unrelated
+    tests don't trip the capability override or the mode-aware failure filter.
+    Tests that exercise those code paths opt back in explicitly."""
     monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: True)
+    # MODE_STATE_PATH points to a non-existent file → DEFAULT_MODE ('drive')
+    # is used, which expects every drive+shared service running. Mirrors the
+    # original assumption these tests were written under.
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', tmp_path / 'mode.state')
 
 
 def test_healthz_route_registered():
@@ -161,6 +166,29 @@ def test_healthz_payload_mqtt_shim_works_without_is_connected(monkeypatch):
     payload, _ = h._healthz_payload()
     assert payload['mqtt_connected'] is False
     state.mqtt_client = None
+
+
+def test_healthz_foot_mode_ignores_drive_only_inactive(monkeypatch, tmp_path):
+    """In FOOT mode, drive-only services being inactive is the *expected*
+    state — the contract must report status=ok and not list them as failed."""
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text('foot\n')
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
+    _reset_healthz_cache()
+    # All drive-only services down, all foot+shared up.
+    drive_only = {'drifter-canbridge', 'drifter-alerts', 'drifter-anomaly',
+                  'drifter-analyst', 'drifter-voice', 'drifter-realdash',
+                  'drifter-fbmirror', 'drifter-rf'}
+    monkeypatch.setattr(h, '_systemctl_active', lambda u: u not in drive_only)
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 200
+    assert payload['status'] == 'ok'
+    assert payload['mode'] == 'foot'
+    assert payload['services_failed'] == []
+    # Underlying services dict still reflects truth — drive-only ARE inactive.
+    assert payload['services']['drifter-canbridge'] is False
 
 
 def test_healthz_voicein_stale_heartbeat_marks_degraded(monkeypatch):

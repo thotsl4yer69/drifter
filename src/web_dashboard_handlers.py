@@ -18,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 from config import (
     load_settings, save_settings, XTYPE_DTC_LOOKUP, SERVICES,
+    MODES, MODE_STATE_PATH, DEFAULT_MODE,
 )
 from mechanic import (
     search as mechanic_search, VEHICLE_SPECS, COMMON_PROBLEMS,
@@ -82,7 +83,16 @@ def _healthz_payload() -> tuple[dict, int]:
     for svc, (hb_path, max_age) in _CAPABILITY_HEARTBEATS.items():
         if services.get(svc) and not _heartbeat_fresh(hb_path, max_age, now):
             services[svc] = False
-    failed = [s for s, ok in services.items() if not ok]
+    # Mode-aware failure: only services the current mode wants running count
+    # toward the "failed" list. Drive-only services being inactive in FOOT mode
+    # is the correct state, not a degradation.
+    try:
+        mode = (Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
+                or DEFAULT_MODE)
+    except OSError:
+        mode = DEFAULT_MODE
+    expected = MODES.get(mode, set(SERVICES))
+    failed = [s for s, ok in services.items() if s in expected and not ok]
 
     mqtt_ok = state.mqtt_client is not None and getattr(
         state.mqtt_client, 'is_connected', lambda: False)()
@@ -93,6 +103,7 @@ def _healthz_payload() -> tuple[dict, int]:
 
     payload = {
         'status':           'ok' if not failed else 'degraded',
+        'mode':             mode,
         'ts':               now,
         'services':         services,
         'services_failed':  failed,

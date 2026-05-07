@@ -647,7 +647,7 @@ REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
-# Canonical list of 15 active systemd services.
+# Canonical list of 17 active systemd services.
 # drifter-llm was superseded by drifter-analyst and is disabled in install.sh.
 SERVICES = [
     "drifter-canbridge",
@@ -668,3 +668,51 @@ SERVICES = [
     "drifter-voicein",
     "drifter-flipper",
 ]
+
+# ── Modes ──
+# Same hardware, two operator personas:
+#   DRIVE — in the vehicle, CAN connected, telemetry meaningful.
+#   FOOT  — battery-pack mobile, recon/opsec console.
+# Services classified into three buckets; each list is mutually exclusive,
+# and the union must equal SERVICES (validated below).
+DRIVE_ONLY_SERVICES = [
+    "drifter-canbridge",   # CAN bus needs vehicle ECUs present
+    "drifter-alerts",      # vehicle alerts
+    "drifter-anomaly",     # telemetry anomaly detector
+    "drifter-analyst",     # LLM session analyst over driving sessions
+    "drifter-voice",       # cabin TTS for vehicle alerts
+    "drifter-realdash",    # RealDash app feed
+    "drifter-fbmirror",    # SPI LCD mirror for the dash screen
+    "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
+]
+FOOT_ONLY_SERVICES = [
+    "drifter-wardrive",    # active Wi-Fi/BT recon
+    "drifter-flipper",     # Flipper Zero CLI bridge
+]
+SHARED_SERVICES = [
+    "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
+    "drifter-hotspot",     # Wi-Fi AP — phone tethers in either mode
+    "drifter-homesync",    # rsync to home node when reachable
+    "drifter-watchdog",    # service health monitor
+    "drifter-logger",      # telemetry log writer
+    "drifter-vivi",        # voice assistant LLM brain
+    "drifter-voicein",     # wake-word + STT
+]
+MODES = {
+    "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
+    "foot":  set(FOOT_ONLY_SERVICES)  | set(SHARED_SERVICES),
+    "both":  set(SERVICES),
+}
+# Sanity: every service must land in exactly one bucket.
+_classified = set(DRIVE_ONLY_SERVICES) | set(FOOT_ONLY_SERVICES) | set(SHARED_SERVICES)
+assert _classified == set(SERVICES), (
+    f"MODES classification drift: missing={set(SERVICES) - _classified}, "
+    f"extra={_classified - set(SERVICES)}"
+)
+assert not (set(DRIVE_ONLY_SERVICES) & set(FOOT_ONLY_SERVICES)), \
+    "service cannot be both DRIVE_ONLY and FOOT_ONLY"
+
+# Persistent mode marker — read by the dashboard and CLI to render which
+# persona is currently armed. Updated by `drifter mode <name>`.
+MODE_STATE_PATH = DRIFTER_DIR / "mode.state"
+DEFAULT_MODE = "drive"
