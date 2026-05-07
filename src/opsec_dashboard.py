@@ -36,7 +36,7 @@ sys.path.insert(0, '/opt/drifter')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import (  # noqa: E402
-    MODE_STATE_PATH, DEFAULT_MODE, MQTT_HOST, MQTT_PORT, TOPICS,
+    MODE_STATE_PATH, DEFAULT_MODE, MODES, MQTT_HOST, MQTT_PORT, TOPICS,
 )
 
 LOG_FORMAT = '%(asctime)s [OPSEC] %(message)s'
@@ -815,8 +815,8 @@ class OpsecHandler(BaseHTTPRequestHandler):
                 'ts':      time.time(),
             })
             return
-        if path == '/api/mode/status':
-            self._send_json(200, {'mode': current_mode()})
+        if path == '/api/mode/status' or path == '/api/mode':
+            self._send_json(200, {'mode': current_mode(), 'choices': sorted(MODES)})
             return
         if path == '/api/tools':
             self._send_json(200, {
@@ -846,6 +846,26 @@ class OpsecHandler(BaseHTTPRequestHandler):
             return
         if path == '/api/kill/halt-recon':
             self._send_json(200, kill_halt_recon())
+            return
+        if path.startswith('/api/mode/') and not path.endswith('/status'):
+            target = path[len('/api/mode/'):]
+            if target not in MODES:
+                self._send_json(400, {'error': f'unknown mode {target!r}'})
+                return
+            # systemd-run as a transient unit so the switch survives this
+            # process being SIGTERM'd by its own cgroup teardown when
+            # FOOT→DRIVE disables drifter-opsec.
+            r = subprocess.run(
+                ['sudo', '-n', '/usr/bin/systemd-run', '--no-block',
+                 '--unit=drifter-mode-switch', '/usr/local/bin/drifter', 'mode', target],
+                capture_output=True, text=True, timeout=10,
+            )
+            self._send_json(200, {
+                'requested': target,
+                'status':    'dispatched' if r.returncode == 0 else 'failed',
+                'rc':        r.returncode,
+                'stderr':    r.stderr.strip(),
+            })
             return
         self.send_error(404)
 
@@ -905,8 +925,11 @@ def main() -> int:
     log.info(f'probes={len(PROBES)} tools={len(TOOLS)}')
 
     def _shutdown(_signo, _frame):
+        # httpd.shutdown() blocks waiting for serve_forever to exit; calling
+        # it from the same thread that owns serve_forever deadlocks. Spawn
+        # a brief helper thread so the signal handler returns immediately.
         log.info('shutdown signal — closing socket')
-        httpd.shutdown()
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)

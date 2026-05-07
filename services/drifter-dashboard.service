@@ -18,7 +18,9 @@ Environment=PYTHONUNBUFFERED=1
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
 # read-only while leaving /opt/drifter writable for logs/state.
-NoNewPrivileges=true
+# NoNewPrivileges intentionally OMITTED: /api/mode/<name> invokes
+# `sudo -n drifter mode …` (NOPASSWD entries in /etc/sudoers.d/drifter-mode)
+# to flip personas from the UI. NoNewPrivileges=true would block sudo.
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelTunables=true

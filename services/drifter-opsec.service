@@ -13,6 +13,7 @@ WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/opsec_dashboard.py
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=10
 Environment=PYTHONUNBUFFERED=1
 
 # --- Hardening (see AGENTS.md) --------------------------------------

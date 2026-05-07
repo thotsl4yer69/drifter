@@ -76,6 +76,19 @@ body{
 }
 .header h1{font-size:20px;letter-spacing:8px;color:var(--accent);font-weight:700;text-shadow:0 0 18px var(--accent-glow)}
 .header .sub{font-size:var(--fs-xs);color:var(--text-mute);margin-top:3px;letter-spacing:2px}
+.mode-pill{
+  padding:4px 12px;border:1px solid var(--accent);border-radius:2px;
+  font-size:var(--fs-xs);letter-spacing:2px;color:var(--accent);
+  text-shadow:0 0 8px var(--accent-glow);font-family:monospace;
+}
+.mode-pill.foot{color:#39ff14;border-color:#39ff14;text-shadow:0 0 8px rgba(57,255,20,.5)}
+.mode-switch{
+  background:transparent;border:1px solid var(--border);color:var(--text-mute);
+  padding:4px 10px;border-radius:2px;font-family:monospace;font-size:var(--fs-xs);
+  letter-spacing:1.5px;cursor:pointer;transition:.14s;
+}
+.mode-switch:hover{color:var(--accent);border-color:var(--accent)}
+.mode-switch:disabled{opacity:.4;cursor:wait}
 
 /* Status bar */
 .status-bar{
@@ -431,9 +444,15 @@ details[open] summary::before{content:"▾ "}
 </head>
 <body>
 
-<div class="header">
-  <h1>DRIFTER</h1>
-  <div class="sub">2004 JAGUAR X-TYPE 2.5L V6 &mdash; MZ1312</div>
+<div class="header" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+  <div>
+    <h1>DRIFTER</h1>
+    <div class="sub">2004 JAGUAR X-TYPE 2.5L V6 &mdash; MZ1312</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="mode-pill" class="mode-pill drive">DRIVE</span>
+    <button id="mode-switch" class="mode-switch" title="Switch persona">→ FOOT</button>
+  </div>
 </div>
 
 <div class="status-bar">
@@ -1433,6 +1452,48 @@ function toggleMic(){
 }
 
 document.getElementById('ask-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askMechanic();}});
+
+// ── Mode pill + persona switch ──
+async function refreshModePill(){
+  try{
+    const m = await fetch('/api/mode').then(r=>r.json());
+    const pill = document.getElementById('mode-pill');
+    const btn  = document.getElementById('mode-switch');
+    pill.textContent = m.mode.toUpperCase();
+    pill.className = 'mode-pill ' + m.mode;
+    btn.textContent = m.mode === 'foot' ? '→ DRIVE' : '→ FOOT';
+    btn.dataset.target = m.mode === 'foot' ? 'drive' : 'foot';
+  }catch(e){}
+}
+document.getElementById('mode-switch').addEventListener('click', async (e)=>{
+  const btn = e.currentTarget;
+  const target = btn.dataset.target || 'foot';
+  if (!confirm('Switch persona to ' + target.toUpperCase() + '?\\n\\nThis will start/stop services to match the new mode.')) return;
+  btn.disabled = true;
+  btn.textContent = 'SWITCHING…';
+  try{
+    const res = await fetch('/api/mode/' + target, {method:'POST'});
+    const data = await res.json();
+    if (data.status !== 'dispatched'){
+      alert('mode switch rejected: ' + JSON.stringify(data));
+      btn.disabled = false;
+      refreshModePill();
+      return;
+    }
+    // Switch runs detached because it can SIGTERM us mid-call (when the
+    // dashboard's own mode flips out). Wait for systemctl to finish, then
+    // hop to the new persona's port.
+    setTimeout(() => {
+      const port = target === 'foot' ? 8090 : 8080;
+      location.href = 'http://' + location.hostname + ':' + port + '/';
+    }, 4500);
+  }catch(err){
+    alert('mode switch error: ' + err);
+    btn.disabled = false;
+  }
+});
+refreshModePill();
+setInterval(refreshModePill, 10000);
 
 // ── Start ──
 connect();

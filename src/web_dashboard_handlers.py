@@ -251,7 +251,40 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/settings':
             self._post_settings()
             return
+        if self.path.startswith('/api/mode/'):
+            self._post_mode(self.path[len('/api/mode/'):])
+            return
         self.send_error(404)
+
+    def _get_mode(self, parsed):
+        try:
+            mode = (Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
+                    or DEFAULT_MODE)
+        except OSError:
+            mode = DEFAULT_MODE
+        self._serve_json({'mode': mode, 'choices': sorted(MODES)})
+
+    def _post_mode(self, target: str):
+        if target not in MODES:
+            self.send_error(400, f'unknown mode {target!r}')
+            return
+        # systemd-run spawns the switch as a transient unit OUTSIDE this
+        # dashboard's cgroup. Required for the foot→drive case where the
+        # opsec dashboard initiates a switch that disables drifter-opsec
+        # mid-call: systemctl SIGTERMs the cgroup, which would kill any
+        # subprocess.Popen child of opsec even with start_new_session.
+        r = subprocess.run(
+            ['sudo', '-n', '/usr/bin/systemd-run', '--no-block',
+             '--unit=drifter-mode-switch', '/usr/local/bin/drifter', 'mode', target],
+            capture_output=True, text=True, timeout=10,
+        )
+        _healthz_cache.update(ts=0.0, payload=None, http_status=200)
+        self._serve_json({
+            'requested': target,
+            'status':    'dispatched' if r.returncode == 0 else 'failed',
+            'rc':        r.returncode,
+            'stderr':    r.stderr.strip(),
+        })
 
     def _post_analyse(self):
         try:
@@ -479,4 +512,5 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/mechanic/fuses':        DashboardHandler._get_fuses,
     '/api/mechanic/training':     DashboardHandler._get_training,
     '/api/mechanic/tsb':          DashboardHandler._get_tsb,
+    '/api/mode':                  DashboardHandler._get_mode,
 }
