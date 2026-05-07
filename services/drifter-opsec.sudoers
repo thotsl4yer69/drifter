@@ -1,0 +1,12 @@
+# /etc/sudoers.d/drifter-opsec
+# NOPASSWD entries for the OPSEC dashboard's killswitch actions.
+# Installed by install.sh at /etc/sudoers.d/drifter-opsec (mode 0440).
+#
+# Scope: only operations the killswitch needs. No catch-all systemctl, no
+# arbitrary ip-link — everything is constrained by exact subcommand pattern.
+
+drifter ALL=(root) NOPASSWD: /usr/sbin/ip link set dev wlan[0-9] down
+drifter ALL=(root) NOPASSWD: /usr/sbin/ip link set dev wlan[0-9] up
+drifter ALL=(root) NOPASSWD: /usr/sbin/ip link set dev wlan[0-9] address [0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl stop drifter-flipper
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl stop drifter-wardrive

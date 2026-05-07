@@ -345,6 +345,16 @@ for svc in ${REPO_DIR}/services/*.service; do
     cp "$svc" /etc/systemd/system/
 done
 
+# Killswitch sudoers — narrow NOPASSWD entries for OPSEC dashboard actions.
+# visudo -c validates syntax before installing; bail loud if the file is bad
+# so we don't end up with a broken /etc/sudoers.d that locks out sudo.
+SUDOERS_SRC="${REPO_DIR}/services/drifter-opsec.sudoers"
+SUDOERS_DST="/etc/sudoers.d/drifter-opsec"
+if [ -f "$SUDOERS_SRC" ]; then
+    install -m 0440 -o root -g root "$SUDOERS_SRC" "$SUDOERS_DST"
+    visudo -cf "$SUDOERS_DST" >/dev/null
+fi
+
 systemctl daemon-reload
 
 # Enable all services

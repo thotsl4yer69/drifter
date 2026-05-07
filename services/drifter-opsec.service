@@ -16,7 +16,9 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
 # --- Hardening (see AGENTS.md) --------------------------------------
-NoNewPrivileges=true
+# NoNewPrivileges intentionally OMITTED: the killswitch invokes sudo
+# (NOPASSWD entries in /etc/sudoers.d/drifter-opsec) for MAC randomize and
+# halt-recon. NoNewPrivileges=true would block that elevation.
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelTunables=true
