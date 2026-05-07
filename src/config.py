@@ -623,8 +623,8 @@ LLM_PRIMARY = os.getenv("LLM_PRIMARY", "ollama")  # "ollama" = offline-first, "g
 
 # ── Voice Input (STT) ──
 VOSK_MODEL_DIR = DRIFTER_DIR / "vosk-models" / "vosk-model-small-en-us-0.15"
-WAKE_WORD_MODEL = "hey_drifter"
-WAKE_WORD_THRESHOLD = 0.7
+WAKE_WORD_MODEL = "hey_jarvis_v0.1"  # bundled openwakeword model — closest fit to "hey vivi"
+WAKE_WORD_THRESHOLD = 0.85           # bumped from 0.7: default bundle was firing on ambient noise
 PTT_GPIO_PIN = 17                    # GPIO pin for push-to-talk button
 VOICE_SILENCE_TIMEOUT = 1.5          # seconds of silence to end recording
 VOICE_MAX_RECORD = 30                # max seconds per utterance

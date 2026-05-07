@@ -311,7 +311,13 @@ def create_wake_word_model():
         if ('/' in path or path.endswith(('.onnx', '.tflite'))) and not _os.path.isfile(path):
             continue
         try:
-            oww_model = Model(wakeword_models=[path])
+            # openwakeword renamed `wakeword_models` → `wakeword_model_paths`.
+            # Try the new arg first, fall through to the old name for older
+            # installs (the `Model.__init__` signature is the only signal).
+            try:
+                oww_model = Model(wakeword_model_paths=[path])
+            except TypeError:
+                oww_model = Model(wakeword_models=[path])
             oww_available = True
             log.info(f"Wake word model loaded: {_os.path.basename(path) or path}")
             return oww_model

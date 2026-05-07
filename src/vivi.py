@@ -411,10 +411,33 @@ def _resolve_piper_bin() -> str:
 _PIPER_BIN = _resolve_piper_bin()
 
 
+_MARKDOWN_NOISE_RE = re.compile(
+    r"""(\*{1,3}            # **bold** or *italic* or ***bold-italic***
+        | _{1,2}            # _italic_ or __bold__
+        | `{1,3}            # `code` or ```fenced```
+        | ^\s*[#>-]\s+      # leading # heading, > quote, - bullet
+        | \[([^\]]*)\]\([^)]*\)  # [text](url) — keep just the text
+    )""",
+    re.VERBOSE | re.MULTILINE,
+)
+
+
+def _strip_markdown_for_tts(text: str) -> str:
+    """Piper reads markdown literally ('asterisk asterisk my coolant').
+    Strip the syntax, keep the text."""
+    # First pass: collapse [text](url) → text so we don't lose meaning.
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    # Second pass: strip remaining markdown noise.
+    text = re.sub(r"\*{1,3}|_{1,2}|`{1,3}", "", text)
+    text = re.sub(r"^\s*[#>-]\s+", "", text, flags=re.MULTILINE)
+    return text.strip()
+
+
 def speak(text: str) -> None:
     """Synthesise speech via Piper TTS, play locally, and publish WAV to MQTT."""
     AUDIO_DIR.mkdir(exist_ok=True)
     wav_path = AUDIO_DIR / "vivi.wav"
+    text = _strip_markdown_for_tts(text)
 
     try:
         model_arg = str(PIPER_MODEL_PATH) if PIPER_MODEL_PATH.exists() else PIPER_MODEL
