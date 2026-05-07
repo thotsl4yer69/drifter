@@ -457,6 +457,7 @@ details[open] summary::before{content:"▾ "}
 
 <div class="status-bar">
   <span><span class="status-dot dot-off" id="dot-conn"></span><span id="conn-text">CONNECTING</span></span>
+  <span><span class="status-dot dot-ok" id="dot-vivi" title="Vivi"></span><span id="vivi-text">VIVI</span></span>
   <span id="data-age">--</span>
 </div>
 
@@ -1081,6 +1082,35 @@ function handleMessage(msg){
       const m = Math.floor((sys.uptime_seconds%3600)/60);
       setVal('v-uptime', h+'h '+m+'m');
     }
+  }
+  // ── Vivi voice replies ──
+  // When the user speaks to Vivi via mic, mirror her reply into the
+  // ASK output area so the conversation is visible in the HUD.
+  else if(topic === 'drifter/vivi/response' && data && data.response){
+    if(queryBusy) return;  // don't clobber an in-flight typed query
+    const out = document.getElementById('ask-output');
+    const meta = document.getElementById('ask-meta');
+    if(out){
+      out.style.color='var(--text)';
+      out.textContent = data.response;
+    }
+    if(meta && data.query){
+      meta.textContent = '🎙 ' + data.query;
+    }
+  }
+  else if(topic === 'drifter/vivi/status' && data && data.status){
+    const dot = document.getElementById('dot-vivi');
+    if(dot){
+      dot.className = 'status-dot ' + (
+        data.status === 'idle' ? 'dot-ok' :
+        data.status === 'speaking' ? 'dot-warn' :
+        data.status === 'thinking' ? 'dot-warn' :
+        'dot-warn'
+      );
+      dot.title = 'Vivi: ' + data.status;
+    }
+    const txt = document.getElementById('vivi-text');
+    if(txt) txt.textContent = data.status.toUpperCase();
   }
 }
 
