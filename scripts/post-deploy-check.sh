@@ -104,7 +104,7 @@ fi
 
 # ── 4. systemd services ──
 echo -e "\n${AMBER}[4/8] systemd Services${NC}"
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec"
 for svc in $SERVICES; do
     if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
         if systemctl is-active --quiet "$svc" 2>/dev/null; then

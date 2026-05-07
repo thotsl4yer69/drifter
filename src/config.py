@@ -647,7 +647,7 @@ REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
-# Canonical list of 17 active systemd services.
+# Canonical list of 18 active systemd services.
 # drifter-llm was superseded by drifter-analyst and is disabled in install.sh.
 SERVICES = [
     "drifter-canbridge",
@@ -667,6 +667,7 @@ SERVICES = [
     "drifter-fbmirror",
     "drifter-voicein",
     "drifter-flipper",
+    "drifter-opsec",
 ]
 
 # ── Modes ──
@@ -688,6 +689,7 @@ DRIVE_ONLY_SERVICES = [
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon
     "drifter-flipper",     # Flipper Zero CLI bridge
+    "drifter-opsec",       # OPSEC dashboard on :8090 (Kali aesthetic)
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)

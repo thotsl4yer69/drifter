@@ -211,7 +211,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 7 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py tool_executor.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -351,7 +351,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

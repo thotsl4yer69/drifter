@@ -141,6 +141,7 @@ SERVICES=(
     drifter-analyst drifter-voice drifter-vivi drifter-hotspot drifter-homesync
     drifter-watchdog drifter-realdash drifter-rf drifter-wardrive
     drifter-dashboard drifter-fbmirror drifter-voicein drifter-flipper
+    drifter-opsec
 )
 systemctl daemon-reload
 for svc in "${SERVICES[@]}"; do

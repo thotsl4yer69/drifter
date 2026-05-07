@@ -1,0 +1,30 @@
+[Unit]
+Description=MZ1312 DRIFTER OPSEC Dashboard (port 8090)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=drifter
+Group=drifter
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/opsec_dashboard.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# --- Hardening (see AGENTS.md) --------------------------------------
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
