@@ -1,6 +1,8 @@
 # tests/test_web_dashboard_handlers.py
 """Tests for the refactored dispatch table in web_dashboard_handlers."""
 import sys
+
+import pytest
 sys.path.insert(0, 'src')
 
 import web_dashboard_handlers as h
@@ -70,6 +72,13 @@ def test_dtc_regex_still_enforced():
 
 def _reset_healthz_cache():
     h._healthz_cache.update(ts=0.0, payload=None, http_status=200)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_heartbeats(monkeypatch):
+    """Default to fresh heartbeats so unrelated tests don't trip the
+    capability override — the bug-fix test below opts back into a stale one."""
+    monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: True)
 
 
 def test_healthz_route_registered():
@@ -152,3 +161,19 @@ def test_healthz_payload_mqtt_shim_works_without_is_connected(monkeypatch):
     payload, _ = h._healthz_payload()
     assert payload['mqtt_connected'] is False
     state.mqtt_client = None
+
+
+def test_healthz_voicein_stale_heartbeat_marks_degraded(monkeypatch):
+    """systemd reports voicein active, but its mic loop has stalled — the
+    capability override must mark it failed and flip status to 503. This is
+    the regression that masked a broken mic as a healthy node."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
+    monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: False)
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 503
+    assert payload['status'] == 'degraded'
+    assert payload['services']['drifter-voicein'] is False
+    assert 'drifter-voicein' in payload['services_failed']

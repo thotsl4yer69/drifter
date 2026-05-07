@@ -14,6 +14,7 @@ import time
 import logging
 import subprocess
 import threading
+from pathlib import Path
 import numpy as np
 
 import paho.mqtt.client as mqtt
@@ -449,10 +450,23 @@ def main():
 
     log.info("Voice input LIVE — listening for wake word / PTT")
 
+    # Heartbeat file — /healthz reads its mtime to confirm voicein has a
+    # working mic, not just a live systemd unit. Only touched after a
+    # successful stream.read; the no-mic retry path above does NOT write it.
+    heartbeat_path = "/opt/drifter/voicein.heartbeat"
+    last_heartbeat = 0.0
+
     # ── Main listen loop ──
     try:
         while running:
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+            now = time.time()
+            if now - last_heartbeat >= 5.0:
+                try:
+                    Path(heartbeat_path).touch()
+                except OSError:
+                    pass
+                last_heartbeat = now
 
             triggered = False
             source = "wake_word"

@@ -43,6 +43,14 @@ _DTC_RE = re.compile(r'^[PCBU][0-9A-F]{4}$')
 _HEALTHZ_TTL = 2.0
 _healthz_cache: dict = {'ts': 0.0, 'payload': None, 'http_status': 200}
 
+# Services whose systemd active-state is necessary but not sufficient: their
+# inner loop can degrade (mic disappears, CAN drops) while the unit stays
+# "active". Each service writes a heartbeat file from inside its working loop;
+# /healthz overrides the systemctl reading with the heartbeat freshness.
+_CAPABILITY_HEARTBEATS: dict = {
+    'drifter-voicein': ('/opt/drifter/voicein.heartbeat', 90.0),
+}
+
 
 def _systemctl_active(unit: str) -> bool:
     """Return True if `systemctl is-active <unit>` reports 'active'."""
@@ -56,6 +64,13 @@ def _systemctl_active(unit: str) -> bool:
         return False
 
 
+def _heartbeat_fresh(path: str, max_age_s: float, now: float) -> bool:
+    try:
+        return (now - Path(path).stat().st_mtime) < max_age_s
+    except OSError:
+        return False
+
+
 def _healthz_payload() -> tuple[dict, int]:
     """Build the /healthz payload + HTTP status. Cached for _HEALTHZ_TTL."""
     now = time.time()
@@ -64,6 +79,9 @@ def _healthz_payload() -> tuple[dict, int]:
         return _healthz_cache['payload'], _healthz_cache['http_status']
 
     services = {svc: _systemctl_active(svc) for svc in SERVICES}
+    for svc, (hb_path, max_age) in _CAPABILITY_HEARTBEATS.items():
+        if services.get(svc) and not _heartbeat_fresh(hb_path, max_age, now):
+            services[svc] = False
     failed = [s for s, ok in services.items() if not ok]
 
     mqtt_ok = state.mqtt_client is not None and getattr(
