@@ -110,7 +110,25 @@ def test_healthz_payload_all_active(monkeypatch):
 
 
 def test_healthz_payload_one_failed(monkeypatch):
-    """One failed unit → status=degraded, http=503, listed in services_failed."""
+    """A failed non-hardware service → status=degraded, http=503."""
+    _reset_healthz_cache()
+    # drifter-watchdog is SHARED + not hardware-optional → real failure path.
+    monkeypatch.setattr(
+        h, '_systemctl_active',
+        lambda u: u != 'drifter-watchdog',
+    )
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 503
+    assert payload['status'] == 'degraded'
+    assert 'drifter-watchdog' in payload['services_failed']
+
+
+def test_healthz_payload_hw_optional_inactive(monkeypatch):
+    """A hardware-optional service down → status=ok-hw-pending, http=200,
+    surfaced in services_hw_pending. Bench units without OBD-II/RTL-SDR
+    must still pass the deploy contract."""
     _reset_healthz_cache()
     monkeypatch.setattr(
         h, '_systemctl_active',
@@ -119,9 +137,10 @@ def test_healthz_payload_one_failed(monkeypatch):
     state.mqtt_client = None
     state.latest_state.clear()
     payload, status = h._healthz_payload()
-    assert status == 503
-    assert payload['status'] == 'degraded'
-    assert 'drifter-canbridge' in payload['services_failed']
+    assert status == 200
+    assert payload['status'] == 'ok-hw-pending'
+    assert 'drifter-canbridge' in payload['services_hw_pending']
+    assert payload['services_failed'] == []
 
 
 def test_healthz_payload_caches(monkeypatch):
@@ -191,17 +210,20 @@ def test_healthz_foot_mode_ignores_drive_only_inactive(monkeypatch, tmp_path):
     assert payload['services']['drifter-canbridge'] is False
 
 
-def test_healthz_voicein_stale_heartbeat_marks_degraded(monkeypatch):
+def test_healthz_voicein_stale_heartbeat_marks_hw_pending(monkeypatch):
     """systemd reports voicein active, but its mic loop has stalled — the
-    capability override must mark it failed and flip status to 503. This is
-    the regression that masked a broken mic as a healthy node."""
+    capability override marks it inactive and surfaces it on
+    services_hw_pending. Voicein is hardware-optional (mic might not be
+    plugged in on the bench), so this is HTTP 200 with status=ok-hw-pending,
+    not a fatal 503 — but the broken-mic state IS visible to operators."""
     _reset_healthz_cache()
     monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
     monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: False)
     state.mqtt_client = None
     state.latest_state.clear()
     payload, status = h._healthz_payload()
-    assert status == 503
-    assert payload['status'] == 'degraded'
+    assert status == 200
+    assert payload['status'] == 'ok-hw-pending'
     assert payload['services']['drifter-voicein'] is False
-    assert 'drifter-voicein' in payload['services_failed']
+    assert 'drifter-voicein' in payload['services_hw_pending']
+    assert payload['services_failed'] == []

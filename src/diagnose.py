@@ -85,9 +85,11 @@ def _run(cmd: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
 # Services that require optional hardware (Flipper Zero, voice models, etc.)
 # and should not fail the deploy contract when that hardware is absent.
 _HARDWARE_OPTIONAL_SERVICES = frozenset({
-    'drifter-vivi',    # requires Ollama + faster-whisper + piper + audio input
-    'drifter-flipper', # requires Flipper Zero connected via UART/USB
-    'drifter-voicein', # requires wake-word model or GPIO PTT button
+    'drifter-vivi',      # requires Ollama + faster-whisper + piper + audio input
+    'drifter-flipper',   # requires Flipper Zero connected via UART/USB
+    'drifter-voicein',   # requires wake-word model or GPIO PTT button
+    'drifter-canbridge', # needs USB2CANFD plugged into OBD-II — service crash-loops cleanly until it is
+    'drifter-rf',        # needs RTL-SDR dongle — TPMS sniffing only viable with hardware
 })
 
 

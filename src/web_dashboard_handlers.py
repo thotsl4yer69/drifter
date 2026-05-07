@@ -92,7 +92,18 @@ def _healthz_payload() -> tuple[dict, int]:
     except OSError:
         mode = DEFAULT_MODE
     expected = MODES.get(mode, set(SERVICES))
-    failed = [s for s, ok in services.items() if s in expected and not ok]
+    # Hardware-optional services crash-loop cleanly until their dongle is
+    # plugged in. Canbridge waits for USB2CANFD, rf for RTL-SDR, voicein
+    # for the mic, vivi for Ollama+Piper. These should warn (status:
+    # degraded), not fail the healthz contract (HTTP 503).
+    _HW_OPTIONAL = {
+        'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
+        'drifter-voicein', 'drifter-flipper',
+    }
+    failed = [s for s, ok in services.items()
+              if s in expected and not ok and s not in _HW_OPTIONAL]
+    degraded = [s for s, ok in services.items()
+                if s in expected and not ok and s in _HW_OPTIONAL]
 
     mqtt_ok = state.mqtt_client is not None and getattr(
         state.mqtt_client, 'is_connected', lambda: False)()
@@ -101,16 +112,26 @@ def _healthz_payload() -> tuple[dict, int]:
     last_seen = state.latest_state.get('_last_update', 0)
     telemetry_fresh = (now - last_seen) < 30 if last_seen else False
 
+    if failed:
+        status_str = 'degraded'
+    elif degraded:
+        status_str = 'ok-hw-pending'  # pi is healthy, dongles aren't plugged in yet
+    else:
+        status_str = 'ok'
     payload = {
-        'status':           'ok' if not failed else 'degraded',
-        'mode':             mode,
-        'ts':               now,
-        'services':         services,
-        'services_failed':  failed,
-        'mqtt_connected':   mqtt_ok,
-        'telemetry_fresh':  telemetry_fresh,
-        'ws_clients':       len(state.ws_clients),
+        'status':              status_str,
+        'mode':                mode,
+        'ts':                  now,
+        'services':            services,
+        'services_failed':     failed,
+        'services_hw_pending': degraded,
+        'mqtt_connected':      mqtt_ok,
+        'telemetry_fresh':     telemetry_fresh,
+        'ws_clients':          len(state.ws_clients),
     }
+    # Healthz contract: 200 = OS-side healthy, 503 = a NON-hardware service
+    # is failing. Hardware-pending state still returns 200 so the deploy
+    # contract doesn't block on a bench unit waiting for OBD-II.
     http_status = 200 if not failed else 503
     _healthz_cache.update(ts=now, payload=payload, http_status=http_status)
     return payload, http_status
