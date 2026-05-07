@@ -91,8 +91,9 @@ def test_ask_vivi_passes_context_to_ollama(monkeypatch):
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 780, 'coolant': 95})
     monkeypatch.setattr(vivi, '_mqtt_client', None)
     captured = {}
-    def fake_ollama(prompt, system):
+    def fake_ollama(prompt, system, history=None):
         captured['prompt'] = prompt
+        captured['history'] = history
         return "Looks fine."
     with patch('vivi._query_ollama', side_effect=fake_ollama):
         with patch('vivi.kb_search', return_value=[]):

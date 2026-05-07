@@ -84,6 +84,14 @@ _mqtt_client: Optional[mqtt.Client] = None
 _mode = MODE_PTT
 _wake_word = WAKE_WORD
 
+# Rolling conversation history for /api/chat. Keep small — every turn adds
+# tokens to every subsequent request and 1.5b is slow. 6 messages = 3
+# user/assistant pairs which is enough for "what about X — and another
+# thing" follow-ups without bloating the prompt.
+from collections import deque
+_history: deque = deque(maxlen=6)
+_history_lock = threading.Lock()
+
 
 AUDIO_INPUT_DEVICE = "auto"  # vivi.yaml override: int index, name substring, or "auto"
 
@@ -237,21 +245,27 @@ def transcribe(audio_bytes: bytes) -> Optional[str]:
         return None
 
 
-def _query_ollama(prompt: str, system: str) -> Optional[str]:
-    """POST to Ollama /api/generate. Returns response text or None on any failure."""
+def _query_ollama(prompt: str, system: str, history: Optional[list] = None) -> Optional[str]:
+    """POST to Ollama /api/chat with optional rolling history. Returns reply or None.
+    /api/chat preserves prior turns as proper messages — better than stuffing
+    history into a single /api/generate prompt because the model can attend to
+    role boundaries cleanly."""
     import requests
-    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/generate"
+    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
+    messages = [{'role': 'system', 'content': system}]
+    if history:
+        messages.extend(history)
+    messages.append({'role': 'user', 'content': prompt})
     try:
         resp = requests.post(url, json={
             'model': OLLAMA_MODEL,
-            'prompt': prompt,
-            'system': system,
+            'messages': messages,
             'stream': False,
             'keep_alive': '30m',  # keep model resident — first cold load is ~50s
             'options': {'temperature': 0.85, 'num_predict': 200, 'top_p': 0.95},
         }, timeout=OLLAMA_TIMEOUT)
         if resp.status_code == 200:
-            return resp.json().get('response', '').strip() or None
+            return resp.json().get('message', {}).get('content', '').strip() or None
         log.warning(f"Ollama HTTP {resp.status_code}")
         return None
     except Exception as e:
@@ -351,11 +365,22 @@ def ask_vivi(query: str) -> str:
     context = _build_context(query)
     prompt = f"{context}\n\nUser: {query}" if context else query
 
-    response = _query_ollama(prompt, VIVI_SYSTEM_PROMPT)
+    with _history_lock:
+        history_snapshot = list(_history)
+    response = _query_ollama(prompt, VIVI_SYSTEM_PROMPT, history=history_snapshot)
+    used_llm = bool(response)
     if not response:
         response = _rag_fallback(query)
     else:
         response = _strip_hallucinated_telemetry(response)
+
+    # Only persist real LLM replies in history. Stub/fallback lines (LLM
+    # offline, hallucination-stripped boilerplate) shouldn't condition the
+    # next turn — they'd teach the model to repeat the boilerplate.
+    if used_llm and not response.startswith(("LLM offline", "I can't see my live sensors")):
+        with _history_lock:
+            _history.append({'role': 'user', 'content': query})
+            _history.append({'role': 'assistant', 'content': response})
 
     log.info(f"Response: {response[:80]}...")
     return response

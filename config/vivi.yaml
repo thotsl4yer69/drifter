@@ -11,14 +11,16 @@ mode: ptt
 wake_word: "hey vivi"
 
 # ── LLM backend (local Ollama) ──
-# qwen2.5:1.5b is the only model that consistently finishes a Vivi turn
-# inside the 60s budget on Pi 5 (8GB, CPU-only). 3b times out under the
-# heavier persona prompt; 7b is hopeless. 3b stays installed for any
-# slower offline use; session-analyst keeps 7b.
-ollama_model: qwen2.5:1.5b
+# Pi 5 actually has 15GB RAM (not 8 as the chassis sticker suggests on
+# this revision). With only one model resident, qwen2.5:3b finishes a
+# turn in ~25-40s and follows persona/no-invention rules far better than
+# 1.5b which fixates on coolant boilerplate regardless of prompt.
+# Timeout 120s gives headroom for cold-load + history-padded turns.
+# 1.5b stays on disk as the rescue model (set OLLAMA_MODEL env override).
+ollama_model: qwen2.5:3b
 ollama_host: localhost
 ollama_port: 11434
-ollama_timeout: 60
+ollama_timeout: 120
 
 # ── Speech-to-text (faster-whisper) ──
 whisper_model: base.en
