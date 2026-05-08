@@ -17,12 +17,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>DRIFTER</title>
 <script>
 /* Inline theme boot — applies before CSS so the page never flashes a
-   different palette. Persisted as `drifter-theme`; valid values
-   uncaged | ghost | drift, default uncaged. */
+   different palette. Persisted as `drifter-theme`. ?theme=X URL
+   override is honoured for headless screenshot capture and for
+   previewing a theme without overwriting the saved choice. */
 (function(){
   try{
-    var t=localStorage.getItem('drifter-theme');
-    if(t!=='ghost'&&t!=='drift'&&t!=='uncaged') t='uncaged';
+    var ok=['uncaged','ghost','drift','amber','nightrun','daylight','woobs','deckrun'];
+    var url=new URLSearchParams(location.search).get('theme');
+    var t = (url && ok.indexOf(url)>=0) ? url : localStorage.getItem('drifter-theme');
+    if(ok.indexOf(t)<0) t='uncaged';
     document.documentElement.dataset.theme=t;
   }catch(e){}
 })();
@@ -852,7 +855,7 @@ details[open] summary::before{content:"▾ "}
   0%{transform:scale(.95);opacity:0}
   100%{transform:scale(1);opacity:1}
 }
-.cp-dot-label{font-size:9px;letter-spacing:1.5px;color:var(--text-mute)}
+.cp-dot-label{font-size:10px;letter-spacing:1.2px;color:var(--text-mute);font-weight:600}
 .cp-dot{
   width:8px;height:8px;border-radius:50%;
   background:#1a0606;
@@ -968,7 +971,10 @@ details[open] summary::before{content:"▾ "}
   pointer-events:auto;
 }
 .cp-chip{
-  background:rgba(0,0,0,.72);
+  /* Theme-aware: 70% bg-elev keeps chips legible on both dark and
+     light themes (#0a0a0a → near-black on uncaged; #eae5d8 → near-
+     cream on daylight). Hardcoded rgba(0,0,0,.72) blew out daylight. */
+  background:color-mix(in srgb, var(--bg-elev) 80%, transparent);
   border:1px solid var(--border-hi);
   color:var(--text-mute);
   padding:6px 12px;
@@ -1224,27 +1230,27 @@ details[open] summary::before{content:"▾ "}
   <footer class="cp-engine">
     <div class="cp-gauge cp-gauge-rpm">
       <div class="cp-gauge-label">RPM</div>
-      <div class="cp-gauge-val" id="cp-rpm">—</div>
+      <div class="cp-gauge-val" id="cp-rpm">--</div>
       <div class="cp-gauge-bar"><div class="cp-gauge-bar-fill" id="cp-rpm-bar"></div></div>
     </div>
     <div class="cp-gauge cp-gauge-speed">
       <div class="cp-gauge-label">SPEED</div>
-      <div class="cp-gauge-val" id="cp-speed">—</div>
+      <div class="cp-gauge-val" id="cp-speed">--</div>
       <div class="cp-gauge-unit">km/h</div>
     </div>
     <div class="cp-gauge cp-gauge-coolant">
       <div class="cp-gauge-label">COOLANT</div>
-      <div class="cp-gauge-val" id="cp-coolant">—</div>
+      <div class="cp-gauge-val" id="cp-coolant">--</div>
       <div class="cp-gauge-unit">°C</div>
     </div>
     <div class="cp-gauge cp-gauge-voltage">
       <div class="cp-gauge-label">VOLTAGE</div>
-      <div class="cp-gauge-val" id="cp-voltage">—</div>
+      <div class="cp-gauge-val" id="cp-voltage">--</div>
       <div class="cp-gauge-unit">V</div>
     </div>
     <div class="cp-gauge cp-gauge-gear">
       <div class="cp-gauge-label">GEAR</div>
-      <div class="cp-gauge-val" id="cp-gear">—</div>
+      <div class="cp-gauge-val" id="cp-gear">--</div>
     </div>
   </footer>
 </div>
@@ -2819,12 +2825,18 @@ function cpMirrorGauges(){
   };
   const set = (dst, val) => {
     const el = document.getElementById(dst);
-    if(el) el.textContent = (!val || val === '--') ? '—' : val;
+    // No-data placeholder: '--' (two hyphen-minus). The em-dash '—'
+    // collapses to a thin stroke at 42px in the fallback monospace
+    // font (JetBrains Mono not installed system-wide).
+    if(el) el.textContent = (!val || val === '--' || val === '—') ? '--' : val;
   };
   set('cp-rpm',     get('v-rpm'));
   set('cp-speed',   get('v-speed'));
-  set('cp-coolant', get('v-cool'));
-  set('cp-voltage', get('v-volt'));
+  // Legacy IDs are v-coolant / v-voltage, not v-cool / v-volt — the
+  // typo here meant cockpit coolant + voltage have read null since
+  // Phase 5 landed (architect-caught during 5.1 review).
+  set('cp-coolant', get('v-coolant'));
+  set('cp-voltage', get('v-voltage'));
   // Gear isn't currently in the legacy view — leave dim until canbridge
   // populates a gear topic. (Drive-only bench has no OBD; expected.)
   // RPM bar fill, 7000 redline.
