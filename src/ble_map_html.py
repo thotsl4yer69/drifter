@@ -161,6 +161,43 @@ async function loadAndRender() {
 document.getElementById('refresh').addEventListener('click', loadAndRender);
 document.getElementById('window').addEventListener('change', loadAndRender);
 loadAndRender();
+
+// ── Cross-frame controls (parent cockpit drives the map) ────────
+// Phase 5: parent posts {type:'recenter',lat,lng} and
+// {type:'layer',layer,action} messages. Recenter is critical because
+// the Pi has no GPS publisher yet — the parent's browser-geolocation
+// API gives us an actual location while a real GPS service is still
+// to be wired.
+const _layerLayers = {};  // layer key → L.LayerGroup (just markerLayer for now)
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.type === 'recenter' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+    map.setView([d.lat, d.lng], d.zoom || 14, { animate: true });
+    // Drop a "you" pin so the operator can see the cockpit's idea of
+    // their location even when no detection has GPS.
+    if (!window._youPin) {
+      window._youPin = L.circleMarker([d.lat, d.lng], {
+        radius: 9,
+        color: '#ffffff',
+        fillColor: 'var(--accent)',
+        fillOpacity: 0.9,
+        weight: 2,
+        className: 'pulse',
+      }).addTo(map).bindPopup('You');
+    } else {
+      window._youPin.setLatLng([d.lat, d.lng]);
+    }
+  }
+  if (d.type === 'layer' && d.layer) {
+    // BLE layer toggle is the only one we own today — flip the
+    // markerLayer visibility. Future layers (drone/AP/police) will
+    // get their own LayerGroups.
+    if (d.layer === 'ble' || d.layer === 'all') {
+      if (d.action === 'hide')      markerLayer.removeFrom(map);
+      else if (d.action === 'show') markerLayer.addTo(map);
+    }
+  }
+});
 </script>
 </body>
 </html>

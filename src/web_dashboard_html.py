@@ -2931,6 +2931,42 @@ if(_cpLegacyBanner){
   }).observe(_cpLegacyBanner,{childList:true,characterData:true,subtree:true});
 }
 
+// Browser-geolocation → map recenter. Until a real GPS publisher is
+// wired (Phase 4.7 closeout flagged this as the soak blocker), the
+// parent browser's navigator.geolocation gives us an actual fix —
+// good enough for the operator to see their location on the map.
+// We post {type:'recenter',lat,lng,zoom} to the embedded /map/ble
+// iframe; that page has a message listener (Phase 5) that recentres
+// the Leaflet view + drops a "you" pin.
+(function cockpitGeo(){
+  const frame = document.getElementById('cp-map-frame');
+  if (!frame || !navigator.geolocation) return;
+  let lastFix = null;
+  function postRecenter(lat, lng, zoom){
+    try{
+      frame.contentWindow.postMessage({type:'recenter',lat,lng,zoom},'*');
+    }catch(e){}
+  }
+  function onPosition(p){
+    const c = p.coords;
+    lastFix = {lat:c.latitude, lng:c.longitude};
+    postRecenter(c.latitude, c.longitude, 14);
+  }
+  function onError(e){
+    // Permission denied / unavailable — stay silent, map keeps its
+    // own default. Don't show a UI error; the operator will notice.
+  }
+  // Re-post on every iframe load (handles refresh, theme reload).
+  frame.addEventListener('load', () => {
+    if (lastFix) postRecenter(lastFix.lat, lastFix.lng, 14);
+  });
+  // One-shot fix to bootstrap, then watch for movement.
+  navigator.geolocation.getCurrentPosition(onPosition, onError,
+    {enableHighAccuracy:true, timeout:10000, maximumAge:30000});
+  navigator.geolocation.watchPosition(onPosition, onError,
+    {enableHighAccuracy:true, timeout:15000, maximumAge:5000});
+})();
+
 // Audio-reactive avatar — fake waveform driven by the duration of the
 // last response (real Web Audio tap into Piper output is not
 // accessible from the front-end; the TTS plays on the Pi's speaker).
