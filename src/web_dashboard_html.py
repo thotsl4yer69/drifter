@@ -19,11 +19,18 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 /* Inline theme boot — applies before CSS so the page never flashes a
    different palette. Persisted as `drifter-theme`. ?theme=X URL
    override is honoured for headless screenshot capture and for
-   previewing a theme without overwriting the saved choice. */
+   previewing a theme without overwriting the saved choice.
+   Drift-guarded by tests/test_web_dashboard_html.py — every theme
+   in this allowlist must have a matching `:root[data-theme=...]`
+   block below. */
 (function(){
   try{
     var ok=['uncaged','ghost','drift','amber','nightrun','daylight','woobs','deckrun'];
     var url=new URLSearchParams(location.search).get('theme');
+    if(url && ok.indexOf(url)<0){
+      console.warn('drifter: ?theme='+JSON.stringify(url)+' is not in the allowlist '+
+                   '['+ok.join(',')+'] — falling through to localStorage / default.');
+    }
     var t = (url && ok.indexOf(url)>=0) ? url : localStorage.getItem('drifter-theme');
     if(ok.indexOf(t)<0) t='uncaged';
     document.documentElement.dataset.theme=t;
