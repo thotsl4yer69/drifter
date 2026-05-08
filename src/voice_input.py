@@ -8,6 +8,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import math
+import re
 import struct
 import signal
 import time
@@ -143,16 +144,27 @@ _PAGE_MAP = {
 }
 
 
+_NAV_VERBS = re.compile(
+    r'^\s*(go\s+to|navigate(\s+to)?|switch\s+to|open|show\s+(me\s+)?(the\s+)?)\b',
+    re.IGNORECASE,
+)
+
+
 def _classify_voice(text: str):
-    """Returns ('navigate', value) or ('query', text). value is int or 'next'/'prev'."""
+    """Returns ('navigate', value) or ('query', text). value is int or
+    'next'/'prev'. Navigation is gated by an explicit verb prefix
+    ('go to', 'open', 'show me') — bare keyword matches are treated as
+    queries because the page-map overlaps with sensor names ("speed",
+    "rpm", "tpms")."""
     words = text.lower().split()
-    if any(w in ('next', 'forward') for w in words):
+    if any(w in ('next', 'forward') for w in words) and len(words) <= 4:
         return ('navigate', 'next')
-    if any(w in ('previous', 'back', 'prev', 'last') for w in words):
+    if any(w in ('previous', 'back', 'prev', 'last') for w in words) and len(words) <= 4:
         return ('navigate', 'prev')
-    for w in words:
-        if w in _PAGE_MAP:
-            return ('navigate', _PAGE_MAP[w])
+    if _NAV_VERBS.match(text):
+        for w in words:
+            if w in _PAGE_MAP:
+                return ('navigate', _PAGE_MAP[w])
     return ('query', text)
 
 

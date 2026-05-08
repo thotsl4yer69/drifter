@@ -107,6 +107,13 @@ _recent_alerts: deque = deque(maxlen=3)  # (ts, level, msg) tuples
 ALERT_FRESH_SEC = 300.0             # 5-minute alert window
 _drive_session_start: float = 0.0
 _session_id: str = ""               # set on first turn or first /snapshot
+
+# Phase 4.1 proactive comments — when a high-severity alert lands and Vivi
+# hasn't spoken unprompted in a while, generate a one-line observation.
+_last_unprompted_ts: float = 0.0
+_unprompted_count: int = 0
+UNPROMPTED_COOLDOWN_SEC = 300.0   # 5 min between unprompted lines
+UNPROMPTED_MAX_PER_SESSION = 3
 _mqtt_client: Optional[mqtt.Client] = None
 _mode = MODE_PTT
 _wake_word = WAKE_WORD
@@ -351,13 +358,46 @@ def _telemetry_fresh() -> bool:
 
 def _new_session() -> str:
     """Mint a new drive-session id; reset history + alert + telemetry-start state."""
-    global _session_id, _drive_session_start
+    global _session_id, _drive_session_start, _last_unprompted_ts, _unprompted_count
     _session_id = uuid.uuid4().hex[:12]
     _drive_session_start = time.time()
+    _last_unprompted_ts = 0.0
+    _unprompted_count = 0
     with _history_lock:
         _history.clear()
     _recent_alerts.clear()
     return _session_id
+
+
+def _maybe_unprompted_comment(level: int, message: str) -> None:
+    """Generate + speak an unprompted comment when an alert fires and the
+    rate limit allows. Background thread so the MQTT callback returns
+    immediately. RED only — AMBER and INFO too noisy for proactive speech."""
+    global _last_unprompted_ts, _unprompted_count
+    if level < 3:
+        return
+    now = time.time()
+    if now - _last_unprompted_ts < UNPROMPTED_COOLDOWN_SEC:
+        return
+    if _unprompted_count >= UNPROMPTED_MAX_PER_SESSION:
+        return
+    _last_unprompted_ts = now
+    _unprompted_count += 1
+
+    def _worker():
+        prompt = (f"The car just raised an alert: {message}. "
+                  f"Comment briefly — one short sentence. Do not invent values.")
+        try:
+            response = ask_vivi(prompt)
+            _publish_response(prompt, response)
+            _publish_status("speaking")
+            speak(response)
+            _publish_status("idle")
+        except Exception as e:
+            log.warning(f"unprompted comment failed: {e}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    log.info(f"unprompted comment dispatched (count={_unprompted_count})")
 
 
 def _ensure_session() -> str:
@@ -737,6 +777,7 @@ def on_message(client, userdata, msg) -> None:
             message = str(payload.get('message') or '').strip()
             if message:
                 _recent_alerts.append((time.time(), level, message))
+                _maybe_unprompted_comment(level, message)
     elif topic == TOPICS.get('vivi_control'):
         # Operator-triggered reset (CLEAR button on dashboard, etc.)
         if isinstance(payload, dict) and payload.get('action') == 'reset':

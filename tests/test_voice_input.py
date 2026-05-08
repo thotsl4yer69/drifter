@@ -25,17 +25,17 @@ class TestClassifyVoice:
     """Unit tests for _classify_voice intent classifier."""
 
     def test_navigate_by_page_name(self):
-        intent, value = voice_input._classify_voice("show engine stats")
+        intent, value = voice_input._classify_voice("show me engine stats")
         assert intent == 'navigate'
         assert value == 2  # 'engine' maps to page 2
 
     def test_navigate_tyre(self):
-        intent, value = voice_input._classify_voice("check tyre pressure")
+        intent, value = voice_input._classify_voice("show tyre page")
         assert intent == 'navigate'
         assert value == 1
 
     def test_navigate_status(self):
-        intent, value = voice_input._classify_voice("system status")
+        intent, value = voice_input._classify_voice("go to status")
         assert intent == 'navigate'
         assert value == 3
 
@@ -45,9 +45,19 @@ class TestClassifyVoice:
         assert value == 4
 
     def test_navigate_wardrive(self):
-        intent, value = voice_input._classify_voice("start scan")
+        intent, value = voice_input._classify_voice("open scan")
         assert intent == 'navigate'
         assert value == 5
+
+    def test_bare_keyword_is_query_not_navigate(self):
+        # Phase 4.3: bare keyword without nav verb is a query, not nav.
+        # "what's my speed" must NOT navigate to the speed page.
+        intent, _ = voice_input._classify_voice("what's my speed")
+        assert intent == 'query'
+        intent, _ = voice_input._classify_voice("system status")
+        assert intent == 'query'
+        intent, _ = voice_input._classify_voice("ENGINE RPM HIGH")
+        assert intent == 'query'
 
     def test_navigate_next(self):
         intent, value = voice_input._classify_voice("next page")
@@ -80,7 +90,7 @@ class TestClassifyVoice:
         assert intent == 'query'
 
     def test_case_insensitive(self):
-        intent, value = voice_input._classify_voice("ENGINE RPM HIGH")
+        intent, value = voice_input._classify_voice("SHOW ENGINE PAGE")
         assert intent == 'navigate'
         assert value == 2
 
@@ -96,7 +106,7 @@ class TestRouteTranscript:
 
     def test_nav_intent_payload_has_page(self, reset_mqtt):
         from config import TOPICS
-        voice_input.route_transcript("tyre pressure")
+        voice_input.route_transcript("show tyre page")
         for call in reset_mqtt.publish.call_args_list:
             if call[0][0] == TOPICS['hud_navigate']:
                 payload = json.loads(call[0][1])
