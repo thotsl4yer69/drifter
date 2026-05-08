@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sudo apt-get install -y --no-install-recommends bettercap 2>&1 | tail -5\\necho \\\"---\\\"\\nwhich bettercap\\nsudo -u drifter bash -c 'which bettercap'\",\"description\":\"Install bettercap without...",
-  "error": "Exit code 1\nReading state information...\nYou might want to run 'apt --fix-broken install' to correct these.\nThe following packages have unmet dependencies:\n libgtk-3-bin : Depends: libgtk-3-0 (>= 1:3.24.38-2~deb12u2+rpt7+rpi1)\nE: Unmet dependencies. Try 'apt --fix-broken install' with no packages (or specify a solution).\n---\nbettercap not found",
-  "timestamp": "2026-05-07T22:06:44.127Z",
-  "retry_count": 1
-}

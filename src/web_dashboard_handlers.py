@@ -20,12 +20,8 @@ from config import (
     load_settings, save_settings, XTYPE_DTC_LOOKUP, SERVICES,
     MODES, MODE_STATE_PATH, DEFAULT_MODE,
 )
-from mechanic import (
-    search as mechanic_search, VEHICLE_SPECS, COMMON_PROBLEMS,
-    SERVICE_SCHEDULE, EMERGENCY_PROCEDURES, TORQUE_SPECS, FUSE_REFERENCE,
-    get_advice_for_alert,
-)
-from web_dashboard_html import DASHBOARD_HTML, MECHANIC_HTML, SETTINGS_HTML
+from corpus import corpus_search, dtc_lookup
+from web_dashboard_html import DASHBOARD_HTML, SETTINGS_HTML
 from web_dashboard_hardware import check_hardware
 import web_dashboard_state as state
 
@@ -166,41 +162,25 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     # Route bodies — one method per endpoint. Most are one-liners.
     def _serve_dashboard_page(self, parsed):  self._serve_html(DASHBOARD_HTML)
-    def _serve_mechanic_page(self, parsed):   self._serve_html(MECHANIC_HTML)
     def _serve_settings_page(self, parsed):   self._serve_html(SETTINGS_HTML)
     def _get_settings(self, parsed):          self._serve_json(load_settings())
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
-    def _get_specs(self, parsed):             self._serve_json(VEHICLE_SPECS)
-    def _get_problems(self, parsed):          self._serve_json(COMMON_PROBLEMS)
-    def _get_service(self, parsed):           self._serve_json(SERVICE_SCHEDULE)
-    def _get_emergency(self, parsed):         self._serve_json(EMERGENCY_PROCEDURES)
-    def _get_torque(self, parsed):            self._serve_json(TORQUE_SPECS)
-    def _get_fuses(self, parsed):             self._serve_json(FUSE_REFERENCE)
-
-    def _get_mechanic_search(self, parsed):
-        q = parse_qs(parsed.query).get('q', [''])[0]
-        self._serve_json({'query': q, 'results': mechanic_search(q)})
 
     def _get_mechanic_advice(self, parsed):
+        """Alert-click handler: feeds the alert text into the corpus and
+        returns the top 3 ranked passages. The dashboard renders the
+        passage bodies as bullet lines under the alert banner."""
         msg = parse_qs(parsed.query).get('alert', [''])[0]
-        self._serve_json({'alert': msg, 'advice': get_advice_for_alert(msg) or []})
-
-    def _get_training(self, parsed):
-        # TRAINING_MODULES is optional — absent in the current KB.
-        try:
-            from mechanic import TRAINING_MODULES  # type: ignore
-            self._serve_json(TRAINING_MODULES)
-        except ImportError:
-            self._serve_json([])
-
-    def _get_tsb(self, parsed):
-        try:
-            from mechanic import TECHNICAL_BULLETINS  # type: ignore
-            self._serve_json(TECHNICAL_BULLETINS)
-        except ImportError:
-            self._serve_json([])
+        hits = corpus_search(msg, k=3, min_similarity=0.4) if msg else []
+        advice = [{
+            'text':   (h.get('content') or '').strip().splitlines()[0][:200],
+            'source': h.get('source'),
+            'topic':  h.get('topic'),
+            'score':  round(h.get('score', 0), 3),
+        } for h in hits]
+        self._serve_json({'alert': msg, 'advice': advice})
 
     def _get_sessions(self, parsed):
         try:
@@ -235,9 +215,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _serve_dtc_lookup(self, parsed):
+        """DTC click handler — corpus first (full description, ECU action,
+        likely causes), legacy XTYPE_DTC_LOOKUP as a tiny built-in fallback
+        for codes the corpus hasn't been rebuilt with."""
         code = parsed.path.rsplit('/', 1)[-1].upper()
         if not _DTC_RE.match(code):
             self.send_error(400, 'Invalid DTC code')
+            return
+        hit = dtc_lookup(code)
+        if hit:
+            self._serve_json({
+                'code':    code,
+                'topic':   hit.get('topic'),
+                'content': (hit.get('content') or '').strip(),
+                'source':  hit.get('source'),
+            })
             return
         info = XTYPE_DTC_LOOKUP.get(code, {})
         self._serve_json({'code': code, **info})
@@ -482,25 +474,12 @@ def build_query_context(query: str) -> str:
     else:
         context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
 
-    # Knowledge-base top-5 hits, reformatted into short blocks.
+    # Corpus retrieval — top 3 chunks ranked by cosine similarity.
     kb_lines = []
-    for r in mechanic_search(query)[:5]:
-        if r.get('type') == 'problem':
-            p = r['data']
-            kb_lines.append(
-                f"KNOWN ISSUE: {p['title']}\n"
-                f"Cause: {p.get('cause', '')}\n"
-                f"Fix: {p.get('fix', '')}\n"
-                f"Cost: {p.get('cost', 'Unknown')}"
-            )
-        elif r.get('type') == 'dtc':
-            d = r['data']
-            kb_lines.append(
-                f"DTC: {d.get('code', '')} — {d.get('desc', '')}\n"
-                f"Causes: {', '.join(d.get('causes', []))}"
-            )
-        elif r.get('type') == 'telemetry_guide':
-            kb_lines.append(f"GUIDE: {r.get('title', '')}")
+    for hit in corpus_search(query, k=3, min_similarity=0.4):
+        topic = hit.get('topic') or hit.get('section') or 'reference'
+        body = (hit.get('content') or '').strip().replace('\n', ' ')[:400]
+        kb_lines.append(f"{topic}: {body}")
     if kb_lines:
         context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
 
@@ -511,7 +490,6 @@ def build_query_context(query: str) -> str:
 DashboardHandler._EXACT_GET_ROUTES = {
     '/':                          DashboardHandler._serve_dashboard_page,
     '/index.html':                DashboardHandler._serve_dashboard_page,
-    '/mechanic':                  DashboardHandler._serve_mechanic_page,
     '/settings':                  DashboardHandler._serve_settings_page,
     '/healthz':                   DashboardHandler._get_healthz,
     '/api/settings':              DashboardHandler._get_settings,
@@ -521,15 +499,6 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,
     '/api/wardrive':              DashboardHandler._get_wardrive,
-    '/api/mechanic/search':       DashboardHandler._get_mechanic_search,
     '/api/mechanic/advice':       DashboardHandler._get_mechanic_advice,
-    '/api/mechanic/specs':        DashboardHandler._get_specs,
-    '/api/mechanic/problems':     DashboardHandler._get_problems,
-    '/api/mechanic/service':      DashboardHandler._get_service,
-    '/api/mechanic/emergency':    DashboardHandler._get_emergency,
-    '/api/mechanic/torque':       DashboardHandler._get_torque,
-    '/api/mechanic/fuses':        DashboardHandler._get_fuses,
-    '/api/mechanic/training':     DashboardHandler._get_training,
-    '/api/mechanic/tsb':          DashboardHandler._get_tsb,
     '/api/mode':                  DashboardHandler._get_mode,
 }

@@ -11,13 +11,22 @@ import web_dashboard_state as state
 
 def test_exact_get_route_table_covers_key_endpoints():
     routes = h.DashboardHandler._EXACT_GET_ROUTES
-    # Spot-check a handful of routes that absolutely must exist.
-    for path in ['/', '/index.html', '/mechanic', '/settings',
+    for path in ['/', '/index.html', '/settings', '/healthz',
                  '/api/state', '/api/hardware', '/api/settings',
-                 '/api/mechanic/search', '/api/mechanic/advice',
-                 '/api/mechanic/specs', '/api/mechanic/problems',
-                 '/api/mechanic/service', '/api/mechanic/torque']:
+                 '/api/mechanic/advice', '/api/mode']:
         assert path in routes, f"missing route {path}"
+
+
+def test_static_panel_routes_are_gone():
+    """Phase 2: every static-content panel route deleted; ASK + corpus
+    are the only path to that knowledge now."""
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    for path in ['/mechanic', '/api/mechanic/search', '/api/mechanic/specs',
+                 '/api/mechanic/problems', '/api/mechanic/service',
+                 '/api/mechanic/emergency', '/api/mechanic/torque',
+                 '/api/mechanic/fuses', '/api/mechanic/training',
+                 '/api/mechanic/tsb']:
+        assert path not in routes, f"stale route {path} still in table"
 
 
 def test_all_routes_point_to_callables():

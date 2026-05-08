@@ -21,3 +21,7 @@ data/
 reports/
 .vscode/
 .idea/
+
+# OMC/superpowers runtime — local agent state, not for the repo
+.omc/
+.superpowers/

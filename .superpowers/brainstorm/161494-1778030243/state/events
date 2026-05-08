@@ -1,3 +1,0 @@
-{"type":"click","text":"A\n    \n      Status-first layout\n      Connection state prominent, hw info visible, log below. Cleaner at a glance.","choice":"a","id":null,"timestamp":1778031021312}
-{"type":"click","text":"B\n    \n      Signal log-first layout\n      Sidebar for status, more rows in the log. Better when you care about what it's capturing.","choice":"b","id":null,"timestamp":1778031022000}
-{"type":"click","text":"B\n    \n      Signal log-first layout\n      Sidebar for status, more rows in the log. Better when you care about what it's capturing.","choice":"b","id":null,"timestamp":1778031069779}

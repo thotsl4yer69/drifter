@@ -1,8 +1,0 @@
-{"t":0,"agent":"a5f4a11","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"a06eefb","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"aa3628a","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"a169bb6","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"a15b920","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"system","event":"keyword_detected","keyword":"ralph"}
-{"t":0,"agent":"system","event":"keyword_detected","keyword":"ai-slop-cleaner"}
-{"t":0.2,"agent":"system","event":"mode_change","mode_from":"none","mode_to":"ralph"}

@@ -11,6 +11,10 @@ case "${1:-}" in
         shift
         exec "$PY" /opt/drifter/mode.py "$@"
         ;;
+    corpus)
+        shift
+        exec "$PY" /opt/drifter/corpus.py "$@"
+        ;;
     diagnose|"")
         exec "$PY" /opt/drifter/diagnose.py "$@"
         ;;
