@@ -5,10 +5,10 @@ Brand: **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 
 ## Architecture
 
-**19 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.  
+**37 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.
 Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, and service list.
 
-**Data flow**: `can_bridge.py` → MQTT (NanoMQ) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `anomaly_monitor.py` / `session_analyst.py` / `vivi.py`  
+**Data flow**: `can_bridge.py` → MQTT (Mosquitto on `localhost:1883`; NanoMQ supported via `--with-nanomq`) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `anomaly_monitor.py` / `session_analyst.py` / `vivi.py`  
 **MQTT topics** use the `TOPICS` dict from config — never hardcode topic strings. Hierarchy: `drifter/{domain}/{metric}`.  
 **RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.  
 **Web Dashboard**: HTTP on port 8080, WebSocket telemetry on 8081, audio on 8082.  
@@ -19,7 +19,7 @@ Every module imports shared constants from [`src/config.py`](src/config.py) — 
 - **Python 3**, snake_case everywhere, `UPPER_SNAKE_CASE` for constants
 - Every file starts with `#!/usr/bin/env python3` and a docstring: `MZ1312 DRIFTER — <Name>\n<desc>.\nUNCAGED TECHNOLOGY — EST 1991`
 - Logging: `logging.basicConfig(format='%(asctime)s [TAG] %(message)s', datefmt='%H:%M:%S')` — TAG is UPPERCASE module name
-- MQTT: `paho-mqtt<2.0` (v1.x API — `mqtt.Client(client_id="drifter-<name>")`, no `CallbackAPIVersion`)
+- MQTT: `paho-mqtt>=2.0`. Always instantiate via `from config import make_mqtt_client; cli = make_mqtt_client("drifter-<name>")`. Never call `mqtt.Client(...)` directly — the helper sets `CallbackAPIVersion.VERSION2` and is the single seam that lets us bump versions fleet-wide.
 - Paths: `pathlib.Path` for all filesystem operations
 
 ### Service skeleton (every daemon follows this):
@@ -82,7 +82,7 @@ sudo ./install.sh && sudo reboot
 .\deploy.ps1 -PiHost <ip>
 ```
 
-**Dependencies**: `python-can`, `paho-mqtt<2.0`, `psutil`, `websockets`, `requests` — installed in venv at `/opt/drifter/venv`.  
+**Dependencies**: `python-can`, `paho-mqtt>=2.0`, `psutil`, `websockets`, `requests` — installed in venv at `/opt/drifter/venv`.  
 **Optional deps**: `vosk`, `pyaudio`, `openwakeword` (voice input); `ollama` (LLM mechanic).  
 **Test path setup**: `conftest.py` inserts `src/` into `sys.path`. Import directly: `from config import ...`
 

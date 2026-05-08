@@ -121,3 +121,27 @@ class TestDecodeObdResponse:
         pid, value = decode_obd_response(msg)
         assert pid == 0x06
         assert abs(value - 0.0) < 0.5
+
+
+# ── Regression: _consecutive_failures must be declared global in main() ──
+
+class TestMainGlobals:
+    """Guards the UnboundLocalError that crashed drifter-canbridge on
+    2026-05-08: main() reads _consecutive_failures at the polling-loop
+    health-check, but assigns to it on the recovery branch, so without
+    a `global` declaration Python treats it as a local and the first
+    read raises UnboundLocalError before any frame is sent."""
+
+    def test_consecutive_failures_is_global_in_main(self):
+        import can_bridge
+        code = can_bridge.main.__code__
+        # If `global _consecutive_failures` is missing, the name appears
+        # in co_varnames (locals) instead of co_names (module-globals).
+        assert '_consecutive_failures' not in code.co_varnames, (
+            "main() treats _consecutive_failures as a local — add "
+            "`global _consecutive_failures` at the top of main()"
+        )
+        assert '_consecutive_failures' in code.co_names, (
+            "main() never references the module global "
+            "_consecutive_failures — the recovery path is dead code"
+        )

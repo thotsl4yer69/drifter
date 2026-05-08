@@ -217,7 +217,7 @@ def request_dtcs(bus, mode=0x03):
 
 
 def main():
-    global latest_values
+    global latest_values, _consecutive_failures
 
     running = True
 

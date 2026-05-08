@@ -1,8 +1,8 @@
 # DRIFTER — Fleet Handoff (CLAUDE.md)
 
-Node: **drifter** — Raspberry Pi 4 telemetry node in a 2004 Jaguar X-Type 2.5 V6 (AJ-V6).
+Node: **drifter** — Raspberry Pi 5 (8 GB) telemetry node in a 2004 Jaguar X-Type 2.5 V6 (AJ-V6).
 Brand: MZ1312 UNCAGED TECHNOLOGY — EST 1991.
-Status: **yellow** (contract layer present, not yet exercised end-to-end on the live Pi).
+Status: **yellow** — bench-green and canbridge `_consecutive_failures` global fix landed (2026-05-08); awaiting in-vehicle smoke (OBD-II + RTL-SDR + mic).
 
 This file is the operator-facing handoff per the fleet `DEPLOY_CONTRACT.md`. For
 agent-facing architecture details see [`AGENTS.md`](AGENTS.md). For wiring see
@@ -57,17 +57,23 @@ Returns JSON shaped like:
 ```json
 {
   "status": "ok",
+  "mode": "drive",
   "ts": 1735689600.123,
   "services": {"drifter-canbridge": true, "drifter-alerts": true, …},
   "services_failed": [],
+  "services_hw_pending": [],
   "mqtt_connected": true,
   "telemetry_fresh": true,
   "ws_clients": 1
 }
 ```
 
-HTTP **200** when no services failed, **503** otherwise. Cached for 2s server-side
-so high-rate probing is cheap.
+`status` is one of:
+- `ok` — every expected service is active.
+- `ok-hw-pending` — only hardware-dependent services (`canbridge`, `rf`, `vivi`, `voicein`, `flipper`, `bleconv`) are inactive; the dongle isn't plugged in yet. Still HTTP **200** so deploy doesn't block on a bench Pi awaiting OBD-II.
+- `degraded` — a non-hardware service is down. HTTP **503**.
+
+`mode` reflects the current persona (`drive` / `foot`); `MODES` in `config.py` decides which services count as "expected" per mode. Cached for 2s server-side so high-rate probing is cheap.
 
 ## `drifter diagnose`
 
@@ -90,10 +96,10 @@ Checks performed:
 
 Exit `0` if every fatal check passes; warnings (audio, rf_sdr) don't fail the run.
 
-## Service inventory (17)
+## Service inventory (19)
 
 Canonical list lives in [`src/config.py`](src/config.py) — `SERVICES`. Keep in sync with
-[`services/`](services/) and the `SERVICES` array in [`scripts/oneshot.sh`](scripts/oneshot.sh).
+[`services/`](services/) and the `SERVICES` array in [`install.sh`](install.sh).
 
 ```
 drifter-canbridge   drifter-alerts      drifter-logger
@@ -101,7 +107,8 @@ drifter-anomaly     drifter-analyst     drifter-voice
 drifter-vivi        drifter-hotspot     drifter-homesync
 drifter-watchdog    drifter-realdash    drifter-rf
 drifter-wardrive    drifter-dashboard   drifter-fbmirror
-drifter-voicein     drifter-flipper
+drifter-voicein     drifter-flipper     drifter-opsec
+drifter-bleconv
 ```
 
 `drifter-llm.service` was removed (superseded by `drifter-analyst`); `install.sh`
@@ -117,7 +124,7 @@ will tear down a leftover unit file from older deploys.
 | Telemetry WS | `10.42.0.1:8081` | WS | live MQTT fan-out |
 | Audio WS | `10.42.0.1:8082` | WS (binary WAV) | TTS over phone speaker |
 | RealDash | `10.42.0.1:35000` | **TCP** (CAN 0x44) | RealDash app |
-| MQTT broker | `localhost:1883` | NanoMQ or Mosquitto fallback | inter-service bus |
+| MQTT broker | `localhost:1883` | Mosquitto (NanoMQ optional via `--with-nanomq`) | inter-service bus |
 
 ## Discrepancies from the contract spec
 
