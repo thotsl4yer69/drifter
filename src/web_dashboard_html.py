@@ -372,6 +372,51 @@ body{
   text-transform:uppercase;letter-spacing:3px;font-weight:600;
   display:flex;align-items:center;gap:10px;
 }
+/* ── Vivi avatar ───────────────────────────────────────────
+   Inline circular mark inside the ASK VIVI section header.
+   Three states keyed off a class:
+     .idle      slow 4s breath (default)
+     .thinking  fast 1.1s pulse (query in flight)
+     .speaking  tight 0.42s wave pulse (TTS playing)
+   Inherits --accent so it tracks the active theme. */
+.vivi-avatar{
+  position:relative;flex:0 0 auto;
+  width:34px;height:34px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  margin-left:auto;margin-right:0;
+}
+.vivi-avatar .va-ring{
+  position:absolute;inset:0;border-radius:50%;
+  border:1px solid var(--accent);opacity:.5;
+  background:radial-gradient(circle at 30% 30%,
+    color-mix(in srgb,var(--accent) 18%,transparent) 0%,
+    transparent 70%);
+}
+.vivi-avatar .va-mark{
+  font-family:var(--font-display);font-size:14px;font-weight:700;
+  color:var(--accent);letter-spacing:1px;line-height:1;
+  text-shadow:0 0 6px var(--accent-glow);
+  position:relative;z-index:1;
+}
+.vivi-avatar.idle .va-ring{animation:vivi-idle 4s ease-in-out infinite}
+.vivi-avatar.thinking .va-ring{animation:vivi-thinking 1.1s ease-in-out infinite}
+.vivi-avatar.speaking .va-ring{animation:vivi-speaking .42s ease-in-out infinite}
+@keyframes vivi-idle{
+  0%,100%{transform:scale(1);opacity:.4;box-shadow:0 0 0 0 var(--accent-glow)}
+  50%{transform:scale(1.06);opacity:.7;box-shadow:0 0 14px 1px var(--accent-glow)}
+}
+@keyframes vivi-thinking{
+  0%,100%{transform:scale(1);opacity:.55;box-shadow:0 0 0 0 var(--accent-glow)}
+  50%{transform:scale(1.14);opacity:.95;box-shadow:0 0 18px 3px var(--accent-glow)}
+}
+@keyframes vivi-speaking{
+  0%,100%{transform:scale(1);box-shadow:0 0 0 0 var(--accent-glow)}
+  50%{transform:scale(1.20);box-shadow:0 0 26px 4px var(--accent-glow)}
+}
+@media (prefers-reduced-motion: reduce){
+  .vivi-avatar .va-ring{animation:none!important}
+}
+
 .section::before,.section::after{
   content:"";flex:1;height:1px;
   background:linear-gradient(90deg,transparent,var(--border),transparent);
@@ -628,8 +673,15 @@ details[open] summary::before{content:"▾ "}
 <!-- ── Tab bar — groups the 11 sections into DRIVE / OPSEC / DIAG.
      ASK VIVI sits ABOVE the tabs (it's always visible — primary action). -->
 <!-- ── ASK VIVI — promoted to top so it's the primary action on the HUD ── -->
-<div class="section">ASK VIVI</div>
-<div style="padding:6px 10px 12px">
+<div class="section">ASK VIVI
+  <!-- Avatar: idle = slow breath, thinking = fast pulse, speaking =
+       short wave pulse. Visible state cue for whether Vivi is busy. -->
+  <span id="vivi-avatar" class="vivi-avatar idle" aria-hidden="true">
+    <span class="va-ring"></span>
+    <span class="va-mark">V</span>
+  </span>
+</div>
+<div style="padding:6px 10px 12px;position:relative">
   <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
     <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
     <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
@@ -640,6 +692,8 @@ details[open] summary::before{content:"▾ "}
   <div style="display:flex;gap:6px;margin-bottom:6px">
     <input id="ask-input" type="text" class="ask-input"
       placeholder="Ask Vivi anything about your X-Type&hellip;"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();askMechanic();}"
+      autocomplete="off"
       style="flex:1;font-size:14px;padding:10px 12px">
     <button id="mic-btn" onclick="toggleMic()" title="Voice input" class="btn mic" aria-label="Voice input">&#x1f3a4;</button>
     <button id="ask-btn" onclick="askMechanic()" class="btn primary">ASK</button>
@@ -1395,6 +1449,9 @@ function connectAudio(){
       src.buffer = buf;
       src.connect(audioCtx.destination);
       src.start(0);
+      // Vivi avatar — pulse 'speaking' on every audio chunk; pulseSpeaking
+      // resets a 300ms timer back to 'idle' if no further chunks arrive.
+      pulseSpeaking();
     }).catch(()=>{});
   };
   audioWs.onclose = ()=>setTimeout(connectAudio, 5000);
@@ -1713,9 +1770,26 @@ let queryBusy=false;
 let queryAbort=null;
 let queryTimer=null;
 
+// Vivi avatar state — keep one place that owns the class so the
+// idle/thinking/speaking animations don't fight each other.
+let _viviSpeakingTimer = null;
+function setViviState(state){
+  const el = document.getElementById('vivi-avatar');
+  if (!el) return;
+  el.classList.remove('idle','thinking','speaking');
+  el.classList.add(state);
+}
+function pulseSpeaking(){
+  setViviState('speaking');
+  if (_viviSpeakingTimer) clearTimeout(_viviSpeakingTimer);
+  // Drop back to idle if no audio chunks for 300ms — TTS playback over.
+  _viviSpeakingTimer = setTimeout(() => setViviState('idle'), 300);
+}
+
 function _submitQuery(q){
   if(queryBusy||!q) return;
   queryBusy=true;
+  setViviState('thinking');
   const out=document.getElementById('ask-output');
   const meta=document.getElementById('ask-meta');
   const btn=document.getElementById('ask-btn');
@@ -1819,6 +1893,9 @@ function _submitQuery(q){
     btn.disabled=false;btn.classList.remove('hidden');btn.textContent='ASK';
     cancelBtn.classList.add('hidden');
     if(queryTimer){clearInterval(queryTimer);queryTimer=null;}
+    // If audio isn't playing back, return to idle. pulseSpeaking will
+    // override this to 'speaking' as soon as the first WAV chunk lands.
+    setViviState('idle');
   });
 }
 

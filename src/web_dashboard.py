@@ -39,7 +39,7 @@ except ImportError:
     HAS_WEBSOCKETS = False
 
 from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 
 import web_dashboard_state as state
 from web_dashboard_handlers import DashboardHandler
@@ -69,7 +69,12 @@ _last_audio_time = 0.0
 # ═══════════════════════════════════════════════════════════════════
 
 def run_http_server() -> None:
-    server = HTTPServer(('0.0.0.0', WEB_PORT), DashboardHandler)
+    # ThreadingHTTPServer (not the plain single-thread HTTPServer) so a
+    # streaming /api/query/stream call can't block /healthz, the BLE
+    # tile poll, hardware checks, etc. Long Vivi LLM streams used to
+    # wedge the entire dashboard until the stream finished.
+    server = ThreadingHTTPServer(('0.0.0.0', WEB_PORT), DashboardHandler)
+    server.daemon_threads = True
     server.timeout = 2
     log.info("HTTP dashboard on http://0.0.0.0:%d", WEB_PORT)
     while state.running:
