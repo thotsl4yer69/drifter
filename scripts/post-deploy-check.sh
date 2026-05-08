@@ -98,11 +98,11 @@ fi
 
 # ── 4. systemd services ──
 echo -e "\n${AMBER}[4/8] systemd Services${NC}"
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv"
 # Hardware-optional: services that crash-loop cleanly until their dongle
 # is plugged in. Reported as warnings even in-mode so a bench install
 # without USB2CANFD/RTL-SDR/microphone still passes the deploy contract.
-HW_OPTIONAL_SERVICES="drifter-canbridge drifter-rf drifter-vivi drifter-voicein drifter-flipper"
+HW_OPTIONAL_SERVICES="drifter-canbridge drifter-rf drifter-vivi drifter-voicein drifter-flipper drifter-bleconv"
 # Active persona — services NOT in this mode are reported but non-fatal.
 # config.py owns the canonical mapping; ask it directly so the bash side
 # can't drift out of sync.

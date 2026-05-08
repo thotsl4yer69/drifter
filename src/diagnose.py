@@ -88,8 +88,9 @@ _HARDWARE_OPTIONAL_SERVICES = frozenset({
     'drifter-vivi',      # requires Ollama + faster-whisper + piper + audio input
     'drifter-flipper',   # requires Flipper Zero connected via UART/USB
     'drifter-voicein',   # requires wake-word model or GPIO PTT button
-    'drifter-canbridge', # needs USB2CANFD plugged into OBD-II — service crash-loops cleanly until it is
+    'drifter-canbridge', # needs USB2CANFD plugged into OBD-II
     'drifter-rf',        # needs RTL-SDR dongle — TPMS sniffing only viable with hardware
+    'drifter-bleconv',   # needs hci0 active (Pi 5 onboard BLE) + bleak in venv
 })
 
 

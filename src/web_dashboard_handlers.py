@@ -94,7 +94,7 @@ def _healthz_payload() -> tuple[dict, int]:
     # degraded), not fail the healthz contract (HTTP 503).
     _HW_OPTIONAL = {
         'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
-        'drifter-voicein', 'drifter-flipper',
+        'drifter-voicein', 'drifter-flipper', 'drifter-bleconv',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]
@@ -167,6 +167,49 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
+
+    def _get_ble_recent(self, parsed):
+        """Last N BLE detections from /opt/drifter/state/ble-events.db.
+        Privacy: only respond if the request comes from 127.0.0.1 or the
+        hotspot subnet (10.42.0.0/24). BLE detection data is the one
+        feed where remote read genuinely shouldn't happen."""
+        peer = self.client_address[0] if self.client_address else ''
+        if peer != '127.0.0.1' and not peer.startswith('10.42.0.'):
+            self.send_error(403, 'BLE recent: local network only')
+            return
+        try:
+            limit = int(parse_qs(parsed.query).get('limit', ['20'])[0])
+        except ValueError:
+            limit = 20
+        limit = max(1, min(limit, 200))
+        import sqlite3
+        from pathlib import Path as _P
+        db_path = _P('/opt/drifter/state/ble-events.db')
+        if not db_path.exists():
+            self._serve_json({'detections': []})
+            return
+        try:
+            with sqlite3.connect(db_path) as c:
+                rows = c.execute(
+                    "SELECT ts, target, mac, rssi, gps_lat, gps_lng, "
+                    "manufacturer_id, advertised_name, is_alert "
+                    "FROM detections ORDER BY ts DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as e:
+            self._serve_json({'error': str(e), 'detections': []})
+            return
+        out = [{
+            'ts':                r[0],
+            'target':            r[1],
+            'mac':               r[2],
+            'rssi':              r[3],
+            'gps':               ({'lat': r[4], 'lng': r[5]} if r[4] is not None else None),
+            'manufacturer_id':   r[6],
+            'advertised_name':   r[7],
+            'is_alert':          bool(r[8]),
+        } for r in rows]
+        self._serve_json({'detections': out})
 
     def _get_mechanic_advice(self, parsed):
         """Alert-click handler: feeds the alert text into the corpus and
@@ -519,5 +562,6 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/sessions':              DashboardHandler._get_sessions,
     '/api/wardrive':              DashboardHandler._get_wardrive,
     '/api/mechanic/advice':       DashboardHandler._get_mechanic_advice,
+    '/api/ble/recent':            DashboardHandler._get_ble_recent,
     '/api/mode':                  DashboardHandler._get_mode,
 }

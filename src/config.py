@@ -601,6 +601,11 @@ TOPICS = {
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
+    # BLE passive scanner (Phase 4.5)
+    'ble_detection': 'drifter/ble/detection',
+    'ble_raw': 'drifter/ble/raw',
+    # GPS (cached by ble_passive for detection geo-tagging)
+    'gps_fix': 'drifter/gps/fix',
 }
 
 # ── LLM Analyst ──
@@ -634,13 +639,28 @@ ANOMALY_HIGH_Z = 3.5
 ANOMALY_CRITICAL_Z = 4.5
 ANOMALY_IDLE_RPM_STDDEV = 50       # RPM stddev threshold at idle
 
+# ── BLE Passive Scanner (drifter-bleconv) ──
+BLE_TARGETS_PATH = DRIFTER_DIR / "ble_targets.yaml"
+BLE_DB_PATH = DRIFTER_DIR / "state" / "ble-events.db"
+BLE_RAW_PUBLISH = os.getenv("BLE_RAW_PUBLISH", "false").lower() in ("1", "true", "yes")
+BLE_LOG_RETENTION_DAYS = int(os.getenv("BLE_LOG_RETENTION_DAYS", "30"))
+BLE_RATE_LIMIT_SEC = float(os.getenv("BLE_RATE_LIMIT_SEC", "30"))
+BLE_GPS_FRESH_SEC = float(os.getenv("BLE_GPS_FRESH_SEC", "10"))
+
+# Topics that home_sync MUST NEVER bridge to the home node. BLE detection
+# data + audio classifier output stay local only.
+HOMESYNC_EXCLUDE_TOPICS = [
+    'drifter/ble/+',
+    'drifter/audio/+',
+]
+
 # ── Storage ──
 DB_PATH = DRIFTER_DIR / "data" / "drifter.db"
 REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
-# Canonical list of 18 active systemd services.
+# Canonical list of 19 active systemd services.
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",
@@ -660,6 +680,7 @@ SERVICES = [
     "drifter-voicein",
     "drifter-flipper",
     "drifter-opsec",
+    "drifter-bleconv",      # Phase 4.5 — passive BLE scanner
 ]
 
 # ── Modes ──
@@ -677,6 +698,7 @@ DRIVE_ONLY_SERVICES = [
     "drifter-realdash",    # RealDash app feed
     "drifter-fbmirror",    # SPI LCD mirror for the dash screen
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
+    "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon

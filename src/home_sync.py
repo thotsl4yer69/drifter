@@ -174,16 +174,45 @@ def _rsync_file(local_path, remote_dir):
         return False
 
 
+def _topic_excluded(topic: str, patterns) -> bool:
+    """MQTT-style wildcard match for HOMESYNC_EXCLUDE_TOPICS — supports
+    `+` (single-segment wildcard) and `#` (multi-segment, only at end)."""
+    for pat in patterns or []:
+        if pat == topic:
+            return True
+        # `drifter/ble/+` matches `drifter/ble/detection` but not
+        # `drifter/ble/detection/extra`. `drifter/ble/#` matches both.
+        ps = pat.split('/')
+        ts = topic.split('/')
+        if ps and ps[-1] == '#':
+            head = ps[:-1]
+            if len(ts) >= len(head) and all(
+                p == '+' or p == t for p, t in zip(head, ts[:len(head)])
+            ):
+                return True
+            continue
+        if len(ps) != len(ts):
+            continue
+        if all(p == '+' or p == t for p, t in zip(ps, ts)):
+            return True
+    return False
+
+
 def on_local_message(client, userdata, msg):
-    """Forward drifter messages to nanob."""
+    """Forward drifter messages to nanob, except topics in
+    HOMESYNC_EXCLUDE_TOPICS (privacy-sensitive feeds like BLE detections
+    and audio classifier output stay local-only)."""
     global home_client
     if not (home_client and is_home):
         return
     try:
+        from config import HOMESYNC_EXCLUDE_TOPICS
+    except ImportError:
+        HOMESYNC_EXCLUDE_TOPICS = []
+    if _topic_excluded(msg.topic, HOMESYNC_EXCLUDE_TOPICS):
+        return
+    try:
         topic = msg.topic
-        # Only rewrite the leading "drifter/" prefix. str.replace rewrites
-        # every occurrence, which would mangle any topic that legitimately
-        # contains the substring "drifter/" past the first segment.
         if topic.startswith("drifter/"):
             remote_topic = "sentient/vehicle/drifter/" + topic[len("drifter/"):]
         else:

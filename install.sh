@@ -210,15 +210,30 @@ pip install --quiet \
     requests \
     numpy
 # Voice input Python deps (must be in venv)
-pip install --quiet vosk pyaudio openwakeword 2>/dev/null && ok "Voice input Python deps installed" || \
-    warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword' in venv"
+pip install --quiet vosk pyaudio openwakeword pyyaml 2>/dev/null && ok "Voice input Python deps installed" || \
+    warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword pyyaml' in venv"
+# Vivi STT/TTS deps
+pip install --quiet faster-whisper piper-tts sounddevice 2>/dev/null && ok "Vivi STT/TTS deps installed" || \
+    warn "Vivi deps failed — run 'pip install faster-whisper piper-tts sounddevice' in venv"
+# Corpus retrieval (sentence-transformers + torch — large download, only if missing)
+"${DRIFTER_DIR}/venv/bin/python3" -c "import sentence_transformers" 2>/dev/null \
+    && ok "sentence-transformers already installed" \
+    || (pip install --quiet sentence-transformers \
+        && ok "sentence-transformers installed (corpus retrieval)") \
+    || warn "sentence-transformers install failed — corpus search disabled"
+# Passive BLE scanner deps
+"${DRIFTER_DIR}/venv/bin/python3" -c "import bleak" 2>/dev/null \
+    && ok "bleak already installed" \
+    || (pip install --quiet "bleak>=0.21.0" \
+        && ok "bleak installed (passive BLE scanner)") \
+    || warn "bleak install failed — drifter-bleconv disabled"
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 7. Deploy Application ──
 step 7 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py corpus.py ble_passive.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -269,9 +284,32 @@ else
     ok "vivi.yaml already present — not overwriting"
 fi
 
-# Log & session directories
-mkdir -p ${DRIFTER_DIR}/logs/sessions
-ok "Log directories created"
+# Driver profile (Vivi reads name every turn)
+if [ ! -f "${DRIFTER_DIR}/driver.yaml" ]; then
+    cp "${REPO_DIR}/config/driver.yaml" "${DRIFTER_DIR}/"
+    ok "driver.yaml deployed"
+fi
+
+# BLE target registry (drifter-bleconv)
+if [ ! -f "${DRIFTER_DIR}/ble_targets.yaml" ]; then
+    cp "${REPO_DIR}/config/ble_targets.yaml" "${DRIFTER_DIR}/"
+    ok "ble_targets.yaml deployed"
+else
+    ok "ble_targets.yaml already present — not overwriting"
+fi
+
+# polkit grant for drifter user → BlueZ (BLE passive scan needs D-Bus access)
+POLKIT_SRC="${REPO_DIR}/services/51-drifter-bluetooth.rules"
+POLKIT_DST="/etc/polkit-1/rules.d/51-drifter-bluetooth.rules"
+if [ -f "$POLKIT_SRC" ]; then
+    install -m 0644 -o root -g root "$POLKIT_SRC" "$POLKIT_DST"
+    ok "BlueZ polkit rule installed"
+fi
+
+# Log & session + state directories
+mkdir -p ${DRIFTER_DIR}/logs/sessions ${DRIFTER_DIR}/state
+chown -R drifter:drifter ${DRIFTER_DIR}/state ${DRIFTER_DIR}/logs 2>/dev/null || true
+ok "Log/state directories created"
 
 # Analyst data directories and API key placeholder
 mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports

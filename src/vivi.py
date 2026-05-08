@@ -105,6 +105,10 @@ _telemetry_ts: float = 0.0          # wall-clock of last snapshot update
 TELEMETRY_FRESH_SEC = 10.0          # context drops telemetry older than this
 _recent_alerts: deque = deque(maxlen=3)  # (ts, level, msg) tuples
 ALERT_FRESH_SEC = 300.0             # 5-minute alert window
+# Phase 4.5.4 — BLE detections that landed in the last 5 minutes. One per
+# target (newer wins) so a flood of e.g. axon hits doesn't dominate context.
+_recent_ble: dict = {}              # target_name → {ts, target_label, rssi}
+BLE_FRESH_SEC = 300.0
 _drive_session_start: float = 0.0
 _session_id: str = ""               # set on first turn or first /snapshot
 
@@ -366,6 +370,7 @@ def _new_session() -> str:
     with _history_lock:
         _history.clear()
     _recent_alerts.clear()
+    _recent_ble.clear()
     return _session_id
 
 
@@ -427,6 +432,24 @@ def _format_drive_state() -> Optional[str]:
     return ", ".join(bits) if bits else None
 
 
+def _format_recent_ble() -> Optional[str]:
+    """One line per BLE target seen in the last BLE_FRESH_SEC. Vivi sees
+    only target_label + RSSI + age — no MAC, no identity claim. Persona
+    prompt covers the language constraint ('hardware family only')."""
+    now = time.time()
+    fresh = [(t, info) for t, info in _recent_ble.items()
+             if now - info.get('ts', 0) < BLE_FRESH_SEC]
+    if not fresh:
+        return None
+    lines = []
+    for _t, info in fresh:
+        age = max(0, int(now - info['ts']))
+        lines.append(
+            f"- {info['target_label']} (RSSI {info['rssi']}, {age}s ago)"
+        )
+    return "Recent BLE:\n" + "\n".join(lines)
+
+
 def _format_recent_alerts() -> Optional[str]:
     """Last 3 alerts within ALERT_FRESH_SEC, joined into a single line."""
     now = time.time()
@@ -477,6 +500,11 @@ def _build_context(query: str) -> str:
     alerts = _format_recent_alerts()
     if alerts:
         parts.append(alerts)
+
+    # Recent BLE detections (last 5 min, one per target)
+    ble = _format_recent_ble()
+    if ble:
+        parts.append(ble)
 
     # Corpus hook — Phase 2 wires retrieval here. corpus_search returns
     # the single best chunk (or None). Format compresses topic + body into
@@ -784,6 +812,27 @@ def on_message(client, userdata, msg) -> None:
             log.info("vivi_control reset — clearing history + new session")
             _new_session()
             _publish_status("idle")
+    elif topic == TOPICS.get('ble_detection'):
+        # ble_passive publishes one of these per matched advertisement.
+        if isinstance(payload, dict):
+            target = str(payload.get('target', '')).strip()
+            label = str(payload.get('target_label') or target).strip()
+            try:
+                rssi = int(payload.get('rssi', 0) or 0)
+            except (TypeError, ValueError):
+                rssi = 0
+            if target:
+                _recent_ble[target] = {
+                    'ts': time.time(),
+                    'target_label': label,
+                    'rssi': rssi,
+                }
+            # Proactive comment for vivi_alert targets in alert range.
+            if payload.get('vivi_alert') and payload.get('is_alert'):
+                # Reuse the existing rate limit by emitting via the same path.
+                _maybe_unprompted_comment(
+                    3, f"BLE detection: {label} nearby (RSSI {rssi})"
+                )
 
 
 def _handle_text_query(query: str) -> None:
@@ -909,6 +958,7 @@ def main() -> None:
         (TOPICS['snapshot'], 0),
         (TOPICS['alert_message'], 0),
         (TOPICS['vivi_control'], 0),
+        (TOPICS.get('ble_detection', 'drifter/ble/detection'), 0),
     ])
     _mqtt_client.loop_start()
 

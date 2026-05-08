@@ -1,0 +1,59 @@
+# MZ1312 DRIFTER — BLE target registry (drifter-bleconv)
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Each target is a passive-detection rule. A target matches an advertisement
+# when ANY of its `match` predicates is satisfied (OR semantics within a
+# target). At least one criterion must be set.
+#
+# Schema:
+#   name                  : str       — short identifier (used in MQTT payload, SQLite)
+#   description           : str       — human-readable
+#   enabled               : bool      — runtime gate
+#   verified              : bool      — has the OUI / UUID been confirmed?
+#   verification_source   : str       — where the assertion came from
+#   match:
+#     oui_prefixes        : list[str] — first 8 chars of MAC, e.g. "00:25:DF"
+#     manufacturer_id     : int       — Bluetooth assigned-numbers manufacturer ID
+#     manufacturer_data_prefix : str  — hex prefix of manufacturer_data bytes
+#     service_uuids       : list[str] — full 128-bit UUIDs
+#   rssi_alert_threshold  : int       — dBm; >= threshold → is_alert=true
+#   vivi_alert            : bool      — trigger an unprompted Vivi line on alert
+#   vivi_label            : str       — neutral hardware-family label Vivi uses
+#
+# A target with verified=false AND enabled=true is a config error — the
+# scanner logs WARNING and disables it at runtime.
+
+targets:
+  - name: "axon"
+    description: "Axon Enterprise body cams, tasers, holsters"
+    enabled: true
+    verified: true
+    verification_source: "IEEE OUI registry, 00:25:DF registered to Taser International Inc (now Axon Enterprise, Inc.)"
+    match:
+      oui_prefixes: ["00:25:DF"]
+    rssi_alert_threshold: -60
+    vivi_alert: true
+    vivi_label: "law enforcement BLE equipment"
+
+  - name: "tile"
+    description: "Tile trackers (anti-stalking awareness)"
+    enabled: false
+    verified: false
+    verification_source: "Tile uses several service UUIDs incl. 0xFEED. Verify against current firmware before enabling."
+    match:
+      service_uuids: ["0000feed-0000-1000-8000-00805f9b34fb"]
+    rssi_alert_threshold: -50
+    vivi_alert: false
+    vivi_label: "Tile tracker"
+
+  - name: "airtag"
+    description: "Apple AirTag (anti-stalking awareness)"
+    enabled: false
+    verified: false
+    verification_source: "Apple Find My uses manufacturer data 0x004C with specific format. See docs/AIRTAG_DETECTION.md before enabling — simple manufacturer_id match catches every Apple device."
+    match:
+      manufacturer_id: 0x004C
+      manufacturer_data_prefix: "1219"
+    rssi_alert_threshold: -50
+    vivi_alert: false
+    vivi_label: "Apple Find My device"
