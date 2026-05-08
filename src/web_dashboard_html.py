@@ -664,6 +664,36 @@ details[open] summary::before{content:"▾ "}
 <div id="ble-panel" style="padding:6px 10px 8px;font-size:11px;color:var(--dim)">
   No detections — scanner listening passively
 </div>
+<div style="padding:0 10px 8px;font-size:11px;color:var(--dim)">
+  <button id="ble-history-toggle" type="button"
+          style="background:#181818;color:var(--dim);border:1px solid #2a2a2a;padding:3px 8px;font-size:11px;cursor:pointer;border-radius:2px">
+    + History (24h)
+  </button>
+  <a href="/map/ble" target="_blank"
+     style="margin-left:6px;color:var(--dim);text-decoration:none;font-size:11px;border:1px solid #2a2a2a;padding:3px 8px;border-radius:2px;display:inline-block">
+    Map &rarr;
+  </a>
+  <button id="ble-history-refresh" type="button" hidden
+          style="margin-left:6px;background:#181818;color:var(--dim);border:1px solid #2a2a2a;padding:3px 8px;font-size:11px;cursor:pointer;border-radius:2px">
+    Refresh
+  </button>
+</div>
+<div id="ble-history-panel" hidden
+     style="padding:0 10px 10px;font-size:10px;color:var(--dim);max-height:240px;overflow:auto">
+  <table style="width:100%;border-collapse:collapse;font-family:monospace">
+    <thead>
+      <tr style="color:var(--dim);text-align:left;border-bottom:1px solid #1a1a1a">
+        <th style="padding:2px 4px">TIME</th>
+        <th style="padding:2px 4px">TARGET</th>
+        <th style="padding:2px 4px">MAC</th>
+        <th style="padding:2px 4px;text-align:right">RSSI</th>
+        <th style="padding:2px 4px">GPS</th>
+        <th style="padding:2px 4px;text-align:right">AGE</th>
+      </tr>
+    </thead>
+    <tbody id="ble-history-tbody"></tbody>
+  </table>
+</div>
 
 <!-- ASK panel was here — promoted to the top of the page in Phase 3. -->
 <div style="height:80px"></div>
@@ -1293,6 +1323,60 @@ function renderBle(detections){
 }
 loadBle();
 setInterval(loadBle, 5000);
+
+// ── BLE history (Phase 4.7 — collapsed by default, manual refresh) ──
+async function loadBleHistory(){
+  const tbody=document.getElementById('ble-history-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="6" style="padding:4px;color:var(--dim)">loading…</td></tr>';
+  try{
+    const since=Math.floor(Date.now()/1000)-86400;
+    const r=await fetch(`/api/ble/history?since=${since}&limit=500`);
+    if(!r.ok){
+      tbody.innerHTML=`<tr><td colspan="6" style="padding:4px;color:#ff5151">HTTP ${r.status}</td></tr>`;
+      return;
+    }
+    const d=await r.json();
+    const rows=d.detections||[];
+    if(!rows.length){
+      tbody.innerHTML='<tr><td colspan="6" style="padding:4px;color:var(--dim)">No detections in last 24h</td></tr>';
+      return;
+    }
+    const now=Date.now()/1000;
+    tbody.innerHTML=rows.map(d=>{
+      const t=new Date((d.ts||0)*1000).toISOString().slice(11,19);
+      const age=Math.max(0,Math.round(now-(d.ts||0)));
+      const ageStr=age<60?age+'s':age<3600?Math.round(age/60)+'m':Math.round(age/3600)+'h';
+      const macPfx=esc((d.mac||'').slice(0,8));
+      const alertCol=d.is_alert?'color:#ff5151;font-weight:bold':'';
+      const gps=(d.lat!=null && d.lng!=null)?'✓':'·';
+      return `<tr style="border-bottom:1px solid #131313">
+        <td style="padding:2px 4px;color:var(--dim)">${t}</td>
+        <td style="padding:2px 4px;${alertCol}">${esc(d.target||'?')}</td>
+        <td style="padding:2px 4px">${macPfx}…</td>
+        <td style="padding:2px 4px;text-align:right">${d.rssi!=null?d.rssi:''}</td>
+        <td style="padding:2px 4px;text-align:center;color:${gps==='✓'?'var(--accent)':'var(--dim)'}">${gps}</td>
+        <td style="padding:2px 4px;text-align:right;color:var(--dim)">${ageStr}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    tbody.innerHTML=`<tr><td colspan="6" style="padding:4px;color:#ff5151">${esc(String(e))}</td></tr>`;
+  }
+}
+(()=>{
+  const btn=document.getElementById('ble-history-toggle');
+  const panel=document.getElementById('ble-history-panel');
+  const refresh=document.getElementById('ble-history-refresh');
+  if(!btn||!panel||!refresh) return;
+  btn.addEventListener('click',()=>{
+    const expanded=!panel.hidden;
+    panel.hidden=expanded;
+    refresh.hidden=expanded;
+    btn.textContent=(expanded?'+ ':'– ')+'History (24h)';
+    if(!expanded) loadBleHistory();
+  });
+  refresh.addEventListener('click',loadBleHistory);
+})();
 
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
 

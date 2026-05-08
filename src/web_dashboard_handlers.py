@@ -22,6 +22,8 @@ from config import (
 )
 from corpus import corpus_search, dtc_lookup
 from web_dashboard_html import DASHBOARD_HTML, SETTINGS_HTML
+from ble_map_html import BLE_MAP_HTML
+import ble_history
 from web_dashboard_hardware import check_hardware
 import web_dashboard_state as state
 
@@ -136,7 +138,29 @@ def _healthz_payload() -> tuple[dict, int]:
 _STATIC_FILES = {
     '/realdash.xml': ('/opt/drifter/drifter_channels.xml', 'application/xml',
                        'attachment; filename="drifter_channels.xml"'),
+    # Vendored Leaflet 1.9.4 — used by /map/ble. Tethered phones can't
+    # reach unpkg through the hotspot, so we serve everything locally.
+    '/static/leaflet/leaflet.css': ('/opt/drifter/static/leaflet/leaflet.css',
+                                     'text/css', None),
+    '/static/leaflet/leaflet.js':  ('/opt/drifter/static/leaflet/leaflet.js',
+                                     'application/javascript', None),
+    '/static/leaflet/marker-icon.png':
+        ('/opt/drifter/static/leaflet/marker-icon.png', 'image/png', None),
+    '/static/leaflet/marker-icon-2x.png':
+        ('/opt/drifter/static/leaflet/marker-icon-2x.png', 'image/png', None),
+    '/static/leaflet/marker-shadow.png':
+        ('/opt/drifter/static/leaflet/marker-shadow.png', 'image/png', None),
 }
+
+
+_BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
+
+
+def _is_local_peer(peer: str) -> bool:
+    """Hotspot-only ACL — same gate Phase 4.5 used for /api/ble/recent.
+    BLE detection data shouldn't leak past 127.0.0.1 + the 10.42.0.0/24
+    Wi-Fi hotspot."""
+    return peer == '127.0.0.1' or peer.startswith('10.42.0.')
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
@@ -169,12 +193,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
 
     def _get_ble_recent(self, parsed):
-        """Last N BLE detections from /opt/drifter/state/ble-events.db.
-        Privacy: only respond if the request comes from 127.0.0.1 or the
-        hotspot subnet (10.42.0.0/24). BLE detection data is the one
-        feed where remote read genuinely shouldn't happen."""
+        """Last N BLE detections from the Phase 4.7 ble_history.db.
+        Same hotspot-only ACL as /api/ble/history."""
         peer = self.client_address[0] if self.client_address else ''
-        if peer != '127.0.0.1' and not peer.startswith('10.42.0.'):
+        if not _is_local_peer(peer):
             self.send_error(403, 'BLE recent: local network only')
             return
         try:
@@ -182,34 +204,112 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except ValueError:
             limit = 20
         limit = max(1, min(limit, 200))
-        import sqlite3
-        from pathlib import Path as _P
-        db_path = _P('/opt/drifter/state/ble-events.db')
-        if not db_path.exists():
+        rows = self._ble_query(limit=limit)
+        if rows is None:
             self._serve_json({'detections': []})
             return
-        try:
-            with sqlite3.connect(db_path) as c:
-                rows = c.execute(
-                    "SELECT ts, target, mac, rssi, gps_lat, gps_lng, "
-                    "manufacturer_id, advertised_name, is_alert "
-                    "FROM detections ORDER BY ts DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-        except sqlite3.Error as e:
-            self._serve_json({'error': str(e), 'detections': []})
-            return
+        # Preserve the Phase 4.5 wire shape (gps as nested object,
+        # advertised_name field) so the existing dashboard tile keeps
+        # rendering without a JS edit.
         out = [{
-            'ts':                r[0],
-            'target':            r[1],
-            'mac':               r[2],
-            'rssi':              r[3],
-            'gps':               ({'lat': r[4], 'lng': r[5]} if r[4] is not None else None),
-            'manufacturer_id':   r[6],
-            'advertised_name':   r[7],
-            'is_alert':          bool(r[8]),
+            'ts':                r['ts'],
+            'target':            r['target'],
+            'mac':               r['mac'],
+            'rssi':              r['rssi'],
+            'gps': ({'lat': r['lat'], 'lng': r['lng']}
+                    if r['lat'] is not None else None),
+            'manufacturer_id':   r['manufacturer_id'],
+            'advertised_name':   r['adv_name'],
+            'is_alert':          r['is_alert'],
         } for r in rows]
         self._serve_json({'detections': out})
+
+    def _ble_query(self, **kwargs):
+        """Open the history DB read-only, run query_history, close.
+        Returns None if the DB doesn't exist yet (fresh install before
+        any detections)."""
+        from pathlib import Path as _P
+        if not _P(_BLE_HISTORY_DB).exists():
+            return None
+        try:
+            conn = ble_history.open_db(_P(_BLE_HISTORY_DB))
+            try:
+                return ble_history.query_history(conn, **kwargs)
+            finally:
+                conn.close()
+        except Exception as e:
+            log.warning(f"ble_history query failed: {e}")
+            return None
+
+    def _get_ble_history(self, parsed):
+        """Filterable history read. Hotspot-only.
+        Query params: target, since, until, drive_id, limit (default 200,
+        cap 2000)."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'BLE history: local network only')
+            return
+        q = parse_qs(parsed.query)
+        kw: dict = {}
+        for key in ('target', 'drive_id'):
+            v = q.get(key, [None])[0]
+            if v:
+                kw[key] = v
+        for key in ('since', 'until'):
+            v = q.get(key, [None])[0]
+            if v:
+                try:
+                    kw[key] = float(v)
+                except ValueError:
+                    self.send_error(400, f'invalid {key}')
+                    return
+        try:
+            kw['limit'] = int(q.get('limit', ['200'])[0])
+        except ValueError:
+            kw['limit'] = 200
+        rows = self._ble_query(**kw)
+        if rows is None:
+            self._serve_json({'detections': [], 'count': 0,
+                              'drive_id': ble_history.current_drive_id()
+                                          if Path(_BLE_HISTORY_DB).parent.exists()
+                                          else None})
+            return
+        self._serve_json({
+            'detections': rows,
+            'count': len(rows),
+            'drive_id': ble_history.current_drive_id(),
+        })
+
+    def _get_ble_drives(self, parsed):
+        """Per-drive summary."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'BLE drives: local network only')
+            return
+        from pathlib import Path as _P
+        if not _P(_BLE_HISTORY_DB).exists():
+            self._serve_json({'drives': []})
+            return
+        try:
+            conn = ble_history.open_db(_P(_BLE_HISTORY_DB))
+            try:
+                drives = ble_history.query_drives(conn)
+            finally:
+                conn.close()
+        except Exception as e:
+            log.warning(f"ble_history drives query failed: {e}")
+            self._serve_json({'drives': [], 'error': str(e)})
+            return
+        self._serve_json({'drives': drives})
+
+    def _get_ble_map(self, parsed):
+        """Self-contained Leaflet map of the last 24h of BLE detections.
+        Hotspot-only — same ACL as the API endpoints."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'BLE map: local network only')
+            return
+        self._serve_html(BLE_MAP_HTML)
 
     def _get_mechanic_advice(self, parsed):
         """Alert-click handler: feeds the alert text into the corpus and
@@ -563,5 +663,8 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/wardrive':              DashboardHandler._get_wardrive,
     '/api/mechanic/advice':       DashboardHandler._get_mechanic_advice,
     '/api/ble/recent':            DashboardHandler._get_ble_recent,
+    '/api/ble/history':           DashboardHandler._get_ble_history,
+    '/api/ble/drives':            DashboardHandler._get_ble_drives,
+    '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
 }

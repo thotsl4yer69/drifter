@@ -205,34 +205,8 @@ def test_no_gps_yields_null():
     assert bp.GpsCache(fresh_sec=10.0).get() is None
 
 
-# ── SQLite event log ────────────────────────────────────────────────
-
-def test_detection_logged_to_sqlite(tmp_path):
-    db = bp.EventLog(tmp_path / 'b.db')
-    db.insert({
-        'ts': time.time(), 'target': 'axon', 'mac': '00:25:DF:11:22:33',
-        'rssi': -55, 'gps': None, 'manufacturer_id': '0x0006',
-        'advertised_name': None, 'raw_advertisement': '',
-        'is_alert': True,
-    })
-    assert db.count() == 1
-
-
-def test_prune_old_detections(tmp_path):
-    db = bp.EventLog(tmp_path / 'b.db')
-    old = time.time() - (40 * 86400)
-    new = time.time()
-    for ts in (old, new):
-        db.insert({
-            'ts': ts, 'target': 'axon', 'mac': '00:25:DF:11:22:33',
-            'rssi': -55, 'gps': None, 'manufacturer_id': None,
-            'advertised_name': None, 'raw_advertisement': '',
-            'is_alert': False,
-        })
-    assert db.count() == 2
-    pruned = db.prune_older_than(30)
-    assert pruned == 1
-    assert db.count() == 1
+# ── SQLite event log moved to ble_history (Phase 4.7) ───────────────
+# Coverage for insert/count/prune now lives in tests/test_ble_history.py.
 
 
 # ── home_sync exclusion ─────────────────────────────────────────────

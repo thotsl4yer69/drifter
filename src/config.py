@@ -641,7 +641,7 @@ ANOMALY_IDLE_RPM_STDDEV = 50       # RPM stddev threshold at idle
 
 # ── BLE Passive Scanner (drifter-bleconv) ──
 BLE_TARGETS_PATH = DRIFTER_DIR / "ble_targets.yaml"
-BLE_DB_PATH = DRIFTER_DIR / "state" / "ble-events.db"
+BLE_HISTORY_PATH = DRIFTER_DIR / "state" / "ble_history.db"
 BLE_RAW_PUBLISH = os.getenv("BLE_RAW_PUBLISH", "false").lower() in ("1", "true", "yes")
 BLE_LOG_RETENTION_DAYS = int(os.getenv("BLE_LOG_RETENTION_DAYS", "30"))
 BLE_RATE_LIMIT_SEC = float(os.getenv("BLE_RATE_LIMIT_SEC", "30"))

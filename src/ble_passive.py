@@ -27,17 +27,19 @@ import paho.mqtt.client as mqtt
 try:
     from config import (
         DRIFTER_DIR, MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
-        BLE_TARGETS_PATH, BLE_DB_PATH, BLE_RAW_PUBLISH,
+        BLE_TARGETS_PATH, BLE_HISTORY_PATH, BLE_RAW_PUBLISH,
         BLE_LOG_RETENTION_DAYS, BLE_RATE_LIMIT_SEC, BLE_GPS_FRESH_SEC,
     )
+    import ble_history
 except ImportError:
     import sys
     sys.path.insert(0, '/opt/drifter')
     from config import (  # type: ignore
         DRIFTER_DIR, MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
-        BLE_TARGETS_PATH, BLE_DB_PATH, BLE_RAW_PUBLISH,
+        BLE_TARGETS_PATH, BLE_HISTORY_PATH, BLE_RAW_PUBLISH,
         BLE_LOG_RETENTION_DAYS, BLE_RATE_LIMIT_SEC, BLE_GPS_FRESH_SEC,
     )
+    import ble_history  # type: ignore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -207,65 +209,6 @@ class GpsCache:
         return dict(self._fix)
 
 
-# ── SQLite event log ───────────────────────────────────────────────
-
-class EventLog:
-    SCHEMA = """
-        CREATE TABLE IF NOT EXISTS detections (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts REAL NOT NULL,
-            target TEXT NOT NULL,
-            mac TEXT NOT NULL,
-            rssi INTEGER NOT NULL,
-            gps_lat REAL,
-            gps_lng REAL,
-            manufacturer_id TEXT,
-            advertised_name TEXT,
-            raw_advertisement TEXT,
-            is_alert INTEGER DEFAULT 0
-        );
-        CREATE INDEX IF NOT EXISTS idx_ts ON detections(ts);
-        CREATE INDEX IF NOT EXISTS idx_target_mac ON detections(target, mac);
-    """
-
-    def __init__(self, path: Path):
-        self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as c:
-            c.executescript(self.SCHEMA)
-
-    def insert(self, detection: dict) -> None:
-        with sqlite3.connect(self.path) as c:
-            c.execute(
-                """INSERT INTO detections
-                   (ts, target, mac, rssi, gps_lat, gps_lng, manufacturer_id,
-                    advertised_name, raw_advertisement, is_alert)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    detection['ts'],
-                    detection['target'],
-                    detection['mac'],
-                    detection['rssi'],
-                    (detection.get('gps') or {}).get('lat'),
-                    (detection.get('gps') or {}).get('lng'),
-                    detection.get('manufacturer_id'),
-                    detection.get('advertised_name'),
-                    detection.get('raw_advertisement'),
-                    1 if detection.get('is_alert') else 0,
-                ),
-            )
-
-    def prune_older_than(self, days: int) -> int:
-        cutoff = time.time() - (days * 86400)
-        with sqlite3.connect(self.path) as c:
-            cur = c.execute("DELETE FROM detections WHERE ts < ?", (cutoff,))
-            return cur.rowcount
-
-    def count(self) -> int:
-        with sqlite3.connect(self.path) as c:
-            return c.execute("SELECT COUNT(*) FROM detections").fetchone()[0]
-
-
 # ── Scanner ────────────────────────────────────────────────────────
 
 class BLEScanner:
@@ -275,7 +218,12 @@ class BLEScanner:
         log.info(f"loaded {len(self.targets)} target(s); {len(self.enabled)} enabled")
         self.rl = RateLimiter(BLE_RATE_LIMIT_SEC)
         self.gps = GpsCache(BLE_GPS_FRESH_SEC)
-        self.eventlog = EventLog(BLE_DB_PATH)
+        # Phase 4.7 — forensic history with drive_id partitioning.
+        try:
+            self._history = ble_history.open_db(BLE_HISTORY_PATH)
+        except Exception as e:
+            log.warning(f"history DB unavailable: {e} — detections will publish but not persist")
+            self._history = None
         self._mqtt: Optional[mqtt.Client] = None
         self._stop = asyncio.Event()
         self._last_prune = 0.0
@@ -352,16 +300,9 @@ class BLEScanner:
                 'is_alert': is_alert,
                 'raw_advertisement': mfr_blob_hex,
                 'vivi_alert': bool(target['vivi_alert']) and is_alert,
+                'drive_id': ble_history.current_drive_id(),
             }
-            self.eventlog.insert(detection)
-            if self._mqtt is not None:
-                try:
-                    self._mqtt.publish(
-                        TOPICS.get('ble_detection', 'drifter/ble/detection'),
-                        json.dumps(detection),
-                    )
-                except Exception as e:
-                    log.warning(f"ble publish failed: {e}")
+            self._record_detection(detection)
             log.info(
                 f"hit {target['name']} {mac} rssi={rssi}"
                 f"{' [ALERT]' if is_alert else ''}"
@@ -370,11 +311,36 @@ class BLEScanner:
 
         # Daily prune
         now = time.time()
-        if now - self._last_prune > 86400:
+        if now - self._last_prune > 86400 and self._history is not None:
             self._last_prune = now
-            removed = self.eventlog.prune_older_than(BLE_LOG_RETENTION_DAYS)
-            if removed:
-                log.info(f"pruned {removed} old detection(s)")
+            try:
+                removed = ble_history.prune_older_than(
+                    self._history, BLE_LOG_RETENTION_DAYS
+                )
+                if removed:
+                    log.info(f"pruned {removed} old detection(s)")
+            except Exception as e:
+                log.warning(f"history prune failed: {e}")
+
+    def _record_detection(self, detection: dict) -> None:
+        """MQTT publish first, DB persist second. A persistence failure
+        must NEVER prevent the publish path from running — downstream
+        consumers (vivi proactive comments, dashboard tile) only see
+        the live MQTT feed."""
+        if self._mqtt is not None:
+            try:
+                self._mqtt.publish(
+                    TOPICS.get('ble_detection', 'drifter/ble/detection'),
+                    json.dumps(detection),
+                )
+            except Exception as e:
+                log.warning(f"ble publish failed: {e}")
+        if self._history is not None:
+            try:
+                ble_history.insert_detection(self._history, detection)
+                ble_history.touch_drive_id()
+            except Exception as e:
+                log.warning(f"ble history insert failed: {e}")
 
     async def run(self) -> int:
         if not self.enabled:
