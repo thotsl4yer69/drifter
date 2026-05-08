@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""
+drifter-ble-soak-report — diagnostic dump of the BLE stack's last 7d
+of activity. Read-only. Plain text, no UI.
+
+Use after the soak period to answer "is the scoring actually working"
+without re-deriving everything from raw SQLite.
+
+UNCAGED TECHNOLOGY — EST 1991
+"""
+from __future__ import annotations
+
+import sqlite3
+import sys
+import time
+from pathlib import Path
+
+DRIFTER_DIR = Path("/opt/drifter")
+if DRIFTER_DIR.exists() and str(DRIFTER_DIR) not in sys.path:
+    sys.path.insert(0, str(DRIFTER_DIR))
+
+import ble_history       # noqa: E402
+import ble_identity      # noqa: E402
+import ble_geocluster    # noqa: E402
+import ble_persistence   # noqa: E402
+
+DB_PATH = Path("/opt/drifter/state/ble_history.db")
+WINDOW_SEC = 7 * 86400
+
+
+def _hdr(title: str) -> None:
+    print()
+    print(title)
+    print("-" * len(title))
+
+
+def main() -> int:
+    if not DB_PATH.exists():
+        print(f"history DB missing: {DB_PATH}")
+        return 1
+
+    # Read-only attach so the running drifter-bleconv writer is undisturbed.
+    uri = f"file:{DB_PATH}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        now = time.time()
+        since = now - WINDOW_SEC
+        rows = ble_history.query_history(conn, since=since, until=now,
+                                          limit=1_000_000)
+    finally:
+        conn.close()
+
+    print(f"DRIFTER BLE SOAK REPORT  ({time.strftime('%Y-%m-%d %H:%M:%S')})")
+    print(f"window: last 7d  ({time.strftime('%Y-%m-%d %H:%M', time.localtime(since))} → now)")
+    print(f"db:     {DB_PATH}  ({DB_PATH.stat().st_size:,} bytes)")
+
+    _hdr("Volume")
+    print(f"  detections (7d):       {len(rows):>8,}")
+    drive_ids = {r['drive_id'] for r in rows}
+    print(f"  unique drive_ids:      {len(drive_ids):>8,}")
+    raw_macs = {r['mac'] for r in rows if r.get('mac')}
+    print(f"  unique raw MACs:       {len(raw_macs):>8,}")
+
+    # Identity collapse — how many distinct stable identities exist
+    # vs raw MACs. Ratio near 1.0 means the identity layer is doing
+    # nothing (every device is its own identity); a ratio ≪ 1.0 means
+    # rotating MACs collapsed into named fingerprints, or that
+    # axon/tile MACs from one device showed up multiple times.
+    identities = {}
+    for r in rows:
+        ident, conf = ble_identity.compute_identity(r)
+        if ident not in identities:
+            identities[ident] = {'count': 0, 'confidence': conf}
+        identities[ident]['count'] += 1
+    n_ident = len(identities)
+    ratio = (n_ident / len(raw_macs)) if raw_macs else 0
+    print(f"  unique stable identities:{n_ident:>7,}")
+    print(f"  collapse ratio:        {ratio:>8.2f}  (identities / raw MACs)")
+    print(f"                                ↑ closer to 0 = identity layer collapsing more rotation")
+
+    _hdr("GPS coverage")
+    with_gps = sum(1 for r in rows if r.get('lat') is not None and r.get('lng') is not None)
+    pct_gps = (100.0 * with_gps / len(rows)) if rows else 0.0
+    print(f"  with GPS fix:          {with_gps:>8,}  ({pct_gps:>5.1f}%)")
+    print(f"  without:               {len(rows) - with_gps:>8,}")
+
+    _hdr("Persistent contacts (current scoring)")
+    re_conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    try:
+        contacts, noise = ble_persistence.score_persistent_contacts(
+            re_conn, since_ts=since, until_ts=now,
+        )
+    finally:
+        re_conn.close()
+    tier_counts = {'high': 0, 'medium': 0, 'weak': 0}
+    for c in contacts:
+        tier_counts[c['tier']] += 1
+    print(f"  high tier:             {tier_counts['high']:>8,}")
+    print(f"  medium tier:           {tier_counts['medium']:>8,}")
+    print(f"  weak tier:             {tier_counts['weak']:>8,}")
+    print(f"  rejected by filters:   {noise:>8,}")
+
+    _hdr("Top 10 by follower_score")
+    if not contacts:
+        print("  (none)")
+    else:
+        print(f"  {'#':>2}  {'TIER':<7} {'SCORE':>6}  {'DRIVES':>6}  "
+              f"{'CLUSTERS':>8}  {'COUNT':>6}  {'CONF':>4}  IDENTITY")
+        for i, c in enumerate(contacts[:10], 1):
+            ident = c['identity']
+            if len(ident) > 60:
+                ident = ident[:57] + '...'
+            print(f"  {i:>2}  {c['tier']:<7} {c['follower_score']:>6.2f}  "
+                  f"{c['unique_drive_ids']:>6}  "
+                  f"{c['unique_geo_clusters']:>8}  "
+                  f"{c['detection_count']:>6}  "
+                  f"{c['confidence']:>4.2f}  {ident}")
+
+    _hdr("Geo-cluster size distribution (7d)")
+    cluster_ids = ble_geocluster.cluster_locations(rows)
+    by_cid: dict[int, int] = {}
+    for cid in cluster_ids:
+        if cid < 0:
+            continue
+        by_cid[cid] = by_cid.get(cid, 0) + 1
+    buckets = {'1': 0, '2': 0, '3-5': 0, '6-10': 0, '11+': 0}
+    for size in by_cid.values():
+        if size == 1:
+            buckets['1'] += 1
+        elif size == 2:
+            buckets['2'] += 1
+        elif size <= 5:
+            buckets['3-5'] += 1
+        elif size <= 10:
+            buckets['6-10'] += 1
+        else:
+            buckets['11+'] += 1
+    for label, cnt in buckets.items():
+        print(f"  size {label:>4}:               {cnt:>8,}")
+    print(f"  total clusters:        {len(by_cid):>8,}")
+    print(f"  noise points (no cluster): {sum(1 for c in cluster_ids if c == -1):>4,}")
+
+    _hdr("Distinct cluster centroids (lat,lng to 3dp)")
+    centroids: dict[tuple[float, float], int] = {}
+    for i, cid in enumerate(cluster_ids):
+        if cid < 0:
+            continue
+        r = rows[i]
+        key = (round(r['lat'], 3), round(r['lng'], 3))
+        centroids[key] = centroids.get(key, 0) + 1
+    if not centroids:
+        print("  (no clustered points)")
+    else:
+        for (lat, lng), cnt in sorted(centroids.items(), key=lambda kv: -kv[1])[:30]:
+            print(f"  {lat:>9.3f}, {lng:>10.3f}   ({cnt:>5,} hits)")
+        if len(centroids) > 30:
+            print(f"  ... + {len(centroids) - 30} more")
+
+    print()
+    print("End of report.")
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

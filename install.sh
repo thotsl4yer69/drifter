@@ -255,6 +255,13 @@ if [ -f "${REPO_DIR}/scripts/drifter-ble-export" ]; then
     ok "drifter-ble-export installed (/usr/local/bin/drifter-ble-export)"
 fi
 
+# Phase 4.8 closeout — soak diagnostic report
+if [ -f "${REPO_DIR}/scripts/drifter-ble-soak-report" ]; then
+    install -m 0755 "${REPO_DIR}/scripts/drifter-ble-soak-report" \
+            /usr/local/bin/drifter-ble-soak-report
+    ok "drifter-ble-soak-report installed (/usr/local/bin/drifter-ble-soak-report)"
+fi
+
 # Vendored Leaflet for the /map/ble route — phones tethered to the
 # MZ1312_DRIFTER hotspot can't reliably reach unpkg.
 if [ -d "${REPO_DIR}/static/leaflet" ]; then
