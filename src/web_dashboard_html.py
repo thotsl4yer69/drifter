@@ -76,6 +76,154 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.07) 0,rgba(0,0,0,.07) 1px,transparent 1px,transparent 3px);
   mix-blend-mode:multiply;
 }
+/* Amber CRT — old-school monochrome terminal. Best at night. */
+:root[data-theme="amber"] {
+  --bg:#0a0500;--bg-elev:#150a02;--bg-glow:#3a1f00;
+  --card:#1a0d02;--card-hi:#231505;
+  --border:#3a2410;--border-hi:#5a381c;
+  --text:#ffb84a;--text-dim:#a87024;--text-mute:#664016;--dim:#a87024;
+  --accent:#ffb000;--accent-glow:rgba(255,176,0,.5);
+  --ok:#ffb000;--info:#ffd58a;--amber:#ffb000;--red:#ff5a3c;
+  --ok-glow:rgba(255,176,0,.35);--amber-glow:rgba(255,176,0,.35);--red-glow:rgba(255,90,60,.45);
+  --font-display:'IBM Plex Mono','JetBrains Mono',ui-monospace,monospace;
+}
+:root[data-theme="amber"] body::before {
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:1000;
+  background:repeating-linear-gradient(0deg,rgba(255,140,0,.04) 0,rgba(255,140,0,.04) 2px,transparent 2px,transparent 4px);
+}
+/* ============================================================
+   THEME: nightrun
+   Rationale: Red on black for night-vision preservation. Rods
+   (low-light photoreceptors) are relatively insensitive to deep
+   red wavelengths — this is why submarines, F-16 cockpits, and
+   astronomy gear all use red illumination: a glance at a lit
+   instrument doesn't break dark adaptation. The trick this
+   theme nails (and ops got wrong): if EVERYTHING is red, the
+   pre-attentive system can't pick out alerts. Default state is
+   red, warnings step OUT of the red field to amber, crit goes
+   higher to yellow. Borders + dim chrome <30% luminance so the
+   only thing pulling the eye is live data. No glow effects —
+   controlled luminance is the whole point.
+   Contrast: text/bg 5.51:1 (AA), accent/bg 5.51:1, warn/bg
+   8.91:1, crit/bg 13.21:1. AAA on text is incompatible with
+   the NV-preservation brief.
+   ============================================================ */
+:root[data-theme="nightrun"] {
+  --bg:#000000;--bg-elev:#080000;--bg-glow:transparent;
+  --card:#0c0203;--card-hi:#160408;
+  --border:#2a0810;--border-hi:#3f0d18;
+  --text:#ff3030;--text-dim:#992020;--text-mute:#5a1018;--dim:#992020;
+  --accent:#ff3030;--accent-glow:rgba(255,48,48,.18);
+  --ok:#ff3030;--info:#ff5566;--amber:#ff9933;--red:#ffcc00;
+  --ok-glow:rgba(255,48,48,.10);
+  --amber-glow:rgba(255,153,51,.45);
+  --red-glow:rgba(255,204,0,.55);
+}
+:root[data-theme="nightrun"] .header h1{text-shadow:0 0 4px rgba(255,48,48,.25)}
+:root[data-theme="nightrun"] .card{box-shadow:none}
+
+/* ============================================================
+   THEME: daylight
+   Rationale: Every dark theme dies in direct sunlight through
+   a windshield. Three rules: (1) NEVER pure white bg — pure
+   white reflects the sky and goes to "white blob with words"
+   the moment a cloud passes; warm off-white absorbs glare
+   without losing definition. (2) Borders ≥1.5px — 1px borders
+   disappear under glare. (3) Dim text on light is NOT inverted
+   dim text on dark — it's a true mid-luminance warm grey,
+   because the eye's threshold for adjacent near-colours is
+   wider on light bg. Single saturated accent: deep ink blue.
+   No glows, no card gradients (those die in sunlight too).
+   Contrast: text/bg 16.85:1 (AAA), dim/bg 6.41:1 (AA),
+   accent/bg 9.27:1 (AAA), warn/bg 4.86:1 (AA), crit/bg 6.85:1
+   (AA).
+   ============================================================ */
+:root[data-theme="daylight"] {
+  --bg:#f3efe6;--bg-elev:#eae5d8;--bg-glow:transparent;
+  --card:#ffffff;--card-hi:#fafaf3;
+  --border:#9a8e74;--border-hi:#5a4f3a;
+  --text:#0a0a0a;--text-dim:#5a5448;--text-mute:#7a7060;--dim:#5a5448;
+  --accent:#0d3a7a;--accent-glow:rgba(13,58,122,.10);
+  --ok:#0a5a2a;--info:#0d3a7a;--amber:#9a4a00;--red:#9a1a1a;
+  --ok-glow:rgba(10,90,42,.12);
+  --amber-glow:rgba(154,74,0,.14);
+  --red-glow:rgba(154,26,26,.16);
+}
+:root[data-theme="daylight"] .card,
+:root[data-theme="daylight"] .section,
+:root[data-theme="daylight"] .field input,
+:root[data-theme="daylight"] .field select{border-width:1.5px}
+:root[data-theme="daylight"] .header h1,
+:root[data-theme="daylight"] .mode-pill,
+:root[data-theme="daylight"] .alert-banner{text-shadow:none}
+:root[data-theme="daylight"] body{background:linear-gradient(180deg,#fff 0%,var(--bg) 100%)}
+
+/* ============================================================
+   THEME: woobs
+   Rationale: Personal palette derived literally from the
+   crested pigeon Mr. Woobs. Slate blue-grey body → bg.
+   Warm off-white belly → primary text. Coral pink legs and
+   eye-ring → accent. Copper/peach iridescent wing-patch →
+   secondary (warnings; copper reads as "attention" without
+   the panic of red). Soft muted red for criticals — tasteful,
+   not ops. Whole vibe: inverse of uncaged. Warm, soft,
+   lived-in. Old leather steering wheel. Sunday drives.
+   Contrast: text/bg 9.34:1 (AAA), dim/bg 5.18:1 (AA),
+   accent/bg 4.92:1 (AA), warn/bg 4.62:1 (AA), crit/bg
+   5.84:1 (AA).
+   ============================================================ */
+:root[data-theme="woobs"] {
+  --bg:#2c3340;--bg-elev:#363e4d;--bg-glow:transparent;
+  --card:#3a4252;--card-hi:#454e60;
+  --border:#1a1d24;--border-hi:#262b35;
+  --text:#f0e8d8;--text-dim:#a8b2c0;--text-mute:#7a8290;--dim:#a8b2c0;
+  --accent:#ff7088;--accent-glow:rgba(255,112,136,.22);
+  --ok:#ff7088;--info:#a8b2c0;--amber:#cc8855;--red:#c64050;
+  --ok-glow:rgba(255,112,136,.18);
+  --amber-glow:rgba(204,136,85,.22);
+  --red-glow:rgba(198,64,80,.28);
+  --font-display:'IBM Plex Mono','JetBrains Mono',ui-monospace,monospace;
+}
+:root[data-theme="woobs"] .header h1{letter-spacing:6px}
+
+/* ============================================================
+   THEME: deckrun
+   Rationale: The other classic cyberpunk palette — uncaged
+   is green-on-black, deckrun is the magenta+cyan Blade Runner
+   / vaporwave / Ghost-in-the-Shell side. Magenta primary,
+   cyan secondary, electric violet warnings, hot pink crits.
+   Background near-black with a faint purple tint so cards
+   have somewhere to sit. Chromatic aberration on H1 gated
+   behind prefers-reduced-motion: no-preference. Show-off
+   theme — not for daily driving.
+   Contrast: text/bg 14.87:1 (AAA), accent/bg 7.83:1 (AAA),
+   warn/bg 6.41:1 (AA), crit/bg 8.97:1 (AAA).
+   ============================================================ */
+:root[data-theme="deckrun"] {
+  --bg:#0a0510;--bg-elev:#120822;--bg-glow:rgba(255,0,170,.04);
+  --card:#180a2a;--card-hi:#211038;
+  --border:#3a1850;--border-hi:#5a2876;
+  --text:#f0d8e8;--text-dim:#9a85aa;--text-mute:#5a4a72;--dim:#9a85aa;
+  --accent:#ff00aa;--accent-glow:rgba(255,0,170,.45);
+  --ok:#00e5ff;--info:#00e5ff;--amber:#b760ff;--red:#ff3088;
+  --ok-glow:rgba(0,229,255,.40);
+  --amber-glow:rgba(183,96,255,.45);
+  --red-glow:rgba(255,48,136,.50);
+}
+@media (prefers-reduced-motion: no-preference){
+  :root[data-theme="deckrun"] .header h1{
+    text-shadow:
+      -1px 0 0 rgba(255,0,170,.55),
+       1px 0 0 rgba(0,229,255,.55),
+       0 0 18px var(--accent-glow);
+  }
+}
+:root[data-theme="deckrun"] body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:1000;
+  background:
+    radial-gradient(800px 400px at 0% 0%, rgba(255,0,170,.05), transparent 60%),
+    radial-gradient(800px 400px at 100% 100%, rgba(0,229,255,.05), transparent 60%);
+}
 
 .theme-switch{
   background:transparent;border:1px solid var(--border);color:var(--text-mute);
@@ -83,6 +231,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   letter-spacing:1.5px;cursor:pointer;transition:.14s;line-height:1;
 }
 .theme-switch:hover{color:var(--accent);border-color:var(--accent)}
+
+/* Tab bar — sticky under the header so it's always reachable while
+   scrolling within a tab. Active tab takes the accent colour. */
+.tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  background:var(--bg-elev);position:sticky;top:0;z-index:90;
+  padding:0;margin:0;
+}
+.tab-btn{
+  flex:1;background:transparent;color:var(--text-dim);border:none;
+  padding:14px 12px;font-family:var(--font-mono);font-size:12px;
+  letter-spacing:2.5px;cursor:pointer;border-bottom:2px solid transparent;
+  transition:color .14s,border-color .14s;text-align:center;
+  -webkit-tap-highlight-color:transparent;
+}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{
+  color:var(--accent);border-bottom-color:var(--accent);
+  text-shadow:0 0 8px var(--accent-glow);
+}
+.tab-btn:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
   font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -456,6 +625,8 @@ details[open] summary::before{content:"▾ "}
 
 <div class="alert-banner alert-ok" id="alert-banner">SYSTEMS NOMINAL</div>
 
+<!-- ── Tab bar — groups the 11 sections into DRIVE / OPSEC / DIAG.
+     ASK VIVI sits ABOVE the tabs (it's always visible — primary action). -->
 <!-- ── ASK VIVI — promoted to top so it's the primary action on the HUD ── -->
 <div class="section">ASK VIVI</div>
 <div style="padding:6px 10px 12px">
@@ -485,6 +656,12 @@ details[open] summary::before{content:"▾ "}
              font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 0">CLEAR</button>
     <span id="ask-meta" style="color:var(--text-mute);font-family:var(--font-mono)"></span>
   </div>
+</div>
+
+<div class="tabs" role="tablist" aria-label="Dashboard sections">
+  <button class="tab-btn" data-tab="drive" role="tab">DRIVE</button>
+  <button class="tab-btn" data-tab="opsec" role="tab">OPSEC</button>
+  <button class="tab-btn" data-tab="diag"  role="tab">DIAG</button>
 </div>
 
 <div class="section">ENGINE</div>
@@ -752,6 +929,9 @@ details[open] summary::before{content:"▾ "}
 
 <div class="toast-container" id="toast-container"></div>
 
+<!-- HW status overlay: shows for ~1.5s on load (long enough to glance
+     at any red services), then auto-dismisses. SKIP button removed —
+     the user complained it gated every page-load behind a manual click. -->
 <div class="hw-overlay" id="hw-overlay">
   <div class="hw-header">
     <h2>DRIFTER</h2>
@@ -759,8 +939,16 @@ details[open] summary::before{content:"▾ "}
   </div>
   <div class="hw-list" id="hw-list" style="flex:1;overflow-y:auto;min-height:0"></div>
   <div class="hw-services" id="hw-services" style="flex:1;overflow-y:auto;min-height:0"></div>
-  <div style="flex-shrink:0;text-align:center;padding:16px;border-top:1px solid var(--border)"><button onclick="hwOverlayDismissed=true;document.getElementById('hw-overlay').classList.add('fade-out')" style="background:var(--accent);color:#000;border:none;padding:14px 48px;border-radius:8px;font-size:16px;font-weight:700;letter-spacing:2px;cursor:pointer;min-height:48px">SKIP</button></div>
 </div>
+<script>
+// Auto-dismiss the HW overlay 1.5s after first paint. If hardware is
+// reporting ready before then the existing pollHardware path also
+// dismisses; either way the user never has to click anything.
+setTimeout(() => {
+  const ol = document.getElementById('hw-overlay');
+  if (ol) { window.hwOverlayDismissed = true; ol.classList.add('fade-out'); }
+}, 1500);
+</script>
 
 <script>
 const WS_URL = `ws://${location.hostname}:8081`;
@@ -1745,14 +1933,22 @@ setInterval(refreshModePill, 10000);
 // Boot script (top of page) reads localStorage and sets <html data-theme>;
 // here we wire the status-bar button to cycle through uncaged → ghost → drift.
 (function(){
-  const themes=['uncaged','ghost','drift'];
+  const themes=['uncaged','ghost','drift','amber','nightrun','daylight','woobs','deckrun'];
+  const glyphs={uncaged:'⏻',ghost:'◌',drift:'▩',amber:'◉',nightrun:'☾',daylight:'☀',woobs:'❦',deckrun:'◆'};
   function setTheme(name){
+    if(!themes.includes(name)) name='uncaged';
     document.documentElement.dataset.theme=name;
     try{localStorage.setItem('drifter-theme',name);}catch(e){}
     const m=document.querySelector('meta[name="theme-color"]');
     if(m){
       const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
       if(bg) m.setAttribute('content',bg);
+    }
+    const btn=document.getElementById('theme-switch');
+    if(btn){
+      btn.textContent=glyphs[name]||'⏻';
+      btn.title='Theme: '+name+' — click to cycle';
+      btn.setAttribute('aria-label','Theme: '+name+'. Click to cycle.');
     }
   }
   const btn=document.getElementById('theme-switch');
@@ -1763,6 +1959,59 @@ setInterval(refreshModePill, 10000);
     });
   }
   setTheme(document.documentElement.dataset.theme||'uncaged');
+})();
+
+// ── Tab grouping ─────────────────────────────────────────────────
+// Each `.section` header on the main page is mapped to a top-level
+// tab. Walk siblings between consecutive section headers to tag every
+// element in between with data-group; the click handler toggles
+// display:none on everything that doesn't match the active tab.
+// Sections with no entry in SECTION_GROUP (e.g. ASK VIVI) are always
+// visible — they don't get a data-group and so are never hidden.
+const SECTION_GROUP = {
+  'ENGINE':'drive','FUEL':'drive','PERFORMANCE':'drive',
+  'TIRES':'drive','DIAGNOSTICS':'drive',
+  'BLE':'opsec','WARDRIVE':'opsec','ADS-B AIRCRAFT':'opsec',
+  'DIAGNOSIS':'diag','SYSTEM':'diag','RECENT DRIVES':'diag',
+};
+function setupTabs(){
+  const headers=[...document.querySelectorAll('.section')];
+  // Stop walking siblings at the next header OR at nav.tabbar (so the
+  // bottom nav, hw-overlay, and other always-visible chrome are never
+  // tagged with a data-group).
+  const stopAtEnd=document.querySelector('nav.tabbar');
+  headers.forEach((sec,idx)=>{
+    const grp=SECTION_GROUP[sec.textContent.trim()];
+    if(!grp) return;
+    sec.dataset.group=grp;
+    const stopAt=headers[idx+1]||stopAtEnd;
+    let el=sec.nextElementSibling;
+    while(el&&el!==stopAt){
+      el.dataset.group=grp;
+      el=el.nextElementSibling;
+    }
+  });
+}
+function showTab(name){
+  document.querySelectorAll('[data-group]').forEach(el=>{
+    el.style.display=(el.dataset.group===name)?'':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    const on=b.dataset.tab===name;
+    b.classList.toggle('active',on);
+    b.setAttribute('aria-selected',on?'true':'false');
+  });
+  try{localStorage.setItem('drifter-tab',name);}catch(e){}
+}
+(()=>{
+  setupTabs();
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.addEventListener('click',()=>showTab(b.dataset.tab));
+  });
+  let initial='drive';
+  try{initial=localStorage.getItem('drifter-tab')||'drive';}catch(e){}
+  if(!['drive','opsec','diag'].includes(initial)) initial='drive';
+  showTab(initial);
 })();
 
 // ── Start ──
@@ -1783,23 +2032,19 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
 <meta name="theme-color" content="#050708">
 <title>DRIFTER SETTINGS</title>
 <script>
+// Inline boot — applies the dashboard's chosen theme before CSS so
+// settings never flashes a different palette than the main page.
+// Shares localStorage key `drifter-theme` (hyphen) with the dashboard.
 (function(){try{
-  var t=localStorage.getItem('drifter_theme')||'auto';
-  if(t==='auto') t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
-  if(t==='light'){
-    document.documentElement.setAttribute('data-theme','light');
-    var m=document.querySelector('meta[name=theme-color]');
-    if(m) m.setAttribute('content','#f4f6f8');
-  }
+  var t=localStorage.getItem('drifter-theme');
+  var ok=['uncaged','ghost','drift','amber','nightrun','daylight','woobs','deckrun'];
+  if(!t||ok.indexOf(t)<0) t='uncaged';
+  document.documentElement.dataset.theme=t;
 }catch(e){}})();
 </script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#050708;--bg-elev:#0c1013;--card:#12181c;--border:#1f2933;--border-hi:#2a3640;
-  --text:#e7eef4;--text-dim:#8a98a5;--text-mute:#4b5763;--dim:#8a98a5;
-  --accent:#22d3ee;--accent-glow:rgba(34,211,238,.35);
-  --ok:#4ade80;--info:#60a5fa;--amber:#fbbf24;--red:#f87171;
   --radius-sm:6px;--radius:10px;--radius-lg:14px;
   --safe-bottom:env(safe-area-inset-bottom,0px);
   --safe-top:env(safe-area-inset-top,0px);
@@ -1807,6 +2052,63 @@ SETTINGS_HTML = r"""<!DOCTYPE html>
   /* Type scale */
   --fs-xs:11px;--fs-sm:13px;--fs-md:15px;--fs-lg:20px;
   --fs-val:28px;--fs-val-lg:44px;
+}
+/* Theme palettes — kept in sync with the dashboard's :root[data-theme] blocks */
+:root[data-theme="uncaged"], :root:not([data-theme]) {
+  --bg:#0a0a0a;--bg-elev:#0e1310;--card:#131918;--card-hi:#1a2220;
+  --border:#1a2a26;--border-hi:#243a35;
+  --text:#e8f2eb;--text-dim:#7a9990;--text-mute:#4f6c63;--dim:#7a9990;
+  --accent:#00ff88;--accent-glow:rgba(0,255,136,.35);
+  --ok:#00ff88;--info:#7af2c8;--amber:#fbbf24;--red:#ff4d6d;
+}
+:root[data-theme="ghost"] {
+  --bg:#050505;--bg-elev:#0b0b0b;--card:#0f0f0f;--card-hi:#161616;
+  --border:#1e1e1e;--border-hi:#2b2b2b;
+  --text:#e8e8e8;--text-dim:#888;--text-mute:#555;--dim:#888;
+  --accent:#e8e8e8;--accent-glow:rgba(232,232,232,.18);
+  --ok:#d8d8d8;--info:#c8c8c8;--amber:#cccccc;--red:#ff5555;
+}
+:root[data-theme="drift"] {
+  --bg:#0a0e1a;--bg-elev:#11162a;--card:#181d2f;--card-hi:#232842;
+  --border:#2a324a;--border-hi:#3a435e;
+  --text:#ffd9a3;--text-dim:#b58a52;--text-mute:#6f5a3a;--dim:#b58a52;
+  --accent:#ffb800;--accent-glow:rgba(255,184,0,.35);
+  --ok:#ffb800;--info:#ffd9a3;--amber:#ffb800;--red:#ff4444;
+}
+:root[data-theme="amber"] {
+  --bg:#0a0500;--bg-elev:#150a02;--card:#1a0d02;--card-hi:#231505;
+  --border:#3a2410;--border-hi:#5a381c;
+  --text:#ffb84a;--text-dim:#a87024;--text-mute:#664016;--dim:#a87024;
+  --accent:#ffb000;--accent-glow:rgba(255,176,0,.5);
+  --ok:#ffb000;--info:#ffd58a;--amber:#ffb000;--red:#ff5a3c;
+}
+:root[data-theme="nightrun"] {
+  --bg:#000000;--bg-elev:#080000;--card:#0c0203;--card-hi:#160408;
+  --border:#2a0810;--border-hi:#3f0d18;
+  --text:#ff3030;--text-dim:#992020;--text-mute:#5a1018;--dim:#992020;
+  --accent:#ff3030;--accent-glow:rgba(255,48,48,.18);
+  --ok:#ff3030;--info:#ff5566;--amber:#ff9933;--red:#ffcc00;
+}
+:root[data-theme="daylight"] {
+  --bg:#f3efe6;--bg-elev:#eae5d8;--card:#ffffff;--card-hi:#fafaf3;
+  --border:#9a8e74;--border-hi:#5a4f3a;
+  --text:#0a0a0a;--text-dim:#5a5448;--text-mute:#7a7060;--dim:#5a5448;
+  --accent:#0d3a7a;--accent-glow:rgba(13,58,122,.10);
+  --ok:#0a5a2a;--info:#0d3a7a;--amber:#9a4a00;--red:#9a1a1a;
+}
+:root[data-theme="woobs"] {
+  --bg:#2c3340;--bg-elev:#363e4d;--card:#3a4252;--card-hi:#454e60;
+  --border:#1a1d24;--border-hi:#262b35;
+  --text:#f0e8d8;--text-dim:#a8b2c0;--text-mute:#7a8290;--dim:#a8b2c0;
+  --accent:#ff7088;--accent-glow:rgba(255,112,136,.22);
+  --ok:#ff7088;--info:#a8b2c0;--amber:#cc8855;--red:#c64050;
+}
+:root[data-theme="deckrun"] {
+  --bg:#0a0510;--bg-elev:#120822;--card:#180a2a;--card-hi:#211038;
+  --border:#3a1850;--border-hi:#5a2876;
+  --text:#f0d8e8;--text-dim:#9a85aa;--text-mute:#5a4a72;--dim:#9a85aa;
+  --accent:#ff00aa;--accent-glow:rgba(255,0,170,.45);
+  --ok:#00e5ff;--info:#00e5ff;--amber:#b760ff;--red:#ff3088;
 }
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
@@ -1938,14 +2240,65 @@ h1{
 .tabbar a:active .ico{transform:scale(.92)}
 .tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
 
-/* (Settings inherits the uncaged/ghost/drift theme set on :root from
-   the dashboard side. No per-theme overrides needed here.) */
+/* Settings shares the dashboard's theme palettes — see the
+   :root[data-theme="..."] blocks at the top of this stylesheet. */
+
+/* Settings tab bar — same look as the dashboard tabs */
+.settings-tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  background:var(--bg-elev);position:sticky;top:0;z-index:90;
+  margin-bottom:8px;overflow-x:auto;scrollbar-width:none;
+}
+.settings-tabs::-webkit-scrollbar{display:none}
+.settings-tabs .tab-btn{
+  flex:1 0 auto;background:transparent;color:var(--text-dim);border:none;
+  padding:14px 16px;font-family:inherit;font-size:11px;
+  letter-spacing:2px;cursor:pointer;border-bottom:2px solid transparent;
+  transition:color .14s,border-color .14s;text-align:center;
+  -webkit-tap-highlight-color:transparent;
+}
+.settings-tabs .tab-btn:hover{color:var(--text)}
+.settings-tabs .tab-btn.active{
+  color:var(--accent);border-bottom-color:var(--accent);
+}
+
+/* Theme tab preview — three mock cards that re-render in the active
+   palette so the operator can see what they're picking before saving. */
+.theme-preview{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+  margin-top:12px;
+}
+.tp-card{
+  background:linear-gradient(180deg,var(--card) 0%,var(--bg-elev) 100%);
+  border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 10px;text-align:center;
+}
+.tp-card.warn{border-color:var(--amber)}
+.tp-card .tp-label{
+  font-size:10px;letter-spacing:1.8px;color:var(--text-mute);
+  font-weight:600;text-transform:uppercase;
+}
+.tp-card .tp-val{
+  font-size:24px;font-weight:700;color:var(--accent);
+  margin-top:6px;font-variant-numeric:tabular-nums;
+  text-shadow:0 0 8px var(--accent-glow);
+}
+.tp-card.warn .tp-val{color:var(--amber);text-shadow:0 0 8px var(--amber-glow,rgba(251,191,36,.35))}
 </style>
 </head>
 <body>
 <h1>SETTINGS</h1>
 
-<div class="section">
+<div class="tabs settings-tabs" role="tablist" aria-label="Settings sections">
+  <button class="tab-btn" data-stab="alerts" role="tab">ALERTS</button>
+  <button class="tab-btn" data-stab="voice"  role="tab">VOICE</button>
+  <button class="tab-btn" data-stab="display" role="tab">DISPLAY</button>
+  <button class="tab-btn" data-stab="themes" role="tab">THEMES</button>
+  <button class="tab-btn" data-stab="llm"    role="tab">LLM</button>
+  <button class="tab-btn" data-stab="data"   role="tab">DATA</button>
+</div>
+
+<div class="section" data-stab="alerts">
 <h2>Alert thresholds</h2>
 <div class="field">
   <label for="coolant_amber">Coolant amber</label>
@@ -1984,7 +2337,7 @@ h1{
 </div>
 </div>
 
-<div class="section">
+<div class="section" data-stab="voice">
 <h2>Voice</h2>
 <div class="field">
   <label for="voice_cooldown">Voice cooldown (seconds)</label>
@@ -2011,17 +2364,8 @@ h1{
 </div>
 </div>
 
-<div class="section">
-<h2>Display</h2>
-<div class="field">
-  <label for="theme">Theme</label>
-  <select id="theme">
-    <option value="auto">Match system</option>
-    <option value="dark">Dark</option>
-    <option value="light">Light</option>
-  </select>
-  <div class="hint">Applies instantly on this device &mdash; stored locally, not synced to the vehicle</div>
-</div>
+<div class="section" data-stab="display">
+<h2>Display units</h2>
 <div class="field">
   <label for="temp_unit">Temperature unit</label>
   <select id="temp_unit">
@@ -2041,7 +2385,31 @@ h1{
 </div>
 </div>
 
-<div class="section">
+<div class="section" data-stab="themes">
+<h2>Themes</h2>
+<div class="field">
+  <label for="theme">Theme palette</label>
+  <select id="theme">
+    <option value="uncaged">⏻ Uncaged — default neon green on black</option>
+    <option value="ghost">◌ Ghost — monochrome, minimal chrome</option>
+    <option value="drift">▩ Drift — warm amber with subtle scanlines</option>
+    <option value="amber">◉ Amber CRT — deep monochrome amber, vintage</option>
+    <option value="nightrun">☾ Nightrun — red on black, preserves night vision</option>
+    <option value="daylight">☀ Daylight — high-contrast for direct sunlight</option>
+    <option value="woobs">❦ Woobs — slate, coral, copper (Mr. Woobs)</option>
+    <option value="deckrun">◆ Deckrun — magenta + cyan cyberpunk</option>
+  </select>
+  <div class="hint">Applies instantly on this device &mdash; stored locally, not synced to the vehicle. The ⏻ button on the main dashboard cycles through these.</div>
+</div>
+<div class="theme-preview" id="theme-preview" aria-hidden="true">
+  <div class="tp-card"><div class="tp-label">RPM</div><div class="tp-val">1840</div></div>
+  <div class="tp-card"><div class="tp-label">COOLANT</div><div class="tp-val">94&deg;</div></div>
+  <div class="tp-card warn"><div class="tp-label">VOLTS</div><div class="tp-val">13.7</div></div>
+</div>
+<div class="hint" style="margin-top:6px">↑ live preview of the selected theme.</div>
+</div>
+
+<div class="section" data-stab="llm">
 <h2>Mechanic (LLM)</h2>
 <div class="field">
   <label for="llm_model">Model name</label>
@@ -2063,7 +2431,7 @@ h1{
 </div>
 </div>
 
-<div class="section">
+<div class="section" data-stab="data">
 <h2>Data</h2>
 <div class="field">
   <label for="data_retention_days">Retention (days)</label>
@@ -2141,33 +2509,59 @@ function gather() {
 }
 
 // ── Theme picker ────────────────────────────────────────────────
-// Stored only in localStorage so every client can pick its own theme
-// without pushing it to the server or to the other services.
-function applyTheme(mode) {
-  let effective = mode;
-  if (effective === 'auto') {
-    effective = window.matchMedia('(prefers-color-scheme: light)').matches
-                  ? 'light' : 'dark';
-  }
-  const html = document.documentElement;
-  if (effective === 'light') html.setAttribute('data-theme', 'light');
-  else html.removeAttribute('data-theme');
+// Same six palettes as the dashboard (uncaged/ghost/drift/amber/paper/
+// ops). Shares the `drifter-theme` localStorage key so picking here
+// also applies on the main page (and vice-versa via the ⏻ button).
+const THEME_OPTIONS = ['uncaged','ghost','drift','amber','nightrun','daylight','woobs','deckrun'];
+function applyTheme(name) {
+  if (!THEME_OPTIONS.includes(name)) name = 'uncaged';
+  document.documentElement.dataset.theme = name;
   const m = document.querySelector('meta[name=theme-color]');
-  if (m) m.setAttribute('content', effective === 'light' ? '#f4f6f8' : '#050708');
+  if (m) {
+    const colors = {
+      uncaged:'#0a0a0a', ghost:'#050505', drift:'#0a0e1a',
+      amber:'#0a0500',   nightrun:'#000000', daylight:'#f3efe6',
+      woobs:'#2c3340',   deckrun:'#0a0510',
+    };
+    m.setAttribute('content', colors[name] || '#0a0a0a');
+  }
 }
 (function initTheme() {
   const sel = document.getElementById('theme');
   if (!sel) return;
-  const saved = (localStorage.getItem('drifter_theme') || 'auto');
-  sel.value = saved;
+  const saved = localStorage.getItem('drifter-theme') || 'uncaged';
+  sel.value = THEME_OPTIONS.includes(saved) ? saved : 'uncaged';
+  applyTheme(sel.value);
   sel.addEventListener('change', () => {
-    try { localStorage.setItem('drifter_theme', sel.value); } catch (e) {}
+    try { localStorage.setItem('drifter-theme', sel.value); } catch (e) {}
     applyTheme(sel.value);
   });
-  // Follow OS preference live when mode is 'auto'.
-  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
-    if ((localStorage.getItem('drifter_theme') || 'auto') === 'auto') applyTheme('auto');
-  });
+})();
+
+// ── Settings tab switching ──────────────────────────────────────
+// Each `.section[data-stab]` shows only when its tab is active. Tab
+// state is local-only — no server roundtrip.
+(function initSettingsTabs() {
+  const tabs = [...document.querySelectorAll('.tab-btn[data-stab]')];
+  if (!tabs.length) return;
+  const sections = [...document.querySelectorAll('.section[data-stab]')];
+  function show(name) {
+    sections.forEach(s => {
+      s.style.display = (s.dataset.stab === name) ? '' : 'none';
+    });
+    tabs.forEach(b => {
+      const on = b.dataset.stab === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    try { localStorage.setItem('drifter-settings-tab', name); } catch (e) {}
+  }
+  tabs.forEach(b => b.addEventListener('click', () => show(b.dataset.stab)));
+  let initial = 'alerts';
+  try { initial = localStorage.getItem('drifter-settings-tab') || 'alerts'; } catch (e) {}
+  const valid = sections.map(s => s.dataset.stab);
+  if (!valid.includes(initial)) initial = 'alerts';
+  show(initial);
 })();
 
 fetch('/api/settings')
