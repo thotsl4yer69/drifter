@@ -489,6 +489,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/vivi/reset':
             self._post_vivi_reset()
             return
+        if self.path == '/api/vivi/conversation_mode':
+            self._post_vivi_conversation_mode()
+            return
         self.send_error(404)
 
     def _post_vivi_reset(self):
@@ -506,6 +509,35 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("vivi reset publish failed: %s", e)
         self._serve_json({'ok': ok})
+
+    def _post_vivi_conversation_mode(self):
+        """Toggle conversation mode. Body: {"enabled": bool}.
+        Publishes RETAINED to drifter/vivi/conversation_mode so the
+        state survives drifter-vivi restarts. drifter-vivi's subscriber
+        flips a flag; on every subsequent /api/query response, vivi
+        publishes drifter/voice/listen_now and drifter-voicein records
+        a follow-up turn without waiting for the wake-word."""
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        enabled = bool(body.get('enabled', False))
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/vivi/conversation_mode',
+                    json.dumps({'enabled': enabled, 'ts': time.time()}),
+                    qos=0, retain=True,
+                )
+                ok = True
+            except Exception as e:
+                log.warning("conversation_mode publish failed: %s", e)
+        self._serve_json({'ok': ok, 'enabled': enabled})
 
     def _get_mode(self, parsed):
         try:

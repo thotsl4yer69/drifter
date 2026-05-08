@@ -109,6 +109,10 @@ ALERT_FRESH_SEC = 300.0             # 5-minute alert window
 # target (newer wins) so a flood of e.g. axon hits doesn't dominate context.
 _recent_ble: dict = {}              # target_name → {ts, target_label, rssi}
 BLE_FRESH_SEC = 300.0
+# Conversation mode — when on, publish drifter/voice/listen_now after
+# every response so drifter-voicein records a follow-up turn without
+# requiring the wake-word again. Operator toggles via dashboard.
+_conversation_mode = False
 _drive_session_start: float = 0.0
 _session_id: str = ""               # set on first turn or first /snapshot
 
@@ -825,12 +829,21 @@ def _publish_status(status: str) -> None:
 
 
 def _publish_response(query: str, response: str) -> None:
-    if _mqtt_client:
-        _mqtt_client.publish(TOPICS['vivi_response'], json.dumps({
-            'query': query,
-            'response': response,
-            'ts': time.time(),
-        }))
+    if not _mqtt_client:
+        return
+    _mqtt_client.publish(TOPICS['vivi_response'], json.dumps({
+        'query': query,
+        'response': response,
+        'ts': time.time(),
+    }))
+    # Conversation-mode hand-off: tell drifter-voicein to record one more
+    # turn without waiting for the wake-word. The voicein loop arms a
+    # single follow-up; if the operator wants to keep talking, this
+    # publishes again on the next response, looping naturally until
+    # they stop or until conversation_mode is toggled off.
+    if _conversation_mode:
+        topic = TOPICS.get('voice_listen_now', 'drifter/voice/listen_now')
+        _mqtt_client.publish(topic, json.dumps({'ts': time.time()}))
 
 
 def on_message(client, userdata, msg) -> None:
@@ -841,6 +854,13 @@ def on_message(client, userdata, msg) -> None:
         payload = json.loads(msg.payload)
     except (json.JSONDecodeError, UnicodeDecodeError):
         payload = msg.payload.decode('utf-8', errors='replace')
+
+    if topic == TOPICS.get('vivi_conversation_mode', 'drifter/vivi/conversation_mode'):
+        global _conversation_mode
+        if isinstance(payload, dict):
+            _conversation_mode = bool(payload.get('enabled', False))
+        log.info(f"conversation_mode → {_conversation_mode}")
+        return
 
     if topic == TOPICS['vivi_query']:
         query = payload if isinstance(payload, str) else payload.get('query', '')
@@ -1012,6 +1032,8 @@ def main() -> None:
         (TOPICS['alert_message'], 0),
         (TOPICS['vivi_control'], 0),
         (TOPICS.get('ble_detection', 'drifter/ble/detection'), 0),
+        # Conversation mode toggle (retained — operator sets via dashboard)
+        (TOPICS.get('vivi_conversation_mode', 'drifter/vivi/conversation_mode'), 0),
     ])
     _mqtt_client.loop_start()
 

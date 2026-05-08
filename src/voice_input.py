@@ -369,12 +369,7 @@ def check_wake_word(oww_model, audio_chunk):
 # ═══════════════════════════════════════════════════════════════════
 
 def on_connect(client, userdata, flags, reason_code, properties=None):
-    """MQTT on-connect callback (paho-mqtt v2 callback API).
-
-    paho-mqtt v2 passes a ``ReasonCode`` object plus ``properties``;
-    v1 passes a plain int. ``properties`` defaults to None so this
-    signature works with both APIs.
-    """
+    """MQTT on-connect callback (paho-mqtt v2 callback API)."""
     rc = getattr(reason_code, 'value', reason_code)
     if rc == 0:
         log.info("Connected to MQTT broker")
@@ -382,8 +377,26 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
             "status": "Voice input online",
             "timestamp": time.time(),
         }))
+        # Conversation mode — listen for "skip the wake-word, record now"
+        # signals from drifter-vivi (sent automatically after each
+        # response when conversation mode is on).
+        client.subscribe(TOPICS.get('voice_listen_now', 'drifter/voice/listen_now'))
     else:
         log.warning(f"MQTT connect failed (rc={rc})")
+
+
+# Flag the main loop polls. Set to True when a `voice_listen_now`
+# message arrives; the loop then enters record_and_transcribe and
+# clears the flag.
+_follow_up_pending = False
+
+
+def on_voice_message(_client, _userdata, msg):
+    """MQTT message handler — only listen_now matters here."""
+    global _follow_up_pending
+    if msg.topic == TOPICS.get('voice_listen_now', 'drifter/voice/listen_now'):
+        log.info("conversation mode: follow-up turn requested")
+        _follow_up_pending = True
 
 
 def setup_mqtt():
@@ -391,6 +404,7 @@ def setup_mqtt():
     global mqtt_client
     mqtt_client = make_mqtt_client("drifter-voicein")
     mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_voice_message
 
     connected = False
     while not connected and running:
@@ -553,8 +567,19 @@ def main():
             triggered = False
             source = "wake_word"
 
-            # Check PTT first (higher priority)
-            if check_ptt():
+            # Conversation mode: a follow-up was requested by drifter-vivi
+            # after its last response. Skip the wake-word gate for one
+            # turn. The flag is cleared so each follow-up is a single
+            # turn — vivi must re-publish for each subsequent turn.
+            global _follow_up_pending
+            if _follow_up_pending:
+                _follow_up_pending = False
+                triggered = True
+                source = "follow_up"
+                log.info("conversation mode: recording follow-up turn")
+
+            # Check PTT (higher priority than wake word)
+            if not triggered and check_ptt():
                 triggered = True
                 source = "ptt"
                 log.info("PTT button pressed — recording")

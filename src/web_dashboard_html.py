@@ -699,6 +699,15 @@ details[open] summary::before{content:"▾ "}
     <button id="ask-btn" onclick="askMechanic()" class="btn primary">ASK</button>
     <button id="cancel-btn" onclick="cancelQuery()" class="btn danger hidden">CANCEL</button>
   </div>
+  <div style="display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:10px;color:var(--text-mute);letter-spacing:1.5px">
+    <input type="checkbox" id="conv-toggle"
+      style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
+      onchange="toggleConversationMode(this.checked)">
+    <label for="conv-toggle" style="cursor:pointer;user-select:none">
+      CONVERSATION MODE
+      <span style="color:var(--text-mute);text-transform:none;letter-spacing:.3px">— after Vivi answers, mic re-arms automatically (no wake-word for the next turn)</span>
+    </label>
+  </div>
   <div id="ask-output"
     style="font-size:13px;color:var(--text);line-height:1.55;white-space:pre-wrap;
            min-height:48px;padding:8px 2px">
@@ -1917,6 +1926,30 @@ function chipAsk(el){
   document.getElementById('ask-input').value=q;
   _submitQuery(q);
 }
+
+// CONVERSATION MODE — when on, drifter-vivi publishes
+// drifter/voice/listen_now after every response, so drifter-voicein
+// records a follow-up turn without waiting for the wake-word. Local
+// state mirrored in localStorage so a refresh reflects the toggle.
+function toggleConversationMode(on){
+  try{localStorage.setItem('drifter-conv-mode', on?'1':'0');}catch(e){}
+  fetch('/api/vivi/conversation_mode',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:!!on}),
+  }).then(r=>r.json()).then(d=>{
+    showToast(on?'Conversation mode ON':'Conversation mode OFF',
+              d.ok?'ok':'err',2000);
+  }).catch(()=>{showToast('Toggle failed','err',2000);});
+}
+(()=>{
+  const cb=document.getElementById('conv-toggle');
+  if(!cb) return;
+  let saved=false;
+  try{saved=(localStorage.getItem('drifter-conv-mode')==='1');}catch(e){}
+  cb.checked=saved;
+  // Don't auto-publish on load — only when the operator clicks.
+})();
 
 // CLEAR — wipe conversation locally + tell Vivi to drop her history
 // (POST → dashboard publishes drifter/vivi/control {"action":"reset"}).

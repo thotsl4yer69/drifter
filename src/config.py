@@ -601,6 +601,10 @@ TOPICS = {
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
+    # Conversation mode (Vivi ↔ voice_input loop)
+    'voice_listen_now':       'drifter/voice/listen_now',
+    'vivi_conversation_mode': 'drifter/vivi/conversation_mode',
+
     # BLE passive scanner (Phase 4.5)
     'ble_detection': 'drifter/ble/detection',
     'ble_raw': 'drifter/ble/raw',
