@@ -605,6 +605,11 @@ TOPICS = {
     'voice_listen_now':       'drifter/voice/listen_now',
     'vivi_conversation_mode': 'drifter/vivi/conversation_mode',
 
+    # Phase 5 — cockpit interrupt + voice control of HUD layers
+    'adsb_police':            'drifter/adsb/police',
+    'drone_detection':        'drifter/drone/detection',
+    'hud_map_layer':          'drifter/hud/map/layer',
+
     # BLE passive scanner (Phase 4.5)
     'ble_detection': 'drifter/ble/detection',
     'ble_raw': 'drifter/ble/raw',

@@ -798,9 +798,390 @@ details summary{
 details summary::-webkit-details-marker{display:none}
 details summary::before{content:"▸ ";color:var(--text-mute)}
 details[open] summary::before{content:"▾ "}
+
+/* ═══════════════════════════════════════════════════════════════
+   COCKPIT — Phase 5 (1920×1080 landscape)
+   ─────────────────────────────────────────────────────────────────
+   Default: hidden. The :root .cockpit and .legacy display rules at
+   the bottom of this block are gated by min-width: 1400px so the
+   existing portrait layout stays the small-screen view.
+═══════════════════════════════════════════════════════════════ */
+.cockpit{display:none}
+@media (min-width: 1400px){
+  body{padding-bottom:0!important}
+  .legacy{display:none}
+  .cockpit{
+    display:grid;
+    grid-template-rows: 60px 1fr 140px;
+    grid-template-areas: "top" "body" "engine";
+    height:100vh;width:100vw;
+    overflow:hidden;
+  }
+}
+
+/* TOP STRIP — drive id, alert ribbon, status dots */
+.cp-top{
+  grid-area:top;
+  display:grid;
+  grid-template-columns:1fr 2fr 1fr;
+  align-items:center;
+  padding:0 18px;
+  background:linear-gradient(180deg,var(--bg-elev),var(--bg));
+  border-bottom:1px solid var(--border);
+  font-family:var(--font-mono);
+  font-size:11px;letter-spacing:1.5px;
+  color:var(--text-mute);
+}
+.cp-top-left,.cp-top-right{display:flex;align-items:center;gap:10px;height:100%}
+.cp-top-right{justify-content:flex-end}
+.cp-drive-id{color:var(--accent);font-weight:600}
+.cp-divider{color:var(--text-mute);opacity:.6}
+.cp-clock{color:var(--text);font-weight:600}
+.cp-alert-ribbon{
+  text-align:center;font-size:13px;letter-spacing:2.5px;
+  color:var(--text-mute);text-transform:uppercase;
+  transition:.4s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.cp-alert-ribbon[data-active="1"]{
+  color:var(--accent);
+  text-shadow:0 0 8px var(--accent-glow);
+  animation:cp-alert-flash .6s var(--ease);
+}
+@keyframes cp-alert-flash{
+  0%{transform:scale(.95);opacity:0}
+  100%{transform:scale(1);opacity:1}
+}
+.cp-dot-label{font-size:9px;letter-spacing:1.5px;color:var(--text-mute)}
+.cp-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#1a0606;
+  border:1px solid var(--border-hi);
+  display:inline-block;
+}
+.cp-dot.ok{
+  background:var(--accent);
+  box-shadow:0 0 6px var(--accent-glow);
+  border-color:var(--accent);
+}
+
+/* 3-COLUMN BODY */
+.cp-body{
+  grid-area:body;
+  display:grid;
+  grid-template-columns:480px 1fr 480px;
+  gap:1px;
+  background:var(--border);
+  overflow:hidden;
+}
+.cp-left,.cp-center,.cp-right{
+  background:var(--bg);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+  min-width:0;min-height:0;
+}
+
+/* LEFT — avatar + transcript + controls */
+.cp-left{
+  padding:24px;align-items:center;overflow-y:auto;
+}
+.cp-avatar-wrap{
+  margin:8px auto 0;
+  display:flex;justify-content:center;
+  flex:0 0 auto;
+}
+.vivi-avatar.large{
+  width:280px;height:280px;
+  margin:0;
+}
+.vivi-avatar.large .va-ring{border-width:1.5px}
+.vivi-avatar.large .va-mark{
+  font-size:84px;letter-spacing:2px;
+  text-shadow:0 0 14px var(--accent-glow),0 0 28px var(--accent-glow);
+}
+.cp-state-label{
+  font-family:var(--font-mono);font-size:14px;letter-spacing:6px;
+  color:var(--accent);
+  text-shadow:0 0 8px var(--accent-glow);
+  text-transform:uppercase;font-weight:600;
+  margin-top:14px;text-align:center;
+}
+.cp-transcript{
+  margin-top:18px;width:100%;
+  background:var(--card);border:1px solid var(--border);
+  padding:14px;font-size:12px;line-height:1.55;
+  max-height:180px;overflow-y:auto;
+  color:var(--text);
+}
+.cp-tx-line{padding:3px 0}
+.cp-tx-vivi{color:var(--text)}
+.cp-tx-op{color:var(--text-dim);font-style:italic}
+.cp-controls{
+  margin-top:14px;width:100%;
+  display:flex;gap:8px;
+}
+#cp-ask-input{
+  flex:1;background:var(--card);
+  border:1px solid var(--border);color:var(--text);
+  font-family:inherit;font-size:14px;padding:11px 13px;outline:none;
+}
+#cp-ask-input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px var(--accent-glow);
+}
+.cp-btn{
+  background:var(--card);border:1px solid var(--border);
+  color:var(--text-dim);padding:11px 18px;
+  font-family:var(--font-mono);font-size:11px;
+  letter-spacing:2px;cursor:pointer;font-weight:600;
+}
+.cp-btn-primary{
+  background:var(--accent);color:#001519;border-color:var(--accent);
+  text-shadow:none;
+}
+.cp-quickpicks{
+  margin-top:10px;width:100%;
+  display:flex;flex-wrap:wrap;gap:6px;
+}
+.cp-qp{
+  flex:1 1 calc(50% - 3px);
+  background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);
+  padding:7px 10px;
+  font-family:inherit;font-size:11px;letter-spacing:.5px;
+  cursor:pointer;
+  transition:.14s;
+}
+.cp-qp:hover{
+  border-color:var(--accent);color:var(--accent);
+  text-shadow:0 0 4px var(--accent-glow);
+}
+
+/* CENTER — map */
+.cp-center{position:relative}
+.cp-map-toolbar{
+  position:absolute;top:12px;left:12px;right:12px;z-index:10;
+  pointer-events:none;
+}
+.cp-layer-chips{
+  display:flex;flex-wrap:wrap;gap:6px;
+  pointer-events:auto;
+}
+.cp-chip{
+  background:rgba(0,0,0,.72);
+  border:1px solid var(--border-hi);
+  color:var(--text-mute);
+  padding:6px 12px;
+  font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px;
+  cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:.15s;font-weight:600;
+}
+.cp-chip:hover{border-color:var(--accent)}
+.cp-chip[data-active="1"]{
+  color:var(--accent);border-color:var(--accent);
+  text-shadow:0 0 4px var(--accent-glow);
+  box-shadow:0 0 8px var(--accent-glow);
+}
+.cp-chip-count{margin-left:6px;color:var(--text)}
+.cp-map-frame{
+  flex:1;border:none;width:100%;height:100%;
+  background:var(--bg);
+  pointer-events:auto;
+}
+
+/* RIGHT — intel panels */
+.cp-right{padding:0;overflow:hidden}
+.cp-panel{
+  flex:1 1 0;
+  display:flex;flex-direction:column;
+  border-bottom:1px solid var(--border);
+  min-height:0;
+}
+.cp-panel:last-child{border-bottom:none}
+.cp-panel-head{
+  flex:0 0 auto;
+  padding:11px 14px;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:2.5px;
+  color:var(--text-mute);text-transform:uppercase;font-weight:600;
+  border-bottom:1px solid var(--border);
+  background:var(--bg-elev);
+}
+.cp-panel-count{
+  float:right;color:var(--accent);font-weight:700;
+}
+.cp-panel-body{
+  flex:1 1 auto;overflow-y:auto;
+  padding:10px 14px;
+  font-family:var(--font-mono);font-size:11px;line-height:1.6;
+  color:var(--text-dim);
+}
+
+/* ENGINE STRIP */
+.cp-engine{
+  grid-area:engine;
+  display:grid;
+  grid-template-columns:1.3fr 1fr 1fr 1fr .7fr;
+  gap:1px;
+  background:var(--border);
+  border-top:1px solid var(--border);
+}
+.cp-gauge{
+  background:var(--bg-elev);
+  padding:14px 22px;
+  display:flex;flex-direction:column;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.cp-gauge::before,.cp-gauge::after{
+  content:"";position:absolute;width:8px;height:8px;
+  border:1px solid var(--accent);opacity:.4;
+}
+.cp-gauge::before{top:6px;left:6px;border-right:none;border-bottom:none}
+.cp-gauge::after{bottom:6px;right:6px;border-left:none;border-top:none}
+.cp-gauge-label{
+  font-family:var(--font-mono);font-size:10px;letter-spacing:2.5px;
+  color:var(--text-mute);font-weight:600;text-transform:uppercase;
+}
+.cp-gauge-val{
+  font-family:var(--font-display);font-size:42px;font-weight:700;
+  color:var(--accent);
+  text-shadow:0 0 10px var(--accent-glow);
+  font-variant-numeric:tabular-nums;line-height:1.05;
+  margin-top:4px;
+}
+.cp-gauge-unit{
+  font-size:11px;color:var(--text-mute);letter-spacing:1px;
+}
+.cp-gauge-bar{
+  height:4px;background:var(--card);
+  margin-top:8px;border-radius:2px;overflow:hidden;
+}
+.cp-gauge-bar-fill{
+  height:100%;background:var(--accent);width:0%;
+  transition:width .3s var(--ease);
+  box-shadow:0 0 6px var(--accent-glow);
+}
+
 </style>
 </head>
 <body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     COCKPIT — Phase 5 landscape layout (1920×1080)
+     Visible at >=1400px viewport. Below 1400px, the .legacy wrapper
+     below shows the original portrait layout. Both share telemetry
+     via the same WS connection — the cockpit polls JSON endpoints
+     for slow-changing state and watches the WS for real-time data.
+═══════════════════════════════════════════════════════════════ -->
+<div class="cockpit">
+  <header class="cp-top">
+    <div class="cp-top-left">
+      <span class="cp-drive-id" id="cp-drive-id">—</span>
+      <span class="cp-divider">·</span>
+      <span class="cp-clock" id="cp-clock">--:--</span>
+    </div>
+    <div class="cp-alert-ribbon" id="cp-alert-ribbon" data-active="0">
+      <span class="cp-alert-icon" id="cp-alert-icon"></span>
+      <span class="cp-alert-text" id="cp-alert-text"></span>
+    </div>
+    <div class="cp-top-right">
+      <span class="cp-dot-label">MQTT</span>
+      <span class="cp-dot" id="cp-dot-mqtt" title="MQTT broker"></span>
+      <span class="cp-dot-label">RF</span>
+      <span class="cp-dot" id="cp-dot-rf" title="drifter-rf"></span>
+      <span class="cp-dot-label">GPS</span>
+      <span class="cp-dot" id="cp-dot-gps" title="GPS"></span>
+    </div>
+  </header>
+
+  <section class="cp-body">
+    <!-- LEFT — Vivi avatar + transcript + ASK -->
+    <div class="cp-left">
+      <div class="cp-avatar-wrap">
+        <span class="vivi-avatar large idle" id="cp-avatar" aria-hidden="true">
+          <span class="va-ring"></span>
+          <span class="va-mark">V</span>
+        </span>
+      </div>
+      <div class="cp-state-label" id="cp-state-label">STANDBY</div>
+      <div class="cp-transcript" id="cp-transcript">
+        <div class="cp-tx-line cp-tx-vivi">Vivi standing by. Ask anything.</div>
+      </div>
+      <div class="cp-controls">
+        <input id="cp-ask-input" type="text"
+               placeholder="Ask Vivi anything…"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();cpAsk();}"
+               autocomplete="off">
+        <button id="cp-ask-btn" onclick="cpAsk()" class="cp-btn cp-btn-primary">ASK</button>
+      </div>
+      <div class="cp-quickpicks">
+        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Safe to drive?</button>
+        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Explain alert</button>
+        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Fuel trims</button>
+        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Next service</button>
+      </div>
+    </div>
+
+    <!-- CENTER — Map (the anchor) -->
+    <div class="cp-center">
+      <div class="cp-map-toolbar">
+        <div class="cp-layer-chips">
+          <button class="cp-chip" data-layer="ble"     data-active="1">BLE <span class="cp-chip-count" id="cp-count-ble">0</span></button>
+          <button class="cp-chip" data-layer="adsb"    data-active="1">ADS-B <span class="cp-chip-count" id="cp-count-adsb">0</span></button>
+          <button class="cp-chip" data-layer="drone"   data-active="0">DRONE <span class="cp-chip-count" id="cp-count-drone">0</span></button>
+          <button class="cp-chip" data-layer="ap"      data-active="0">AP <span class="cp-chip-count" id="cp-count-ap">0</span></button>
+          <button class="cp-chip" data-layer="police"  data-active="1">PERSIST <span class="cp-chip-count" id="cp-count-police">0</span></button>
+        </div>
+      </div>
+      <iframe class="cp-map-frame" id="cp-map-frame" src="/map/ble" title="DRIFTER map"></iframe>
+    </div>
+
+    <!-- RIGHT — Contacts & intel -->
+    <div class="cp-right">
+      <div class="cp-panel">
+        <div class="cp-panel-head">PERSISTENT CONTACTS <span class="cp-panel-count" id="cp-pp-count">0</span></div>
+        <div class="cp-panel-body" id="cp-pp-body">—</div>
+      </div>
+      <div class="cp-panel">
+        <div class="cp-panel-head">LIVE BLE <span class="cp-panel-count" id="cp-ble-count">0</span></div>
+        <div class="cp-panel-body" id="cp-ble-body">No detections yet.</div>
+      </div>
+      <div class="cp-panel">
+        <div class="cp-panel-head">ADS-B AIRCRAFT <span class="cp-panel-count" id="cp-adsb-cnt">0</span></div>
+        <div class="cp-panel-body" id="cp-adsb-body">No aircraft in range.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="cp-engine">
+    <div class="cp-gauge cp-gauge-rpm">
+      <div class="cp-gauge-label">RPM</div>
+      <div class="cp-gauge-val" id="cp-rpm">—</div>
+      <div class="cp-gauge-bar"><div class="cp-gauge-bar-fill" id="cp-rpm-bar"></div></div>
+    </div>
+    <div class="cp-gauge cp-gauge-speed">
+      <div class="cp-gauge-label">SPEED</div>
+      <div class="cp-gauge-val" id="cp-speed">—</div>
+      <div class="cp-gauge-unit">km/h</div>
+    </div>
+    <div class="cp-gauge cp-gauge-coolant">
+      <div class="cp-gauge-label">COOLANT</div>
+      <div class="cp-gauge-val" id="cp-coolant">—</div>
+      <div class="cp-gauge-unit">°C</div>
+    </div>
+    <div class="cp-gauge cp-gauge-voltage">
+      <div class="cp-gauge-label">VOLTAGE</div>
+      <div class="cp-gauge-val" id="cp-voltage">—</div>
+      <div class="cp-gauge-unit">V</div>
+    </div>
+    <div class="cp-gauge cp-gauge-gear">
+      <div class="cp-gauge-label">GEAR</div>
+      <div class="cp-gauge-val" id="cp-gear">—</div>
+    </div>
+  </footer>
+</div>
+
+<main class="legacy">
 
 <div class="header" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
   <div>
@@ -1542,6 +1923,12 @@ function handleMessage(msg){
   // ADS-B
   else if(topic.endsWith('/rf/adsb')){
     handleAdsb(data);
+  }
+  // Phase 5 — voice-issued map layer toggle ("show drones" etc.)
+  // arrives here via drifter-voicein → MQTT → WS. Re-dispatch as a
+  // custom DOM event so the cockpit handler can update chips.
+  else if(topic.endsWith('/hud/map/layer')){
+    window.dispatchEvent(new CustomEvent('drifter-map-layer',{detail:data}));
   }
   // Watchdog / system
   else if(topic.endsWith('/system/watchdog')){
@@ -2310,6 +2697,266 @@ function showTab(name){
 
 // ── Start ──
 connect();
+</script>
+</main>
+<script>
+// ═══ COCKPIT layout JS — Phase 5 ═══════════════════════════════
+// Polls slow-changing JSON endpoints, mirrors live legacy values
+// into cockpit gauge IDs, wires the layer chips and the ASK panel.
+// Avatar state hooks reuse setViviState (dashboard side) so the big
+// 360px avatar in the cockpit and the small 34px mark in the legacy
+// header animate in lockstep.
+
+// Drive timer & clock
+function cpUpdateClocks(){
+  const c = document.getElementById('cp-clock');
+  if(c){
+    const d = new Date();
+    c.textContent = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+}
+setInterval(cpUpdateClocks, 30000);
+cpUpdateClocks();
+
+async function cpUpdateDriveId(){
+  try{
+    const r = await fetch('/api/ble/history?limit=1');
+    if(!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById('cp-drive-id');
+    if(el && d.drive_id){
+      const m = d.drive_id.match(/drive-(\d{4})(\d{2})(\d{2})-(\d{4})/);
+      el.textContent = m ? `${m[2]}-${m[3]} ${m[4].slice(0,2)}:${m[4].slice(2)}` : d.drive_id.slice(0,16);
+    }
+  }catch(e){}
+}
+setInterval(cpUpdateDriveId, 30000);
+cpUpdateDriveId();
+
+// Mirror legacy gauge values into the cockpit. The legacy WS handler
+// updates #v-rpm/#v-speed/#v-cool/#v-volt; we just shadow the result.
+function cpMirrorGauges(){
+  const get = id => {
+    const el = document.getElementById(id);
+    return el ? el.textContent.trim() : null;
+  };
+  const set = (dst, val) => {
+    const el = document.getElementById(dst);
+    if(el) el.textContent = (!val || val === '--') ? '—' : val;
+  };
+  set('cp-rpm',     get('v-rpm'));
+  set('cp-speed',   get('v-speed'));
+  set('cp-coolant', get('v-cool'));
+  set('cp-voltage', get('v-volt'));
+  // Gear isn't currently in the legacy view — leave dim until canbridge
+  // populates a gear topic. (Drive-only bench has no OBD; expected.)
+  // RPM bar fill, 7000 redline.
+  const rpm = parseFloat(get('v-rpm'));
+  const bar = document.getElementById('cp-rpm-bar');
+  if(bar && !isNaN(rpm)){
+    bar.style.width = Math.min(100,(rpm/7000)*100)+'%';
+  }
+}
+setInterval(cpMirrorGauges, 1000);
+
+// Right column intel polls — persistent contacts, live BLE
+async function cpRefreshIntel(){
+  // Persistent contacts (Phase 4.8)
+  try{
+    const r = await fetch('/api/ble/persistent?window=7d');
+    if(r.ok){
+      const d = await r.json();
+      const cs = (d.contacts||[]).slice(0,5);
+      document.getElementById('cp-pp-count').textContent = cs.length;
+      document.getElementById('cp-count-police').textContent = cs.length;
+      const body = document.getElementById('cp-pp-body');
+      if(body){
+        if(!cs.length) body.textContent = 'None.';
+        else body.innerHTML = cs.map(c=>{
+          const tier = c.tier||'weak';
+          const col = ({high:'var(--red)',medium:'var(--amber)',weak:'var(--text-mute)'})[tier];
+          const id = (c.identity||'').slice(0,32);
+          return `<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:10px">
+            <span style="color:${col};font-weight:bold">${esc(tier.toUpperCase())}</span>
+            <span style="color:var(--text)"> ${esc(id)}${c.identity&&c.identity.length>32?'…':''}</span>
+            <span style="float:right;color:var(--text-mute)">${(c.follower_score||0).toFixed(1)}</span>
+          </div>`;
+        }).join('');
+      }
+    }
+  }catch(e){}
+  // Live BLE
+  try{
+    const r = await fetch('/api/ble/recent?limit=5');
+    if(r.ok){
+      const d = await r.json();
+      const dets = d.detections||[];
+      document.getElementById('cp-ble-count').textContent = dets.length;
+      document.getElementById('cp-count-ble').textContent = dets.length;
+      const body = document.getElementById('cp-ble-body');
+      if(body){
+        if(!dets.length) body.textContent = 'No detections.';
+        else body.innerHTML = dets.map(b=>{
+          return `<div style="padding:2px 0;font-size:10px">
+            <span style="color:var(--accent)">${esc(b.target||'?')}</span>
+            <span style="color:var(--text-mute);margin-left:6px">${esc((b.mac||'').slice(0,8))}…</span>
+            <span style="float:right;color:var(--text-mute)">${b.rssi||0}dBm</span>
+          </div>`;
+        }).join('');
+      }
+    }
+  }catch(e){}
+}
+setInterval(cpRefreshIntel, 5000);
+cpRefreshIntel();
+
+// Connection dots — green when service healthy
+async function cpRefreshConnDots(){
+  const setOk = (id, ok) => {
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('ok', !!ok);
+  };
+  try{
+    const r = await fetch('/healthz');
+    const d = await r.json();
+    setOk('cp-dot-mqtt', d.mqtt_connected);
+    setOk('cp-dot-rf',   d.services && d.services['drifter-rf']);
+    setOk('cp-dot-gps',  d.telemetry_fresh);
+  }catch(e){}
+}
+setInterval(cpRefreshConnDots, 10000);
+cpRefreshConnDots();
+
+// Cockpit ASK
+async function cpAsk(){
+  const inp = document.getElementById('cp-ask-input');
+  const tx  = document.getElementById('cp-transcript');
+  if(!inp||!tx) return;
+  const q = inp.value.trim();
+  if(!q) return;
+  tx.innerHTML += `<div class="cp-tx-line cp-tx-op">› ${esc(q)}</div>`;
+  inp.value = '';
+  if(typeof setViviState==='function') setViviState('thinking');
+  tx.scrollTop = tx.scrollHeight;
+  try{
+    const r = await fetch('/api/query',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q}),
+    });
+    const d = await r.json();
+    const ans = d.response || d.error || '(no response)';
+    tx.innerHTML += `<div class="cp-tx-line cp-tx-vivi">${esc(ans)}</div>`;
+  }catch(e){
+    tx.innerHTML += `<div class="cp-tx-line cp-tx-vivi" style="color:var(--red)">Vivi unreachable.</div>`;
+  }finally{
+    if(typeof setViviState==='function') setViviState('idle');
+    tx.scrollTop = tx.scrollHeight;
+  }
+}
+function cpQuickAsk(text){
+  const inp = document.getElementById('cp-ask-input');
+  if(inp){inp.value = text; cpAsk();}
+}
+
+// State label — when setViviState changes, mirror into the cockpit
+// label and apply the same class to the cockpit avatar. We override
+// the dashboard-side setViviState so both layouts pulse in lockstep.
+(function wrapSetViviState(){
+  const orig = window.setViviState;
+  window.setViviState = function(state){
+    try{
+      document.querySelectorAll('.vivi-avatar').forEach(el=>{
+        el.classList.remove('idle','thinking','speaking');
+        el.classList.add(state);
+      });
+    }catch(e){}
+    const lbl = document.getElementById('cp-state-label');
+    if(lbl){
+      lbl.textContent = ({idle:'STANDBY',thinking:'THINKING',
+                         speaking:'SPEAKING',listening:'LISTENING'})[state]||'STANDBY';
+    }
+    if(orig) try{orig(state);}catch(e){}
+  };
+})();
+
+// Layer chip handlers — toggle visual state
+document.querySelectorAll('.cp-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    const layer = chip.dataset.layer;
+    const wasActive = chip.dataset.active === '1';
+    chip.dataset.active = wasActive ? '0' : '1';
+    const action = wasActive ? 'hide' : 'show';
+    // Forward to embedded /map/ble iframe so it can hide its layer.
+    const frame = document.getElementById('cp-map-frame');
+    if(frame && frame.contentWindow){
+      try{frame.contentWindow.postMessage({type:'layer',layer,action},'*');}catch(e){}
+    }
+  });
+});
+
+// Voice-issued layer toggle from drifter/hud/map/layer (relayed via WS).
+window.addEventListener('drifter-map-layer',(e)=>{
+  const d = e.detail||{};
+  if(!d.layer) return;
+  document.querySelectorAll('.cp-chip').forEach(chip=>{
+    const matchAll = d.layer === 'all';
+    const matchOne = chip.dataset.layer === d.layer;
+    if(!matchAll && !matchOne) return;
+    if(d.action === 'show')      chip.dataset.active = '1';
+    else if(d.action === 'hide') chip.dataset.active = '0';
+  });
+  // Brief alert ribbon flash so the operator gets visual confirmation
+  // a voice command landed.
+  cpFlashAlert(`map · ${d.action} ${d.layer}`);
+});
+
+// Alert ribbon — fills for 8s when an interrupt fires, then fades.
+let _cpRibbonTimer = null;
+function cpFlashAlert(text){
+  const ribbon = document.getElementById('cp-alert-ribbon');
+  const el = document.getElementById('cp-alert-text');
+  if(!ribbon||!el) return;
+  el.textContent = text;
+  ribbon.dataset.active = '1';
+  if(_cpRibbonTimer) clearTimeout(_cpRibbonTimer);
+  _cpRibbonTimer = setTimeout(()=>{ribbon.dataset.active='0';el.textContent='';}, 8000);
+}
+// Hook the same alert path the legacy uses — listen on its alert
+// banner mutations and mirror.
+const _cpLegacyBanner = document.getElementById('alert-banner');
+if(_cpLegacyBanner){
+  new MutationObserver(()=>{
+    const t = _cpLegacyBanner.textContent.trim();
+    if(t && t !== 'SYSTEMS NOMINAL') cpFlashAlert(t);
+  }).observe(_cpLegacyBanner,{childList:true,characterData:true,subtree:true});
+}
+
+// Audio-reactive avatar — fake waveform driven by the duration of the
+// last response (real Web Audio tap into Piper output is not
+// accessible from the front-end; the TTS plays on the Pi's speaker).
+// Whenever speaking starts, jitter the .speaking pulse intensity for
+// a believable "talking" effect. Honours prefers-reduced-motion.
+(function avatarWaveformFake(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const big = document.getElementById('cp-avatar');
+  if(!big) return;
+  let interval = null;
+  const obs = new MutationObserver(()=>{
+    if(big.classList.contains('speaking')){
+      if(interval) return;
+      interval = setInterval(()=>{
+        // Tiny scale jitter — "she's talking"
+        const ring = big.querySelector('.va-ring');
+        if(ring) ring.style.transform = 'scale('+(1.0+Math.random()*0.18)+')';
+      }, 80);
+    }else{
+      if(interval){clearInterval(interval);interval=null;}
+      const ring = big.querySelector('.va-ring');
+      if(ring) ring.style.transform = '';
+    }
+  });
+  obs.observe(big,{attributes:true,attributeFilter:['class']});
+})();
 </script>
 </body>
 </html>"""

@@ -900,12 +900,28 @@ def on_message(client, userdata, msg) -> None:
                     'target_label': label,
                     'rssi': rssi,
                 }
-            # Proactive comment for vivi_alert targets in alert range.
-            if payload.get('vivi_alert') and payload.get('is_alert'):
-                # Reuse the existing rate limit by emitting via the same path.
+            # Phase 5 — police-adjacent interrupt (casual heads-up).
+            # Axon-class hardware at close range = officer with body cam
+            # or vehicle nearby. The casual phrasing matters: operator
+            # asks for details if they want them.
+            if target in ('axon', 'axon-class') and rssi >= -70:
+                _maybe_unprompted_comment(3, "Cop nearby.")
+            # Other vivi_alert targets fall through to the longer line
+            # they were originally configured for.
+            elif payload.get('vivi_alert') and payload.get('is_alert'):
                 _maybe_unprompted_comment(
                     3, f"BLE detection: {label} nearby (RSSI {rssi})"
                 )
+    elif topic == TOPICS.get('adsb_police'):
+        # Phase 5 — police helicopter heads-up. Topic is fed by an
+        # external watcher (see docs); when it's not yet wired, the
+        # topic is silent and this branch never fires. Casual phrasing
+        # to match the BLE police interrupt.
+        _maybe_unprompted_comment(3, "Helicopter overhead.")
+    elif topic == TOPICS.get('drone_detection'):
+        # Phase 5 — drone signal heads-up. Wired for when the Coral TPU
+        # RF pipeline lands; until then the topic is silent.
+        _maybe_unprompted_comment(3, "Drone signal detected.")
 
 
 def _handle_text_query(query: str) -> None:
@@ -1034,6 +1050,10 @@ def main() -> None:
         (TOPICS.get('ble_detection', 'drifter/ble/detection'), 0),
         # Conversation mode toggle (retained — operator sets via dashboard)
         (TOPICS.get('vivi_conversation_mode', 'drifter/vivi/conversation_mode'), 0),
+        # Phase 5 — police-adjacent interrupt feeds (police helicopter,
+        # drone RF). Watchers/detectors publish here; vivi narrates.
+        (TOPICS.get('adsb_police', 'drifter/adsb/police'), 0),
+        (TOPICS.get('drone_detection', 'drifter/drone/detection'), 0),
     ])
     _mqtt_client.loop_start()
 

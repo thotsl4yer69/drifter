@@ -150,6 +150,38 @@ _NAV_VERBS = re.compile(
 )
 
 
+# Phase 5 — voice control of HUD map layers. Patterns: "show drones",
+# "hide police", "show all", "hide all". The keyword maps a noun to a
+# canonical layer name the front-end subscriber knows about.
+_MAP_LAYER_KEYWORDS = {
+    'drone': 'drone', 'drones': 'drone',
+    'police': 'police', 'cop': 'police', 'cops': 'police',
+    'ble': 'ble', 'bluetooth': 'ble',
+    'aircraft': 'adsb', 'planes': 'adsb', 'plane': 'adsb',
+    'adsb': 'adsb', 'ads-b': 'adsb',
+    'wardrive': 'ap', 'aps': 'ap', 'wifi': 'ap',
+    'all': 'all', 'everything': 'all',
+}
+_MAP_ACTION_RE = re.compile(
+    r'^\s*(?P<action>show|hide)\s+(me\s+|the\s+)?(?P<noun>\w[\w-]*)\b',
+    re.IGNORECASE,
+)
+
+
+def _classify_map_layer(text: str):
+    """Return (layer, action) when the transcript is a map-layer
+    command, else None. Action is 'show' or 'hide'; layer is one of
+    the canonical names in _MAP_LAYER_KEYWORDS."""
+    m = _MAP_ACTION_RE.match(text or '')
+    if not m:
+        return None
+    noun = m.group('noun').lower()
+    layer = _MAP_LAYER_KEYWORDS.get(noun)
+    if not layer:
+        return None
+    return (layer, m.group('action').lower())
+
+
 def _classify_voice(text: str):
     """Returns ('navigate', value) or ('query', text). value is int or
     'next'/'prev'. Navigation is gated by an explicit verb prefix
@@ -178,9 +210,24 @@ def _pub_voice_status(state: str):
 
 
 def route_transcript(text: str):
-    """Classify and route a voice transcript — page nav or LLM mechanic query."""
+    """Classify and route a voice transcript — map-layer toggle, page
+    nav, or LLM mechanic query (in that priority order)."""
     if not text.strip():
         return
+    # Phase 5 — map layer commands beat the nav classifier so "show
+    # drones" doesn't get misrouted to a page-nav lookup that doesn't
+    # exist for that noun.
+    layer_cmd = _classify_map_layer(text)
+    if layer_cmd is not None:
+        layer, action = layer_cmd
+        mqtt_client.publish(
+            TOPICS.get('hud_map_layer', 'drifter/hud/map/layer'),
+            json.dumps({'layer': layer, 'action': action, 'ts': time.time()}),
+        )
+        log.info(f"Map layer → {action} {layer}")
+        _pub_voice_status('idle')
+        return
+
     intent, value = _classify_voice(text)
     if intent == 'navigate':
         mqtt_client.publish(TOPICS['hud_navigate'], json.dumps({'page': value, 'ts': time.time()}))
