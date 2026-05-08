@@ -631,6 +631,158 @@ body{
 .btn.danger{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.35)}
 .btn.mic{padding:10px 12px;background:var(--card);color:var(--text-dim);border:1px solid var(--border);font-size:16px}
 
+/* ── Conversation-mode cockpit rocker ──────────────────────────────
+   Two-position switch (STBY / LIVE). Sharp, monospaced, etched.
+   Status LED + status line. Replaces a stock checkbox because a
+   checkbox feels like a settings menu — this is a meta-control on
+   the primary action surface and needs to feel deliberate. */
+.conv-mode{
+  margin:6px 0 4px;
+  border:1px solid var(--border);
+  background:
+    linear-gradient(180deg,rgba(0,0,0,.4),rgba(255,255,255,.015));
+  position:relative;
+}
+/* hairline corner accents — reads as "this is a panel, not a row" */
+.conv-mode::before,.conv-mode::after{
+  content:"";position:absolute;width:8px;height:8px;
+  border:1px solid var(--accent);opacity:.45;pointer-events:none;
+}
+.conv-mode::before{top:-1px;left:-1px;border-right:none;border-bottom:none}
+.conv-mode::after {bottom:-1px;right:-1px;border-left:none;border-top:none}
+.conv-mode-row{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;
+  font-family:var(--font-mono);font-size:10px;
+  letter-spacing:2.2px;color:var(--text-mute);
+  text-transform:uppercase;
+}
+.conv-mode-label{flex:0 0 auto;font-weight:600}
+.conv-mode-hint{
+  padding:0 12px 8px;font-family:var(--font-mono);font-size:9.5px;
+  letter-spacing:.3px;color:var(--text-mute);
+  text-transform:none;line-height:1.4;
+  border-top:1px dashed var(--border);
+  padding-top:6px;
+}
+/* Switch — anchor element */
+.conv-switch{
+  background:transparent;border:none;padding:0;margin:0 auto 0 0;
+  display:inline-flex;align-items:center;gap:10px;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.conv-switch:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* Track — the etched bezel */
+.conv-track{
+  position:relative;width:108px;height:24px;
+  background:linear-gradient(180deg,#000,#0c0c0c 60%,#1a1a1a);
+  border:1px solid var(--border-hi);
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,.7),
+    inset 0 -1px 0 rgba(255,255,255,.04);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 9px;
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.6px;
+  user-select:none;overflow:hidden;
+}
+/* Hatched stripes behind the LIVE label — visible only on STBY side. */
+.conv-track-stripes{
+  position:absolute;top:0;right:0;bottom:0;width:50%;
+  background-image:repeating-linear-gradient(
+    -45deg,
+    transparent 0,transparent 4px,
+    rgba(255,255,255,.025) 4px,rgba(255,255,255,.025) 5px
+  );
+  pointer-events:none;z-index:0;
+  transition:opacity .25s ease;
+}
+.conv-switch.on .conv-track-stripes{opacity:0}
+.conv-switch:not(.on) .conv-track-stripes{
+  /* mirror — hatching shifts to opposite side when LIVE */
+  right:auto;left:0;
+}
+
+.conv-pos{
+  position:relative;z-index:2;
+  color:var(--text-mute);
+  transition:color .2s ease,text-shadow .2s ease;
+  font-weight:600;
+}
+.conv-switch:not(.on) .conv-pos-stby{
+  color:var(--accent);text-shadow:0 0 4px var(--accent-glow);
+}
+.conv-switch.on .conv-pos-live{
+  color:var(--accent);text-shadow:0 0 4px var(--accent-glow);
+}
+
+/* Thumb — the sliding indicator */
+.conv-thumb{
+  position:absolute;top:1px;bottom:1px;left:1px;width:53px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb,var(--accent) 8%,#0d1410),
+      color-mix(in srgb,var(--accent) 20%,#1a2a1f));
+  border:1px solid var(--accent);
+  box-shadow:
+    0 0 8px var(--accent-glow),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  z-index:1;
+  transition:transform .22s cubic-bezier(.65,.05,.25,1),
+             box-shadow .25s ease;
+}
+.conv-switch.on .conv-thumb{
+  transform:translateX(53px);
+  box-shadow:
+    0 0 12px var(--accent-glow),
+    0 0 20px var(--accent-glow),
+    inset 0 1px 0 rgba(255,255,255,.08);
+}
+.conv-switch:active .conv-thumb{
+  box-shadow:
+    0 0 16px var(--accent-glow),
+    inset 0 0 8px var(--accent-glow);
+}
+
+/* Status LED next to the switch — armed indicator */
+.conv-led{
+  position:relative;width:9px;height:9px;flex-shrink:0;
+  border:1px solid var(--border-hi);border-radius:50%;
+  background:#0a0a0a;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
+}
+.conv-led-core{
+  position:absolute;inset:1px;border-radius:50%;
+  background:#1f0606;
+  transition:.25s;
+}
+.conv-switch.on .conv-led{border-color:var(--accent)}
+.conv-switch.on .conv-led-core{
+  background:var(--accent);
+  box-shadow:
+    0 0 6px var(--accent-glow),
+    0 0 12px var(--accent-glow);
+  animation:conv-led-pulse 1.6s ease-in-out infinite;
+}
+@keyframes conv-led-pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.65;transform:scale(.92)}
+}
+@media (prefers-reduced-motion: reduce){
+  .conv-led-core{animation:none!important}
+  .conv-thumb{transition:transform .12s linear}
+}
+
+/* Status text — right side, tracks state */
+.conv-status{
+  flex:0 0 auto;margin-left:auto;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:2.2px;
+  color:var(--text-mute);min-width:64px;text-align:right;
+}
+.conv-mode.on .conv-status{
+  color:var(--accent);text-shadow:0 0 4px var(--accent-glow);
+}
+
 /* Analysis card */
 .diag-card{
   background:linear-gradient(180deg,var(--card),#0f141a);
@@ -699,14 +851,28 @@ details[open] summary::before{content:"▾ "}
     <button id="ask-btn" onclick="askMechanic()" class="btn primary">ASK</button>
     <button id="cancel-btn" onclick="cancelQuery()" class="btn danger hidden">CANCEL</button>
   </div>
-  <div style="display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:10px;color:var(--text-mute);letter-spacing:1.5px">
-    <input type="checkbox" id="conv-toggle"
-      style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
-      onchange="toggleConversationMode(this.checked)">
-    <label for="conv-toggle" style="cursor:pointer;user-select:none">
-      CONVERSATION MODE
-      <span style="color:var(--text-mute);text-transform:none;letter-spacing:.3px">— after Vivi answers, mic re-arms automatically (no wake-word for the next turn)</span>
-    </label>
+  <!-- Cockpit-style conversation-mode rocker. Two etched positions
+       (STBY / LIVE), snap-action thumb, status LED, status line.
+       Replaces the stock checkbox — tactile + on-aesthetic. -->
+  <div class="conv-mode" id="conv-mode" role="group" aria-labelledby="conv-mode-lbl">
+    <div class="conv-mode-row">
+      <span id="conv-mode-lbl" class="conv-mode-label">CONVERSATION</span>
+      <button type="button" class="conv-switch" id="conv-toggle"
+              aria-pressed="false" aria-label="Conversation mode: standby"
+              onclick="toggleConversationMode(!this.classList.contains('on'))">
+        <span class="conv-track" aria-hidden="true">
+          <span class="conv-track-stripes"></span>
+          <span class="conv-pos conv-pos-stby">STBY</span>
+          <span class="conv-pos conv-pos-live">LIVE</span>
+          <span class="conv-thumb"></span>
+        </span>
+        <span class="conv-led" aria-hidden="true">
+          <span class="conv-led-core"></span>
+        </span>
+      </button>
+      <span class="conv-status" id="conv-status">STANDBY</span>
+    </div>
+    <div class="conv-mode-hint">After Vivi answers, mic re-arms — no wake-word for the next turn.</div>
   </div>
   <div id="ask-output"
     style="font-size:13px;color:var(--text);line-height:1.55;white-space:pre-wrap;
@@ -1927,28 +2093,46 @@ function chipAsk(el){
   _submitQuery(q);
 }
 
-// CONVERSATION MODE — when on, drifter-vivi publishes
-// drifter/voice/listen_now after every response, so drifter-voicein
-// records a follow-up turn without waiting for the wake-word. Local
-// state mirrored in localStorage so a refresh reflects the toggle.
+// CONVERSATION MODE — cockpit rocker. Visual state lives in classes
+// on #conv-toggle (the switch button) and #conv-mode (the panel
+// wrapper, which carries the status-text accent rule). Persisted in
+// localStorage; backend state lives in a retained MQTT message
+// published by the POST /api/vivi/conversation_mode endpoint.
+function _setConvMode(on){
+  const sw=document.getElementById('conv-toggle');
+  const wrap=document.getElementById('conv-mode');
+  const status=document.getElementById('conv-status');
+  if(!sw||!wrap) return;
+  sw.classList.toggle('on',!!on);
+  wrap.classList.toggle('on',!!on);
+  sw.setAttribute('aria-pressed',on?'true':'false');
+  sw.setAttribute('aria-label','Conversation mode: '+(on?'live':'standby'));
+  if(status) status.textContent=on?'LIVE · auto-listen':'STANDBY';
+}
 function toggleConversationMode(on){
-  try{localStorage.setItem('drifter-conv-mode', on?'1':'0');}catch(e){}
+  _setConvMode(on);
+  try{localStorage.setItem('drifter-conv-mode',on?'1':'0');}catch(e){}
   fetch('/api/vivi/conversation_mode',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({enabled:!!on}),
   }).then(r=>r.json()).then(d=>{
-    showToast(on?'Conversation mode ON':'Conversation mode OFF',
-              d.ok?'ok':'err',2000);
-  }).catch(()=>{showToast('Toggle failed','err',2000);});
+    showToast(on?'Conversation mode ENGAGED':'Conversation mode STANDBY',
+              d.ok?'success':'info',1800);
+  }).catch(()=>{
+    // Roll back the visual if the backend never got the message.
+    _setConvMode(!on);
+    try{localStorage.setItem('drifter-conv-mode',!on?'1':'0');}catch(e){}
+    showToast('Toggle failed','info',1800);
+  });
 }
 (()=>{
-  const cb=document.getElementById('conv-toggle');
-  if(!cb) return;
+  if(!document.getElementById('conv-toggle')) return;
   let saved=false;
   try{saved=(localStorage.getItem('drifter-conv-mode')==='1');}catch(e){}
-  cb.checked=saved;
-  // Don't auto-publish on load — only when the operator clicks.
+  // Restore visual state without re-publishing — backend already has
+  // the retained MQTT message from the last toggle the operator made.
+  _setConvMode(saved);
 })();
 
 // CLEAR — wipe conversation locally + tell Vivi to drop her history
