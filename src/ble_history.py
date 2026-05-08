@@ -162,7 +162,14 @@ def query_history(conn: sqlite3.Connection,
                   target: Optional[str] = None,
                   drive_id: Optional[str] = None,
                   limit: int = 200) -> list[dict]:
-    """Filterable history read. Returns most-recent-first."""
+    """Filterable history read. Returns most-recent-first.
+
+    NOTE: `limit` is applied AFTER `ORDER BY ts DESC`, so when a window
+    contains more than `limit` rows the OLDEST rows in the window are
+    silently truncated. The map page uses limit=2000 over the last 24h;
+    busy environments (multiple Axon devices in range with the 30s
+    rate-limit) can exceed that. Bump the cap or paginate if a drive's
+    history page comes back short of expected."""
     sql = (
         "SELECT ts, target, mac, rssi, manufacturer_id, adv_name, "
         "lat, lng, is_alert, drive_id "

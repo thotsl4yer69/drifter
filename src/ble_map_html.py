@@ -90,17 +90,28 @@ function colorFor(target) {
   return TARGET_COLORS[target] || '#9ca3af';
 }
 
+// HTML-escape every detection field before interpolating into the
+// popup. A hotspot client publishing crafted JSON to drifter/ble/detection
+// (target='<script>...') would otherwise land stored XSS in the map UI.
+// ACL limits blast radius but the fix is trivial.
+function esc(s){
+  const d=document.createElement('div');
+  d.textContent=String(s==null?'':s);
+  return d.innerHTML;
+}
 function popupHtml(d) {
   const ts = d.ts ? new Date(d.ts * 1000).toISOString().replace('T',' ').slice(0, 19) : '?';
+  const target = esc(d.target || '?');
+  const tcolor = colorFor(d.target);  // colorFor uses dict lookup, not interpolation
   return `
     <div style="font-size:12px;line-height:1.4">
-      <div style="color:${colorFor(d.target)};font-weight:bold">${d.target}${d.is_alert ? ' &#9888;' : ''}</div>
-      <div>${ts}</div>
-      <div>MAC: ${d.mac || '?'}</div>
-      <div>RSSI: ${d.rssi != null ? d.rssi + ' dBm' : '?'}</div>
-      ${d.adv_name ? '<div>Name: ' + d.adv_name + '</div>' : ''}
-      ${d.manufacturer_id ? '<div>Mfr: ' + d.manufacturer_id + '</div>' : ''}
-      <div style="color:#7a7a7a;margin-top:4px">drive: ${d.drive_id || '?'}</div>
+      <div style="color:${tcolor};font-weight:bold">${target}${d.is_alert ? ' &#9888;' : ''}</div>
+      <div>${esc(ts)}</div>
+      <div>MAC: ${esc(d.mac || '?')}</div>
+      <div>RSSI: ${d.rssi != null ? esc(d.rssi) + ' dBm' : '?'}</div>
+      ${d.adv_name ? '<div>Name: ' + esc(d.adv_name) + '</div>' : ''}
+      ${d.manufacturer_id ? '<div>Mfr: ' + esc(d.manufacturer_id) + '</div>' : ''}
+      <div style="color:#7a7a7a;margin-top:4px">drive: ${esc(d.drive_id || '?')}</div>
     </div>
   `;
 }
