@@ -1091,6 +1091,43 @@ details[open] summary::before{content:"▾ "}
   50%{opacity:.55}
 }
 
+/* DETAILS slide-over — at desktop, opens the legacy portrait view
+   in place of the cockpit. Operator gets DTCs, fuel trims, system
+   health, recent drives, wardrive, full alerts list, settings link.
+   Esc / close button collapses back to the cockpit. */
+.cp-details-btn{
+  background:transparent;border:1px solid var(--border-hi);
+  color:var(--text-mute);
+  padding:4px 10px;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:1.5px;cursor:pointer;font-weight:600;
+  margin-left:14px;transition:.14s;
+}
+.cp-details-btn:hover{
+  color:var(--accent);border-color:var(--accent);
+  text-shadow:0 0 4px var(--accent-glow);
+}
+@media (min-width: 1400px){
+  body.cockpit-details-open .cockpit{display:none}
+  body.cockpit-details-open .legacy{display:block}
+  body.cockpit-details-open #cp-details-close{display:flex}
+}
+#cp-details-close{
+  display:none;
+  position:fixed;top:14px;right:14px;z-index:9999;
+  width:48px;height:48px;border-radius:50%;
+  background:var(--card);border:1px solid var(--accent);
+  color:var(--accent);
+  font-family:var(--font-mono);font-size:18px;font-weight:700;
+  cursor:pointer;
+  align-items:center;justify-content:center;
+  box-shadow:0 0 12px var(--accent-glow),0 4px 16px rgba(0,0,0,.6);
+  transition:.14s;
+}
+#cp-details-close:hover{
+  background:var(--accent);color:#001519;
+  transform:scale(1.05);
+}
+
 /* CLEAR button — secondary, less prominent than ASK */
 .cp-clear{
   margin-top:8px;width:100%;
@@ -1140,6 +1177,11 @@ details[open] summary::before{content:"▾ "}
       <span class="cp-dot" id="cp-dot-rf" title="drifter-rf"></span>
       <span class="cp-dot-label">GPS</span>
       <span class="cp-dot" id="cp-dot-gps" title="GPS"></span>
+      <button class="cp-details-btn" id="cp-details-btn"
+              onclick="toggleCockpitDetails(true)"
+              aria-label="Open details panel" title="DTCs, fuel trims, system, drives, settings">
+        DETAILS &raquo;
+      </button>
     </div>
   </header>
 
@@ -2783,6 +2825,29 @@ connect();
 </script>
 </main>
 <script>
+// ── DETAILS slide-over — open/close the legacy view from cockpit ──
+function toggleCockpitDetails(open){
+  document.body.classList.toggle('cockpit-details-open', !!open);
+}
+// Inject the close button once. Cleaner than putting it in body HTML
+// because it lives outside both .cockpit and .legacy DOM trees.
+(()=>{
+  if(document.getElementById('cp-details-close')) return;
+  const btn=document.createElement('button');
+  btn.id='cp-details-close';
+  btn.setAttribute('aria-label','Close details — return to cockpit');
+  btn.title='Close details (Esc)';
+  btn.textContent='×';
+  btn.addEventListener('click',()=>toggleCockpitDetails(false));
+  document.body.appendChild(btn);
+})();
+// Esc closes the slide-over.
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && document.body.classList.contains('cockpit-details-open')){
+    toggleCockpitDetails(false);
+  }
+});
+
 // ═══ COCKPIT layout JS — Phase 5 ═══════════════════════════════
 // Polls slow-changing JSON endpoints, mirrors live legacy values
 // into cockpit gauge IDs, wires the layer chips and the ASK panel.
