@@ -98,6 +98,7 @@ def _healthz_payload() -> tuple[dict, int]:
     _HW_OPTIONAL = {
         'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
         'drifter-voicein', 'drifter-flipper', 'drifter-bleconv',
+        'drifter-gps',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]

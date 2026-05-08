@@ -690,6 +690,7 @@ SERVICES = [
     "drifter-flipper",
     "drifter-opsec",
     "drifter-bleconv",      # Phase 4.5 — passive BLE scanner
+    "drifter-gps",          # Phase 5.2 — gpsd → MQTT GPS publisher
 ]
 
 # ── Modes ──
@@ -708,6 +709,7 @@ DRIVE_ONLY_SERVICES = [
     "drifter-fbmirror",    # SPI LCD mirror for the dash screen
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
     "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
+    "drifter-gps",         # GPS feed for the cockpit map + drive_id geo-tagging
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon

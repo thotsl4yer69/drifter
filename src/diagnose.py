@@ -91,6 +91,7 @@ _HARDWARE_OPTIONAL_SERVICES = frozenset({
     'drifter-canbridge', # needs USB2CANFD plugged into OBD-II
     'drifter-rf',        # needs RTL-SDR dongle — TPMS sniffing only viable with hardware
     'drifter-bleconv',   # needs hci0 active (Pi 5 onboard BLE) + bleak in venv
+    'drifter-gps',       # needs gpsd + a USB GPS dongle reporting fixes
 })
 
 

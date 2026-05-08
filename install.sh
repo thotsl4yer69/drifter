@@ -61,7 +61,9 @@ apt-get install -y -qq \
     jq \
     rsync \
     librtlsdr-dev \
-    rtl-sdr 2>/dev/null
+    rtl-sdr \
+    gpsd \
+    gpsd-clients 2>/dev/null
 ok "Core packages installed"
 
 # Install rtl_433 (433 MHz signal decoder)
@@ -233,7 +235,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 7 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py corpus.py ble_passive.py ble_history.py ble_map_html.py ble_identity.py ble_geocluster.py ble_persistence.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py corpus.py ble_passive.py ble_history.py ble_map_html.py ble_identity.py ble_geocluster.py ble_persistence.py gps_publisher.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -429,7 +431,7 @@ systemctl daemon-reload
 systemctl disable --now drifter-llm 2>/dev/null || true
 rm -f /etc/systemd/system/drifter-llm.service
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

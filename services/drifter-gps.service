@@ -1,0 +1,28 @@
+[Unit]
+Description=MZ1312 DRIFTER GPS publisher (gpsd → MQTT)
+After=gpsd.service nanomq.service
+Wants=gpsd.service nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=drifter
+Group=drifter
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/gps_publisher.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Sandboxing — no GPIO / hardware writes, just reads from gpsd's
+# localhost socket and writes to the MQTT broker.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
