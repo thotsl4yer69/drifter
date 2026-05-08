@@ -737,6 +737,12 @@ def on_message(client, userdata, msg) -> None:
             message = str(payload.get('message') or '').strip()
             if message:
                 _recent_alerts.append((time.time(), level, message))
+    elif topic == TOPICS.get('vivi_control'):
+        # Operator-triggered reset (CLEAR button on dashboard, etc.)
+        if isinstance(payload, dict) and payload.get('action') == 'reset':
+            log.info("vivi_control reset — clearing history + new session")
+            _new_session()
+            _publish_status("idle")
 
 
 def _handle_text_query(query: str) -> None:
@@ -861,6 +867,7 @@ def main() -> None:
         (TOPICS['vivi_query'], 0),
         (TOPICS['snapshot'], 0),
         (TOPICS['alert_message'], 0),
+        (TOPICS['vivi_control'], 0),
     ])
     _mqtt_client.loop_start()
 

@@ -16,46 +16,73 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta name="theme-color" content="#050708">
 <title>DRIFTER</title>
 <script>
-/* Theme boot — runs before any CSS applies to avoid a flash of wrong theme.
-   Order of precedence: explicit user choice in localStorage, then OS-level
-   prefers-color-scheme, otherwise dark (the DRIFTER default). */
+/* Inline theme boot — applies before CSS so the page never flashes a
+   different palette. Persisted as `drifter-theme`; valid values
+   uncaged | ghost | drift, default uncaged. */
 (function(){
   try{
-    var t=localStorage.getItem('drifter_theme')||'auto';
-    if(t==='auto'){
-      t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
-    }
-    if(t==='light'){
-      document.documentElement.setAttribute('data-theme','light');
-      var m=document.querySelector('meta[name=theme-color]');
-      if(m) m.setAttribute('content','#f4f6f8');
-    }
+    var t=localStorage.getItem('drifter-theme');
+    if(t!=='ghost'&&t!=='drift'&&t!=='uncaged') t='uncaged';
+    document.documentElement.dataset.theme=t;
   }catch(e){}
 })();
 </script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  /* Surfaces */
-  --bg:#050708;--bg-elev:#0c1013;--card:#12181c;--card-hi:#1a2127;
-  --border:#1f2933;--border-hi:#2a3640;
-  /* Text */
-  --text:#e7eef4;--text-dim:#8a98a5;--text-mute:#4b5763;
-  --dim:#8a98a5;/* legacy alias used by scattered inline styles */
-  /* Brand / semantics */
-  --accent:#22d3ee;--accent-glow:rgba(34,211,238,.35);
-  --ok:#4ade80;--info:#60a5fa;--amber:#fbbf24;--red:#f87171;
-  --ok-glow:rgba(74,222,128,.25);--amber-glow:rgba(251,191,36,.35);--red-glow:rgba(248,113,113,.4);
-  /* Geometry */
+  /* Geometry, motion, type — invariant across themes */
   --radius-sm:6px;--radius:10px;--radius-lg:14px;
   --safe-bottom:env(safe-area-inset-bottom,0px);
   --safe-top:env(safe-area-inset-top,0px);
-  /* Motion */
   --ease:cubic-bezier(.4,0,.2,1);
-  /* Type scale */
   --fs-xs:11px;--fs-sm:13px;--fs-md:15px;--fs-lg:20px;
   --fs-val:28px;--fs-val-lg:44px;
+  --font-mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
+  --font-display:'JetBrains Mono','Fira Code',ui-monospace,monospace;
 }
+
+/* ── THEMES ─ uncaged (default) / ghost / drift ─ persisted in
+   localStorage as `drifter-theme`. Switcher in the status bar cycles. */
+:root[data-theme="uncaged"], :root:not([data-theme]) {
+  --bg:#0a0a0a;--bg-elev:#0e1310;--bg-glow:#003a22;
+  --card:#131918;--card-hi:#1a2220;
+  --border:#1a2a26;--border-hi:#243a35;
+  --text:#e8f2eb;--text-dim:#7a9990;--text-mute:#4f6c63;--dim:#7a9990;
+  --accent:#00ff88;--accent-glow:rgba(0,255,136,.35);
+  --ok:#00ff88;--info:#7af2c8;--amber:#fbbf24;--red:#ff4d6d;
+  --ok-glow:rgba(0,255,136,.25);--amber-glow:rgba(251,191,36,.35);--red-glow:rgba(255,77,109,.4);
+}
+:root[data-theme="ghost"] {
+  --bg:#050505;--bg-elev:#0b0b0b;--bg-glow:transparent;
+  --card:#0f0f0f;--card-hi:#161616;
+  --border:#1e1e1e;--border-hi:#2b2b2b;
+  --text:#e8e8e8;--text-dim:#888;--text-mute:#555;--dim:#888;
+  --accent:#e8e8e8;--accent-glow:rgba(232,232,232,.18);
+  --ok:#d8d8d8;--info:#c8c8c8;--amber:#cccccc;--red:#ff5555;
+  --ok-glow:rgba(216,216,216,.15);--amber-glow:rgba(204,204,204,.18);--red-glow:rgba(255,85,85,.35);
+  --font-display:'Inter','Helvetica Neue',ui-sans-serif,sans-serif;
+}
+:root[data-theme="drift"] {
+  --bg:#0a0e1a;--bg-elev:#11162a;--bg-glow:#2a1c00;
+  --card:#181d2f;--card-hi:#232842;
+  --border:#2a324a;--border-hi:#3a435e;
+  --text:#ffd9a3;--text-dim:#b58a52;--text-mute:#6f5a3a;--dim:#b58a52;
+  --accent:#ffb800;--accent-glow:rgba(255,184,0,.35);
+  --ok:#ffb800;--info:#ffd9a3;--amber:#ffb800;--red:#ff4444;
+  --ok-glow:rgba(255,184,0,.3);--amber-glow:rgba(255,184,0,.3);--red-glow:rgba(255,68,68,.4);
+}
+:root[data-theme="drift"] body::before {
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:1000;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.07) 0,rgba(0,0,0,.07) 1px,transparent 1px,transparent 3px);
+  mix-blend-mode:multiply;
+}
+
+.theme-switch{
+  background:transparent;border:1px solid var(--border);color:var(--text-mute);
+  padding:3px 8px;border-radius:2px;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:1.5px;cursor:pointer;transition:.14s;line-height:1;
+}
+.theme-switch:hover{color:var(--accent);border-color:var(--accent)}
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
   font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -63,7 +90,7 @@ body{
   overflow-x:hidden;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;
   padding-bottom:calc(64px + var(--safe-bottom));
   background:
-    radial-gradient(1200px 600px at 50% -150px, #0e1c23 0%, transparent 60%),
+    radial-gradient(1200px 600px at 50% -150px, var(--bg-glow) 0%, transparent 60%),
     var(--bg);
 }
 
@@ -71,7 +98,7 @@ body{
 .header{
   text-align:center;padding:calc(12px + var(--safe-top)) 12px 10px;
   border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;
-  background:linear-gradient(180deg,#0a1015 0%,var(--bg) 100%);
+  background:linear-gradient(180deg,var(--bg-elev) 0%,var(--bg) 100%);
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
 }
 .header h1{font-size:20px;letter-spacing:8px;color:var(--accent);font-weight:700;text-shadow:0 0 18px var(--accent-glow)}
@@ -81,7 +108,7 @@ body{
   font-size:var(--fs-xs);letter-spacing:2px;color:var(--accent);
   text-shadow:0 0 8px var(--accent-glow);font-family:monospace;
 }
-.mode-pill.foot{color:#39ff14;border-color:#39ff14;text-shadow:0 0 8px rgba(57,255,20,.5)}
+.mode-pill.foot{color:var(--ok);border-color:var(--ok);text-shadow:0 0 8px var(--ok-glow)}
 .mode-switch{
   background:transparent;border:1px solid var(--border);color:var(--text-mute);
   padding:4px 10px;border-radius:2px;font-family:monospace;font-size:var(--fs-xs);
@@ -243,43 +270,8 @@ body{
 .tabbar button.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
 .tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
 
-/* ── Light-mode overrides ── */
-[data-theme="light"]{
-  --bg:#f4f6f8;--bg-elev:#ffffff;--card:#ffffff;--card-hi:#f0f3f6;
-  --border:#d8dfe5;--border-hi:#c2ccd4;
-  --text:#0c1319;--text-dim:#4b5763;--text-mute:#7b8693;
-  --dim:#4b5763;
-  --accent:#0891b2;--accent-glow:rgba(8,145,178,.22);
-  --ok:#16a34a;--info:#2563eb;--amber:#d97706;--red:#dc2626;
-  --ok-glow:rgba(22,163,74,.18);--amber-glow:rgba(217,119,6,.22);--red-glow:rgba(220,38,38,.25);
-}
-[data-theme="light"] body{
-  background:
-    radial-gradient(1200px 600px at 50% -150px,#e6eef5 0%,transparent 60%),
-    var(--bg);
-}
-[data-theme="light"] .header{background:linear-gradient(180deg,#ffffff,var(--bg))}
-[data-theme="light"] .card{background:linear-gradient(180deg,var(--card),#f7f9fb)}
-[data-theme="light"] .card::before{background:radial-gradient(140% 80% at 50% -30%,rgba(8,145,178,.05),transparent 55%)}
-[data-theme="light"] .tpms-card,[data-theme="light"] .diag-card,[data-theme="light"] .alert-msg,
-[data-theme="light"] .alert-expand,[data-theme="light"] .hw-item{
-  background:linear-gradient(180deg,var(--card),#f7f9fb);
-}
-[data-theme="light"] .bar,
-[data-theme="light"] .bar-zones,
-[data-theme="light"] .trim-bar-wrap{background:#e8edf2}
-[data-theme="light"] .bar-needle{background:#0c1319;box-shadow:0 0 6px rgba(12,19,25,.35)}
-[data-theme="light"] .tabbar{background:linear-gradient(180deg,rgba(244,246,248,.92),var(--bg))}
-[data-theme="light"] .alert-ok{background:linear-gradient(180deg,rgba(22,163,74,.08),rgba(22,163,74,.02))}
-[data-theme="light"] .alert-info{background:linear-gradient(180deg,rgba(37,99,235,.08),rgba(37,99,235,.02))}
-[data-theme="light"] .alert-amber{background:linear-gradient(180deg,rgba(217,119,6,.12),rgba(217,119,6,.03))}
-[data-theme="light"] .alert-red{background:linear-gradient(180deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
-[data-theme="light"] .hw-overlay,[data-theme="light"] .disconnected{background:var(--bg)}
-[data-theme="light"] .dot-off{background:#b5bcc5}
-[data-theme="light"] .disconnected{
-  border-color:rgba(220,38,38,.35);
-  box-shadow:0 20px 60px -10px rgba(0,0,0,.18),0 0 30px rgba(220,38,38,.1);
-}
+/* (Old light-mode block removed in Phase 3 — replaced by the
+   uncaged/ghost/drift theme system at the top of this stylesheet.) */
 
 /* Responsive */
 @media(max-width:480px){
@@ -458,10 +450,42 @@ details[open] summary::before{content:"▾ "}
 <div class="status-bar">
   <span><span class="status-dot dot-off" id="dot-conn"></span><span id="conn-text">CONNECTING</span></span>
   <span><span class="status-dot dot-ok" id="dot-vivi" title="Vivi"></span><span id="vivi-text">VIVI</span></span>
+  <button class="theme-switch" id="theme-switch" title="Cycle theme" aria-label="Cycle theme">⏻</button>
   <span id="data-age">--</span>
 </div>
 
 <div class="alert-banner alert-ok" id="alert-banner">SYSTEMS NOMINAL</div>
+
+<!-- ── ASK VIVI — promoted to top so it's the primary action on the HUD ── -->
+<div class="section">ASK VIVI</div>
+<div style="padding:6px 10px 12px">
+  <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+    <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
+    <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
+    <button class="chip" onclick="chipAsk(this)">What do my DTCs mean?</button>
+    <button class="chip" onclick="chipAsk(this)">Likely cause of alert?</button>
+    <button class="chip" onclick="chipAsk(this)">Next service items?</button>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input id="ask-input" type="text" class="ask-input"
+      placeholder="Ask Vivi anything about your X-Type&hellip;"
+      style="flex:1;font-size:14px;padding:10px 12px">
+    <button id="mic-btn" onclick="toggleMic()" title="Voice input" class="btn mic" aria-label="Voice input">&#x1f3a4;</button>
+    <button id="ask-btn" onclick="askMechanic()" class="btn primary">ASK</button>
+    <button id="cancel-btn" onclick="cancelQuery()" class="btn danger hidden">CANCEL</button>
+  </div>
+  <div id="ask-output"
+    style="font-size:13px;color:var(--text);line-height:1.55;white-space:pre-wrap;
+           min-height:48px;padding:8px 2px">
+    Hi. I&rsquo;m Vivi — ask me anything about the car. Voice replies stream automatically when you use the mic.
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;padding:2px 2px 0">
+    <button id="clear-conv" onclick="clearConversation()" title="Clear conversation"
+      style="background:transparent;border:none;color:var(--text-mute);font-family:var(--font-mono);
+             font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 0">CLEAR</button>
+    <span id="ask-meta" style="color:var(--text-mute);font-family:var(--font-mono)"></span>
+  </div>
+</div>
 
 <div class="section">ENGINE</div>
 <div class="grid">
@@ -636,37 +660,7 @@ details[open] summary::before{content:"▾ "}
   No data yet — ADS-B scan runs every 5 min (requires dump1090)
 </div>
 
-<div class="section">ASK MECHANIC</div>
-<div style="padding:6px 10px 10px">
-
-  <!-- Quick-pick chips — one tap sends the question -->
-  <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
-    <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
-    <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
-    <button class="chip" onclick="chipAsk(this)">Why is coolant rising?</button>
-    <button class="chip" onclick="chipAsk(this)">What do my DTCs mean?</button>
-    <button class="chip" onclick="chipAsk(this)">Likely cause of alert?</button>
-    <button class="chip" onclick="chipAsk(this)">Check engine light causes?</button>
-    <button class="chip" onclick="chipAsk(this)">Next service items?</button>
-    <button class="chip" onclick="chipAsk(this)">Thermostat OK?</button>
-  </div>
-
-  <!-- Text input row with mic button -->
-  <div style="display:flex;gap:6px;margin-bottom:6px">
-    <input id="ask-input" type="text" class="ask-input" placeholder="Or type a question&hellip;">
-    <button id="mic-btn" onclick="toggleMic()" title="Voice input" class="btn mic" aria-label="Voice input">&#x1f3a4;</button>
-    <button id="ask-btn" onclick="askMechanic()" class="btn primary">ASK</button>
-    <button id="cancel-btn" onclick="cancelQuery()" class="btn danger hidden">CANCEL</button>
-  </div>
-
-  <div id="ask-output"
-    style="font-size:12px;color:var(--dim);line-height:1.5;white-space:pre-wrap;
-           min-height:32px;padding:6px 2px">
-    Tap a question above or use the mic &mdash; live telemetry is sent with every query.
-  </div>
-  <div id="ask-meta" style="font-size:9px;color:#444;text-align:right;padding:0 2px"></div>
-</div>
-
+<!-- ASK panel was here — promoted to the top of the page in Phase 3. -->
 <div style="height:80px"></div>
 
 <nav class="tabbar" aria-label="Primary">
@@ -1444,6 +1438,17 @@ function chipAsk(el){
   _submitQuery(q);
 }
 
+// CLEAR — wipe conversation locally + tell Vivi to drop her history
+// (POST → dashboard publishes drifter/vivi/control {"action":"reset"}).
+function clearConversation(){
+  fetch('/api/vivi/reset',{method:'POST'}).catch(()=>{});
+  const out=document.getElementById('ask-output');
+  const meta=document.getElementById('ask-meta');
+  if(out){out.style.color='var(--text)';out.textContent='Cleared. Ask away.';}
+  if(meta) meta.textContent='';
+  document.querySelectorAll('.chip.active').forEach(c=>c.classList.remove('active'));
+}
+
 // Voice input via Web Speech API
 let recognition=null;
 function toggleMic(){
@@ -1520,6 +1525,30 @@ document.getElementById('mode-switch').addEventListener('click', async (e)=>{
 });
 refreshModePill();
 setInterval(refreshModePill, 10000);
+
+// ── Theme cycle ──
+// Boot script (top of page) reads localStorage and sets <html data-theme>;
+// here we wire the status-bar button to cycle through uncaged → ghost → drift.
+(function(){
+  const themes=['uncaged','ghost','drift'];
+  function setTheme(name){
+    document.documentElement.dataset.theme=name;
+    try{localStorage.setItem('drifter-theme',name);}catch(e){}
+    const m=document.querySelector('meta[name="theme-color"]');
+    if(m){
+      const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      if(bg) m.setAttribute('content',bg);
+    }
+  }
+  const btn=document.getElementById('theme-switch');
+  if(btn){
+    btn.addEventListener('click',()=>{
+      const cur=document.documentElement.dataset.theme||'uncaged';
+      setTheme(themes[(themes.indexOf(cur)+1)%themes.length]);
+    });
+  }
+  setTheme(document.documentElement.dataset.theme||'uncaged');
+})();
 
 // ── Start ──
 connect();
@@ -1694,25 +1723,8 @@ h1{
 .tabbar a:active .ico{transform:scale(.92)}
 .tabbar a.active .ico{filter:drop-shadow(0 0 6px var(--accent-glow))}
 
-/* Light-mode overrides */
-[data-theme="light"]{
-  --bg:#f4f6f8;--bg-elev:#ffffff;--card:#ffffff;
-  --border:#d8dfe5;--border-hi:#c2ccd4;
-  --text:#0c1319;--text-dim:#4b5763;--text-mute:#7b8693;--dim:#4b5763;
-  --accent:#0891b2;--accent-glow:rgba(8,145,178,.22);
-  --ok:#16a34a;--info:#2563eb;--amber:#d97706;--red:#dc2626;
-}
-[data-theme="light"] body{
-  background:radial-gradient(1200px 600px at 50% -150px,#e6eef5 0%,transparent 60%),var(--bg);
-}
-[data-theme="light"] .section{background:linear-gradient(180deg,var(--card),#f7f9fb)}
-[data-theme="light"] .field input[type="number"],
-[data-theme="light"] .field input[type="text"],
-[data-theme="light"] .field select{background:#ffffff}
-[data-theme="light"] .save-bar{background:linear-gradient(180deg,rgba(244,246,248,0),rgba(244,246,248,.95) 40%)}
-[data-theme="light"] .tabbar{background:linear-gradient(180deg,rgba(244,246,248,.92),var(--bg))}
-[data-theme="light"] .switch .slider{background:#c2ccd4}
-[data-theme="light"] .switch .slider::before{box-shadow:0 2px 6px rgba(0,0,0,.15)}
+/* (Settings inherits the uncaged/ghost/drift theme set on :root from
+   the dashboard side. No per-theme overrides needed here.) */
 </style>
 </head>
 <body>

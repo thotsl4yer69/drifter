@@ -265,7 +265,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path.startswith('/api/mode/'):
             self._post_mode(self.path[len('/api/mode/'):])
             return
+        if self.path == '/api/vivi/reset':
+            self._post_vivi_reset()
+            return
         self.send_error(404)
+
+    def _post_vivi_reset(self):
+        """Tell Vivi to drop her conversation history. Publishes
+        drifter/vivi/control={"action":"reset"} which Vivi's MQTT
+        subscriber consumes and clears _history + mints a new session id."""
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/vivi/control',
+                    json.dumps({'action': 'reset', 'ts': time.time()}),
+                )
+                ok = True
+            except Exception as e:
+                log.warning("vivi reset publish failed: %s", e)
+        self._serve_json({'ok': ok})
 
     def _get_mode(self, parsed):
         try:

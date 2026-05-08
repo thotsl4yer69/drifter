@@ -590,6 +590,7 @@ TOPICS = {
     'vivi_query': 'drifter/vivi/query',
     'vivi_response': 'drifter/vivi/response',
     'vivi_status': 'drifter/vivi/status',
+    'vivi_control': 'drifter/vivi/control',  # {"action": "reset"} clears history
     # Audio (shared with voice_alerts)
     'audio_wav': 'drifter/audio/wav',
     # Flipper Zero
