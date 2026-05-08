@@ -2046,6 +2046,16 @@ function handleMessage(msg){
   else if(topic.endsWith('/hud/map/layer')){
     window.dispatchEvent(new CustomEvent('drifter-map-layer',{detail:data}));
   }
+  // Phase 5.2 — live GPS fix from any drifter/gps/fix publisher
+  // (USB GPS dongle + gpsd bridge, phone bridge, or a synthetic
+  // mosquitto_pub for testing). Recenters the map on every fix so
+  // the cockpit follows the vehicle. Browser-geolocation is now
+  // the bench-only path; MQTT is the in-vehicle path.
+  else if(topic.endsWith('/gps/fix')){
+    if(data && typeof data.lat==='number' && typeof data.lng==='number'){
+      window.dispatchEvent(new CustomEvent('drifter-gps-fix',{detail:data}));
+    }
+  }
   // Watchdog / system
   else if(topic.endsWith('/system/watchdog')){
     const sys = data.system || {};
@@ -3085,13 +3095,26 @@ if(_cpLegacyBanner){
   }).observe(_cpLegacyBanner,{childList:true,characterData:true,subtree:true});
 }
 
-// Browser-geolocation → map recenter. Until a real GPS publisher is
-// wired (Phase 4.7 closeout flagged this as the soak blocker), the
-// parent browser's navigator.geolocation gives us an actual fix —
-// good enough for the operator to see their location on the map.
-// We post {type:'recenter',lat,lng,zoom} to the embedded /map/ble
-// iframe; that page has a message listener (Phase 5) that recentres
-// the Leaflet view + drops a "you" pin.
+// MQTT-driven map follow — when ANY drifter/gps/fix arrives over WS
+// the cockpit recenters the iframe map. This is the in-vehicle path:
+// USB GPS dongle on the Pi, phone-bridged GPS, or a synthetic
+// mosquitto_pub for testing — all land here. Browser geolocation
+// (below) becomes the bench-only path. MQTT wins when both fire
+// because watchPosition only updates a handful of times per second
+// and the MQTT handler runs synchronously on every fix.
+window.addEventListener('drifter-gps-fix',(e)=>{
+  const d=e.detail||{};
+  if(typeof d.lat!=='number' || typeof d.lng!=='number') return;
+  const frame=document.getElementById('cp-map-frame');
+  if(!frame || !frame.contentWindow) return;
+  try{frame.contentWindow.postMessage({type:'recenter',lat:d.lat,lng:d.lng,zoom:15},'*');}catch(e){}
+});
+
+// Browser-geolocation → map recenter (BENCH PATH ONLY — desktop
+// browsers triangulate off IP/Wi-Fi BSSID and don't follow the
+// vehicle). For real in-car following see the MQTT handler above.
+// We keep this so phones tethered to the hotspot, with their own
+// GPS chip, follow naturally without a Pi GPS publisher.
 (function cockpitGeo(){
   const frame = document.getElementById('cp-map-frame');
   if (!frame || !navigator.geolocation) return;
