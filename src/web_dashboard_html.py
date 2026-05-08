@@ -3105,13 +3105,29 @@ if(_cpLegacyBanner){
 // MQTT-driven map follow — when ANY drifter/gps/fix arrives over WS
 // the cockpit recenters the iframe map. This is the in-vehicle path:
 // USB GPS dongle on the Pi, phone-bridged GPS, or a synthetic
-// mosquitto_pub for testing — all land here. Browser geolocation
-// (below) becomes the bench-only path. MQTT wins when both fire
-// because watchPosition only updates a handful of times per second
-// and the MQTT handler runs synchronously on every fix.
+// mosquitto_pub for testing — all land here.
+//
+// Lockout: every fix stamps __drifterLastMqttFix. The browser-
+// geolocation watchPosition handler (below) checks this timestamp
+// and skips its own recenter for MQTT_LOCKOUT_MS afterwards. Without
+// the lockout, both paths post recenter messages to the iframe and
+// fight for the operator's view — visible on bench when a synthetic
+// mosquitto_pub competes with the real (often-stale) browser
+// geolocation. MQTT wins by recency, but the lockout makes the win
+// explicit and quiet rather than dueling fixes per second.
+window.__drifterLastMqttFix = 0;
+const MQTT_LOCKOUT_MS = 10000;
+// 10s chosen because gpsd's default cadence is 1Hz; a 10s window
+// covers a brief gpsd hiccup or a temporary publisher restart
+// without immediately ceding control back to browser geolocation.
+// Tightening below ~5s risks bench thrash when synthetic publishes
+// stop and the real browser fix takes over before the operator
+// notices. Loosening past ~30s would mask a genuinely-dead GPS
+// dongle for too long.
 window.addEventListener('drifter-gps-fix',(e)=>{
   const d=e.detail||{};
   if(typeof d.lat!=='number' || typeof d.lng!=='number') return;
+  window.__drifterLastMqttFix = performance.now();
   const frame=document.getElementById('cp-map-frame');
   if(!frame || !frame.contentWindow) return;
   try{frame.contentWindow.postMessage({type:'recenter',lat:d.lat,lng:d.lng,zoom:15},'*');}catch(e){}
@@ -3134,6 +3150,17 @@ window.addEventListener('drifter-gps-fix',(e)=>{
   function onPosition(p){
     const c = p.coords;
     lastFix = {lat:c.latitude, lng:c.longitude};
+    // MQTT-fix lockout — if a `drifter/gps/fix` arrived in the
+    // last MQTT_LOCKOUT_MS, the in-vehicle path is alive and the
+    // bench-grade browser fix would just thrash the map. Skip the
+    // postMessage but keep lastFix updated so a takeover can
+    // resume cleanly when MQTT goes quiet.
+    const sinceMqtt = performance.now() - window.__drifterLastMqttFix;
+    if (window.__drifterLastMqttFix && sinceMqtt < MQTT_LOCKOUT_MS) {
+      console.debug('drifter: geolocation suppressed — MQTT fix '+
+                    Math.round(sinceMqtt)+'ms ago');
+      return;
+    }
     postRecenter(c.latitude, c.longitude, 14);
   }
   function onError(e){
@@ -3141,8 +3168,12 @@ window.addEventListener('drifter-gps-fix',(e)=>{
     // own default. Don't show a UI error; the operator will notice.
   }
   // Re-post on every iframe load (handles refresh, theme reload).
+  // Same lockout — don't fight an active MQTT publisher.
   frame.addEventListener('load', () => {
-    if (lastFix) postRecenter(lastFix.lat, lastFix.lng, 14);
+    if (!lastFix) return;
+    const sinceMqtt = performance.now() - window.__drifterLastMqttFix;
+    if (window.__drifterLastMqttFix && sinceMqtt < MQTT_LOCKOUT_MS) return;
+    postRecenter(lastFix.lat, lastFix.lng, 14);
   });
   // One-shot fix to bootstrap, then watch for movement.
   navigator.geolocation.getCurrentPosition(onPosition, onError,
