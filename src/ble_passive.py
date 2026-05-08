@@ -84,12 +84,17 @@ def load_targets(path: Path) -> list[dict]:
         if enabled and not verified:
             log.warning(f"BLE target {name!r}: enabled but unverified — disabling at runtime")
             enabled = False
+        mode = str(entry.get('match_mode', 'any')).lower()
+        if mode not in ('any', 'all'):
+            log.warning(f"BLE target {name!r}: match_mode={mode!r} invalid; defaulting to 'any'")
+            mode = 'any'
         out.append({
             'name': name,
             'description': str(entry.get('description', '')),
             'enabled': enabled,
             'verified': verified,
             'match': match,
+            'match_mode': mode,
             'rssi_alert_threshold': int(entry.get('rssi_alert_threshold', -60)),
             'vivi_alert': bool(entry.get('vivi_alert', False)),
             'vivi_label': str(entry.get('vivi_label', name)),
@@ -135,13 +140,23 @@ def matches_service_uuid(target: dict, service_uuids: list) -> bool:
 
 
 def target_matches(target: dict, mac: str, mfr_data: dict, service_uuids: list) -> bool:
-    """OR semantics across this target's criteria. Any one is enough."""
-    return (
-        matches_oui(target, mac) or
-        matches_manufacturer_id(target, mfr_data) or
-        matches_manufacturer_data_prefix(target, mfr_data) or
-        matches_service_uuid(target, service_uuids)
-    )
+    """Default 'any' semantics: any one criterion match is enough.
+    'all' mode (opt-in via `match_mode: all` in YAML): every criterion
+    that is set must match. Required for AirTag-style targets where
+    manufacturer_id alone is too broad and the prefix must AND with it."""
+    m = target['match']
+    checks: list[bool] = []
+    if m.get('oui_prefixes'):
+        checks.append(matches_oui(target, mac))
+    if m.get('manufacturer_id') is not None:
+        checks.append(matches_manufacturer_id(target, mfr_data))
+    if m.get('manufacturer_data_prefix'):
+        checks.append(matches_manufacturer_data_prefix(target, mfr_data))
+    if m.get('service_uuids'):
+        checks.append(matches_service_uuid(target, service_uuids))
+    if not checks:
+        return False
+    return all(checks) if target.get('match_mode') == 'all' else any(checks)
 
 
 # ── Rate limiter ───────────────────────────────────────────────────
@@ -266,8 +281,22 @@ class BLEScanner:
         self._last_prune = 0.0
 
     def _connect_mqtt(self) -> None:
+        # systemd has us After=nanomq.service, but `After=` only orders
+        # service start — it doesn't wait for the broker to be accepting
+        # TCP connections. Retry with linear backoff so a fresh boot
+        # doesn't churn the unit through a crash-restart cycle.
         client = make_mqtt_client('drifter-bleconv')
-        client.connect(MQTT_HOST, MQTT_PORT, 60)
+        last_err: Optional[Exception] = None
+        for attempt in range(1, 11):
+            try:
+                client.connect(MQTT_HOST, MQTT_PORT, 60)
+                break
+            except (ConnectionRefusedError, OSError) as e:
+                last_err = e
+                log.info(f"MQTT not ready (attempt {attempt}/10): {e}")
+                time.sleep(min(attempt, 5))
+        else:
+            raise RuntimeError(f"MQTT broker unreachable after 10 attempts: {last_err}")
         client.subscribe(TOPICS.get('gps_fix', 'drifter/gps/fix'))
         client.on_message = self._on_mqtt
         client.loop_start()

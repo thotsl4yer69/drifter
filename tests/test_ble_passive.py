@@ -82,6 +82,53 @@ def test_combined_match_or_semantics():
     assert not bp.target_matches(target, '11:22:33:44:55:66', {}, [])
 
 
+def test_match_mode_all_requires_every_set_criterion():
+    """match_mode=all: every populated criterion must match. The AirTag
+    use case: manufacturer_id 0x004C is every Apple device, so the
+    Find My prefix must tighten — not loosen — the rule."""
+    target = _t(manufacturer_id=0x004C, manufacturer_data_prefix='1219')
+    target['match_mode'] = 'all'
+    # Both match → hit
+    assert bp.target_matches(target, '11:22:33:44:55:66',
+                             {0x004C: bytes.fromhex('1219abcd')}, [])
+    # Apple ID without the Find My prefix → miss (would be a hit under 'any')
+    assert not bp.target_matches(target, '11:22:33:44:55:66',
+                                 {0x004C: bytes.fromhex('aabbccdd')}, [])
+    # Wrong manufacturer ID → miss
+    assert not bp.target_matches(target, '11:22:33:44:55:66',
+                                 {0x0006: bytes.fromhex('1219abcd')}, [])
+    # No manufacturer data at all → miss
+    assert not bp.target_matches(target, '11:22:33:44:55:66', {}, [])
+
+
+def test_match_mode_any_is_default(tmp_path):
+    """A target with no match_mode field must keep OR semantics."""
+    yaml_path = tmp_path / 'targets.yaml'
+    yaml_path.write_text(
+        "targets:\n"
+        "  - name: legacy\n"
+        "    enabled: true\n"
+        "    verified: true\n"
+        "    match: {oui_prefixes: ['00:25:DF']}\n"
+    )
+    [t] = bp.load_targets(yaml_path)
+    assert t['match_mode'] == 'any'
+
+
+def test_match_mode_invalid_falls_back_to_any(tmp_path):
+    yaml_path = tmp_path / 'targets.yaml'
+    yaml_path.write_text(
+        "targets:\n"
+        "  - name: weird\n"
+        "    enabled: true\n"
+        "    verified: true\n"
+        "    match_mode: xor\n"
+        "    match: {oui_prefixes: ['00:25:DF']}\n"
+    )
+    [t] = bp.load_targets(yaml_path)
+    assert t['match_mode'] == 'any'
+
+
 def test_unverified_target_disabled_at_runtime(tmp_path, monkeypatch):
     """A target with verified=false AND enabled=true must be force-disabled
     by load_targets (with a WARNING log)."""

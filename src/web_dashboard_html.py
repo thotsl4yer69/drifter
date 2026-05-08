@@ -660,6 +660,11 @@ details[open] summary::before{content:"▾ "}
   No data yet — ADS-B scan runs every 5 min (requires dump1090)
 </div>
 
+<div class="section">BLE</div>
+<div id="ble-panel" style="padding:6px 10px 8px;font-size:11px;color:var(--dim)">
+  No detections — scanner listening passively
+</div>
+
 <!-- ASK panel was here — promoted to the top of the page in Phase 3. -->
 <div style="height:80px"></div>
 
@@ -1254,6 +1259,40 @@ function handleAdsb(data){
     </div>`;
   }).join('');
 }
+
+// ── BLE live updates (Phase 4.6) ──
+// Polls /api/ble/recent every 5s. Endpoint is hotspot-only — remote
+// browsers see 403. Renders target name (hardware family label only),
+// MAC prefix, RSSI, and age. Alerts get a red marker.
+async function loadBle(){
+  try{
+    const r=await fetch('/api/ble/recent?limit=8');
+    if(!r.ok) return;
+    const d=await r.json();
+    renderBle(d.detections||[]);
+  }catch(e){}
+}
+function renderBle(detections){
+  const panel=document.getElementById('ble-panel');
+  if(!panel) return;
+  if(!detections.length){
+    panel.textContent='No detections — scanner listening passively';
+    return;
+  }
+  const now=Date.now()/1000;
+  panel.innerHTML=detections.slice(0,8).map(d=>{
+    const age=Math.max(0,Math.round(now-(d.ts||0)));
+    const ageStr=age<60?age+'s':age<3600?Math.round(age/60)+'m':Math.round(age/3600)+'h';
+    const macPfx=(d.mac||'').slice(0,8);
+    const alertCol=d.is_alert?'#ff5151':'var(--accent)';
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
+      <span style="color:${alertCol};font-weight:bold">${esc(d.target||'?')}${d.is_alert?' ⚠':''}</span>
+      <span style="color:var(--dim)">${esc(macPfx)}&hellip;&ensp;${d.rssi}dBm&ensp;${ageStr}</span>
+    </div>`;
+  }).join('');
+}
+loadBle();
+setInterval(loadBle, 5000);
 
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
 

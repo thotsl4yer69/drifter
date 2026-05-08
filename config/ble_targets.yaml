@@ -51,6 +51,9 @@ targets:
     enabled: false
     verified: false
     verification_source: "Apple Find My uses manufacturer data 0x004C with specific format. See docs/AIRTAG_DETECTION.md before enabling — simple manufacturer_id match catches every Apple device."
+    # AND-semantics REQUIRED: 0x004C alone is every Apple device in range.
+    # The prefix must tighten the rule, not loosen it.
+    match_mode: all
     match:
       manufacturer_id: 0x004C
       manufacturer_data_prefix: "1219"
