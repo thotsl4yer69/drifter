@@ -450,20 +450,35 @@ def _format_recent_ble() -> Optional[str]:
     return "Recent BLE:\n" + "\n".join(lines)
 
 
+# Phase 4.8.1 — cache the persistent-contact summary for 60s. Without
+# this, every Vivi turn opens ble_history.db and runs the full scoring
+# pass; the underlying data only changes when new detections arrive,
+# and 60s is well below the "this week" granularity of the summary.
+_persistent_cache: dict = {'ts': 0.0, 'value': None}
+_PERSISTENT_TTL = 60.0
+
+
 def _format_persistent_contacts() -> Optional[str]:
     """Phase 4.8 — short Vivi context line summarising persistent
     contacts seen in the last week. Returns None when nothing above
     the weak tier exists, so most turns have no PERSISTENT_CONTACTS
     block (Vivi only mentions follower-style telemetry when asked)."""
+    now = time.time()
+    if (now - _persistent_cache['ts']) < _PERSISTENT_TTL:
+        return _persistent_cache['value']
+
     try:
         import ble_history
         import ble_persistence
     except ImportError:
+        _persistent_cache.update(ts=now, value=None)
         return None
     db_path = '/opt/drifter/state/ble_history.db'
+    summary = ''
     try:
         from pathlib import Path
         if not Path(db_path).exists():
+            _persistent_cache.update(ts=now, value=None)
             return None
         conn = ble_history.open_db(Path(db_path))
         try:
@@ -472,10 +487,12 @@ def _format_persistent_contacts() -> Optional[str]:
             conn.close()
     except Exception as e:
         log.debug(f"persistent-contact summary failed: {e}")
+        _persistent_cache.update(ts=now, value=None)
         return None
-    if not summary:
-        return None
-    return f"PERSISTENT_CONTACTS: {summary}"
+
+    value = f"PERSISTENT_CONTACTS: {summary}" if summary else None
+    _persistent_cache.update(ts=now, value=value)
+    return value
 
 
 def _format_recent_alerts() -> Optional[str]:

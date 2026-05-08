@@ -123,22 +123,52 @@ def test_high_tier_when_score_clears_threshold(conn):
 
 
 def test_tier_assignment_matches_thresholds(conn):
-    """Boundary check: scores < 3 → weak, 3–6 → medium, ≥6 + conf≥0.7 → high."""
-    # Weak: 2 drives × 1 cluster × 0.4 conf (airtag) = 0.8 → weak
+    """Boundary check: scores < 3 → weak, 3–6 → medium, ≥6 + conf≥0.7 → high.
+    Phase 4.8.1 added unique_geo_clusters>=2 as a hard filter, so the
+    weak case needs ≥2 separated locations to surface at all."""
+    # Weak: 2 drives × 2 clusters × 0.4 conf (airtag) = 1.6 → weak
     base_ts = time.time() - 86400
+    locations = [(37.7749, -122.4194), (37.8044, -122.4500)]  # ~3.5 km apart
     for d, t_off in (('drive-A', 0), ('drive-B', 3600)):
-        for i in range(3):
-            _ins(conn, drive_id=d,
-                 target='airtag', manufacturer_id='0x004C',
-                 mac=f'AA:BB:CC:DD:EE:{i:02X}',
-                 adv_name='', lat=37.7749, lng=-122.4194,
-                 ts=base_ts + t_off + i)
+        for li, (lat, lng) in enumerate(locations):
+            for i in range(2):
+                _ins(conn, drive_id=d,
+                     target='airtag', manufacturer_id='0x004C',
+                     mac=f'AA:BB:CC:DD:EE:{i:02X}',
+                     adv_name='', lat=lat + i * 1e-5, lng=lng,
+                     ts=base_ts + t_off + li * 60 + i)
     contacts, _ = bp.score_persistent_contacts(conn)
-    # Airtag identities collapse to mfr|name:anon, so all 6 share one identity
+    # Airtag identities collapse to mfr|name:anon, so all 8 share one identity
     assert len(contacts) == 1
-    # 1 cluster × 2 drives × 0.4 = 0.8 → weak
+    # 2 clusters × 2 drives × 0.4 = 1.6 → weak (below medium threshold of 3)
     assert contacts[0]['tier'] == 'weak'
-    assert contacts[0]['follower_score'] == pytest.approx(0.8, abs=1e-6)
+    assert contacts[0]['follower_score'] == pytest.approx(1.6, abs=1e-6)
+
+
+def test_single_cluster_identity_filtered_out(conn):
+    """Phase 4.8.1 — even when detection_count and unique_drives both
+    pass, an identity confined to one geographic cluster (a stable
+    device at home / at work) is locality, not following."""
+    base_ts = time.time() - 86400
+    for d, t_off in (('drive-A', 0), ('drive-B', 3600), ('drive-C', 7200)):
+        for i in range(2):
+            _ins(conn, drive_id=d,
+                 mac='AA:BB:CC:DD:EE:FF',
+                 lat=37.7749 + i * 1e-5, lng=-122.4194,
+                 ts=base_ts + t_off + i)
+    contacts, noise = bp.score_persistent_contacts(conn)
+    assert contacts == []
+    assert noise >= 1
+
+
+def test_persistent_summary_uses_cache(monkeypatch):
+    """Phase 4.8.1 — the Vivi context hook caches the summary for 60s
+    so we don't open the DB on every prompt build."""
+    import vivi
+    monkeypatch.setattr(vivi, '_persistent_cache',
+                        {'ts': time.time(), 'value': 'cached-value'})
+    # cache hit — should NOT touch ble_history at all
+    assert vivi._format_persistent_contacts() == 'cached-value'
 
 
 def test_noise_excluded_counter_increments(conn):
@@ -193,12 +223,14 @@ def test_endpoint_window_param_works(conn):
         for i in range(3):
             _ins(conn, drive_id=d, ts=now - 8 * 86400 - i,
                  lat=37.78 + i * 1e-5, lng=-122.4)
-    # Fresh hits — should appear
-    for d in ('drive-NEW-A', 'drive-NEW-B'):
+    # Fresh hits — should appear. Phase 4.8.1 filter requires ≥2
+    # geo clusters, so place each drive's hits at a distinct site.
+    locations = [(37.79, -122.41), (37.85, -122.45)]  # ~7 km apart
+    for d, (lat, lng) in zip(('drive-NEW-A', 'drive-NEW-B'), locations):
         for i in range(3):
             _ins(conn, drive_id=d, ts=now - 3600 - i,
                  mac='AA:BB:CC:DD:EE:FF',
-                 lat=37.79 + i * 1e-5, lng=-122.41)
+                 lat=lat + i * 1e-5, lng=lng)
 
     fresh, _ = bp.score_persistent_contacts(conn,
                                             since_ts=now - 7 * 86400,

@@ -90,6 +90,15 @@ def score_persistent_contacts(conn,
         if not non_noise:
             noise_excluded += 1
             continue
+        # Phase 4.8.1 — require >=2 distinct geo clusters. A stable
+        # device sitting at one location and pinged across multiple
+        # drives (neighbour's phone at home, kit at the workshop) is
+        # locality, not following. The score multiplies clusters in
+        # so 1-cluster cases would be tier=weak anyway, but keeping
+        # them out of the contacts list cleans the dashboard panel.
+        if unique_clusters < 2:
+            noise_excluded += 1
+            continue
 
         # Worst-case confidence — if any contributing detection used
         # the weak fallback, the whole identity is treated as weak.
