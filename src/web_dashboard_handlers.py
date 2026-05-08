@@ -24,6 +24,7 @@ from corpus import corpus_search, dtc_lookup
 from web_dashboard_html import DASHBOARD_HTML, SETTINGS_HTML
 from ble_map_html import BLE_MAP_HTML
 import ble_history
+import ble_persistence
 from web_dashboard_hardware import check_hardware
 import web_dashboard_state as state
 
@@ -310,6 +311,74 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._serve_json({'drives': [], 'error': str(e)})
             return
         self._serve_json({'drives': drives})
+
+    def _get_ble_persistent(self, parsed):
+        """Phase 4.8 — persistent-contact (follower) analysis. Hotspot-only.
+        Query params:
+          window=24h|7d|30d|all (default 7d)
+          min_tier=weak|medium|high (default weak)
+        Compute on demand. Logs a warning if window=30d takes >2s."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'BLE persistent: local network only')
+            return
+        q = parse_qs(parsed.query)
+        window = q.get('window', ['7d'])[0]
+        min_tier = q.get('min_tier', ['weak'])[0]
+
+        windows = {'24h': 86400.0, '7d': 7 * 86400.0,
+                   '30d': 30 * 86400.0, 'all': None}
+        if window not in windows:
+            self.send_error(400, 'invalid window')
+            return
+        if min_tier not in ('weak', 'medium', 'high'):
+            self.send_error(400, 'invalid min_tier')
+            return
+
+        from pathlib import Path as _P
+        now = time.time()
+        if not _P(_BLE_HISTORY_DB).exists():
+            self._serve_json({
+                'window': window, 'computed_at': now,
+                'contacts': [], 'count': 0, 'noise_excluded': 0,
+            })
+            return
+
+        since = (now - windows[window]) if windows[window] is not None else None
+        t0 = time.time()
+        try:
+            conn = ble_history.open_db(_P(_BLE_HISTORY_DB))
+            try:
+                contacts, noise = ble_persistence.score_persistent_contacts(
+                    conn, since_ts=since, until_ts=now,
+                )
+            finally:
+                conn.close()
+        except Exception as e:
+            log.warning(f"persistent-contacts compute failed: {e}")
+            self._serve_json({
+                'window': window, 'computed_at': now,
+                'contacts': [], 'count': 0, 'noise_excluded': 0,
+                'error': str(e),
+            })
+            return
+        elapsed = time.time() - t0
+        if window == '30d' and elapsed > 2.0:
+            log.warning(
+                f"/api/ble/persistent {window} took {elapsed:.2f}s — "
+                "consider caching"
+            )
+
+        tier_rank = {'weak': 0, 'medium': 1, 'high': 2}
+        threshold = tier_rank[min_tier]
+        filtered = [c for c in contacts if tier_rank[c['tier']] >= threshold]
+        self._serve_json({
+            'window':         window,
+            'computed_at':    now,
+            'contacts':       filtered,
+            'count':          len(filtered),
+            'noise_excluded': noise,
+        })
 
     def _get_ble_map(self, parsed):
         """Self-contained Leaflet map of the last 24h of BLE detections.
@@ -674,6 +743,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/ble/recent':            DashboardHandler._get_ble_recent,
     '/api/ble/history':           DashboardHandler._get_ble_history,
     '/api/ble/drives':            DashboardHandler._get_ble_drives,
+    '/api/ble/persistent':        DashboardHandler._get_ble_persistent,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
 }

@@ -695,6 +695,37 @@ details[open] summary::before{content:"▾ "}
   </table>
 </div>
 
+<div style="padding:0 10px 8px;font-size:11px;color:var(--dim)">
+  <button id="ble-persistent-toggle" type="button"
+          style="background:#181818;color:var(--dim);border:1px solid #2a2a2a;padding:3px 8px;font-size:11px;cursor:pointer;border-radius:2px">
+    + Persistent Contacts (7d)
+  </button>
+  <select id="ble-persistent-window" hidden
+          style="margin-left:6px;background:#181818;color:var(--dim);border:1px solid #2a2a2a;padding:3px 6px;font-size:11px;border-radius:2px">
+    <option value="24h">24h</option>
+    <option value="7d" selected>7d</option>
+    <option value="30d">30d</option>
+  </select>
+</div>
+<div id="ble-persistent-panel" hidden
+     style="padding:0 10px 10px;font-size:10px;color:var(--dim);max-height:240px;overflow:auto">
+  <table style="width:100%;border-collapse:collapse;font-family:monospace">
+    <thead>
+      <tr style="color:var(--dim);text-align:left;border-bottom:1px solid #1a1a1a">
+        <th style="padding:2px 4px">TIER</th>
+        <th style="padding:2px 4px">IDENTITY</th>
+        <th style="padding:2px 4px">TARGET</th>
+        <th style="padding:2px 4px;text-align:right">DRIVES</th>
+        <th style="padding:2px 4px;text-align:right">CLUSTERS</th>
+        <th style="padding:2px 4px">LAST SEEN</th>
+        <th style="padding:2px 4px;text-align:right">SCORE</th>
+      </tr>
+    </thead>
+    <tbody id="ble-persistent-tbody"></tbody>
+  </table>
+  <div id="ble-persistent-meta" style="padding:4px;color:var(--dim);font-size:10px"></div>
+</div>
+
 <!-- ASK panel was here — promoted to the top of the page in Phase 3. -->
 <div style="height:80px"></div>
 
@@ -1376,6 +1407,67 @@ async function loadBleHistory(){
     if(!expanded) loadBleHistory();
   });
   refresh.addEventListener('click',loadBleHistory);
+})();
+
+// ── Persistent Contacts (Phase 4.8 — follower analysis, on-demand) ──
+async function loadBlePersistent(){
+  const tbody=document.getElementById('ble-persistent-tbody');
+  const meta=document.getElementById('ble-persistent-meta');
+  const win=document.getElementById('ble-persistent-window');
+  if(!tbody||!meta||!win) return;
+  tbody.innerHTML='<tr><td colspan="7" style="padding:4px;color:var(--dim)">computing…</td></tr>';
+  meta.textContent='';
+  try{
+    const r=await fetch(`/api/ble/persistent?window=${encodeURIComponent(win.value)}&min_tier=weak`);
+    if(!r.ok){
+      tbody.innerHTML=`<tr><td colspan="7" style="padding:4px;color:#ff5151">HTTP ${r.status}</td></tr>`;
+      return;
+    }
+    const d=await r.json();
+    const contacts=d.contacts||[];
+    if(!contacts.length){
+      tbody.innerHTML='<tr><td colspan="7" style="padding:4px;color:var(--dim)">No persistent contacts in window. (Either you haven’t driven enough yet, or you’re clean.)</td></tr>';
+      meta.textContent=`window=${esc(d.window||win.value)} · ${d.noise_excluded||0} candidates rejected by filters`;
+      return;
+    }
+    const tierColor={high:'#ff5151',medium:'#f5b342',weak:'var(--dim)'};
+    const now=Date.now()/1000;
+    tbody.innerHTML=contacts.map(c=>{
+      const tcol=tierColor[c.tier]||'var(--dim)';
+      const ageS=Math.max(0,Math.round(now-(c.last_seen||0)));
+      const last=ageS<60?ageS+'s':ageS<3600?Math.round(ageS/60)+'m':ageS<86400?Math.round(ageS/3600)+'h':Math.round(ageS/86400)+'d';
+      const idShort=esc((c.identity||'').slice(0,40));
+      return `<tr style="border-bottom:1px solid #131313">
+        <td style="padding:2px 4px;color:${tcol};font-weight:bold">${esc(c.tier)}</td>
+        <td style="padding:2px 4px" title="${esc(c.identity||'')}">${idShort}${(c.identity||'').length>40?'…':''}</td>
+        <td style="padding:2px 4px">${esc(c.target||'?')}</td>
+        <td style="padding:2px 4px;text-align:right">${c.unique_drive_ids||0}</td>
+        <td style="padding:2px 4px;text-align:right">${c.unique_geo_clusters||0}</td>
+        <td style="padding:2px 4px;color:var(--dim)">${last}</td>
+        <td style="padding:2px 4px;text-align:right">${(c.follower_score||0).toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+    meta.textContent=`window=${esc(d.window||win.value)} · ${contacts.length} contacts · ${d.noise_excluded||0} rejected`;
+  }catch(e){
+    tbody.innerHTML=`<tr><td colspan="7" style="padding:4px;color:#ff5151">${esc(String(e))}</td></tr>`;
+  }
+}
+(()=>{
+  const btn=document.getElementById('ble-persistent-toggle');
+  const panel=document.getElementById('ble-persistent-panel');
+  const win=document.getElementById('ble-persistent-window');
+  if(!btn||!panel||!win) return;
+  btn.addEventListener('click',()=>{
+    const expanded=!panel.hidden;
+    panel.hidden=expanded;
+    win.hidden=expanded;
+    btn.textContent=(expanded?'+ ':'– ')+'Persistent Contacts ('+win.value+')';
+    if(!expanded) loadBlePersistent();
+  });
+  win.addEventListener('change',()=>{
+    btn.textContent='– Persistent Contacts ('+win.value+')';
+    loadBlePersistent();
+  });
 })();
 
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}

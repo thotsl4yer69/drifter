@@ -450,6 +450,34 @@ def _format_recent_ble() -> Optional[str]:
     return "Recent BLE:\n" + "\n".join(lines)
 
 
+def _format_persistent_contacts() -> Optional[str]:
+    """Phase 4.8 — short Vivi context line summarising persistent
+    contacts seen in the last week. Returns None when nothing above
+    the weak tier exists, so most turns have no PERSISTENT_CONTACTS
+    block (Vivi only mentions follower-style telemetry when asked)."""
+    try:
+        import ble_history
+        import ble_persistence
+    except ImportError:
+        return None
+    db_path = '/opt/drifter/state/ble_history.db'
+    try:
+        from pathlib import Path
+        if not Path(db_path).exists():
+            return None
+        conn = ble_history.open_db(Path(db_path))
+        try:
+            summary = ble_persistence.get_persistent_contact_summary(conn)
+        finally:
+            conn.close()
+    except Exception as e:
+        log.debug(f"persistent-contact summary failed: {e}")
+        return None
+    if not summary:
+        return None
+    return f"PERSISTENT_CONTACTS: {summary}"
+
+
 def _format_recent_alerts() -> Optional[str]:
     """Last 3 alerts within ALERT_FRESH_SEC, joined into a single line."""
     now = time.time()
@@ -505,6 +533,14 @@ def _build_context(query: str) -> str:
     ble = _format_recent_ble()
     if ble:
         parts.append(ble)
+
+    # Phase 4.8 — persistent-contact summary (follower analysis).
+    # On-demand only: surfaces in Vivi's context when the operator asks,
+    # but no proactive comment trigger until the scoring is tuned
+    # against real data (Phase 4.9 decision).
+    persistent = _format_persistent_contacts()
+    if persistent:
+        parts.append(persistent)
 
     # Corpus hook — Phase 2 wires retrieval here. corpus_search returns
     # the single best chunk (or None). Format compresses topic + body into
