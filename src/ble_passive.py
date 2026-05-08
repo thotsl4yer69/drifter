@@ -246,6 +246,13 @@ class BLEScanner:
         else:
             raise RuntimeError(f"MQTT broker unreachable after 10 attempts: {last_err}")
         client.subscribe(TOPICS.get('gps_fix', 'drifter/gps/fix'))
+        # Phase 4.7 — external sources (synthetic mosquitto_pub, future
+        # sensor bridges) can publish to drifter/ble/detection and have
+        # their hits persisted. The scanner's own publishes are tagged
+        # source=scanner and skipped here (loopback would double-persist;
+        # paho-mqtt + brokers like NanoMQ deliver a publisher's own
+        # messages back to it).
+        client.subscribe(TOPICS.get('ble_detection', 'drifter/ble/detection'))
         client.on_message = self._on_mqtt
         client.loop_start()
         self._mqtt = client
@@ -257,6 +264,37 @@ class BLEScanner:
             return
         if msg.topic == TOPICS.get('gps_fix', 'drifter/gps/fix'):
             self.gps.update(payload)
+            return
+        if msg.topic == TOPICS.get('ble_detection', 'drifter/ble/detection'):
+            self._persist_external_detection(payload)
+            return
+
+    def _persist_external_detection(self, payload: dict) -> None:
+        """Persist a detection that came in via MQTT from an outside
+        source (synthetic mosquitto_pub during a smoke test, future
+        sensor bridges). Skips the scanner's own loopbacked publishes
+        (tagged source=scanner)."""
+        if not isinstance(payload, dict):
+            return
+        if payload.get('source') == 'scanner':
+            return
+        if self._history is None:
+            return
+        det = dict(payload)
+        det.setdefault('ts', time.time())
+        det.setdefault('drive_id', ble_history.current_drive_id())
+        # Map the gate-10 wire shape: {"name": ...} → adv_name.
+        if 'adv_name' not in det and 'name' in det:
+            det['adv_name'] = det.pop('name')
+        try:
+            ble_history.insert_detection(self._history, det)
+            ble_history.touch_drive_id()
+            log.info(
+                f"persisted external detection: {det.get('target')} "
+                f"{det.get('mac')}"
+            )
+        except Exception as e:
+            log.warning(f"external detection persist failed: {e}")
 
     def _detection_callback(self, device, advertisement_data):
         mac = device.address or ''
@@ -301,6 +339,10 @@ class BLEScanner:
                 'raw_advertisement': mfr_blob_hex,
                 'vivi_alert': bool(target['vivi_alert']) and is_alert,
                 'drive_id': ble_history.current_drive_id(),
+                # Marks this as a scanner-originated detection so the
+                # MQTT loopback subscriber (Phase 4.7) doesn't persist
+                # it twice.
+                'source': 'scanner',
             }
             self._record_detection(detection)
             log.info(

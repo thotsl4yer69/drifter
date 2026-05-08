@@ -167,6 +167,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     """Route HTTP requests to one of the small endpoint methods below."""
 
     # ─── GET ──────────────────────────────────────────────────────────
+    # HEAD requests fall through SimpleHTTPRequestHandler.do_HEAD by
+    # default, which only knows how to serve files — it doesn't see
+    # the _EXACT_GET_ROUTES table, so /api/* and /map/* return 404 to
+    # `curl -I`. Route HEAD through the same dispatcher; the response
+    # body is sent (technically wasteful) but every client that uses
+    # HEAD ignores it, and the alternative is duplicating every route.
+    def do_HEAD(self) -> None:
+        self.do_GET()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         # Exact-path routes first (cheapest lookup).
