@@ -922,6 +922,28 @@ def on_message(client, userdata, msg) -> None:
         # Phase 5 — drone signal heads-up. Wired for when the Coral TPU
         # RF pipeline lands; until then the topic is silent.
         _maybe_unprompted_comment(3, "Drone signal detected.")
+    elif topic == TOPICS.get('rf_adsb'):
+        # Phase 5.1 — low-altitude-aircraft fallback for the police-
+        # helicopter heuristic. We don't have a vehicle GPS publisher
+        # yet so the "within 1km" check from the spec is impossible;
+        # altitude alone is the next-best proxy. Anything seen at
+        # <1500ft is rare-ish in normal traffic and worth surfacing.
+        # Stale retained payloads (>120s) are skipped so the heads-up
+        # doesn't fire on every (re)connect.
+        if isinstance(payload, dict):
+            try:
+                payload_ts = float(payload.get('ts', 0) or 0)
+            except (TypeError, ValueError):
+                payload_ts = 0
+            if payload_ts and (time.time() - payload_ts) > 120:
+                return
+            aircraft = payload.get('aircraft') or []
+            low = [a for a in aircraft
+                   if isinstance(a, dict)
+                   and a.get('altitude') is not None
+                   and 0 < float(a.get('altitude', 0)) < 1500]
+            if low:
+                _maybe_unprompted_comment(3, "Low aircraft overhead.")
 
 
 def _handle_text_query(query: str) -> None:
@@ -1054,6 +1076,9 @@ def main() -> None:
         # drone RF). Watchers/detectors publish here; vivi narrates.
         (TOPICS.get('adsb_police', 'drifter/adsb/police'), 0),
         (TOPICS.get('drone_detection', 'drifter/drone/detection'), 0),
+        # Phase 5.1 — low-altitude-aircraft fallback (no police-
+        # callsign DB yet; altitude < 1500ft surfaces choppers).
+        (TOPICS.get('rf_adsb', 'drifter/rf/adsb'), 0),
     ])
     _mqtt_client.loop_start()
 

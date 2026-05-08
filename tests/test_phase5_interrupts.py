@@ -110,6 +110,50 @@ def test_drone_topic_triggers_when_published(vivi_module):
     assert any(m == 'Drone signal detected.' for _, m in vivi_module._captured_calls)
 
 
+def test_low_altitude_aircraft_triggers_heads_up(vivi_module):
+    """Phase 5.1 — without a police-callsign DB, any aircraft seen
+    below 1500ft surfaces as a casual heads-up."""
+    msg = MagicMock()
+    msg.topic = 'drifter/rf/adsb'
+    msg.payload = json.dumps({
+        'ts': time.time(),
+        'aircraft': [
+            {'flight': 'POL01', 'altitude': 800, 'speed': 90},
+            {'flight': 'CXA9012', 'altitude': 38000, 'speed': 460},
+        ],
+    }).encode()
+    vivi_module.on_message(None, None, msg)
+    assert any(m == 'Low aircraft overhead.' for _, m in vivi_module._captured_calls)
+
+
+def test_high_altitude_aircraft_does_not_trigger(vivi_module):
+    """Cruising commercial traffic is irrelevant — only sub-1500ft
+    contacts surface."""
+    msg = MagicMock()
+    msg.topic = 'drifter/rf/adsb'
+    msg.payload = json.dumps({
+        'ts': time.time(),
+        'aircraft': [{'flight': 'CXA9012', 'altitude': 38000, 'speed': 460}],
+    }).encode()
+    vivi_module.on_message(None, None, msg)
+    msgs = [m for _, m in vivi_module._captured_calls]
+    assert 'Low aircraft overhead.' not in msgs
+
+
+def test_stale_retained_adsb_payload_does_not_trigger(vivi_module):
+    """rf_adsb is published RETAINED so vivi sees the latest value on
+    every connect — but a low-aircraft heads-up that fired 10 minutes
+    ago shouldn't re-fire on reconnect. Skip stale payloads (>120s)."""
+    msg = MagicMock()
+    msg.topic = 'drifter/rf/adsb'
+    msg.payload = json.dumps({
+        'ts': time.time() - 600,  # 10 minutes old
+        'aircraft': [{'flight': 'POL01', 'altitude': 800}],
+    }).encode()
+    vivi_module.on_message(None, None, msg)
+    assert vivi_module._captured_calls == []
+
+
 # ── Cooldown / per-drive cap (exercised against the real
 # _maybe_unprompted_comment, not the captured stub) ────────────────
 
@@ -120,16 +164,14 @@ def test_interrupt_respects_global_cooldown(monkeypatch):
     import vivi
     monkeypatch.setattr(vivi, '_last_unprompted_ts', 0.0)
     monkeypatch.setattr(vivi, '_unprompted_count', 0)
-    # Stub the downstream dispatch so the test doesn't speak.
-    dispatched = []
-
-    def fake_publish_response(*_a, **_kw):
-        dispatched.append(time.time())
-    monkeypatch.setattr(vivi, '_publish_response', fake_publish_response)
-    # The real _maybe_unprompted_comment may emit via TTS / MQTT — stub
-    # only the side effects, keep the cooldown gate.
-    if hasattr(vivi, '_dispatch_unprompted'):
-        monkeypatch.setattr(vivi, '_dispatch_unprompted', lambda *a, **k: dispatched.append(1))
+    # Stub the downstream worker so it doesn't try to reach Ollama /
+    # piper / MQTT during the test. _maybe_unprompted_comment spawns a
+    # daemon thread; without these stubs, the thread blocks on ask_vivi
+    # for the full session duration.
+    monkeypatch.setattr(vivi, 'ask_vivi', lambda *a, **k: 'stub')
+    monkeypatch.setattr(vivi, '_publish_response', lambda *a, **k: None)
+    monkeypatch.setattr(vivi, '_publish_status',  lambda *a, **k: None)
+    monkeypatch.setattr(vivi, 'speak',            lambda *a, **k: None)
 
     vivi.on_message(None, None, _ble_msg(target='axon-class', rssi=-65))
     first_ts = vivi._last_unprompted_ts
@@ -148,7 +190,10 @@ def test_interrupt_respects_per_drive_cap(monkeypatch):
     import vivi
     monkeypatch.setattr(vivi, '_last_unprompted_ts', 0.0)
     monkeypatch.setattr(vivi, '_unprompted_count', vivi.UNPROMPTED_MAX_PER_SESSION)
+    monkeypatch.setattr(vivi, 'ask_vivi', lambda *a, **k: 'stub')
     monkeypatch.setattr(vivi, '_publish_response', lambda *a, **k: None)
+    monkeypatch.setattr(vivi, '_publish_status',  lambda *a, **k: None)
+    monkeypatch.setattr(vivi, 'speak',            lambda *a, **k: None)
 
     vivi.on_message(None, None, _ble_msg(target='axon-class', rssi=-65))
     # Count stays at the cap (no further increments allowed).

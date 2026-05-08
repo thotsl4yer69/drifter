@@ -1062,6 +1062,49 @@ details[open] summary::before{content:"▾ "}
   box-shadow:0 0 6px var(--accent-glow);
 }
 
+/* Cockpit-side disconnect cue. body.cp-disconnected toggled by the
+   WS onopen/onclose handlers. Subtle red bar across the bottom of
+   the top strip — louder than the MQTT dot, quieter than a modal. */
+@media (min-width: 1400px){
+  body.cp-disconnected .cp-top{
+    box-shadow:inset 0 -2px 0 var(--red);
+    background:linear-gradient(180deg,var(--bg-elev),rgba(248,113,113,.08));
+  }
+  body.cp-disconnected .cp-top::after{
+    content:"DISCONNECTED · retrying";
+    position:absolute;left:50%;transform:translateX(-50%);
+    bottom:2px;font-size:9px;letter-spacing:2px;color:var(--red);
+    text-shadow:0 0 6px var(--red-glow);
+    animation:cp-disc-pulse 1.5s ease-in-out infinite;
+    pointer-events:none;
+  }
+  .cp-top{position:relative}
+}
+@keyframes cp-disc-pulse{
+  0%,100%{opacity:1}
+  50%{opacity:.55}
+}
+
+/* CLEAR button — secondary, less prominent than ASK */
+.cp-clear{
+  margin-top:8px;width:100%;
+  background:transparent;
+  border-color:var(--border);
+  color:var(--text-mute);
+  font-size:10px;letter-spacing:2px;padding:8px;
+}
+.cp-clear:hover{
+  color:var(--red);
+  border-color:var(--red);
+}
+
+/* Conversation rocker, embedded in the cockpit ASK panel — full
+   width with a tighter top margin than the legacy panel uses. */
+#cp-conv-mode{
+  margin-top:10px;
+  width:100%;
+}
+
 </style>
 </head>
 <body>
@@ -1120,6 +1163,31 @@ details[open] summary::before{content:"▾ "}
         <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Fuel trims</button>
         <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Next service</button>
       </div>
+      <!-- Conversation rocker — second instance. _setConvMode finds
+           every .conv-switch + .conv-mode and flips them together so
+           this stays in sync with the legacy panel. -->
+      <div class="conv-mode" id="cp-conv-mode" role="group" aria-labelledby="cp-conv-mode-lbl">
+        <div class="conv-mode-row">
+          <span id="cp-conv-mode-lbl" class="conv-mode-label">CONVERSATION</span>
+          <button type="button" class="conv-switch" id="cp-conv-toggle"
+                  aria-pressed="false" aria-label="Conversation mode: standby"
+                  onclick="toggleConversationMode(!this.classList.contains('on'))">
+            <span class="conv-track" aria-hidden="true">
+              <span class="conv-track-stripes"></span>
+              <span class="conv-pos conv-pos-stby">STBY</span>
+              <span class="conv-pos conv-pos-live">LIVE</span>
+              <span class="conv-thumb"></span>
+            </span>
+            <span class="conv-led" aria-hidden="true">
+              <span class="conv-led-core"></span>
+            </span>
+          </button>
+          <span class="conv-status" data-conv-status>STANDBY</span>
+        </div>
+      </div>
+      <button class="cp-btn cp-clear" onclick="clearConversation();
+              const t=document.getElementById('cp-transcript');
+              if(t) t.innerHTML='<div class=\'cp-tx-line cp-tx-vivi\'>Cleared. Ask away.</div>';">CLEAR</button>
     </div>
 
     <!-- CENTER — Map (the anchor) -->
@@ -1980,6 +2048,9 @@ function connect(){
   ws.onopen = ()=>{
     wsRetryDelay = 2000; // Reset backoff on success
     document.getElementById('dc-overlay').classList.add('hidden');
+    // Phase 5.1 — cockpit equivalent (top-strip MQTT dot already
+    // tracks /healthz, but the WS link is separate; surface its state).
+    document.body.classList.remove('cp-disconnected');
     document.getElementById('dot-conn').className='status-dot dot-ok';
     document.getElementById('conn-text').textContent='LIVE';
     showToast('Connected to DRIFTER', 'success', 2000);
@@ -1989,6 +2060,7 @@ function connect(){
   };
   ws.onclose = ()=>{
     document.getElementById('dc-overlay').classList.remove('hidden');
+    document.body.classList.add('cp-disconnected');
     document.getElementById('dot-conn').className='status-dot dot-off';
     document.getElementById('conn-text').textContent='OFFLINE';
     const retryEl = document.getElementById('dc-retry');
@@ -2486,15 +2558,20 @@ function chipAsk(el){
 // localStorage; backend state lives in a retained MQTT message
 // published by the POST /api/vivi/conversation_mode endpoint.
 function _setConvMode(on){
-  const sw=document.getElementById('conv-toggle');
-  const wrap=document.getElementById('conv-mode');
-  const status=document.getElementById('conv-status');
-  if(!sw||!wrap) return;
-  sw.classList.toggle('on',!!on);
-  wrap.classList.toggle('on',!!on);
-  sw.setAttribute('aria-pressed',on?'true':'false');
-  sw.setAttribute('aria-label','Conversation mode: '+(on?'live':'standby'));
-  if(status) status.textContent=on?'LIVE · auto-listen':'STANDBY';
+  // Phase 5 — cockpit duplicates the rocker. Find every panel + every
+  // switch + every status line, flip them in lockstep so the legacy
+  // and cockpit layouts stay synced regardless of which one is active.
+  document.querySelectorAll('.conv-switch').forEach(sw=>{
+    sw.classList.toggle('on',!!on);
+    sw.setAttribute('aria-pressed',on?'true':'false');
+    sw.setAttribute('aria-label','Conversation mode: '+(on?'live':'standby'));
+  });
+  document.querySelectorAll('.conv-mode').forEach(wrap=>{
+    wrap.classList.toggle('on',!!on);
+  });
+  document.querySelectorAll('.conv-status, [data-conv-status]').forEach(el=>{
+    el.textContent = on?'LIVE · auto-listen':'STANDBY';
+  });
 }
 function toggleConversationMode(on){
   _setConvMode(on);
