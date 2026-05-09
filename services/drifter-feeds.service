@@ -1,0 +1,25 @@
+[Unit]
+Description=MZ1312 DRIFTER Public Feeds Aggregator
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=drifter
+Group=drifter
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/feeds.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/drifter
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/drifter/state /run/readsb
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
