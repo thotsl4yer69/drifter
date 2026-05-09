@@ -499,6 +499,53 @@ def _format_persistent_contacts() -> Optional[str]:
     return value
 
 
+def _format_feed_context() -> Optional[str]:
+    """Read drifter-feeds aggregator output and produce a compact live-
+    context block: weather, EMV incidents, BOM warnings, interesting
+    aircraft. Empty when the file is missing, stale (>10min), or all
+    sub-sections are empty. Capped to ~2 KB to stay well under 500 tokens."""
+    try:
+        import json
+        from pathlib import Path
+        s = json.loads(Path('/opt/drifter/state/feeds_summary.json').read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    age = int(time.time() - float(s.get('ts', 0) or 0))
+    if age > 600:
+        return None
+    o = s.get('origin') or {}
+    src = o.get('source', '?')
+    radius = s.get('radius_km', '?')
+    parts = [f"[Live context — age {age}s, origin {src}, radius {radius}km]"]
+    w = s.get('weather') or {}
+    if any(w.get(k) is not None for k in ('temp_c', 'wind_kmh')):
+        parts.append(
+            f"Weather: {w.get('temp_c')}°C feels {w.get('feels_c')}°C, "
+            f"wind {w.get('wind_kmh')} km/h gust {w.get('gust_kmh')}, "
+            f"rain {w.get('rain_mm') or 0}mm"
+        )
+    inc = int(s.get('incidents_nearby') or 0)
+    parts.append(f"EMV incidents nearby: {inc}")
+    for it in (s.get('incidents_top') or [])[:3]:
+        parts.append(
+            f"  - {it.get('category1')} @ {it.get('location')} "
+            f"({it.get('distance_km')}km, status {it.get('status')})"
+        )
+    wc = int(s.get('warnings_count') or 0)
+    if wc:
+        parts.append(f"BOM VIC warnings: {wc}")
+        for it in (s.get('warnings_top') or [])[:2]:
+            parts.append(f"  - {it.get('title')}")
+    interesting = s.get('aircraft_interesting') or []
+    if interesting:
+        parts.append("Interesting aircraft nearby: " + ", ".join(
+            f"{a.get('flight') or a.get('hex')}@{a.get('distance_km')}km"
+            for a in interesting[:3]
+        ))
+    body = '\n'.join(parts)
+    return body[:2000]
+
+
 def _format_recent_alerts() -> Optional[str]:
     """Last 3 alerts within ALERT_FRESH_SEC, joined into a single line."""
     now = time.time()
@@ -562,6 +609,14 @@ def _build_context(query: str) -> str:
     persistent = _format_persistent_contacts()
     if persistent:
         parts.append(persistent)
+
+    # Live public-data feeds (weather, EMV incidents, BOM warnings,
+    # interesting aircraft). Written every 30s by drifter-feeds; a
+    # null result here means the feeds aggregator is offline or the
+    # snapshot is older than 10 minutes — stale-data safer than fake.
+    feeds = _format_feed_context()
+    if feeds:
+        parts.append(feeds)
 
     # Corpus hook — Phase 2 wires retrieval here. corpus_search returns
     # the single best chunk (or None). Format compresses topic + body into
