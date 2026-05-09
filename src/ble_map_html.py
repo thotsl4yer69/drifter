@@ -29,12 +29,11 @@ BLE_MAP_HTML = r"""<!DOCTYPE html>
 <style>
   :root { --bg:#000; --fg:#dcdcdc; --dim:#7a7a7a; --accent:#ffae42; --alert:#ff5151; }
   html,body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
-  #map { position:absolute; top:50px; bottom:0; left:0; right:0; background:#111; }
-  #bar {
-    position:absolute; top:0; left:0; right:0; height:50px; padding:8px 12px;
-    box-sizing:border-box; background:#0a0a0a; border-bottom:1px solid #222;
-    display:flex; gap:10px; align-items:center; font-size:12px; z-index:1000;
-  }
+  /* Iframe map fills the whole frame — the cockpit chip row above
+     drives layer toggles via postMessage, so the in-frame bar is
+     hidden to stop it visually colliding with the chips. */
+  #map { position:absolute; top:0; bottom:0; left:0; right:0; background:#111; }
+  #bar { display:none; }
   #bar h1 { margin:0; font-size:13px; letter-spacing:.1em; color:var(--accent); flex:0 0 auto; }
   #bar .spacer { flex:1; }
   #bar select, #bar button {
@@ -96,7 +95,30 @@ const TARGET_COLORS = { axon:'#ff5151', airtag:'#3b82f6', tile:'#22c55e' };
 function colorFor(t){ return TARGET_COLORS[t] || '#9ca3af'; }
 function esc(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
 
-const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([0, 0], 2);
+// Default centre: DRIFTER home (Long Gully). Replaced as soon as
+// /api/feeds/summary lands with the live origin (or a real GPS fix).
+const map = L.map('map', { zoomControl: true, worldCopyJump: true })
+  .setView([-36.7596, 144.2531], 11);
+
+// Track the last time the operator manually panned/zoomed. Auto-recenter
+// (origin updates, browser-geo broadcasts) is suppressed for 30s after
+// any manual interaction so the operator's view sticks.
+let _lastUserPanTs = 0;
+const PAN_DEBOUNCE_MS = 30000;
+map.on('dragstart zoomstart', () => { _lastUserPanTs = Date.now(); });
+function _canAutoRecenter(){
+  return (Date.now() - _lastUserPanTs) > PAN_DEBOUNCE_MS;
+}
+
+// On load, snap to the feeds-summary origin so first paint shows the
+// operator's actual region, not a degenerate (0,0) world view.
+fetch('/api/feeds/summary').then(r => r.ok ? r.json() : null).then(s => {
+  const o = s && s.origin;
+  if (o && typeof o.lat === 'number' && typeof o.lon === 'number') {
+    map.setView([o.lat, o.lon], 13);
+    renderOrigin(o.lat, o.lon, o.source || 'home');
+  }
+}).catch(() => {});
 
 // ── Basemaps ─────────────────────────────────────────────────────
 // OSM default (works without external sat tiles when offline-ish).
@@ -295,7 +317,11 @@ setInterval(loadAndRender, 60000);
 window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.type === 'recenter' && typeof d.lat === 'number' && typeof d.lng === 'number') {
-    map.setView([d.lat, d.lng], d.zoom || 14, { animate: true });
+    // Honour the same pan-debounce as origin updates — the operator's
+    // manual pan should stick over a stale browser-geo broadcast.
+    if (_canAutoRecenter()) {
+      map.setView([d.lat, d.lng], d.zoom || 14, { animate: true });
+    }
     if (!window._youPin) {
       window._youPin = L.circleMarker([d.lat, d.lng], {
         radius: 9, color:'#ffffff', fillColor:'#ffae42', fillOpacity:0.9,
@@ -324,7 +350,15 @@ window.addEventListener('message', (e) => {
     renderRadar(d.meta);
   }
   if (d.type === 'origin' && typeof d.lat === 'number' && typeof d.lon === 'number') {
-    renderOrigin(d.lat, d.lon, d.source||'home');
+    const newSource = d.source || 'home';
+    // Recenter only when the source flips (home↔gps) AND the operator
+    // hasn't manually panned in the last 30s. The pin always moves so
+    // the orange/grey marker is current regardless.
+    if (window._originSource !== newSource && _canAutoRecenter()) {
+      map.setView([d.lat, d.lon], 13, { animate: true });
+    }
+    window._originSource = newSource;
+    renderOrigin(d.lat, d.lon, newSource);
   }
 });
 
