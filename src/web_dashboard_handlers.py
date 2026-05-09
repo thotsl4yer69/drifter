@@ -203,6 +203,34 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
 
+    def _get_feeds_summary(self, parsed):
+        """Read /opt/drifter/state/feeds_summary.json (written every 30s
+        by drifter-feeds). Returns {} if absent so the dashboard can render
+        a clean empty state before the first poll cycle lands."""
+        path = Path('/opt/drifter/state/feeds_summary.json')
+        if not path.exists():
+            self._serve_json({})
+            return
+        try:
+            self._serve_json(json.loads(path.read_text()))
+        except (OSError, json.JSONDecodeError):
+            self._serve_json({})
+
+    def _get_radar_gif(self, parsed):
+        """Serve /opt/drifter/state/radar.gif written by drifter-feeds."""
+        path = Path('/opt/drifter/state/radar.gif')
+        if not path.exists():
+            self.send_error(404, 'radar not yet fetched')
+            return
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/gif')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
     def _get_ble_recent(self, parsed):
         """Last N BLE detections from the Phase 4.7 ble_history.db.
         Same hotspot-only ACL as /api/ble/history."""
@@ -747,6 +775,20 @@ def build_query_context(query: str) -> str:
     else:
         context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
 
+    # Live public-data feeds — same source the cockpit reads. We pull the
+    # vivi helper to keep the format identical between the voice path
+    # (vivi.py) and the dashboard query path (here). A None means the
+    # feeds aggregator is offline / stale (>10 min) and we omit cleanly.
+    try:
+        import vivi as _vivi
+        feed_block = _vivi._format_feed_context()
+        if feed_block:
+            context_parts.append("LIVE EXTERIOR CONTEXT (use these numbers verbatim "
+                                 "— do not invent or refer to coolant/engine):\n"
+                                 + feed_block)
+    except Exception as e:
+        log.debug(f"feed-context build failed: {e}")
+
     # Corpus retrieval — top 3 chunks ranked by cosine similarity.
     kb_lines = []
     for hit in corpus_search(query, k=3, min_similarity=0.4):
@@ -777,6 +819,8 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/ble/history':           DashboardHandler._get_ble_history,
     '/api/ble/drives':            DashboardHandler._get_ble_drives,
     '/api/ble/persistent':        DashboardHandler._get_ble_persistent,
+    '/api/feeds/summary':         DashboardHandler._get_feeds_summary,
+    '/api/radar.gif':             DashboardHandler._get_radar_gif,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
 }

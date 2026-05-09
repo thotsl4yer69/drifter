@@ -949,24 +949,6 @@ details[open] summary::before{content:"▾ "}
   background:var(--accent);color:#001519;border-color:var(--accent);
   text-shadow:none;
 }
-.cp-quickpicks{
-  margin-top:10px;width:100%;
-  display:flex;flex-wrap:wrap;gap:6px;
-}
-.cp-qp{
-  flex:1 1 calc(50% - 3px);
-  background:transparent;border:1px solid var(--border);
-  color:var(--text-dim);
-  padding:7px 10px;
-  font-family:inherit;font-size:11px;letter-spacing:.5px;
-  cursor:pointer;
-  transition:.14s;
-}
-.cp-qp:hover{
-  border-color:var(--accent);color:var(--accent);
-  text-shadow:0 0 4px var(--accent-glow);
-}
-
 /* CENTER — map */
 .cp-center{position:relative}
 .cp-map-toolbar{
@@ -1029,6 +1011,25 @@ details[open] summary::before{content:"▾ "}
   font-family:var(--font-mono);font-size:11px;line-height:1.6;
   color:var(--text-dim);
 }
+/* Attribution footer — bottom-left of map area, dim mono. */
+.cp-attr{
+  position:absolute;bottom:6px;left:8px;z-index:11;
+  pointer-events:none;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:1px;
+  color:var(--text-mute);opacity:.65;
+  background:color-mix(in srgb, var(--bg-elev) 70%, transparent);
+  border:1px solid var(--border);
+  padding:3px 8px;
+}
+/* Chip alert flash — short red border pulse for ble/alert/+. */
+.cp-chip[data-flash="1"]{
+  border-color:var(--red,#ff5151) !important;
+  box-shadow:0 0 8px var(--red,#ff5151);
+  color:var(--red,#ff5151) !important;
+}
+/* Incident/aircraft list rows — clickable to recenter map. */
+.cp-clk{cursor:pointer;padding:3px 0;border-bottom:1px solid var(--border);font-size:10px}
+.cp-clk:hover{background:color-mix(in srgb, var(--accent) 18%, transparent)}
 
 /* ENGINE STRIP */
 .cp-engine{
@@ -1203,7 +1204,7 @@ details[open] summary::before{content:"▾ "}
       </div>
       <div class="cp-state-label" id="cp-state-label">STANDBY</div>
       <div class="cp-transcript" id="cp-transcript">
-        <div class="cp-tx-line cp-tx-vivi">Vivi standing by. Ask anything.</div>
+        <div class="cp-tx-line cp-tx-vivi">Vivi online. Ask anything — she'll think it through.</div>
       </div>
       <div class="cp-controls">
         <input id="cp-ask-input" type="text"
@@ -1211,12 +1212,6 @@ details[open] summary::before{content:"▾ "}
                onkeydown="if(event.key==='Enter'){event.preventDefault();cpAsk();}"
                autocomplete="off">
         <button id="cp-ask-btn" onclick="cpAsk()" class="cp-btn cp-btn-primary">ASK</button>
-      </div>
-      <div class="cp-quickpicks">
-        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Safe to drive?</button>
-        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Explain alert</button>
-        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Fuel trims</button>
-        <button class="cp-qp" onclick="cpQuickAsk(this.textContent)">Next service</button>
       </div>
       <!-- Conversation rocker — second instance. _setConvMode finds
            every .conv-switch + .conv-mode and flips them together so
@@ -1254,6 +1249,10 @@ details[open] summary::before{content:"▾ "}
           <button class="cp-chip" data-layer="drone"   data-active="0">DRONE <span class="cp-chip-count" id="cp-count-drone">0</span></button>
           <button class="cp-chip" data-layer="ap"      data-active="0">AP <span class="cp-chip-count" id="cp-count-ap">0</span></button>
           <button class="cp-chip" data-layer="police"  data-active="1">PERSIST <span class="cp-chip-count" id="cp-count-police">0</span></button>
+          <button class="cp-chip" data-layer="incidents" data-active="1">INCIDENTS <span class="cp-chip-count" id="cp-count-incidents">0</span></button>
+          <button class="cp-chip" data-layer="poi"      data-active="0">POIs <span class="cp-chip-count" id="cp-count-poi">0</span></button>
+          <button class="cp-chip" data-layer="radar"    data-active="0">RADAR</button>
+          <button class="cp-chip" data-layer="weather"  data-active="1">WEATHER</button>
         </div>
       </div>
       <iframe class="cp-map-frame" id="cp-map-frame" src="/map/ble" title="DRIFTER map"></iframe>
@@ -1273,7 +1272,20 @@ details[open] summary::before{content:"▾ "}
         <div class="cp-panel-head">ADS-B AIRCRAFT <span class="cp-panel-count" id="cp-adsb-cnt">0</span></div>
         <div class="cp-panel-body" id="cp-adsb-body">No aircraft in range.</div>
       </div>
+      <div class="cp-panel">
+        <div class="cp-panel-head">INCIDENTS <span class="cp-panel-count" id="cp-inc-count">0</span></div>
+        <div class="cp-panel-body" id="cp-inc-body">No incidents reported.</div>
+      </div>
+      <div class="cp-panel">
+        <div class="cp-panel-head">WEATHER <span class="cp-panel-count" id="cp-wx-count">--</span></div>
+        <div class="cp-panel-body" id="cp-wx-body">No weather data.</div>
+      </div>
+      <div class="cp-panel">
+        <div class="cp-panel-head">INTERESTING AIRCRAFT <span class="cp-panel-count" id="cp-ix-count">0</span></div>
+        <div class="cp-panel-body" id="cp-ix-body">No flagged aircraft.</div>
+      </div>
     </div>
+    <div class="cp-attr" id="cp-attr">DATA: STATE OF VICTORIA (EMV) &middot; BOM &middot; OPENSTREETMAP &middot; ADSB.LOL</div>
   </section>
 
   <footer class="cp-engine">
@@ -1338,13 +1350,6 @@ details[open] summary::before{content:"▾ "}
   </span>
 </div>
 <div style="padding:6px 10px 12px;position:relative">
-  <div id="ask-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
-    <button class="chip" onclick="chipAsk(this)">Safe to drive?</button>
-    <button class="chip" onclick="chipAsk(this)">Explain my fuel trims</button>
-    <button class="chip" onclick="chipAsk(this)">What do my DTCs mean?</button>
-    <button class="chip" onclick="chipAsk(this)">Likely cause of alert?</button>
-    <button class="chip" onclick="chipAsk(this)">Next service items?</button>
-  </div>
   <div style="display:flex;gap:6px;margin-bottom:6px">
     <input id="ask-input" type="text" class="ask-input"
       placeholder="Ask Vivi anything about your X-Type&hellip;"
@@ -2105,6 +2110,219 @@ function handleMessage(msg){
     const txt = document.getElementById('vivi-text');
     if(txt) txt.textContent = data.status.toUpperCase();
   }
+  // ── Phase 3 feeds: EMV, ADS-B, POIs, BoM radar, weather, summary ──
+  else if(topic === 'drifter/feeds/emv/snapshot'){
+    handleEmvSnapshot(data || {});
+  }
+  else if(topic === 'drifter/feeds/aircraft/snapshot'){
+    handleAircraftSnapshot(data || {});
+  }
+  else if(topic === 'drifter/feeds/poi/stations'){
+    handlePoiSnapshot(data || {});
+  }
+  else if(topic === 'drifter/feeds/bom/radar'){
+    handleRadarMeta(data || {});
+  }
+  else if(topic === 'drifter/feeds/bom/warnings'){
+    /* no panel update — leave the WEATHER panel for /weather/current */
+  }
+  else if(topic === 'drifter/feeds/weather/current'){
+    handleWeatherCurrent(data || {});
+  }
+  else if(topic === 'drifter/feeds/summary'){
+    handleFeedsSummary(data || {});
+  }
+  // ── Phase 3 BLE: live + persist + alert flash ──
+  else if(topic === 'drifter/ble/detection'){
+    handleBleDetection(data || {});
+  }
+  else if(topic === 'drifter/ble/persist'){
+    handleBlePersist(data || {});
+  }
+  else if(topic && topic.indexOf('drifter/ble/alert/') === 0){
+    flashChip('ble');
+  }
+}
+
+// ── Phase 3: feeds + BLE WS handlers ──────────────────────────────
+function _mapPost(payload){
+  const frame = document.getElementById('cp-map-frame');
+  if(frame && frame.contentWindow){
+    try{ frame.contentWindow.postMessage(payload, '*'); }catch(e){}
+  }
+}
+function flashChip(layer){
+  const chip = document.querySelector('.cp-chip[data-layer="'+layer+'"]');
+  if(!chip) return;
+  chip.dataset.flash = '1';
+  setTimeout(()=>{ try{ delete chip.dataset.flash; }catch(e){ chip.dataset.flash='0'; } }, 2000);
+}
+function handleEmvSnapshot(d){
+  const items = Array.isArray(d.items) ? d.items : [];
+  const cnt = (typeof d.count === 'number') ? d.count : items.length;
+  const cChip = document.getElementById('cp-count-incidents');
+  const cPanel = document.getElementById('cp-inc-count');
+  if(cChip) cChip.textContent = cnt;
+  if(cPanel) cPanel.textContent = cnt;
+  const body = document.getElementById('cp-inc-body');
+  if(body){
+    if(!items.length){ body.textContent = 'No incidents reported.'; }
+    else{
+      const top5 = items.slice(0,5);
+      body.innerHTML = top5.map((it, i)=>{
+        const cat1 = esc(it.category1 || it.category || '?');
+        const loc  = esc(it.location || it.suburb || '');
+        const dist = (typeof it.distance_km === 'number') ? it.distance_km.toFixed(1)+' km' : '';
+        const stat = esc(it.status || it.sourceOrg || '');
+        const lat = (typeof it.lat === 'number') ? it.lat : null;
+        const lng = (typeof it.lng === 'number') ? it.lng : (typeof it.lon === 'number' ? it.lon : null);
+        const onclk = (lat!=null && lng!=null) ? ` data-lat="${lat}" data-lng="${lng}" onclick="cpRecenter(this)"` : '';
+        return `<div class="cp-clk"${onclk}>
+          <span style="color:var(--accent);font-weight:bold">${cat1}</span>
+          <span style="color:var(--text-mute)"> · ${loc}</span>
+          <span style="float:right;color:var(--text-mute)">${dist}</span>
+          <div style="color:var(--text-dim);font-size:9px">${stat}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+  _mapPost({type:'incidents', items});
+}
+function handleAircraftSnapshot(d){
+  const ac = Array.isArray(d.aircraft) ? d.aircraft : (Array.isArray(d.items) ? d.items : []);
+  const cnt = (typeof d.count === 'number') ? d.count : ac.length;
+  const ce = document.getElementById('cp-count-adsb');
+  if(ce) ce.textContent = cnt;
+  const cAdsbPanel = document.getElementById('cp-adsb-cnt');
+  if(cAdsbPanel) cAdsbPanel.textContent = cnt;
+  const interesting = ac.filter(a=>a && a.interesting === true);
+  const cIx = document.getElementById('cp-ix-count');
+  if(cIx) cIx.textContent = interesting.length;
+  const body = document.getElementById('cp-ix-body');
+  if(body){
+    if(!interesting.length){ body.textContent = 'No flagged aircraft.'; }
+    else{
+      body.innerHTML = interesting.slice(0,8).map(a=>{
+        const id = esc(a.flight || a.hex || '?');
+        const alt = (a.altitude!=null) ? Math.round(a.altitude)+' ft' : '?';
+        const dist = (typeof a.distance_km === 'number') ? a.distance_km.toFixed(1)+' km' : '';
+        const lat = (typeof a.lat === 'number') ? a.lat : null;
+        const lng = (typeof a.lng === 'number') ? a.lng : (typeof a.lon === 'number' ? a.lon : null);
+        const onclk = (lat!=null && lng!=null) ? ` data-lat="${lat}" data-lng="${lng}" onclick="cpRecenter(this)"` : '';
+        return `<div class="cp-clk"${onclk}>
+          <span style="color:var(--red,#ff5151);font-weight:bold">${id}</span>
+          <span style="color:var(--text-mute)"> · ${esc(alt)}</span>
+          <span style="float:right;color:var(--text-mute)">${dist}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+  _mapPost({type:'aircraft', items: ac});
+}
+function handlePoiSnapshot(d){
+  const items = Array.isArray(d.items) ? d.items : [];
+  const cnt = (typeof d.count === 'number') ? d.count : items.length;
+  const ce = document.getElementById('cp-count-poi');
+  if(ce) ce.textContent = cnt;
+  _mapPost({type:'poi', items});
+}
+let _cpRadarTimer = null;
+function _radarRefresh(){
+  const img = document.getElementById('cp-wx-radar');
+  if(img){ img.src = '/api/radar.gif?t=' + Date.now(); }
+}
+function handleRadarMeta(d){
+  _radarRefresh();
+  _mapPost({type:'radar', meta: d || {}});
+  if(!_cpRadarTimer){
+    _cpRadarTimer = setInterval(_radarRefresh, 600000);
+  }
+}
+function handleWeatherCurrent(d){
+  const body = document.getElementById('cp-wx-body');
+  const cnt  = document.getElementById('cp-wx-count');
+  const tc = (typeof d.temp_c === 'number') ? d.temp_c : null;
+  if(cnt) cnt.textContent = (tc!=null) ? Math.round(tc)+'°' : '--';
+  if(body){
+    const fc = (typeof d.feels_c === 'number') ? d.feels_c.toFixed(1) : '--';
+    const wk = (typeof d.wind_kmh === 'number') ? d.wind_kmh.toFixed(0) : '--';
+    const gk = (typeof d.gust_kmh === 'number') ? d.gust_kmh.toFixed(0) : '--';
+    const rm = (typeof d.rain_mm === 'number') ? d.rain_mm.toFixed(1) : '--';
+    const txt = `${tc!=null?tc.toFixed(1):'--'}°C feels ${fc}°C · wind ${wk} km/h gust ${gk} · rain ${rm} mm`;
+    let html = '<div>' + esc(txt) + '</div>';
+    html += '<img id="cp-wx-radar" src="/api/radar.gif?t=' + Date.now() + '" style="width:100%;border:1px solid var(--border);margin-top:6px" alt="BoM radar">';
+    body.innerHTML = html;
+  } else {
+    _radarRefresh();
+  }
+}
+function handleFeedsSummary(d){
+  // Seed initial state from the summary fan-out so panels populate
+  // before the first per-topic snapshot lands.
+  if(d && d.emv)        handleEmvSnapshot(d.emv);
+  if(d && d.aircraft)   handleAircraftSnapshot(d.aircraft);
+  if(d && d.poi)        handlePoiSnapshot(d.poi);
+  if(d && d.weather)    handleWeatherCurrent(d.weather);
+  if(d && d.radar)      handleRadarMeta(d.radar);
+}
+const _bleLive = [];
+function _bleSeverityColor(sev){
+  const s = (sev||'').toLowerCase();
+  if(s==='high'||s==='critical') return 'var(--red,#ff5151)';
+  if(s==='medium'||s==='med')    return 'var(--amber,#fbbf24)';
+  return 'var(--text-mute)';
+}
+function handleBleDetection(d){
+  _bleLive.unshift(d);
+  if(_bleLive.length > 30) _bleLive.length = 30;
+  const cnt = document.getElementById('cp-ble-count');
+  if(cnt) cnt.textContent = _bleLive.length;
+  const cChip = document.getElementById('cp-count-ble');
+  if(cChip) cChip.textContent = _bleLive.length;
+  const body = document.getElementById('cp-ble-body');
+  if(body){
+    body.innerHTML = _bleLive.map(b=>{
+      const col = _bleSeverityColor(b.severity);
+      const tgt = esc(b.target || '?');
+      const mac = esc(String(b.mac||'').slice(0,17));
+      const rssi = (b.rssi!=null) ? esc(b.rssi)+'dBm' : '';
+      const nm = b.name ? ' · ' + esc(b.name) : '';
+      return `<div style="padding:2px 0;font-size:10px">
+        <span style="color:${col};font-weight:bold">${tgt}</span>
+        <span style="color:var(--text-mute);margin-left:6px">${mac}</span>${nm}
+        <span style="float:right;color:var(--text-mute)">${rssi}</span>
+      </div>`;
+    }).join('');
+  }
+}
+const _blePersist = new Map();
+function handleBlePersist(d){
+  if(!d || !d.mac) return;
+  _blePersist.set(d.mac, d);
+  const cnt = document.getElementById('cp-pp-count');
+  if(cnt) cnt.textContent = _blePersist.size;
+  const cChip = document.getElementById('cp-count-police');
+  if(cChip) cChip.textContent = _blePersist.size;
+  const body = document.getElementById('cp-pp-body');
+  if(body){
+    const rows = Array.from(_blePersist.values()).slice(0, 30);
+    body.innerHTML = rows.map(c=>{
+      const tgt = esc(c.target || '?');
+      const mac = esc(String(c.mac||'').slice(0,17));
+      const drives = (c.drives!=null) ? c.drives : (c.seen_drives!=null ? c.seen_drives : '?');
+      return `<div style="padding:2px 0;font-size:10px">
+        <span style="color:var(--accent);font-weight:bold">${tgt}</span>
+        <span style="color:var(--text-mute);margin-left:6px">${mac}</span>
+        <span style="float:right;color:var(--text-mute)">${esc(drives)} drives</span>
+      </div>`;
+    }).join('');
+  }
+}
+function cpRecenter(el){
+  if(!el) return;
+  const lat = parseFloat(el.dataset.lat), lng = parseFloat(el.dataset.lng);
+  if(isNaN(lat) || isNaN(lng)) return;
+  _mapPost({type:'recenter', lat, lng});
 }
 
 // ── WebSocket Connection (exponential backoff) ──
@@ -2608,15 +2826,6 @@ function askMechanic(){
   _submitQuery(q);
 }
 
-// Quick-pick chip — highlight it, fill the input, and submit immediately
-function chipAsk(el){
-  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
-  const q=el.textContent;
-  document.getElementById('ask-input').value=q;
-  _submitQuery(q);
-}
-
 // CONVERSATION MODE — cockpit rocker. Visual state lives in classes
 // on #conv-toggle (the switch button) and #conv-mode (the panel
 // wrapper, which carries the status-text accent rule). Persisted in
@@ -2672,7 +2881,6 @@ function clearConversation(){
   const meta=document.getElementById('ask-meta');
   if(out){out.style.color='var(--text)';out.textContent='Cleared. Ask away.';}
   if(meta) meta.textContent='';
-  document.querySelectorAll('.chip.active').forEach(c=>c.classList.remove('active'));
 }
 
 // Voice input via Web Speech API
@@ -2998,35 +3206,71 @@ async function cpRefreshConnDots(){
 setInterval(cpRefreshConnDots, 10000);
 cpRefreshConnDots();
 
-// Cockpit ASK
+// Cockpit ASK — streams tokens so the operator sees Vivi reason in
+// real time. Falls back to the non-streaming endpoint if the SSE
+// stream errors. Reuses the legacy /api/query/stream contract.
+let _cpBusy = false;
 async function cpAsk(){
+  if(_cpBusy) return;
   const inp = document.getElementById('cp-ask-input');
   const tx  = document.getElementById('cp-transcript');
   if(!inp||!tx) return;
   const q = inp.value.trim();
   if(!q) return;
+  _cpBusy = true;
   tx.innerHTML += `<div class="cp-tx-line cp-tx-op">› ${esc(q)}</div>`;
   inp.value = '';
   if(typeof setViviState==='function') setViviState('thinking');
+
+  // Live "thinking" placeholder — replaced as tokens stream in.
+  const live = document.createElement('div');
+  live.className = 'cp-tx-line cp-tx-vivi';
+  live.innerHTML = '<span style="opacity:.6;animation:pulse 1.5s infinite">●●● thinking…</span>';
+  tx.appendChild(live);
   tx.scrollTop = tx.scrollHeight;
+
+  let answered = false;
   try{
-    const r = await fetch('/api/query',{
+    const resp = await fetch('/api/query/stream',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({query:q}),
     });
-    const d = await r.json();
-    const ans = d.response || d.error || '(no response)';
-    tx.innerHTML += `<div class="cp-tx-line cp-tx-vivi">${esc(ans)}</div>`;
-  }catch(e){
-    tx.innerHTML += `<div class="cp-tx-line cp-tx-vivi" style="color:var(--red)">Vivi unreachable.</div>`;
+    if(!resp.ok || !resp.body) throw new Error('no stream');
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      const chunk = decoder.decode(value, {stream:true});
+      for(const line of chunk.split('\n')){
+        if(!line.startsWith('data: ')) continue;
+        try{
+          const d = JSON.parse(line.slice(6));
+          if(d.error){ live.innerHTML = `<span style="color:var(--red)">${esc(d.error)}</span>`; answered = true; continue; }
+          if(d.token){ full += d.token; live.textContent = full; tx.scrollTop = tx.scrollHeight; answered = true; }
+        }catch(e){}
+      }
+    }
+    if(!answered) throw new Error('empty stream');
+  }catch(streamErr){
+    // Fallback to non-streaming query.
+    try{
+      const r = await fetch('/api/query',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:q}),
+      });
+      const d = await r.json();
+      const ans = d.response || d.error || '(no response)';
+      live.textContent = ans;
+    }catch(e){
+      live.innerHTML = '<span style="color:var(--red)">Vivi unreachable.</span>';
+    }
   }finally{
     if(typeof setViviState==='function') setViviState('idle');
     tx.scrollTop = tx.scrollHeight;
+    _cpBusy = false;
   }
-}
-function cpQuickAsk(text){
-  const inp = document.getElementById('cp-ask-input');
-  if(inp){inp.value = text; cpAsk();}
 }
 
 // State label — when setViviState changes, mirror into the cockpit
