@@ -2775,6 +2775,14 @@ function _submitQuery(q){
               const escText=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
               out.innerHTML=escText.replace(/\n/g,'<br>');
             }
+            // Phase 5.3 grounding intercept — overwrite rendered
+            // tokens with the canonical no-reading reply when the
+            // server flags a NO DATA sensor invention.
+            if(d.replace_text){
+              fullText=String(d.replace_text);
+              const escText=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              out.innerHTML=escText.replace(/\n/g,'<br>');
+            }
             if(d.done){
               model=d.model||'';
               tokens=d.tokens||0;
@@ -3262,6 +3270,15 @@ async function cpAsk(){
           const d = JSON.parse(line.slice(6));
           if(d.error){ live.innerHTML = `<span style="color:var(--red)">${esc(d.error)}</span>`; answered = true; continue; }
           if(d.token){ full += d.token; live.textContent = full; tx.scrollTop = tx.scrollHeight; answered = true; }
+          // Phase 5.3 grounding intercept — server validated the full
+          // response and detected a NO DATA sensor invention. Replace
+          // the rendered tokens with the canonical no-reading reply.
+          if(d.replace_text){
+            full = String(d.replace_text);
+            live.textContent = full;
+            tx.scrollTop = tx.scrollHeight;
+            answered = true;
+          }
         }catch(e){}
       }
     }

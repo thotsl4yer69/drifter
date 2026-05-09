@@ -145,14 +145,18 @@ def test_build_context_includes_fresh_telemetry(monkeypatch):
     assert 'Live telemetry' in ctx
 
 
-def test_build_context_omits_stale_telemetry(monkeypatch):
-    """Stale telemetry (>10s) is dropped entirely — no NO DATA marker."""
+def test_build_context_marks_stale_telemetry_no_data(monkeypatch):
+    """Stale telemetry (>10s old) must NOT leak its last-known value
+    into the prompt. Phase 5.3 grounding fix: emit NO DATA tags
+    instead of dropping the block silently — the model needs to SEE
+    the absence so it can't invent a fresh reading."""
     import vivi, time as _t
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 820})
     monkeypatch.setattr(vivi, '_telemetry_ts', _t.time() - 60)
     ctx = vivi._build_context("anything")
-    assert '820' not in ctx
-    assert 'Live telemetry' not in ctx
+    assert '820' not in ctx, "stale RPM value leaked into prompt"
+    assert 'RPM: NO DATA' in ctx
+    assert 'do NOT invent' in ctx
 
 
 def test_build_context_includes_driver_name(monkeypatch):
@@ -178,16 +182,18 @@ def test_build_context_includes_recent_alerts(monkeypatch):
     assert 'Coolant 110' in ctx
 
 
-def test_build_context_minimal_when_no_data(monkeypatch):
-    """No telemetry, no alerts → context is just driver + vehicle line.
-    No 'NOT AVAILABLE' filler — the persona prompt already covers it."""
+def test_build_context_emits_telemetry_block_when_no_data(monkeypatch):
+    """No telemetry, no alerts → context still emits the Live telemetry
+    block with NO DATA per sensor. Phase 5.3 grounding fix: the model
+    must see the absence rather than have to infer it."""
     import vivi
     from collections import deque
     monkeypatch.setattr(vivi, '_telemetry', {})
     monkeypatch.setattr(vivi, '_recent_alerts', deque(maxlen=3))
     ctx = vivi._build_context("hello")
-    assert 'NOT AVAILABLE' not in ctx
-    assert 'Live telemetry' not in ctx
+    assert 'Live telemetry' in ctx
+    assert 'Coolant: NO DATA' in ctx
+    assert 'RPM: NO DATA' in ctx
     assert 'Vehicle:' in ctx
 
 
@@ -327,3 +333,60 @@ def test_on_message_ignores_unknown_topics(monkeypatch):
     msg.topic = 'drifter/unknown/topic'
     msg.payload = b'{}'
     vivi.on_message(None, None, msg)  # must not raise
+
+
+# ── Phase 5.3 — hallucination guardrail ─────────────────────────────
+# Field-observed regression: user asked about GPS, the model replied
+# "Your coolant is at 95°C which suggests the thermostat may not be
+# working" while every engine gauge read --. The model invented
+# telemetry to satisfy its mechanic persona. Fix: prompt MUST emit
+# explicit NO DATA tags + a no-invention rule the model can SEE.
+# These tests assert the prompt SHAPE, not the model output.
+
+import re as _re_for_grounding
+
+_TELEMETRY_LABELS = ['RPM', 'Coolant', 'Battery', 'Speed',
+                     'STFT B1', 'STFT B2', 'LTFT B1', 'LTFT B2',
+                     'IAT', 'MAF']
+
+
+def test_vivi_context_emits_no_data_when_telemetry_empty(monkeypatch):
+    """vivi._build_context with empty _telemetry must include
+    explicit 'NO DATA' for every named sensor + a no-invention rule
+    the model can attend to. No example numeric readings allowed."""
+    import vivi
+    monkeypatch.setattr(vivi, '_telemetry', {})
+    monkeypatch.setattr(vivi, '_driver', {})
+    # Force corpus_search to no-op so it doesn't add unrelated text.
+    try:
+        import corpus
+        monkeypatch.setattr(corpus, 'corpus_search', lambda *a, **kw: [])
+    except ImportError:
+        pass
+    ctx = vivi._build_context("what's my coolant temperature?")
+    for label in _TELEMETRY_LABELS:
+        assert f"{label}: NO DATA" in ctx, f"missing NO DATA for {label}"
+    # The hallucination guardrail rule must appear at least once.
+    assert ('do NOT invent' in ctx or 'never estimate' in ctx.lower()
+            or 'NO DATA = no current reading' in ctx), \
+        "no-invention rule missing from context"
+    # And no numeric reading like "Coolant: 95" leaked in.
+    leak = _re_for_grounding.search(r'Coolant:\s*(?!NO DATA)\d', ctx)
+    assert not leak, f"numeric coolant value leaked into context: {leak!r}"
+
+
+def test_dashboard_query_context_emits_no_data_when_state_empty(monkeypatch):
+    """web_dashboard_handlers.build_query_context with empty
+    state.latest_state must emit NO DATA per sensor and a recency-
+    attended no-invention reminder."""
+    import web_dashboard_state as st
+    monkeypatch.setattr(st, 'latest_state', {})
+    from web_dashboard_handlers import build_query_context
+    prompt = build_query_context("what's my coolant temperature?")
+    for label in ['RPM', 'Coolant', 'Speed', 'Battery']:
+        assert f"{label}: NO DATA" in prompt, f"missing NO DATA for {label}"
+    assert 'do NOT invent' in prompt or 'Never estimate' in prompt, \
+        "no-invention rule missing from /api/query prompt"
+    leak = _re_for_grounding.search(r'Coolant:\s*(?!NO DATA)\d', prompt)
+    assert not leak, f"numeric coolant value leaked into context: {leak!r}"
+

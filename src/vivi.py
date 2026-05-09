@@ -558,6 +558,20 @@ def _format_recent_alerts() -> Optional[str]:
     return "Recent alerts:\n" + "\n".join(lines)
 
 
+# Single source of truth for the live-telemetry key→label→unit table.
+# Used by _build_context (to emit the prompt block) and by the Phase
+# 5.3 grounding validator (to decide which sensors are NO DATA).
+_TELEMETRY_KEY_MAP = [
+    ('rpm', 'RPM', ''), ('coolant', 'Coolant', '°C'),
+    ('voltage', 'Battery', 'V'), ('speed', 'Speed', 'km/h'),
+    ('load', 'Engine load', '%'),
+    ('stft1', 'STFT B1', '%'), ('stft2', 'STFT B2', '%'),
+    ('ltft1', 'LTFT B1', '%'), ('ltft2', 'LTFT B2', '%'),
+    ('iat', 'IAT', '°C'), ('maf', 'MAF', 'g/s'),
+]
+_TELEMETRY_KEY_LABELS = [(k, label) for k, label, _ in _TELEMETRY_KEY_MAP]
+
+
 def _build_context(query: str) -> str:
     """Assemble dynamic context blocks for the LLM. Each block is opt-in:
     we only include what's actually true right now, so a small LLM doesn't
@@ -573,21 +587,27 @@ def _build_context(query: str) -> str:
     # without the user having to remind her every turn).
     parts.append(f"Vehicle: {VEHICLE_YEAR} {VEHICLE_MODEL} {VEHICLE_ENGINE}")
 
-    # Live telemetry — only if fresh. Empty/stale → omit; do NOT emit a
-    # "NOT AVAILABLE" marker (the persona prompt covers no-telemetry case).
-    if _telemetry_fresh():
-        key_map = [
-            ('rpm', 'RPM', ''), ('coolant', 'Coolant', '°C'),
-            ('voltage', 'Battery', 'V'), ('speed', 'Speed', 'km/h'),
-            ('load', 'Engine load', '%'),
-            ('stft1', 'STFT B1', '%'), ('stft2', 'STFT B2', '%'),
-            ('ltft1', 'LTFT B1', '%'), ('ltft2', 'LTFT B2', '%'),
-            ('iat', 'IAT', '°C'), ('maf', 'MAF', 'g/s'),
-        ]
-        lines = [f"{label}: {_telemetry[k]}{unit}"
-                 for k, label, unit in key_map if k in _telemetry]
-        if lines:
-            parts.append("Live telemetry:\n" + '\n'.join(lines))
+    # Live telemetry — ALWAYS emit a block listing every named sensor.
+    # Sensors with no fresh value get an explicit NO DATA marker so the
+    # model SEES the absence and can't invent a number to satisfy its
+    # mechanic persona. This was a field-observed regression: the user
+    # asked about GPS, the model replied "Your coolant is at 95°C
+    # which suggests the thermostat may not be working" while every
+    # gauge read --. The persona prompt alone wasn't enough — the
+    # model needs to see "NO DATA" in the message it's reasoning over.
+    fresh = _telemetry_fresh()
+    tel_lines = []
+    for k, label, unit in _TELEMETRY_KEY_MAP:
+        if fresh and k in _telemetry:
+            tel_lines.append(f"{label}: {_telemetry[k]}{unit}")
+        else:
+            tel_lines.append(f"{label}: NO DATA")
+    parts.append(
+        "Live telemetry (NO DATA = no current reading; do NOT invent, "
+        "estimate, or infer a value for any sensor marked NO DATA):\n"
+        + '\n'.join(tel_lines)
+    )
+    if fresh:
         drive = _format_drive_state()
         if drive:
             parts.append(f"Drive state: {drive}")
@@ -634,6 +654,20 @@ def _build_context(query: str) -> str:
         pass  # corpus module not yet deployed
     except Exception as e:
         log.debug(f"corpus_search failed: {e}")
+
+    # Recency-attended reminder — qwen2.5 weights instructions later
+    # in the prompt more strongly. The static-spec loophole was real
+    # in field test: 1.5b read a "normal range" line from corpus and
+    # answered "Your coolant is at 95°C" with every gauge dark. The
+    # reminder explicitly forbids quoting a number for any NO DATA
+    # sensor regardless of source.
+    parts.append(
+        "REMINDER: If a sensor in the telemetry block above shows NO "
+        "DATA, you MUST respond that you don't have a current reading "
+        "for it. Do NOT state any specific number for that sensor — "
+        "not from a normal range, not from a static spec, not from a "
+        "reference. Never estimate, infer, or invent sensor values."
+    )
 
     return '\n\n'.join(parts)
 
@@ -779,6 +813,20 @@ def ask_vivi(query: str) -> str:
         else:
             _log_correction('opener_replace', response, None)
             response = "What about it? Ask me anything specific."
+
+    # Phase 5.3 grounding validator — backstop for the prompt-side
+    # NO DATA tags + reminder. If the model still cited a number for
+    # a sensor that's currently NO DATA, swap in a canonical "I don't
+    # have a current reading" reply.
+    try:
+        from vivi_grounding import validate, no_data_from_telemetry
+        no_data = no_data_from_telemetry(_telemetry, _TELEMETRY_KEY_LABELS,
+                                           _telemetry_fresh())
+        response, intercepted = validate(response, no_data)
+        if intercepted:
+            _log_correction('grounding_intercept', f'sensor={intercepted}', response)
+    except Exception as e:
+        log.debug(f"grounding validator skipped: {e}")
 
     response = _strip_markdown(response)
     _record_turn('user', query)

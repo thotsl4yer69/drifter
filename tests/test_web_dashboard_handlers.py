@@ -49,9 +49,15 @@ def test_build_query_context_includes_telemetry(monkeypatch):
 
 
 def test_build_query_context_with_no_telemetry():
+    """Empty latest_state → prompt emits explicit NO DATA per sensor +
+    a no-invention reminder. Phase 5.3 grounding fix replaces the old
+    collapsed 'No live telemetry — car may be off' line that the model
+    was happy to ignore."""
     state.latest_state.clear()
     prompt = h.build_query_context('anything')
-    assert 'No live telemetry' in prompt
+    assert 'RPM: NO DATA' in prompt
+    assert 'Coolant: NO DATA' in prompt
+    assert 'do NOT invent' in prompt or 'Never estimate' in prompt
 
 
 def test_build_query_context_includes_dtcs():

@@ -621,8 +621,23 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             prompt = self._build_query_context(query)
             import llm_client
             result = llm_client.query_chat(prompt)
+            text = result['text']
+            # Phase 5.3 grounding validator — second line of defence
+            # after the prompt-side NO DATA tags. Catches the case where
+            # the model still reads a static-spec range out of the KB
+            # and reports it as a live reading.
+            try:
+                from vivi_grounding import validate, no_data_from_state
+                no_data = no_data_from_state(state.latest_state,
+                                              _query_telemetry_keys())
+                text, intercepted = validate(text, no_data)
+                if intercepted:
+                    log.warning("Vivi /api/query grounding intercept "
+                                "(sensor=%s, query=%r)", intercepted, query[:80])
+            except Exception as e:
+                log.debug("grounding validator skipped: %s", e)
             self._serve_json({
-                'response': result['text'],
+                'response': text,
                 'model':    result['model'],
                 'tokens':   result['tokens'],
             })
@@ -646,10 +661,40 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Connection', 'keep-alive')
             self.end_headers()
             import llm_client
+            buffered = []
             for chunk in llm_client.stream_chat_ollama(prompt):
+                if chunk.get('token'):
+                    buffered.append(chunk['token'])
                 payload = json.dumps(chunk, default=str)
                 self.wfile.write(f"data: {payload}\n\n".encode())
                 self.wfile.flush()
+                # Phase 5.3 — when the stream completes, validate the
+                # buffered text. If the model hallucinated a NO DATA
+                # sensor reading, emit a final replace event so the
+                # client can overwrite the rendered tokens with the
+                # canonical no-reading reply.
+                if chunk.get('done'):
+                    try:
+                        from vivi_grounding import (
+                            validate, no_data_from_state)
+                        full = ''.join(buffered)
+                        no_data = no_data_from_state(
+                            state.latest_state, _query_telemetry_keys())
+                        safe, intercepted = validate(full, no_data)
+                        if intercepted:
+                            log.warning(
+                                "Vivi /api/query/stream grounding "
+                                "intercept (sensor=%s, query=%r)",
+                                intercepted, query[:80])
+                            replace = json.dumps(
+                                {'replace_text': safe,
+                                 'intercepted_sensor': intercepted})
+                            self.wfile.write(
+                                f"data: {replace}\n\n".encode())
+                            self.wfile.flush()
+                    except Exception as e:
+                        log.debug(
+                            "stream grounding validator skipped: %s", e)
         except Exception as e:
             log.warning("Stream query error: %s", e)
             try:
@@ -722,6 +767,28 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return build_query_context(query)
 
 
+_TELEMETRY_LINES = [
+    ('engine_rpm',      'RPM',      '{:.0f}'),
+    ('engine_coolant',  'Coolant',  '{:.1f}°C'),
+    ('vehicle_speed',   'Speed',    '{:.0f} km/h'),
+    ('engine_stft1',    'STFT B1',  '{:+.1f}%'),
+    ('engine_stft2',    'STFT B2',  '{:+.1f}%'),
+    ('engine_ltft1',    'LTFT B1',  '{:+.1f}%'),
+    ('engine_ltft2',    'LTFT B2',  '{:+.1f}%'),
+    ('power_voltage',   'Battery',  '{:.1f}V'),
+    ('engine_load',     'Load',     '{:.0f}%'),
+    ('vehicle_throttle','Throttle', '{:.0f}%'),
+    ('engine_iat',      'IAT',      '{:.0f}°C'),
+    ('engine_maf',      'MAF',      '{:.1f} g/s'),
+]
+
+
+def _query_telemetry_keys():
+    """Return [(state_key, label), ...] — single source of truth shared
+    between build_query_context and the grounding validator."""
+    return [(k, label) for k, label, _ in _TELEMETRY_LINES]
+
+
 def build_query_context(query: str) -> str:
     """Assemble the prompt the LLM sees when you ask a question in the UI.
 
@@ -732,29 +799,18 @@ def build_query_context(query: str) -> str:
         d = state.latest_state.get(key, {})
         return d.get('value') if isinstance(d, dict) else None
 
-    # Map of (state key, label, unit-format) so adding a new telemetry line
-    # is one table row instead of three. The format string controls both
-    # precision and unit — kept tight for LLM context economy.
-    TELEMETRY_LINES = [
-        ('engine_rpm',      'RPM',      '{:.0f}'),
-        ('engine_coolant',  'Coolant',  '{:.1f}°C'),
-        ('vehicle_speed',   'Speed',    '{:.0f} km/h'),
-        ('engine_stft1',    'STFT B1',  '{:+.1f}%'),
-        ('engine_stft2',    'STFT B2',  '{:+.1f}%'),
-        ('engine_ltft1',    'LTFT B1',  '{:+.1f}%'),
-        ('engine_ltft2',    'LTFT B2',  '{:+.1f}%'),
-        ('power_voltage',   'Battery',  '{:.1f}V'),
-        ('engine_load',     'Load',     '{:.0f}%'),
-        ('vehicle_throttle','Throttle', '{:.0f}%'),
-        ('engine_iat',      'IAT',      '{:.0f}°C'),
-        ('engine_maf',      'MAF',      '{:.1f} g/s'),
-    ]
+    TELEMETRY_LINES = _TELEMETRY_LINES
 
     telem_lines = []
     for key, label, fmt in TELEMETRY_LINES:
         v = _v(key)
         if v is not None:
             telem_lines.append(f"{label}: {fmt.format(v)}")
+        else:
+            # Explicit NO DATA — the model must SEE the absence rather
+            # than infer one. Closes the hallucination class where the
+            # LLM invented values to satisfy its mechanic persona.
+            telem_lines.append(f"{label}: NO DATA")
 
     dtc_data = state.latest_state.get('diag_dtc', {})
     if isinstance(dtc_data, dict):
@@ -770,10 +826,14 @@ def build_query_context(query: str) -> str:
             telem_lines.append(f"Active alert: {alert_msg}")
 
     context_parts = []
-    if telem_lines:
-        context_parts.append("CURRENT VEHICLE STATE:\n" + "\n".join(telem_lines))
-    else:
-        context_parts.append("CURRENT VEHICLE STATE: No live telemetry — car may be off")
+    # Telemetry is always emitted with explicit NO DATA markers — the
+    # model must see absent sensors rather than have to infer their
+    # absence from a vague "car may be off" line.
+    context_parts.append(
+        "CURRENT VEHICLE STATE (NO DATA = no current reading; do NOT "
+        "invent, estimate, or infer a value for any sensor marked "
+        "NO DATA):\n" + "\n".join(telem_lines)
+    )
 
     # Live public-data feeds — same source the cockpit reads. We pull the
     # vivi helper to keep the format identical between the voice path
@@ -797,6 +857,21 @@ def build_query_context(query: str) -> str:
         kb_lines.append(f"{topic}: {body}")
     if kb_lines:
         context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
+
+    # Recency-attended reminder — qwen2.5 weights instructions later in
+    # the prompt more strongly. The static-spec loophole was real:
+    # 1.5b read "normal coolant range 85-100°C" from the corpus and
+    # answered "Your coolant is at 95°C". The reminder now explicitly
+    # forbids quoting a number for a NO DATA sensor even if the
+    # knowledge base documents a normal range.
+    context_parts.append(
+        "REMINDER: If a sensor in the CURRENT VEHICLE STATE block above "
+        "shows NO DATA, you MUST respond that you don't have a current "
+        "reading for it. Do NOT state any specific number for that "
+        "sensor — not from a normal range, not from a static spec, "
+        "not from a knowledge-base reference. Never estimate, infer, "
+        "or invent sensor values."
+    )
 
     return query + ("\n\n---\n\n" + "\n\n".join(context_parts) if context_parts else "")
 
