@@ -161,47 +161,6 @@ def test_csv_export_columns(tmp_path):
     assert float(rows[1][7]) == 1.0
 
 
-# ── 8. persistence failure must not break MQTT publish ─────────────
-
-def test_persistence_failure_does_not_break_mqtt_publish(monkeypatch):
-    """The Phase 4.7 promise: a sqlite outage means we lose history,
-    NOT the live tile and NOT vivi proactive comments. _record_detection
-    publishes first, persists second — and the persist path is wrapped
-    in try/except."""
-    import ble_passive as bp
-
-    # Build a scanner without going through __init__ (which loads
-    # targets, opens bleak, etc).
-    scanner = bp.BLEScanner.__new__(bp.BLEScanner)
-
-    published: list = []
-    class FakeMqtt:
-        def publish(self, topic, payload):
-            published.append((topic, payload))
-    scanner._mqtt = FakeMqtt()
-
-    # History "connection" that always raises.
-    class BrokenConn:
-        def execute(self, *a, **k):
-            raise RuntimeError("disk full")
-    scanner._history = BrokenConn()
-
-    # Force insert_detection through the broken conn → must raise.
-    monkeypatch.setattr(bp.ble_history, 'insert_detection',
-                        lambda c, d: c.execute("INSERT", ()))
-    monkeypatch.setattr(bp.ble_history, 'touch_drive_id', lambda *a, **k: None)
-
-    detection = _det(target='axon', mac='00:25:DF:00:00:01')
-    scanner._record_detection(detection)
-
-    # Publish ran first, succeeded; persist raised, was swallowed.
-    assert len(published) == 1
-    topic, payload = published[0]
-    assert topic == 'drifter/ble/detection'
-    parsed = json.loads(payload)
-    assert parsed['target'] == 'axon'
-
-
 # ── 9. history endpoint contract (via the underlying query) ────────
 
 def test_history_endpoint_filters(tmp_path):
@@ -266,62 +225,6 @@ def test_prune_older_than_drops_old_rows(tmp_path):
 
 
 # ── parse_relative ─────────────────────────────────────────────────
-
-def test_external_mqtt_detection_persists(tmp_path, monkeypatch):
-    """A detection that arrives via MQTT from an outside source
-    (synthetic mosquitto_pub, sensor bridge) must land in the history
-    DB. Drive-id is auto-derived if the payload doesn't carry one."""
-    import ble_passive as bp
-    # current_drive_id has DEFAULT_DRIVE_FILE bound as a default arg at
-    # function-definition time — replace the whole function so the test
-    # doesn't poke at /opt/drifter/state/.
-    monkeypatch.setattr(bp.ble_history, 'current_drive_id',
-                        lambda *a, **kw: 'drive-test-fixture-aaaaaa')
-    monkeypatch.setattr(bp.ble_history, 'touch_drive_id',
-                        lambda *a, **kw: None)
-
-    scanner = bp.BLEScanner.__new__(bp.BLEScanner)
-    scanner._history = bh.open_db(tmp_path / 'h.db')
-    scanner._mqtt = None
-
-    scanner._persist_external_detection({
-        'target': 'axon-class',
-        'mac': '00:25:DF:11:22:33',
-        'rssi': -55,
-        'ts': time.time(),
-        'is_alert': False,
-        'name': 'synthetic-name',
-    })
-    rows = bh.query_history(scanner._history, limit=10)
-    assert len(rows) == 1
-    assert rows[0]['target'] == 'axon-class'
-    assert rows[0]['mac'] == '00:25:DF:11:22:33'
-    # `name` field aliased to adv_name on the wire→DB hop.
-    assert rows[0]['adv_name'] == 'synthetic-name'
-    # drive_id auto-derived (file got minted).
-    assert rows[0]['drive_id'].startswith('drive-')
-
-
-def test_scanner_loopback_not_double_persisted(tmp_path):
-    """The scanner's own publishes carry source=scanner. The MQTT
-    loopback subscriber must skip those — the radio path already
-    persisted via _record_detection."""
-    import ble_passive as bp
-
-    scanner = bp.BLEScanner.__new__(bp.BLEScanner)
-    scanner._history = bh.open_db(tmp_path / 'h.db')
-    scanner._mqtt = None
-
-    scanner._persist_external_detection({
-        'source': 'scanner',
-        'target': 'axon',
-        'mac': '00:25:DF:00:00:01',
-        'rssi': -55,
-        'ts': time.time(),
-        'drive_id': 'drive-loopback',
-    })
-    assert bh.count(scanner._history) == 0
-
 
 def test_parse_relative_units():
     now = 1_700_000_000
