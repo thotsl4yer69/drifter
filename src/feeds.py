@@ -79,7 +79,7 @@ UA = 'Mozilla/5.0 (X11; Linux aarch64) DRIFTER/1.0 +mz1312'
 UA_OVERPASS = 'drifter-feeds/1.0 (+mz1312)'
 
 EMV_URL     = 'https://data.emergency.vic.gov.au/Show?pageId=getIncidentJSON'
-BOM_WARN_URL = 'https://www.bom.gov.au/fwo/IDZ00056.warnings_vic.xml'
+BOM_WARN_URL = 'https://www.bom.gov.au/fwo/IDZ00059.warnings_vic.xml'
 BOM_RADAR_URL = 'https://www.bom.gov.au/radar/IDR023.gif'
 OPEN_METEO_URL = (
     'https://api.open-meteo.com/v1/forecast'
