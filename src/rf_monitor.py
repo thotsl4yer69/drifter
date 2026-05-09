@@ -516,8 +516,12 @@ def run_adsb_scan(mqtt_client):
 
     proc = None
     try:
+        # readsb (Kali's dump1090 fork) needs --device-type rtlsdr before
+        # the SDR-specific --device flag; the rest of the flags are
+        # compatible with dump1090's CLI.
         cmd = [
             DUMP1090_BIN,
+            '--device-type', 'rtlsdr',
             '--device', '0',
             '--no-interactive',
             '--quiet',

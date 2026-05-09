@@ -515,7 +515,7 @@ EMERGENCY_SCAN_DWELL = 5        # Seconds per frequency
 ADSB_SCAN_INTERVAL = 300        # ADS-B scan every 5 min (pauses TPMS)
 ADSB_SCAN_DURATION = 25         # Seconds to gather aircraft data
 ADSB_JSON_DIR = DRIFTER_DIR / 'data' / 'adsb'  # dump1090 write-json target
-DUMP1090_BIN = 'dump1090'       # or full path if needed
+DUMP1090_BIN = 'readsb'         # Kali ships readsb (modern dump1090 fork). Honours --write-json.
 
 # ── Wardrive ──
 WARDRIVE_LOG_DIR = DRIFTER_DIR / 'logs' / 'wardrive'
