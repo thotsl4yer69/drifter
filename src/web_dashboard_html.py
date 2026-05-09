@@ -2248,9 +2248,16 @@ function handleWeatherCurrent(d){
     const wk = (typeof d.wind_kmh === 'number') ? d.wind_kmh.toFixed(0) : '--';
     const gk = (typeof d.gust_kmh === 'number') ? d.gust_kmh.toFixed(0) : '--';
     const rm = (typeof d.rain_mm === 'number') ? d.rain_mm.toFixed(1) : '--';
-    const txt = `${tc!=null?tc.toFixed(1):'--'}°C feels ${fc}°C · wind ${wk} km/h gust ${gk} · rain ${rm} mm`;
-    let html = '<div>' + esc(txt) + '</div>';
-    html += '<img id="cp-wx-radar" src="/api/radar.gif?t=' + Date.now() + '" style="width:100%;border:1px solid var(--border);margin-top:6px" alt="BoM radar">';
+    let html = '';
+    html += '<div style="font-size:13px;color:var(--text);line-height:1.5">';
+    html += `<div><span style="color:var(--accent);font-size:18px;font-weight:700">${tc!=null?tc.toFixed(1):'--'}°C</span> · feels ${fc}°C</div>`;
+    html += `<div>wind <b>${wk}</b> km/h · gust <b>${gk}</b></div>`;
+    html += `<div>rain <b>${rm}</b> mm</div>`;
+    html += '</div>';
+    html += '<img id="cp-wx-radar" src="/api/radar.gif?t=' + Date.now() + '"'
+         + ' style="display:block;max-width:100%;max-height:120px;'
+         + 'object-fit:contain;border:1px solid var(--border);'
+         + 'margin-top:8px" alt="BoM radar">';
     body.innerHTML = html;
   } else {
     _radarRefresh();
@@ -2264,6 +2271,12 @@ function handleFeedsSummary(d){
   if(d && d.poi)        handlePoiSnapshot(d.poi);
   if(d && d.weather)    handleWeatherCurrent(d.weather);
   if(d && d.radar)      handleRadarMeta(d.radar);
+  // Forward origin so the iframe can pin + (debounced) recenter.
+  if(d && d.origin && typeof d.origin.lat === 'number'
+       && typeof d.origin.lon === 'number'){
+    _mapPost({type:'origin', lat:d.origin.lat, lon:d.origin.lon,
+              source:d.origin.source||'home'});
+  }
 }
 const _bleLive = [];
 function _bleSeverityColor(sev){
