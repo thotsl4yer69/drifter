@@ -104,10 +104,14 @@ def test_ask_vivi_passes_context_to_ollama(monkeypatch):
 # ── ask_vivi: fallback path ──
 
 def test_ask_vivi_falls_back_to_rag(monkeypatch):
-    """ask_vivi should return RAG result when Ollama is down."""
+    """ask_vivi should return RAG result when Ollama is down. The
+    fallback chain is corpus_search → kb_search; we stub corpus_search
+    to empty so the test exercises the kb_search branch."""
     import vivi
+    import corpus as _corpus
     monkeypatch.setattr(vivi, '_telemetry', {})
     monkeypatch.setattr(vivi, '_mqtt_client', None)
+    monkeypatch.setattr(_corpus, 'corpus_search', lambda *a, **kw: [])
     with patch('vivi._query_ollama', return_value=None):
         with patch('vivi.kb_search', return_value=[{
             'title': 'Coil Pack Failure',
