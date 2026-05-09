@@ -1,441 +1,454 @@
-#!/usr/bin/env python3
 """
-MZ1312 DRIFTER — Passive BLE Scanner (drifter-bleconv)
+MZ1312 DRIFTER — Passive BLE surveillance scanner v2
 
-Listens to BLE advertisements via BlueZ (bleak), matches against
-config/ble_targets.yaml, publishes hits to drifter/ble/detection,
-logs to /opt/drifter/state/ble-events.db. No probe requests, no
-connections, no transmissions — listening only.
+OUI-classified surveillance detection. Targets:
+  0025df → axon-class       (Axon Enterprise: body cams, TASER, Signal)
+  003044 → cradlepoint-class (Cradlepoint mobile router — police vehicle network)
+  00170d → cradlepoint-class (Cradlepoint mobile router — police vehicle network)
+  f8e71e → ruckus-class      (Ruckus AP — common in police facilities)
+
+Apple Find My (manufacturer_id 0x004C, type byte 0x12) → airtag-class.
+
+Persists to /opt/drifter/state/ble_history.db (WAL). Schema is migrated in
+place via ALTER TABLE — never dropped — so existing dashboards/tests keep
+working through the v1→v2 transition.
+
+MQTT topics:
+  drifter/ble/detection       qos 0  every classified hit
+  drifter/ble/alert/<target>  qos 1  60s per-MAC cooldown
+  drifter/ble/persist         qos 1  retained — same MAC ≥2 drives in 30 days
+  drifter/ble/stats           qos 1  retained — hourly target-count rollup
+
+Config (env):
+  DRIFTER_MQTT_HOST/PORT/USER/PASS
+  DRIFTER_BLE_DB                  default /opt/drifter/state/ble_history.db
+  DRIFTER_BLE_SCAN_SECS           default 8
+  DRIFTER_BLE_ALERT_COOLDOWN      default 60
+  DRIFTER_STATE_DIR               default /opt/drifter/state
 
 UNCAGED TECHNOLOGY — EST 1991
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import re
+import os
 import signal
 import sqlite3
+import sys
 import time
-from collections import deque
 from pathlib import Path
 from typing import Optional
 
+try:
+    from bleak import BleakScanner
+except ImportError:  # pragma: no cover — bleak is required at runtime
+    print("FATAL: bleak not installed", file=sys.stderr)
+    sys.exit(1)
+
 import paho.mqtt.client as mqtt
 
-try:
-    from config import (
-        DRIFTER_DIR, MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
-        BLE_TARGETS_PATH, BLE_HISTORY_PATH, BLE_RAW_PUBLISH,
-        BLE_LOG_RETENTION_DAYS, BLE_RATE_LIMIT_SEC, BLE_GPS_FRESH_SEC,
-    )
-    import ble_history
-except ImportError:
-    import sys
-    sys.path.insert(0, '/opt/drifter')
-    from config import (  # type: ignore
-        DRIFTER_DIR, MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
-        BLE_TARGETS_PATH, BLE_HISTORY_PATH, BLE_RAW_PUBLISH,
-        BLE_LOG_RETENTION_DAYS, BLE_RATE_LIMIT_SEC, BLE_GPS_FRESH_SEC,
-    )
-    import ble_history  # type: ignore
+
+# ── Config ─────────────────────────────────────────────────────────
+
+MQTT_HOST  = os.environ.get('DRIFTER_MQTT_HOST', 'localhost')
+MQTT_PORT  = int(os.environ.get('DRIFTER_MQTT_PORT', '1883'))
+MQTT_USER  = os.environ.get('DRIFTER_MQTT_USER') or None
+MQTT_PASS  = os.environ.get('DRIFTER_MQTT_PASS') or None
+
+STATE_DIR  = Path(os.environ.get('DRIFTER_STATE_DIR', '/opt/drifter/state'))
+DB_PATH    = Path(os.environ.get('DRIFTER_BLE_DB', str(STATE_DIR / 'ble_history.db')))
+GPS_PATH   = STATE_DIR / 'gps.json'
+DRIVE_PATH_LEGACY = STATE_DIR / 'current_drive_id'
+DRIVE_PATH_NEW    = STATE_DIR / 'current_drive'
+
+SCAN_SECS         = float(os.environ.get('DRIFTER_BLE_SCAN_SECS', '8'))
+ALERT_COOLDOWN_S  = float(os.environ.get('DRIFTER_BLE_ALERT_COOLDOWN', '60'))
+STATS_INTERVAL_S  = 3600
+PERSIST_WINDOW_S  = 30 * 86400
+
+# OUI longest-prefix table — lowercase, no separators, hex.
+OUI_RULES: list[tuple[str, str, str, str]] = [
+    ('0025df', 'axon-class',         'high',
+        'Axon Enterprise (police body cam, TASER, Signal)'),
+    ('003044', 'cradlepoint-class',  'high',
+        'Cradlepoint mobile router (police vehicle network)'),
+    ('00170d', 'cradlepoint-class',  'high',
+        'Cradlepoint mobile router (police vehicle network)'),
+    ('f8e71e', 'ruckus-class',       'medium',
+        'Ruckus AP (used in police facilities)'),
+]
+OUI_RULES.sort(key=lambda r: -len(r[0]))   # longest-prefix-wins
+
+APPLE_MFR_ID    = 0x004C
+APPLE_FINDMY_TY = 0x12
+
+TOPIC_DETECTION = 'drifter/ble/detection'
+TOPIC_ALERT_FMT = 'drifter/ble/alert/{target}'
+TOPIC_PERSIST   = 'drifter/ble/persist'
+TOPIC_STATS     = 'drifter/ble/stats'
+
+
+# ── Logging ────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [BLECONV] %(message)s',
+    format='%(asctime)s [BLE] %(message)s',
     datefmt='%H:%M:%S',
 )
-log = logging.getLogger(__name__)
-
-_OUI_RE = re.compile(r'^[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}$')
+log = logging.getLogger('drifter.ble')
 
 
-# ── Target loading + validation ────────────────────────────────────
+# ── DB ─────────────────────────────────────────────────────────────
 
-def load_targets(path: Path) -> list[dict]:
-    """Read + validate ble_targets.yaml. Returns the list of usable targets;
-    targets with verified=false AND enabled=true are warned + disabled."""
-    if not path.exists():
-        log.warning(f"BLE targets file missing: {path}")
-        return []
-    try:
-        import yaml
-    except ImportError:
-        log.error("pyyaml not installed — BLE targets unavailable")
-        return []
-    data = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
-    raw = data.get('targets', [])
-    if not isinstance(raw, list):
-        log.error("ble_targets.yaml: 'targets' must be a list")
-        return []
-    out: list[dict] = []
-    for entry in raw:
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get('name', '')).strip()
-        if not name:
-            log.warning("BLE target missing name; skipping")
-            continue
-        match = entry.get('match') or {}
-        if not isinstance(match, dict) or not any(match.values()):
-            log.warning(f"BLE target {name!r}: no match criteria; skipping")
-            continue
-        enabled = bool(entry.get('enabled', False))
-        verified = bool(entry.get('verified', False))
-        if enabled and not verified:
-            log.warning(f"BLE target {name!r}: enabled but unverified — disabling at runtime")
-            enabled = False
-        mode = str(entry.get('match_mode', 'any')).lower()
-        if mode not in ('any', 'all'):
-            log.warning(f"BLE target {name!r}: match_mode={mode!r} invalid; defaulting to 'any'")
-            mode = 'any'
-        out.append({
-            'name': name,
-            'description': str(entry.get('description', '')),
-            'enabled': enabled,
-            'verified': verified,
-            'match': match,
-            'match_mode': mode,
-            'rssi_alert_threshold': int(entry.get('rssi_alert_threshold', -60)),
-            'vivi_alert': bool(entry.get('vivi_alert', False)),
-            'vivi_label': str(entry.get('vivi_label', name)),
-        })
-    return out
+# Columns the v2 daemon writes. Existing v1 columns (manufacturer_id,
+# adv_name, lng, is_alert) are preserved and dual-written so legacy
+# readers (web_dashboard_handlers.py, tests, ble_history.py) keep working.
+V2_COLUMNS = {
+    'name':              'TEXT',
+    'severity':          'TEXT',
+    'description':       'TEXT',
+    'manufacturer_data': 'TEXT',
+    'service_uuids':     'TEXT',
+    'lon':               'REAL',
+}
 
 
-# ── Match predicates ───────────────────────────────────────────────
-
-def matches_oui(target: dict, mac: str) -> bool:
-    prefixes = target['match'].get('oui_prefixes') or []
-    if not prefixes:
-        return False
-    head = (mac or '').upper()[:8]
-    return any(head == str(p).upper() for p in prefixes)
-
-
-def matches_manufacturer_id(target: dict, mfr_data: dict) -> bool:
-    want = target['match'].get('manufacturer_id')
-    if want is None:
-        return False
-    return int(want) in (mfr_data or {})
-
-
-def matches_manufacturer_data_prefix(target: dict, mfr_data: dict) -> bool:
-    """Hex-encode the mfr_data bytes for the matched ID and check startswith."""
-    want_id = target['match'].get('manufacturer_id')
-    want_pfx = (target['match'].get('manufacturer_data_prefix') or '').lower()
-    if want_id is None or not want_pfx:
-        return False
-    raw = (mfr_data or {}).get(int(want_id))
-    if raw is None:
-        return False
-    return raw.hex().startswith(want_pfx)
-
-
-def matches_service_uuid(target: dict, service_uuids: list) -> bool:
-    want = [str(u).lower() for u in target['match'].get('service_uuids') or []]
-    if not want:
-        return False
-    have = [str(u).lower() for u in (service_uuids or [])]
-    return any(u in have for u in want)
-
-
-def target_matches(target: dict, mac: str, mfr_data: dict, service_uuids: list) -> bool:
-    """Default 'any' semantics: any one criterion match is enough.
-    'all' mode (opt-in via `match_mode: all` in YAML): every criterion
-    that is set must match. Required for AirTag-style targets where
-    manufacturer_id alone is too broad and the prefix must AND with it."""
-    m = target['match']
-    checks: list[bool] = []
-    if m.get('oui_prefixes'):
-        checks.append(matches_oui(target, mac))
-    if m.get('manufacturer_id') is not None:
-        checks.append(matches_manufacturer_id(target, mfr_data))
-    if m.get('manufacturer_data_prefix'):
-        checks.append(matches_manufacturer_data_prefix(target, mfr_data))
-    if m.get('service_uuids'):
-        checks.append(matches_service_uuid(target, service_uuids))
-    if not checks:
-        return False
-    return all(checks) if target.get('match_mode') == 'all' else any(checks)
-
-
-# ── Rate limiter ───────────────────────────────────────────────────
-
-class RateLimiter:
-    """Per-(target, mac) cooldown. Prunes entries older than 5min on every check."""
-    PRUNE_AFTER = 300.0
-
-    def __init__(self, cooldown: float):
-        self.cooldown = cooldown
-        self._last: dict[tuple[str, str], float] = {}
-
-    def allow(self, target: str, mac: str, now: Optional[float] = None) -> bool:
-        now = now if now is not None else time.time()
-        # prune
-        stale = [k for k, t in self._last.items() if now - t > self.PRUNE_AFTER]
-        for k in stale:
-            del self._last[k]
-        key = (target, mac)
-        if now - self._last.get(key, 0) < self.cooldown:
-            return False
-        self._last[key] = now
-        return True
-
-    def __len__(self) -> int:
-        return len(self._last)
-
-
-# ── GPS injection ──────────────────────────────────────────────────
-
-class GpsCache:
-    """Last fix from drifter/gps/fix; only attached when fresh."""
-    def __init__(self, fresh_sec: float):
-        self.fresh_sec = fresh_sec
-        self._fix: Optional[dict] = None
-        self._ts: float = 0.0
-
-    def update(self, fix: dict) -> None:
-        if isinstance(fix, dict) and 'lat' in fix and 'lng' in fix:
-            self._fix = {'lat': float(fix['lat']), 'lng': float(fix['lng'])}
-            self._ts = time.time()
-
-    def get(self) -> Optional[dict]:
-        if not self._fix:
-            return None
-        if time.time() - self._ts > self.fresh_sec:
-            return None
-        return dict(self._fix)
-
-
-# ── Scanner ────────────────────────────────────────────────────────
-
-class BLEScanner:
-    def __init__(self):
-        self.targets = load_targets(BLE_TARGETS_PATH)
-        self.enabled = [t for t in self.targets if t['enabled']]
-        log.info(f"loaded {len(self.targets)} target(s); {len(self.enabled)} enabled")
-        self.rl = RateLimiter(BLE_RATE_LIMIT_SEC)
-        self.gps = GpsCache(BLE_GPS_FRESH_SEC)
-        # Phase 4.7 — forensic history with drive_id partitioning.
-        try:
-            self._history = ble_history.open_db(BLE_HISTORY_PATH)
-        except Exception as e:
-            log.warning(f"history DB unavailable: {e} — detections will publish but not persist")
-            self._history = None
-        self._mqtt: Optional[mqtt.Client] = None
-        self._stop = asyncio.Event()
-        self._last_prune = 0.0
-
-    def _connect_mqtt(self) -> None:
-        # systemd has us After=nanomq.service, but `After=` only orders
-        # service start — it doesn't wait for the broker to be accepting
-        # TCP connections. Retry with linear backoff so a fresh boot
-        # doesn't churn the unit through a crash-restart cycle.
-        client = make_mqtt_client('drifter-bleconv')
-        last_err: Optional[Exception] = None
-        for attempt in range(1, 11):
-            try:
-                client.connect(MQTT_HOST, MQTT_PORT, 60)
-                break
-            except (ConnectionRefusedError, OSError) as e:
-                last_err = e
-                log.info(f"MQTT not ready (attempt {attempt}/10): {e}")
-                time.sleep(min(attempt, 5))
-        else:
-            raise RuntimeError(f"MQTT broker unreachable after 10 attempts: {last_err}")
-        client.subscribe(TOPICS.get('gps_fix', 'drifter/gps/fix'))
-        # Phase 4.7 — external sources (synthetic mosquitto_pub, future
-        # sensor bridges) can publish to drifter/ble/detection and have
-        # their hits persisted. The scanner's own publishes are tagged
-        # source=scanner and skipped here (loopback would double-persist;
-        # paho-mqtt + brokers like NanoMQ deliver a publisher's own
-        # messages back to it).
-        client.subscribe(TOPICS.get('ble_detection', 'drifter/ble/detection'))
-        client.on_message = self._on_mqtt
-        client.loop_start()
-        self._mqtt = client
-
-    def _on_mqtt(self, _client, _ud, msg):
-        try:
-            payload = json.loads(msg.payload)
-        except (ValueError, UnicodeDecodeError):
-            return
-        if msg.topic == TOPICS.get('gps_fix', 'drifter/gps/fix'):
-            self.gps.update(payload)
-            return
-        if msg.topic == TOPICS.get('ble_detection', 'drifter/ble/detection'):
-            self._persist_external_detection(payload)
-            return
-
-    def _persist_external_detection(self, payload: dict) -> None:
-        """Persist a detection that came in via MQTT from an outside
-        source (synthetic mosquitto_pub during a smoke test, future
-        sensor bridges). Skips the scanner's own loopbacked publishes
-        (tagged source=scanner)."""
-        if not isinstance(payload, dict):
-            return
-        if payload.get('source') == 'scanner':
-            return
-        if self._history is None:
-            return
-        det = dict(payload)
-        det.setdefault('ts', time.time())
-        det.setdefault('drive_id', ble_history.current_drive_id())
-        # Map the gate-10 wire shape: {"name": ...} → adv_name.
-        if 'adv_name' not in det and 'name' in det:
-            det['adv_name'] = det.pop('name')
-        try:
-            ble_history.insert_detection(self._history, det)
-            ble_history.touch_drive_id()
-            log.info(
-                f"persisted external detection: {det.get('target')} "
-                f"{det.get('mac')}"
-            )
-        except Exception as e:
-            log.warning(f"external detection persist failed: {e}")
-
-    def _detection_callback(self, device, advertisement_data):
-        mac = device.address or ''
-        rssi = int(advertisement_data.rssi or -127)
-        mfr_data = dict(advertisement_data.manufacturer_data or {})
-        service_uuids = list(advertisement_data.service_uuids or [])
-        name = advertisement_data.local_name
-
-        # Verbose mode — every advertisement (gated). Useful for offline
-        # analysis but spammy; off by default.
-        if BLE_RAW_PUBLISH and self._mqtt is not None:
-            try:
-                self._mqtt.publish(TOPICS.get('ble_raw', 'drifter/ble/raw'),
-                                   json.dumps({'mac': mac, 'rssi': rssi,
-                                               'name': name, 'ts': time.time()}))
-            except Exception:
-                pass
-
-        for target in self.enabled:
-            if not target_matches(target, mac, mfr_data, service_uuids):
-                continue
-            if not self.rl.allow(target['name'], mac):
-                continue
-            mfr_id_hex: Optional[str] = None
-            mfr_blob_hex = ''
-            if mfr_data:
-                k = next(iter(mfr_data))
-                mfr_id_hex = f'0x{k:04x}'
-                mfr_blob_hex = mfr_data[k].hex()
-            is_alert = rssi >= target['rssi_alert_threshold']
-            detection = {
-                'target': target['name'],
-                'target_label': target['vivi_label'],
-                'mac': mac,
-                'mac_prefix': mac[:8].upper() if len(mac) >= 8 else mac,
-                'rssi': rssi,
-                'ts': time.time(),
-                'gps': self.gps.get(),
-                'manufacturer_id': mfr_id_hex,
-                'advertised_name': name,
-                'is_alert': is_alert,
-                'raw_advertisement': mfr_blob_hex,
-                'vivi_alert': bool(target['vivi_alert']) and is_alert,
-                'drive_id': ble_history.current_drive_id(),
-                # Marks this as a scanner-originated detection so the
-                # MQTT loopback subscriber (Phase 4.7) doesn't persist
-                # it twice.
-                'source': 'scanner',
-            }
-            self._record_detection(detection)
-            log.info(
-                f"hit {target['name']} {mac} rssi={rssi}"
-                f"{' [ALERT]' if is_alert else ''}"
-            )
-            break  # one target per advertisement is enough
-
-        # Daily prune
-        now = time.time()
-        if now - self._last_prune > 86400 and self._history is not None:
-            self._last_prune = now
-            try:
-                removed = ble_history.prune_older_than(
-                    self._history, BLE_LOG_RETENTION_DAYS
-                )
-                if removed:
-                    log.info(f"pruned {removed} old detection(s)")
-            except Exception as e:
-                log.warning(f"history prune failed: {e}")
-
-    def _record_detection(self, detection: dict) -> None:
-        """MQTT publish first, DB persist second. A persistence failure
-        must NEVER prevent the publish path from running — downstream
-        consumers (vivi proactive comments, dashboard tile) only see
-        the live MQTT feed."""
-        if self._mqtt is not None:
-            try:
-                self._mqtt.publish(
-                    TOPICS.get('ble_detection', 'drifter/ble/detection'),
-                    json.dumps(detection),
-                )
-            except Exception as e:
-                log.warning(f"ble publish failed: {e}")
-        if self._history is not None:
-            try:
-                ble_history.insert_detection(self._history, detection)
-                ble_history.touch_drive_id()
-            except Exception as e:
-                log.warning(f"ble history insert failed: {e}")
-
-    async def run(self) -> int:
-        if not self.enabled:
-            log.warning("no enabled targets — sleeping until config change is restart-detected")
-            await self._stop.wait()
-            return 0
-
-        try:
-            from bleak import BleakScanner
-        except ImportError as e:
-            log.error(f"bleak not available: {e}")
-            return 1
-
-        self._connect_mqtt()
-        # BlueZ "passive" mode requires kernel-level or_patterns filters
-        # tied to advertisement data types — it can't filter on device MAC,
-        # which our primary Axon target needs (OUI 00:25:DF). So we run
-        # in BlueZ's default scan mode: listen to every advertisement, no
-        # connection attempts, no SCAN_REQ for advertisers that opted out
-        # of scannability. We never connect — purely a listener.
-        scanner = BleakScanner(
-            detection_callback=self._detection_callback,
+def open_db(path: Path) -> sqlite3.Connection:
+    """Open + WAL + create-if-missing + ALTER ADD any missing v2 columns."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS detections (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts              REAL NOT NULL,
+          target          TEXT NOT NULL,
+          mac             TEXT NOT NULL,
+          rssi            INTEGER,
+          name            TEXT,
+          severity        TEXT,
+          description     TEXT,
+          manufacturer_data TEXT,
+          service_uuids   TEXT,
+          lat             REAL,
+          lon             REAL,
+          drive_id        TEXT NOT NULL DEFAULT 'unknown'
         )
-        log.info(f"BLE scanner LIVE — listening for {len(self.enabled)} target(s)")
-        await scanner.start()
+    ''')
+    have = {row[1] for row in conn.execute('PRAGMA table_info(detections)')}
+    for col, sqltype in V2_COLUMNS.items():
+        if col not in have:
+            conn.execute(f'ALTER TABLE detections ADD COLUMN {col} {sqltype}')
+            log.info(f'schema: ADD COLUMN {col} {sqltype}')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_det_mac        ON detections(mac)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_det_target_ts  ON detections(target, ts)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_det_drive_id   ON detections(drive_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_det_ts         ON detections(ts)')
+    conn.commit()
+    return conn
+
+
+def insert_detection(conn: sqlite3.Connection, d: dict) -> None:
+    """Insert with dual-write to legacy columns (lng, adv_name, is_alert,
+    manufacturer_id) where they exist, so v1 readers keep functioning."""
+    cols = {row[1] for row in conn.execute('PRAGMA table_info(detections)')}
+    fields = ['ts', 'target', 'mac', 'rssi', 'name', 'severity',
+              'description', 'manufacturer_data', 'service_uuids',
+              'lat', 'lon', 'drive_id']
+    values = [d.get(k) for k in fields]
+    if 'lng' in cols:
+        fields.append('lng');             values.append(d.get('lon'))
+    if 'adv_name' in cols:
+        fields.append('adv_name');        values.append(d.get('name'))
+    if 'is_alert' in cols:
+        fields.append('is_alert')
+        values.append(1 if d.get('severity') in ('high', 'medium') else 0)
+    if 'manufacturer_id' in cols:
+        fields.append('manufacturer_id'); values.append(d.get('_legacy_mfr_hex'))
+
+    placeholders = ','.join('?' * len(fields))
+    conn.execute(
+        f'INSERT INTO detections ({",".join(fields)}) VALUES ({placeholders})',
+        values,
+    )
+    conn.commit()
+
+
+# ── Helpers ────────────────────────────────────────────────────────
+
+def normalise_mac(mac: str) -> str:
+    return (mac or '').upper()
+
+
+def oui_of(mac: str) -> str:
+    """First 6 hex chars of the MAC, lowercase, no separators."""
+    return mac.lower().replace(':', '').replace('-', '')[:6]
+
+
+def classify_oui(mac: str) -> Optional[tuple[str, str, str]]:
+    """Return (target, severity, description) or None for non-target OUIs."""
+    o = oui_of(mac)
+    for prefix, target, severity, desc in OUI_RULES:
+        if o.startswith(prefix):
+            return (target, severity, desc)
+    return None
+
+
+def is_apple_findmy(mfr: dict[int, bytes]) -> bool:
+    """0x004C with first payload byte == 0x12."""
+    if APPLE_MFR_ID not in mfr:
+        return False
+    payload = mfr[APPLE_MFR_ID]
+    return bool(payload) and payload[0] == APPLE_FINDMY_TY
+
+
+def serialise_mfr(mfr: dict[int, bytes]) -> str:
+    """JSON map of company_id (0xNNNN) → hex payload string."""
+    return json.dumps({f'0x{cid:04X}': payload.hex() for cid, payload in mfr.items()})
+
+
+def first_legacy_mfr_hex(mfr: dict[int, bytes]) -> Optional[str]:
+    if not mfr:
+        return None
+    cid = next(iter(mfr))
+    return f'0x{cid:04X}'
+
+
+def read_gps() -> tuple[Optional[float], Optional[float]]:
+    """Read /opt/drifter/state/gps.json. Format: {lat, lon, fix, ts}."""
+    try:
+        j = json.loads(GPS_PATH.read_text())
+        if not j.get('fix'):
+            return (None, None)
+        if time.time() - float(j.get('ts', 0)) > 30:
+            return (None, None)
+        return (float(j['lat']), float(j['lon']))
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError, TypeError):
+        return (None, None)
+
+
+def read_drive_id() -> str:
+    """Read current drive id. Try spec path first, then v1 path."""
+    for p in (DRIVE_PATH_NEW, DRIVE_PATH_LEGACY):
         try:
-            await self._stop.wait()
+            v = p.read_text().strip()
+            if v:
+                return v
+        except FileNotFoundError:
+            continue
+    return 'no-drive'
+
+
+# ── MQTT ───────────────────────────────────────────────────────────
+
+def make_mqtt() -> mqtt.Client:
+    """Create + connect MQTT client. paho v1/v2 compatible."""
+    try:
+        client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2,
+            client_id='drifter-bleconv',
+        )
+    except AttributeError:
+        client = mqtt.Client(client_id='drifter-bleconv')
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASS or '')
+    client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+    client.loop_start()
+    return client
+
+
+# ── Detection processing ───────────────────────────────────────────
+
+class Bleconv:
+    def __init__(self, conn: sqlite3.Connection, mqttc: mqtt.Client) -> None:
+        self.conn = conn
+        self.mqtt = mqttc
+        self._cooldown: dict[str, float] = {}
+        self._stats_window: dict[str, int] = {}
+        self._stats_started_at = time.time()
+        self._stop = asyncio.Event()
+
+    def _cooldown_ok(self, mac: str) -> bool:
+        now = time.time()
+        if now - self._cooldown.get(mac, 0.0) >= ALERT_COOLDOWN_S:
+            self._cooldown[mac] = now
+            return True
+        return False
+
+    def _check_persistent(self, mac: str) -> Optional[dict]:
+        cutoff = time.time() - PERSIST_WINDOW_S
+        row = self.conn.execute(
+            '''SELECT COUNT(DISTINCT drive_id), MIN(ts), MAX(ts)
+               FROM detections WHERE mac = ? AND ts >= ?''',
+            (mac, cutoff),
+        ).fetchone()
+        if not row or row[0] is None:
+            return None
+        n_drives, first_ts, last_ts = row
+        if n_drives >= 2:
+            return {
+                'mac': mac,
+                'unique_drives': int(n_drives),
+                'first_seen': float(first_ts),
+                'last_seen': float(last_ts),
+                'window_days': 30,
+            }
+        return None
+
+    def _publish_detection(self, d: dict) -> None:
+        self.mqtt.publish(TOPIC_DETECTION, json.dumps(d), qos=0, retain=False)
+
+    def _publish_alert(self, target: str, d: dict) -> None:
+        self.mqtt.publish(
+            TOPIC_ALERT_FMT.format(target=target),
+            json.dumps(d), qos=1, retain=False,
+        )
+
+    def _publish_persist(self, summary: dict) -> None:
+        self.mqtt.publish(TOPIC_PERSIST, json.dumps(summary), qos=1, retain=True)
+
+    def _publish_stats(self) -> None:
+        snap = {
+            'window_started_ts': self._stats_started_at,
+            'window_ended_ts':   time.time(),
+            'counts': dict(self._stats_window),
+        }
+        self.mqtt.publish(TOPIC_STATS, json.dumps(snap), qos=1, retain=True)
+        self._stats_window = {}
+        self._stats_started_at = time.time()
+        log.info('stats: %s', snap['counts'] or '(empty)')
+
+    def _process(self, mac_raw: str, rssi: Optional[int], adv) -> None:
+        mac = normalise_mac(mac_raw)
+        cls = classify_oui(mac)
+        mfr = dict(getattr(adv, 'manufacturer_data', None) or {})
+        is_findmy = (cls is None) and is_apple_findmy(mfr)
+
+        if cls is None and not is_findmy:
+            return
+
+        if cls is not None:
+            target, severity, description = cls
+        else:
+            target, severity, description = (
+                'airtag-class', 'medium',
+                'Apple Find My beacon (AirTag/AirPods/Find My-paired item)',
+            )
+
+        lat, lon = read_gps()
+        drive_id = read_drive_id()
+        name = getattr(adv, 'local_name', None) or None
+        service_uuids = list(getattr(adv, 'service_uuids', None) or [])
+        ts = time.time()
+
+        det = {
+            'ts': ts,
+            'target': target,
+            'mac': mac,
+            'rssi': int(rssi) if rssi is not None else None,
+            'name': name,
+            'severity': severity,
+            'description': description,
+            'manufacturer_data': serialise_mfr(mfr),
+            'service_uuids': json.dumps(service_uuids),
+            'lat': lat,
+            'lon': lon,
+            'drive_id': drive_id,
+            '_legacy_mfr_hex': first_legacy_mfr_hex(mfr),
+        }
+        try:
+            insert_detection(self.conn, det)
+        except sqlite3.Error as e:
+            log.warning('db insert failed: %s', e)
+            return
+        det.pop('_legacy_mfr_hex', None)
+
+        self._publish_detection(det)
+        self._stats_window[target] = self._stats_window.get(target, 0) + 1
+        log.info('hit: %s %s rssi=%s name=%s drive=%s',
+                 target, mac, det['rssi'], name or '?', drive_id)
+
+        if self._cooldown_ok(mac):
+            self._publish_alert(target, det)
+            persist = self._check_persistent(mac)
+            if persist:
+                persist.update({
+                    'target': target,
+                    'severity': severity,
+                    'description': description,
+                    'last_seen_ts': ts,
+                })
+                self._publish_persist(persist)
+                log.info('PERSISTENT: %s seen across %d drives',
+                         mac, persist['unique_drives'])
+
+    def detection_callback(self, device, advertisement_data) -> None:
+        try:
+            self._process(device.address, advertisement_data.rssi, advertisement_data)
+        except Exception:
+            log.exception('callback error')
+
+    async def run(self) -> None:
+        scanner = BleakScanner(detection_callback=self.detection_callback)
+        log.info('DRIFTER bleconv v2 starting — %d OUI rules + Apple Find My',
+                 len(OUI_RULES))
+        log.info('mqtt %s:%s · db %s · scan %.0fs · cooldown %.0fs',
+                 MQTT_HOST, MQTT_PORT, DB_PATH, SCAN_SECS, ALERT_COOLDOWN_S)
+        await scanner.start()
+        next_stats = time.time() + STATS_INTERVAL_S
+        try:
+            while not self._stop.is_set():
+                await asyncio.sleep(SCAN_SECS)
+                if time.time() >= next_stats:
+                    self._publish_stats()
+                    next_stats = time.time() + STATS_INTERVAL_S
         finally:
             await scanner.stop()
-            if self._mqtt is not None:
-                self._mqtt.loop_stop()
-                self._mqtt.disconnect()
-        return 0
+            log.info('scanner stopped')
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop.set()
 
 
+# ── Entry ──────────────────────────────────────────────────────────
+
 def main() -> int:
-    scanner = BLEScanner()
+    conn = open_db(DB_PATH)
+    mqttc = make_mqtt()
+    bc = Bleconv(conn, mqttc)
 
-    def _sig(_signo, _frame):
-        log.info("shutdown signal")
-        loop = asyncio.get_event_loop()
-        loop.call_soon_threadsafe(scanner.stop)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    signal.signal(signal.SIGTERM, _sig)
-    signal.signal(signal.SIGINT, _sig)
+    def _shutdown(*_a):
+        log.info('signal received — stopping')
+        bc.stop()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT,  _shutdown)
+
     try:
-        return asyncio.run(scanner.run())
-    except KeyboardInterrupt:
-        return 0
+        loop.run_until_complete(bc.run())
+    except Exception:
+        log.exception('bleconv crashed')
+        return 1
+    finally:
+        try:
+            mqttc.loop_stop()
+            mqttc.disconnect()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        log.info('bleconv stopped')
+    return 0
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    sys.exit(main())
