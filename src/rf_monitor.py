@@ -25,6 +25,9 @@ from config import (
     EMERGENCY_SCAN_INTERVAL, EMERGENCY_SCAN_DWELL, EMERGENCY_BANDS,
     ADSB_SCAN_INTERVAL, ADSB_SCAN_DURATION, ADSB_JSON_DIR, DUMP1090_BIN,
     THRESHOLDS, make_mqtt_client,)
+from hw_probe import probe_rtl_sdr, publish_hw_state
+
+SDR_RESCAN_INTERVAL = 30  # seconds — poll for SDR plug/unplug
 
 logging.basicConfig(
     level=logging.INFO,
@@ -755,11 +758,16 @@ def main():
         start_rtl_433()
         log.info("rtl_433 listener started — decoding 433 MHz signals")
 
+    # Publish initial drifter/hw/rtl_sdr snapshot so the dashboard knows
+    # the current state immediately (lsusb-based probe — non-invasive).
+    publish_hw_state(mqtt_client, 'rtl_sdr', probe_rtl_sdr())
+
     # ── Main loop: periodic scans ──
     last_spectrum = 0
     last_emergency = 0
     last_tpms_snapshot = 0
     last_adsb = 0
+    last_sdr_rescan = time.time()
 
     log.info("RF Monitor is LIVE")
     if tpms.sensor_map:
@@ -769,6 +777,35 @@ def main():
 
     while running:
         now = time.time()
+
+        # ── SDR hot-plug rescan ──
+        # When the SDR is plugged in mid-flight, detect it and start rtl_433
+        # without requiring `systemctl restart drifter-rf`. When it disappears,
+        # stop the worker cleanly so we don't spin on a dead handle.
+        if now - last_sdr_rescan >= SDR_RESCAN_INTERVAL:
+            last_sdr_rescan = now
+            probe = probe_rtl_sdr()
+            present_now = probe['connected']
+            if present_now and not has_sdr:
+                # Plugged in — confirm with rtl_test (invasive but no thread holding it)
+                if check_rtl_sdr():
+                    has_sdr = True
+                    log.info("RTL-SDR detected via rescan — starting rtl_433")
+                    if has_rtl433:
+                        start_rtl_433()
+                    mqtt_client.publish(TOPICS['rf_status'], json.dumps({
+                        'state': 'online', 'sdr_detected': True,
+                        'rtl433_installed': has_rtl433,
+                        'dump1090_installed': has_dump1090,
+                        'tpms_sensors': len(tpms.sensor_map),
+                        'ts': now,
+                    }), retain=True)
+                    publish_hw_state(mqtt_client, 'rtl_sdr', probe)
+            elif not present_now and has_sdr:
+                log.warning("RTL-SDR unplugged — stopping rtl_433")
+                pause_rtl_433()
+                has_sdr = False
+                publish_hw_state(mqtt_client, 'rtl_sdr', probe)
 
         # Periodic TPMS snapshot (even when no new data — shows staleness)
         if now - last_tpms_snapshot >= 30 and tpms.sensor_map:

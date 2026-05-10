@@ -50,6 +50,10 @@ except ImportError:  # pragma: no cover — bleak is required at runtime
 
 import paho.mqtt.client as mqtt
 
+from hw_probe import probe_bluetooth, publish_hw_state
+
+BT_RECONNECT_SEC = 30
+
 
 # ── Config ─────────────────────────────────────────────────────────
 
@@ -393,22 +397,52 @@ class Bleconv:
             log.exception('callback error')
 
     async def run(self) -> None:
-        scanner = BleakScanner(detection_callback=self.detection_callback)
         log.info('DRIFTER bleconv v2 starting — %d OUI rules + Apple Find My',
                  len(OUI_RULES))
         log.info('mqtt %s:%s · db %s · scan %.0fs · cooldown %.0fs',
                  MQTT_HOST, MQTT_PORT, DB_PATH, SCAN_SECS, ALERT_COOLDOWN_S)
-        await scanner.start()
-        next_stats = time.time() + STATS_INTERVAL_S
-        try:
-            while not self._stop.is_set():
-                await asyncio.sleep(SCAN_SECS)
-                if time.time() >= next_stats:
-                    self._publish_stats()
-                    next_stats = time.time() + STATS_INTERVAL_S
-        finally:
-            await scanner.stop()
-            log.info('scanner stopped')
+
+        last_hw_state: Optional[bool] = None
+        while not self._stop.is_set():
+            probe = probe_bluetooth()
+            if not probe['connected']:
+                if last_hw_state is not False:
+                    log.warning('BT adapter not ready: %s', probe['detail'])
+                    publish_hw_state(self.mqtt, 'bluetooth', probe)
+                    last_hw_state = False
+                await asyncio.sleep(BT_RECONNECT_SEC)
+                continue
+
+            scanner = BleakScanner(detection_callback=self.detection_callback)
+            try:
+                await scanner.start()
+                if last_hw_state is not True:
+                    log.info('BT adapter ready: %s', probe['detail'])
+                    publish_hw_state(self.mqtt, 'bluetooth', probe)
+                    last_hw_state = True
+                next_stats = time.time() + STATS_INTERVAL_S
+                while not self._stop.is_set():
+                    await asyncio.sleep(SCAN_SECS)
+                    if time.time() >= next_stats:
+                        self._publish_stats()
+                        next_stats = time.time() + STATS_INTERVAL_S
+            except Exception as e:
+                log.warning('scanner error (%s) — will retry in %ds', e, BT_RECONNECT_SEC)
+                publish_hw_state(self.mqtt, 'bluetooth', {
+                    **probe_bluetooth(),
+                    'detail': f'scanner error: {e}',
+                    'action': 'Check bluetooth.service and hciconfig hci0',
+                    'connected': False,
+                })
+                last_hw_state = False
+            finally:
+                try:
+                    await scanner.stop()
+                except Exception:
+                    pass
+            if not self._stop.is_set():
+                await asyncio.sleep(BT_RECONNECT_SEC)
+        log.info('scanner stopped')
 
     def stop(self) -> None:
         self._stop.set()

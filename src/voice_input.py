@@ -24,6 +24,7 @@ from config import (
     MQTT_HOST, MQTT_PORT, TOPICS, DRIFTER_DIR,
     VOSK_MODEL_DIR, WAKE_WORD_MODEL, WAKE_WORD_THRESHOLD,
     PTT_GPIO_PIN, VOICE_SILENCE_TIMEOUT, VOICE_MAX_RECORD, make_mqtt_client,)
+from hw_probe import probe_microphone, publish_hw_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -563,6 +564,7 @@ def main():
             log.warning(f"audio_input_device={sel!r} not found — using auto")
         return candidates[0]
 
+    last_hw_state: bool | None = None
     while running and stream is None:
         try:
             dev_idx, dev_name = _find_input_device()
@@ -577,8 +579,14 @@ def main():
                 frames_per_buffer=CHUNK_SIZE,
             )
             log.info(f"Microphone stream opened on device {dev_idx}: {dev_name}")
+            if last_hw_state is not True:
+                publish_hw_state(mqtt_client, 'microphone', probe_microphone())
+                last_hw_state = True
         except Exception as e:
             log.error(f"No microphone detected — retrying in 30s: {e}")
+            if last_hw_state is not False:
+                publish_hw_state(mqtt_client, 'microphone', probe_microphone())
+                last_hw_state = False
             for _ in range(30):
                 if not running:
                     break
