@@ -17,7 +17,7 @@ Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/default/drifter
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/drifter/state /run/readsb
+ReadWritePaths=/opt/drifter/state -/run/readsb
 PrivateTmp=true
 NoNewPrivileges=true
 
