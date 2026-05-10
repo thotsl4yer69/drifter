@@ -615,11 +615,33 @@ body{
 .hw-info{flex:1}
 .hw-name{font-size:13px;font-weight:700;letter-spacing:1.5px}
 .hw-detail{font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.4}
+.hw-action{font-size:11px;color:var(--amber);margin-top:4px;line-height:1.4}
 .hw-services{padding:12px 16px 20px;font-size:10px;color:var(--text-mute);text-align:center;line-height:1.8}
 .hw-services span{margin:0 4px}
 .hw-svc-ok{color:var(--ok)}
 .hw-svc-fail{color:var(--red)}
 .hw-svc-off{color:var(--text-mute)}
+
+/* CAN-down replacement card: shown instead of `--` gauges when the CAN
+   bus is disconnected. Toggled by body.can-down class set by pollHardware. */
+.can-down-card{
+  display:none;
+  flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:24px 18px;margin:14px;border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,var(--card),var(--card-hi));
+  border:1px solid var(--border-hi);
+  min-height:160px;
+}
+.can-down-card .cd-title{
+  font-size:14px;letter-spacing:3px;color:var(--red);font-weight:700;
+  text-shadow:0 0 14px var(--red-glow);
+}
+.can-down-card .cd-detail{font-size:12px;color:var(--text-dim);margin-top:8px;letter-spacing:.5px}
+.can-down-card .cd-action{font-size:11px;color:var(--amber);margin-top:10px;letter-spacing:1px}
+body.can-down .cp-engine{display:none}
+body.can-down .cp-can-down{display:flex}
+body.can-down .engine-gauges-wrap{display:none}
+body.can-down .legacy-can-down{display:flex}
 
 /* Ask input + action buttons */
 .ask-input{
@@ -1288,6 +1310,12 @@ details[open] summary::before{content:"▾ "}
     <div class="cp-attr" id="cp-attr">DATA: STATE OF VICTORIA (EMV) &middot; BOM &middot; OPENSTREETMAP &middot; ADSB.LOL</div>
   </section>
 
+  <div class="can-down-card cp-can-down" id="cp-can-down">
+    <div class="cd-title">CAN NOT CONNECTED</div>
+    <div class="cd-detail" id="cp-can-down-detail">USB2CAN dongle not detected</div>
+    <div class="cd-action" id="cp-can-down-action">Plug in USB2CAN dongle</div>
+  </div>
+
   <footer class="cp-engine">
     <div class="cp-gauge cp-gauge-rpm">
       <div class="cp-gauge-label">RPM</div>
@@ -1402,6 +1430,13 @@ details[open] summary::before{content:"▾ "}
   <button class="tab-btn" data-tab="diag"  role="tab">DIAG</button>
 </div>
 
+<div class="can-down-card legacy-can-down" id="legacy-can-down">
+  <div class="cd-title">CAN NOT CONNECTED</div>
+  <div class="cd-detail" id="legacy-can-down-detail">USB2CAN dongle not detected</div>
+  <div class="cd-action" id="legacy-can-down-action">Plug in USB2CAN dongle</div>
+</div>
+
+<div class="engine-gauges-wrap">
 <div class="section">ENGINE</div>
 <div class="grid">
   <div class="card lg" id="c-rpm">
@@ -1510,6 +1545,7 @@ details[open] summary::before{content:"▾ "}
 </div>
 <div class="alert-history hidden" id="alert-history"></div>
 <div class="dtc-list" id="dtc-list"></div>
+</div><!-- /engine-gauges-wrap -->
 
 <div class="section">TIRES</div>
 <div class="tpms-grid">
@@ -1811,29 +1847,48 @@ function toggleAlertHistory(){
 }
 
 // ── Hardware Status ──
+// Drives both the boot-time overlay AND the body.can-down class that
+// replaces the engine gauges with a "CAN NOT CONNECTED" card so the
+// dashboard never shows `--` placeholders for hardware that isn't there.
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
 function pollHardware(){
   fetch('/api/hardware').then(r=>r.json()).then(hw=>{
+    // Always drive the body class — overlay dismissal shouldn't unhide
+    // gauges that have no data behind them.
+    const canProbe = (hw.probes && hw.probes.can) || {};
+    const canDown = canProbe.connected === false;
+    document.body.classList.toggle('can-down', canDown);
+    if(canDown){
+      const detail = canProbe.detail || 'USB2CAN dongle not detected';
+      const action = canProbe.action || 'Plug in USB2CAN dongle';
+      ['cp-can-down-detail','legacy-can-down-detail'].forEach(id=>{
+        const el = document.getElementById(id); if(el) el.textContent = detail;
+      });
+      ['cp-can-down-action','legacy-can-down-action'].forEach(id=>{
+        const el = document.getElementById(id); if(el) el.textContent = action;
+      });
+    }
+
     const ol = document.getElementById('hw-overlay');
     if(!ol) return;
     if(hw.ready || hwOverlayDismissed){
       ol.classList.add('fade-out');
-      if(hwPollTimer){clearInterval(hwPollTimer);hwPollTimer=null;}
+      // Keep polling — body.can-down still needs live updates after
+      // dismissal so a mid-drive disconnect re-hides the gauges.
       return;
     }
     ol.classList.remove('fade-out');
-    // Render summary items
     const list = document.getElementById('hw-list');
     list.innerHTML = (hw.summary||[]).map(s=>{
-      const dot = s.status;
-      return `<div class="hw-item"><div class="hw-dot ${dot}"></div><div class="hw-info"><div class="hw-name">${s.item}</div><div class="hw-detail">${s.detail}</div></div></div>`;
+      const action = s.action ? `<div class="hw-action">→ ${escapeHtml(s.action)}</div>` : '';
+      return `<div class="hw-item"><div class="hw-dot ${escapeHtml(s.status)}"></div><div class="hw-info"><div class="hw-name">${escapeHtml(s.item)}</div><div class="hw-detail">${escapeHtml(s.detail)}</div>${action}</div></div>`;
     }).join('');
-    // Render services
     const svcs = document.getElementById('hw-services');
     if(hw.services){
       svcs.innerHTML = Object.entries(hw.services).map(([k,v])=>{
         const cls = v==='active'?'hw-svc-ok':v==='failed'?'hw-svc-fail':'hw-svc-off';
         const name = k.replace('drifter-','');
-        return `<span class="${cls}">${name}</span>`;
+        return `<span class="${cls}">${escapeHtml(name)}</span>`;
       }).join(' ');
     }
   }).catch(()=>{});
