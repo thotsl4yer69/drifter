@@ -1878,20 +1878,22 @@ function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;",
 // rest: hide the corresponding gauge area, show the matching card.
 function applyHwBodyClasses(hw){
   const probes = (hw && hw.probes) || {};
+  // Gates with `card` populate a replacement-card's detail/action when the
+  // probe is missing. The bluetooth gate is layout-only (hide a row), no card.
   const gates = [
-    {key:'can',       cls:'can-down', detailIds:['cp-can-down-detail','legacy-can-down-detail'], actionIds:['cp-can-down-action','legacy-can-down-action'], defaultDetail:'USB2CAN dongle not detected', defaultAction:'Plug in USB2CAN dongle'},
-    {key:'rtl_sdr',   cls:'rf-down',  detailIds:['tpms-rf-down-detail'], actionIds:['tpms-rf-down-action'], defaultDetail:'No RTL-SDR detected', defaultAction:'Plug in RTL-SDR dongle'},
-    {key:'bluetooth', cls:'bt-down',  detailIds:[], actionIds:[], defaultDetail:'', defaultAction:''},
+    {key:'can',     cls:'can-down', card:{detailIds:['cp-can-down-detail','legacy-can-down-detail'], actionIds:['cp-can-down-action','legacy-can-down-action'], defaultDetail:'USB2CAN dongle not detected', defaultAction:'Plug in USB2CAN dongle'}},
+    {key:'rtl_sdr', cls:'rf-down',  card:{detailIds:['tpms-rf-down-detail'], actionIds:['tpms-rf-down-action'], defaultDetail:'No RTL-SDR detected', defaultAction:'Plug in RTL-SDR dongle'}},
+    {key:'bluetooth', cls:'bt-down'},
   ];
   for(const g of gates){
     const p = probes[g.key] || {};
     const down = p.connected === false;
     document.body.classList.toggle(g.cls, down);
-    if(down){
-      const detail = p.detail || g.defaultDetail;
-      const action = p.action || g.defaultAction;
-      g.detailIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=detail; });
-      g.actionIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=action; });
+    if(down && g.card){
+      const detail = p.detail || g.card.defaultDetail;
+      const action = p.action || g.card.defaultAction;
+      g.card.detailIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=detail; });
+      g.card.actionIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=action; });
     }
   }
 }
