@@ -644,6 +644,7 @@ body.can-down .engine-gauges-wrap{display:none}
 body.can-down .legacy-can-down{display:flex}
 body.rf-down .tpms-grid{display:none}
 body.rf-down .tpms-rf-down{display:flex}
+.wd-bt-row{display:contents}
 body.bt-down .wd-bt-row{display:none}
 
 /* Live-loading shimmer for cells whose backend always produces a value
@@ -1620,7 +1621,7 @@ details[open] summary::before{content:"▾ "}
 <div id="wardrive-panel" style="padding:6px 10px 4px">
   <div style="display:flex;gap:8px;font-size:11px;color:var(--dim);margin-bottom:6px">
     <span>&#x1f4f6; Wi-Fi: <b id="wd-wifi-count" style="color:var(--text)"><span class="skel"></span></b></span>
-    <span class="wd-bt-row" style="display:contents"><span>&bull;</span>
+    <span class="wd-bt-row"><span>&bull;</span>
     <span>&#x1f4f1; BT: <b id="wd-bt-count" style="color:var(--text)"><span class="skel"></span></b></span></span>
     <span style="margin-left:auto" id="wd-session-totals" style="color:var(--dim)"></span>
   </div>

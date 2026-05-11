@@ -46,6 +46,17 @@ def test_wd_bt_row_wraps_bt_count():
     assert 'body.bt-down .wd-bt-row{display:none}' in DASHBOARD_HTML
 
 
+def test_wd_bt_row_has_no_inline_display_style():
+    """An inline style="display:..." attribute would beat the body.bt-down
+    cascade (inline specificity wins), silently breaking the hide path.
+    The display:contents layout must live in the stylesheet."""
+    inline = re.compile(r'class="wd-bt-row"[^>]*style="[^"]*display:')
+    assert not inline.search(DASHBOARD_HTML), \
+        'wd-bt-row must not have an inline display style; it defeats body.bt-down'
+    assert '.wd-bt-row{display:contents}' in DASHBOARD_HTML, \
+        'wd-bt-row needs display:contents via stylesheet (not inline)'
+
+
 def test_apply_hw_body_classes_handles_three_gates():
     """The JS toggle helper must drive can-down, rf-down, and bt-down."""
     assert 'function applyHwBodyClasses' in DASHBOARD_HTML
