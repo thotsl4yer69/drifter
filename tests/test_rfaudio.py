@@ -83,6 +83,10 @@ def test_audiostream_stop_terminates_both_processes():
     assert rfaudio._stream.freq_mhz is None
 
 
+_PRESENT_SDR = {'device': 'rtl_sdr', 'connected': True, 'detail': 'RTL-SDR dongle on USB bus', 'action': '', 'ts': 0}
+_MISSING_SDR = {'device': 'rtl_sdr', 'connected': False, 'detail': 'No RTL-SDR detected', 'action': 'Plug in RTL-SDR dongle', 'ts': 0}
+
+
 def test_handle_command_start_paused_rtl_433_first():
     """start must publish pause_rtl_433 BEFORE spawning rtl_fm so the
     drifter-rf service releases the SDR. Order matters here."""
@@ -90,7 +94,8 @@ def test_handle_command_start_paused_rtl_433_first():
     publish_calls = []
     client.publish.side_effect = lambda topic, payload, **kw: publish_calls.append((topic, payload))
 
-    with patch('rfaudio.subprocess.Popen') as popen, \
+    with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.subprocess.Popen') as popen, \
          patch('rfaudio.time.sleep'):
         popen.side_effect = [_fake_proc(), _fake_proc()]
         rfaudio._handle_command(client, {
@@ -103,6 +108,59 @@ def test_handle_command_start_paused_rtl_433_first():
     rf_idx = topics.index('drifter/rf/command')
     assert json.loads(publish_calls[rf_idx][1])['command'] == 'pause_rtl_433'
     assert rfaudio._state == 'playing'
+
+
+def test_handle_command_start_refused_when_no_sdr():
+    """The SDR guard must fail fast with a clear error, not spawn rtl_fm."""
+    client = MagicMock()
+    with patch('rfaudio.probe_rtl_sdr', return_value=_MISSING_SDR), \
+         patch('rfaudio.subprocess.Popen') as popen:
+        rfaudio._handle_command(client, {'action': 'start', 'freq_mhz': 476.525})
+    popen.assert_not_called()
+    assert rfaudio._state == 'idle'
+    # Last publish must be an error payload
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'No RTL-SDR' in payload['error']
+
+
+def test_handle_command_scan_refused_when_no_sdr():
+    client = MagicMock()
+    with patch('rfaudio.probe_rtl_sdr', return_value=_MISSING_SDR):
+        rfaudio._handle_command(client, {'action': 'scan'})
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'No RTL-SDR' in payload['error']
+
+
+def test_handle_command_test_tone_calls_speaker_test():
+    """test_tone must run speaker-test against the configured ALSA device."""
+    client = MagicMock()
+    with patch('rfaudio.subprocess.run') as run:
+        rfaudio._handle_command(client, {'action': 'test_tone'})
+    run.assert_called_once()
+    cmd = run.call_args[0][0]
+    assert cmd[0] == 'speaker-test'
+    assert '-f' in cmd and '1000' in cmd  # 1kHz tone
+    assert '-D' in cmd
+    d_idx = cmd.index('-D')
+    assert cmd[d_idx + 1] == rfaudio.RFAUDIO_APLAY_DEVICE
+
+
+def test_handle_command_list_bands_publishes_full_band_list():
+    client = MagicMock()
+    rfaudio._handle_command(client, {'action': 'list_bands'})
+    last = client.publish.call_args_list[-1]
+    assert last[0][0] == 'drifter/rfaudio/status'
+    payload = json.loads(last[0][1])
+    assert 'bands' in payload
+    assert isinstance(payload['bands'], list)
+    assert len(payload['bands']) == len(rfaudio.EMERGENCY_AUDIO_BANDS)
+    # Must include the UHF CB ch 5 emergency frequency as the default tune-in
+    freqs = [b['freq_mhz'] for b in payload['bands']]
+    assert 476.525 in freqs
 
 
 def test_handle_command_stop_resumes_rtl_433():
@@ -133,9 +191,10 @@ def test_handle_command_unknown_action_does_not_crash():
 
 
 def test_handle_command_uses_defaults_when_fields_missing():
-    """start with no freq_mhz / mode must fall back to RFAUDIO_DEFAULT_*."""
+    """start with no freq_mhz / mode must use the RFAUDIO_DEFAULT_* knobs."""
     client = MagicMock()
-    with patch('rfaudio.subprocess.Popen') as popen, \
+    with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.subprocess.Popen') as popen, \
          patch('rfaudio.time.sleep'):
         popen.side_effect = [_fake_proc(), _fake_proc()]
         rfaudio._handle_command(client, {'action': 'start'})

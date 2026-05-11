@@ -12,10 +12,16 @@ on stop.
 Commands (drifter/rfaudio/command, JSON):
   {"action": "start", "freq_mhz": 476.525, "mode": "nfm", "gain": 0}
   {"action": "stop"}
-  {"action": "scan"}      # cycle through EMERGENCY_AUDIO_BANDS, 8s each
+  {"action": "scan"}        # cycle through EMERGENCY_AUDIO_BANDS, 8s each
+  {"action": "test_tone"}   # 1s 1kHz sine via speaker-test — proves the
+                            #   aplay path without needing the SDR
+  {"action": "list_bands"}  # publishes EMERGENCY_AUDIO_BANDS to status
 
 Status (drifter/rfaudio/status, retained):
   {"state": "idle"|"playing"|"scanning", "freq_mhz": float, "mode": str, "ts": float}
+
+The "start" action refuses if hw_probe reports no SDR — fail fast with a
+clear error rather than letting rtl_fm spawn and immediately die.
 
 UNCAGED TECHNOLOGY — EST 1991
 """
@@ -188,12 +194,57 @@ def _start_scan(client) -> None:
     _scan_thread.start()
 
 
+def _publish_error(client, message: str) -> None:
+    """Publish an error to rfaudio_status without changing _state."""
+    client.publish(TOPICS['rfaudio_status'], json.dumps({
+        'state': _state,
+        'freq_mhz': _stream.freq_mhz,
+        'mode': _stream.mode,
+        'error': message,
+        'ts': time.time(),
+    }), retain=True, qos=1)
+    log.warning(message)
+
+
+def _play_test_tone(client) -> None:
+    """Play a 1-second 1kHz tone through aplay to verify the speaker path.
+    Useful when no SDR is plugged in but the operator wants to confirm
+    audio is wired correctly before connecting the dongle."""
+    log.info("test_tone: speaker-test 1kHz / 1s → %s", RFAUDIO_APLAY_DEVICE)
+    try:
+        subprocess.run(
+            ['speaker-test', '-t', 'sine', '-f', '1000', '-l', '1',
+             '-D', RFAUDIO_APLAY_DEVICE],
+            check=False, capture_output=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        _publish_error(client, f"test_tone failed: {e}")
+
+
+def _publish_bands(client) -> None:
+    """Publish the configured EMERGENCY_AUDIO_BANDS so the dashboard can
+    populate a band picker without re-importing config."""
+    client.publish(TOPICS['rfaudio_status'], json.dumps({
+        'state': _state,
+        'freq_mhz': _stream.freq_mhz,
+        'mode': _stream.mode,
+        'bands': EMERGENCY_AUDIO_BANDS,
+        'ts': time.time(),
+    }), retain=True, qos=1)
+
+
 def _handle_command(client, payload: dict) -> None:
     """Dispatch an rfaudio command. Quiet on bad input — log + status, never crash."""
     global _state
     action = payload.get('action', '').lower()
 
     if action == 'start':
+        # Fail fast when the SDR isn't physically present, so we don't
+        # spawn rtl_fm just to watch it die a second later.
+        probe = probe_rtl_sdr()
+        if not probe['connected']:
+            _publish_error(client, f"start refused: {probe['detail']} — {probe['action']}")
+            return
         _stop_scan()
         freq = float(payload.get('freq_mhz', RFAUDIO_DEFAULT_FREQ_MHZ))
         mode = str(payload.get('mode', RFAUDIO_DEFAULT_MODE)).lower()
@@ -216,8 +267,20 @@ def _handle_command(client, payload: dict) -> None:
         return
 
     if action == 'scan':
+        probe = probe_rtl_sdr()
+        if not probe['connected']:
+            _publish_error(client, f"scan refused: {probe['detail']} — {probe['action']}")
+            return
         _pause_rtl_433(client)
         _start_scan(client)
+        return
+
+    if action == 'test_tone':
+        _play_test_tone(client)
+        return
+
+    if action == 'list_bands':
+        _publish_bands(client)
         return
 
     log.warning("unknown action: %r", action)
