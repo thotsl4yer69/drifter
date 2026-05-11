@@ -642,6 +642,21 @@ body.can-down .cp-engine{display:none}
 body.can-down .cp-can-down{display:flex}
 body.can-down .engine-gauges-wrap{display:none}
 body.can-down .legacy-can-down{display:flex}
+body.rf-down .tpms-grid{display:none}
+body.rf-down .tpms-rf-down{display:flex}
+body.bt-down .wd-bt-row{display:none}
+
+/* Live-loading shimmer for cells whose backend always produces a value
+   (cpu_temp, disk, mem, uptime, weather count, sessions). Distinguishes
+   "still loading" from "data missing" so the operator can read the page. */
+.skel{
+  display:inline-block;min-width:36px;height:0.9em;vertical-align:middle;
+  background:linear-gradient(90deg,var(--card),var(--card-hi),var(--card));
+  background-size:200% 100%;animation:skel-shimmer 1.4s infinite ease-in-out;
+  border-radius:3px;
+}
+@keyframes skel-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel-row{display:block;height:1em;margin:6px 16px;border-radius:3px;min-width:auto}
 
 /* Ask input + action buttons */
 .ask-input{
@@ -1192,7 +1207,7 @@ details[open] summary::before{content:"▾ "}
 <div class="cockpit">
   <header class="cp-top">
     <div class="cp-top-left">
-      <span class="cp-drive-id" id="cp-drive-id">—</span>
+      <span class="cp-drive-id" id="cp-drive-id">no active drive</span>
       <span class="cp-divider">·</span>
       <span class="cp-clock" id="cp-clock">--:--</span>
     </div>
@@ -1284,7 +1299,7 @@ details[open] summary::before{content:"▾ "}
     <div class="cp-right">
       <div class="cp-panel">
         <div class="cp-panel-head">PERSISTENT CONTACTS <span class="cp-panel-count" id="cp-pp-count">0</span></div>
-        <div class="cp-panel-body" id="cp-pp-body">—</div>
+        <div class="cp-panel-body" id="cp-pp-body">No persistent contacts.</div>
       </div>
       <div class="cp-panel">
         <div class="cp-panel-head">LIVE BLE <span class="cp-panel-count" id="cp-ble-count">0</span></div>
@@ -1299,7 +1314,7 @@ details[open] summary::before{content:"▾ "}
         <div class="cp-panel-body" id="cp-inc-body">No incidents reported.</div>
       </div>
       <div class="cp-panel">
-        <div class="cp-panel-head">WEATHER <span class="cp-panel-count" id="cp-wx-count">--</span></div>
+        <div class="cp-panel-head">WEATHER <span class="cp-panel-count" id="cp-wx-count"><span class="skel"></span></span></div>
         <div class="cp-panel-body" id="cp-wx-body">No weather data.</div>
       </div>
       <div class="cp-panel">
@@ -1547,6 +1562,12 @@ details[open] summary::before{content:"▾ "}
 <div class="dtc-list" id="dtc-list"></div>
 </div><!-- /engine-gauges-wrap -->
 
+<div class="can-down-card tpms-rf-down" id="tpms-rf-down">
+  <div class="cd-title">RF NOT CONNECTED</div>
+  <div class="cd-detail" id="tpms-rf-down-detail">No RTL-SDR detected</div>
+  <div class="cd-action" id="tpms-rf-down-action">Plug in RTL-SDR dongle</div>
+</div>
+
 <div class="section">TIRES</div>
 <div class="tpms-grid">
   <div class="tpms-card" id="tpms-fl">
@@ -1569,10 +1590,10 @@ details[open] summary::before{content:"▾ "}
 
 <div class="section">SYSTEM</div>
 <div id="sys-info">
-  <div class="sys-row"><span class="lbl">CPU Temp</span><span id="v-cpu-temp">--</span></div>
-  <div class="sys-row"><span class="lbl">Disk</span><span id="v-disk">--</span></div>
-  <div class="sys-row"><span class="lbl">Memory</span><span id="v-mem">--</span></div>
-  <div class="sys-row"><span class="lbl">Uptime</span><span id="v-uptime">--</span></div>
+  <div class="sys-row"><span class="lbl">CPU Temp</span><span id="v-cpu-temp"><span class="skel"></span></span></div>
+  <div class="sys-row"><span class="lbl">Disk</span><span id="v-disk"><span class="skel"></span></span></div>
+  <div class="sys-row"><span class="lbl">Memory</span><span id="v-mem"><span class="skel"></span></span></div>
+  <div class="sys-row"><span class="lbl">Uptime</span><span id="v-uptime"><span class="skel"></span></span></div>
 </div>
 
 <div class="section">DIAGNOSIS</div>
@@ -1593,14 +1614,14 @@ details[open] summary::before{content:"▾ "}
 </div>
 
 <div class="section">RECENT DRIVES</div>
-<div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)">Loading...</div>
+<div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)"><span class="skel skel-row"></span><span class="skel skel-row"></span><span class="skel skel-row"></span></div>
 
 <div class="section">WARDRIVE</div>
 <div id="wardrive-panel" style="padding:6px 10px 4px">
   <div style="display:flex;gap:8px;font-size:11px;color:var(--dim);margin-bottom:6px">
-    <span>&#x1f4f6; Wi-Fi: <b id="wd-wifi-count" style="color:var(--text)">--</b></span>
-    <span>&bull;</span>
-    <span>&#x1f4f1; BT: <b id="wd-bt-count" style="color:var(--text)">--</b></span>
+    <span>&#x1f4f6; Wi-Fi: <b id="wd-wifi-count" style="color:var(--text)"><span class="skel"></span></b></span>
+    <span class="wd-bt-row" style="display:contents"><span>&bull;</span>
+    <span>&#x1f4f1; BT: <b id="wd-bt-count" style="color:var(--text)"><span class="skel"></span></b></span></span>
     <span style="margin-left:auto" id="wd-session-totals" style="color:var(--dim)"></span>
   </div>
   <div id="wd-networks" style="font-size:11px;color:var(--dim)">No scan yet</div>
@@ -1851,23 +1872,34 @@ function toggleAlertHistory(){
 // replaces the engine gauges with a "CAN NOT CONNECTED" card so the
 // dashboard never shows `--` placeholders for hardware that isn't there.
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+
+// Toggle body.{can,rf,bt}-down classes from probe state. CSS does the
+// rest: hide the corresponding gauge area, show the matching card.
+function applyHwBodyClasses(hw){
+  const probes = (hw && hw.probes) || {};
+  const gates = [
+    {key:'can',       cls:'can-down', detailIds:['cp-can-down-detail','legacy-can-down-detail'], actionIds:['cp-can-down-action','legacy-can-down-action'], defaultDetail:'USB2CAN dongle not detected', defaultAction:'Plug in USB2CAN dongle'},
+    {key:'rtl_sdr',   cls:'rf-down',  detailIds:['tpms-rf-down-detail'], actionIds:['tpms-rf-down-action'], defaultDetail:'No RTL-SDR detected', defaultAction:'Plug in RTL-SDR dongle'},
+    {key:'bluetooth', cls:'bt-down',  detailIds:[], actionIds:[], defaultDetail:'', defaultAction:''},
+  ];
+  for(const g of gates){
+    const p = probes[g.key] || {};
+    const down = p.connected === false;
+    document.body.classList.toggle(g.cls, down);
+    if(down){
+      const detail = p.detail || g.defaultDetail;
+      const action = p.action || g.defaultAction;
+      g.detailIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=detail; });
+      g.actionIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=action; });
+    }
+  }
+}
+
 function pollHardware(){
   fetch('/api/hardware').then(r=>r.json()).then(hw=>{
     // Always drive the body class — overlay dismissal shouldn't unhide
     // gauges that have no data behind them.
-    const canProbe = (hw.probes && hw.probes.can) || {};
-    const canDown = canProbe.connected === false;
-    document.body.classList.toggle('can-down', canDown);
-    if(canDown){
-      const detail = canProbe.detail || 'USB2CAN dongle not detected';
-      const action = canProbe.action || 'Plug in USB2CAN dongle';
-      ['cp-can-down-detail','legacy-can-down-detail'].forEach(id=>{
-        const el = document.getElementById(id); if(el) el.textContent = detail;
-      });
-      ['cp-can-down-action','legacy-can-down-action'].forEach(id=>{
-        const el = document.getElementById(id); if(el) el.textContent = action;
-      });
-    }
+    applyHwBodyClasses(hw);
 
     const ol = document.getElementById('hw-overlay');
     if(!ol) return;
