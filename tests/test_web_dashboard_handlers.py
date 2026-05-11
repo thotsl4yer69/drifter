@@ -242,3 +242,67 @@ def test_healthz_voicein_stale_heartbeat_marks_hw_pending(monkeypatch):
     assert payload['services']['drifter-voicein'] is False
     assert 'drifter-voicein' in payload['services_hw_pending']
     assert payload['services_failed'] == []
+
+
+# ── /api/rfaudio/command ──────────────────────────────────────────────
+
+import io
+import json as _json
+from unittest.mock import MagicMock
+
+
+def _build_post_handler(body: bytes):
+    """Wire up a DashboardHandler instance enough to call a _post_ method."""
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler.rfile = io.BytesIO(body)
+    handler.wfile = io.BytesIO()
+    handler.headers = {'Content-Length': str(len(body))}
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.send_error = MagicMock()
+    return handler
+
+
+def test_post_rfaudio_command_forwards_to_mqtt(monkeypatch):
+    """A valid POST must publish the body verbatim to drifter/rfaudio/command."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"list_bands"}')
+    handler._post_rfaudio_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/rfaudio/command'
+    assert _json.loads(payload) == {'action': 'list_bands'}
+
+
+def test_post_rfaudio_command_rejects_missing_action(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"freq_mhz": 476.525}')
+    handler._post_rfaudio_command()
+    handler.send_error.assert_called_once()
+    args = handler.send_error.call_args[0]
+    assert args[0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_rfaudio_command_rejects_non_json(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'this is not json')
+    handler._post_rfaudio_command()
+    handler.send_error.assert_called_once()
+    args = handler.send_error.call_args[0]
+    assert args[0] == 400
+
+
+def test_post_rfaudio_command_forwards_full_start_payload(monkeypatch):
+    """The handler must not strip fields — freq_mhz/mode/gain reach rfaudio.py."""
+    state.mqtt_client = MagicMock()
+    body = b'{"action":"start","freq_mhz":476.525,"mode":"nfm","gain":0}'
+    handler = _build_post_handler(body)
+    handler._post_rfaudio_command()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    parsed = _json.loads(payload)
+    assert parsed['action'] == 'start'
+    assert parsed['freq_mhz'] == 476.525
+    assert parsed['mode'] == 'nfm'
+    assert parsed['gain'] == 0

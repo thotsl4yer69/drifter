@@ -521,7 +521,40 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/vivi/conversation_mode':
             self._post_vivi_conversation_mode()
             return
+        if self.path == '/api/rfaudio/command':
+            self._post_rfaudio_command()
+            return
         self.send_error(404)
+
+    def _post_rfaudio_command(self):
+        """Forward a JSON body to drifter/rfaudio/command via MQTT.
+        Body shape matches the rfaudio.py command contract:
+          {"action": "start", "freq_mhz": 476.525, "mode": "nfm", "gain": 0}
+          {"action": "stop"} | {"action": "scan"} |
+          {"action": "test_tone"} | {"action": "list_bands"}
+        Returns {"ok": bool, "published": <topic>}."""
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        if not isinstance(body, dict) or 'action' not in body:
+            self.send_error(400, 'body must be a JSON object with an "action" field')
+            return
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/rfaudio/command',
+                    json.dumps(body),
+                )
+                ok = True
+            except Exception as e:
+                log.warning("rfaudio command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/rfaudio/command'})
 
     def _post_vivi_reset(self):
         """Tell Vivi to drop her conversation history. Publishes
