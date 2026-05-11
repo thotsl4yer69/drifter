@@ -38,6 +38,11 @@ log = logging.getLogger(__name__)
 
 running = True
 
+# Cooperative hand-off hooks. main() installs the closures it creates for
+# pause_rtl_433/resume_rtl_433; on_message looks them up here so MQTT
+# commands from peer services (e.g. rfaudio) can release the SDR.
+_rtl_control: dict = {'pause': None, 'resume': None}
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  TPMS State
@@ -649,6 +654,19 @@ def on_message(client, userdata, msg):
                     'ts': time.time(),
                 }))
 
+        elif command == 'pause_rtl_433':
+            # Peer service (rfaudio) needs exclusive SDR access.
+            fn = _rtl_control.get('pause')
+            if callable(fn):
+                was_running = fn()
+                log.info("rtl_433 paused via MQTT (was_running=%s)", was_running)
+
+        elif command == 'resume_rtl_433':
+            fn = _rtl_control.get('resume')
+            if callable(fn):
+                fn()
+                log.info("rtl_433 resumed via MQTT")
+
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         log.warning(f"Bad RF command: {e}")
 
@@ -757,6 +775,10 @@ def main():
     if has_sdr and has_rtl433:
         start_rtl_433()
         log.info("rtl_433 listener started — decoding 433 MHz signals")
+
+    # Expose pause/resume to MQTT-side callers (rfaudio) — see _rtl_control.
+    _rtl_control['pause'] = pause_rtl_433
+    _rtl_control['resume'] = resume_rtl_433
 
     # Publish initial drifter/hw/rtl_sdr snapshot so the dashboard knows
     # the current state immediately (lsusb-based probe — non-invasive).

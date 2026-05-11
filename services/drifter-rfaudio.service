@@ -1,0 +1,26 @@
+[Unit]
+Description=MZ1312 DRIFTER rfaudio — on-demand RTL-SDR → speaker (emergency listen)
+After=nanomq.service mosquitto.service sound.target
+Wants=nanomq.service mosquitto.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=drifter
+Group=drifter
+SupplementaryGroups=audio plugdev
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/rfaudio.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/drifter
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/drifter/state
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

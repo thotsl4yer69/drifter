@@ -532,6 +532,31 @@ EMERGENCY_BANDS = [
     {'name': 'Rail-NRN', 'freq_mhz': 454.9, 'desc': 'National Rail Network'},
 ]
 
+# ── rfaudio: live demodulated emergency-services audio ──
+# Frequencies the rfaudio service can tune to (Australia / Bendigo VIC
+# defaults — adjust per operating area). 'mode' is the rtl_fm demod:
+# 'nfm' = narrowband FM (most land-mobile + UHF CB), 'wfm' = wideband FM
+# (commercial broadcast 88–108 MHz), 'am' = AM (aviation/airband). The
+# 'family' tag is just a label for grouping in the dashboard later.
+EMERGENCY_AUDIO_BANDS = [
+    # UHF CB ch 5 (emergency) + ch 35 (emergency repeater input). Channel 5
+    # is the only frequency a member of the public must monitor; treat as
+    # the default tune-in target.
+    {'name': 'UHF-CB-Ch5',      'freq_mhz': 476.525, 'mode': 'nfm', 'family': 'emergency-cb'},
+    {'name': 'UHF-CB-Ch35',     'freq_mhz': 476.750, 'mode': 'nfm', 'family': 'emergency-cb'},
+    {'name': 'UHF-CB-Ch9-RoadTrain', 'freq_mhz': 476.625, 'mode': 'nfm', 'family': 'cb'},
+    {'name': 'Marine-VHF-16',   'freq_mhz': 156.800, 'mode': 'nfm', 'family': 'marine'},
+    {'name': 'Airband-Guard',   'freq_mhz': 121.500, 'mode': 'am',  'family': 'aviation'},
+    {'name': 'Melbourne-Ctr',   'freq_mhz': 124.700, 'mode': 'am',  'family': 'aviation'},
+    {'name': 'CFA-Bendigo',     'freq_mhz':  76.225, 'mode': 'nfm', 'family': 'fire-rescue'},  # one of several legacy analog channels — verify locally
+]
+RFAUDIO_DEFAULT_FREQ_MHZ = 476.525   # UHF CB ch 5 — the emergency channel
+RFAUDIO_DEFAULT_MODE     = 'nfm'
+RFAUDIO_DEFAULT_GAIN     = 0          # 0 = automatic
+RFAUDIO_SAMPLE_RATE      = 200000     # rtl_fm input rate
+RFAUDIO_OUTPUT_RATE      = 48000      # aplay output rate
+RFAUDIO_APLAY_DEVICE     = 'plughw:0,0'  # USB Audio Device card 0 (C-Media on this Pi)
+
 # ── MQTT Topics ──
 TOPICS = {
     'rpm': 'drifter/engine/rpm',
@@ -572,6 +597,8 @@ TOPICS = {
     'rf_status': 'drifter/rf/status',
     'rf_command': 'drifter/rf/command',
     'rf_adsb': 'drifter/rf/adsb',
+    'rfaudio_command': 'drifter/rfaudio/command',
+    'rfaudio_status': 'drifter/rfaudio/status',
     # Wardrive
     'wardrive_wifi': 'drifter/wardrive/wifi',
     'wardrive_bt': 'drifter/wardrive/bt',
@@ -691,6 +718,7 @@ SERVICES = [
     "drifter-opsec",
     "drifter-bleconv",      # Phase 4.5 — passive BLE scanner
     "drifter-gps",          # Phase 5.2 — gpsd → MQTT GPS publisher
+    "drifter-rfaudio",      # on-demand SDR → speaker (emergency listen)
 ]
 
 # ── Modes ──
@@ -724,6 +752,7 @@ SHARED_SERVICES = [
     "drifter-logger",      # telemetry log writer
     "drifter-vivi",        # voice assistant LLM brain
     "drifter-voicein",     # wake-word + STT
+    "drifter-rfaudio",     # on-demand SDR → speaker (emergency-band listen)
 ]
 MODES = {
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),

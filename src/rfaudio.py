@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""MZ1312 DRIFTER — rfaudio
+On-demand RTL-SDR → speaker bridge for emergency-services audio.
+
+Listens on drifter/rfaudio/command and pipes demodulated audio from
+rtl_fm through aplay to the operator's USB speaker.
+
+Cooperates with drifter-rf (rtl_433) for the shared RTL-SDR device:
+publishes {command: pause_rtl_433} on start, {command: resume_rtl_433}
+on stop.
+
+Commands (drifter/rfaudio/command, JSON):
+  {"action": "start", "freq_mhz": 476.525, "mode": "nfm", "gain": 0}
+  {"action": "stop"}
+  {"action": "scan"}      # cycle through EMERGENCY_AUDIO_BANDS, 8s each
+
+Status (drifter/rfaudio/status, retained):
+  {"state": "idle"|"playing"|"scanning", "freq_mhz": float, "mode": str, "ts": float}
+
+UNCAGED TECHNOLOGY — EST 1991
+"""
+from __future__ import annotations
+
+import json
+import logging
+import signal
+import subprocess
+import threading
+import time
+from typing import Optional
+
+from config import (
+    MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
+    EMERGENCY_AUDIO_BANDS,
+    RFAUDIO_DEFAULT_FREQ_MHZ, RFAUDIO_DEFAULT_MODE, RFAUDIO_DEFAULT_GAIN,
+    RFAUDIO_SAMPLE_RATE, RFAUDIO_OUTPUT_RATE, RFAUDIO_APLAY_DEVICE,
+)
+from hw_probe import probe_rtl_sdr, publish_hw_state
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [RFAUDIO] %(message)s',
+    datefmt='%H:%M:%S',
+)
+log = logging.getLogger(__name__)
+
+SCAN_DWELL_SEC = 8.0
+HW_RESCAN_INTERVAL = 30.0
+
+
+class AudioStream:
+    """rtl_fm | aplay subprocess pair. One stream active at a time."""
+
+    def __init__(self) -> None:
+        self._rtl: Optional[subprocess.Popen] = None
+        self._aplay: Optional[subprocess.Popen] = None
+        self._lock = threading.Lock()
+        self.freq_mhz: Optional[float] = None
+        self.mode: Optional[str] = None
+
+    def start(self, freq_mhz: float, mode: str, gain: float) -> bool:
+        """Spawn rtl_fm and pipe stdout into aplay. Returns True on success."""
+        with self._lock:
+            if self._rtl is not None:
+                self._stop_locked()
+            freq_hz = int(freq_mhz * 1_000_000)
+            gain_arg = ['-g', str(gain)] if gain and gain > 0 else []  # 0 = auto
+            rtl_cmd = [
+                'rtl_fm',
+                '-f', str(freq_hz),
+                '-M', mode,
+                '-s', str(RFAUDIO_SAMPLE_RATE),
+                '-r', str(RFAUDIO_OUTPUT_RATE),
+                *gain_arg,
+            ]
+            aplay_cmd = [
+                'aplay',
+                '-q',
+                '-f', 'S16_LE',
+                '-r', str(RFAUDIO_OUTPUT_RATE),
+                '-c', '1',
+                '-D', RFAUDIO_APLAY_DEVICE,
+            ]
+            log.info("rtl_fm %.3f MHz %s gain=%s → aplay %s",
+                     freq_mhz, mode, gain or 'auto', RFAUDIO_APLAY_DEVICE)
+            try:
+                self._rtl = subprocess.Popen(
+                    rtl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self._aplay = subprocess.Popen(
+                    aplay_cmd, stdin=self._rtl.stdout, stderr=subprocess.PIPE,
+                )
+                # Detach the pipe end in the parent so rtl_fm exits cleanly
+                # when aplay is terminated.
+                if self._rtl.stdout:
+                    self._rtl.stdout.close()
+            except FileNotFoundError as e:
+                log.error("required binary missing: %s", e)
+                self._rtl = self._aplay = None
+                return False
+            self.freq_mhz, self.mode = freq_mhz, mode
+            return True
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
+        for proc in (self._aplay, self._rtl):
+            if proc is None or proc.poll() is not None:
+                continue
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._rtl = self._aplay = None
+        self.freq_mhz = self.mode = None
+
+    def is_running(self) -> bool:
+        return self._rtl is not None and self._rtl.poll() is None
+
+
+_stream = AudioStream()
+_state = 'idle'  # 'idle' | 'playing' | 'scanning'
+_scan_thread: Optional[threading.Thread] = None
+_scan_stop = threading.Event()
+
+
+def _publish_status(client) -> None:
+    payload = {
+        'state': _state,
+        'freq_mhz': _stream.freq_mhz,
+        'mode': _stream.mode,
+        'ts': time.time(),
+    }
+    client.publish(TOPICS['rfaudio_status'], json.dumps(payload), retain=True, qos=1)
+
+
+def _pause_rtl_433(client) -> None:
+    """Ask drifter-rf to release the SDR before we grab it."""
+    client.publish(TOPICS['rf_command'], json.dumps({
+        'command': 'pause_rtl_433', 'ts': time.time(),
+    }), qos=1)
+    # Give drifter-rf a moment to terminate rtl_433 and release the device.
+    time.sleep(0.5)
+
+
+def _resume_rtl_433(client) -> None:
+    client.publish(TOPICS['rf_command'], json.dumps({
+        'command': 'resume_rtl_433', 'ts': time.time(),
+    }), qos=1)
+
+
+def _stop_scan() -> None:
+    global _scan_thread
+    if _scan_thread is not None:
+        _scan_stop.set()
+        _scan_thread.join(timeout=SCAN_DWELL_SEC + 2)
+        _scan_thread = None
+    _scan_stop.clear()
+
+
+def _start_scan(client) -> None:
+    """Cycle through EMERGENCY_AUDIO_BANDS, dwelling SCAN_DWELL_SEC on each."""
+    global _scan_thread, _state
+
+    def worker():
+        global _state
+        for band in EMERGENCY_AUDIO_BANDS:
+            if _scan_stop.is_set():
+                break
+            _stream.start(band['freq_mhz'], band['mode'], RFAUDIO_DEFAULT_GAIN)
+            _state = 'scanning'
+            _publish_status(client)
+            log.info("scan: %s @ %.3f MHz", band['name'], band['freq_mhz'])
+            if _scan_stop.wait(SCAN_DWELL_SEC):
+                break
+        _stream.stop()
+        _state = 'idle'
+        _publish_status(client)
+
+    _stop_scan()
+    _scan_thread = threading.Thread(target=worker, name='rfaudio-scan', daemon=True)
+    _scan_thread.start()
+
+
+def _handle_command(client, payload: dict) -> None:
+    """Dispatch an rfaudio command. Quiet on bad input — log + status, never crash."""
+    global _state
+    action = payload.get('action', '').lower()
+
+    if action == 'start':
+        _stop_scan()
+        freq = float(payload.get('freq_mhz', RFAUDIO_DEFAULT_FREQ_MHZ))
+        mode = str(payload.get('mode', RFAUDIO_DEFAULT_MODE)).lower()
+        gain = float(payload.get('gain', RFAUDIO_DEFAULT_GAIN))
+        _pause_rtl_433(client)
+        if _stream.start(freq, mode, gain):
+            _state = 'playing'
+        else:
+            _state = 'idle'
+            _resume_rtl_433(client)
+        _publish_status(client)
+        return
+
+    if action == 'stop':
+        _stop_scan()
+        _stream.stop()
+        _state = 'idle'
+        _publish_status(client)
+        _resume_rtl_433(client)
+        return
+
+    if action == 'scan':
+        _pause_rtl_433(client)
+        _start_scan(client)
+        return
+
+    log.warning("unknown action: %r", action)
+
+
+def on_message(client, userdata, msg) -> None:  # noqa: ARG001 — paho callback shape
+    try:
+        payload = json.loads(msg.payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        log.warning("bad payload on %s", msg.topic)
+        return
+    if not isinstance(payload, dict):
+        log.warning("payload not a JSON object")
+        return
+    _handle_command(client, payload)
+
+
+def main() -> int:
+    running = True
+
+    def _on_signal(_sig, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
+    log.info("DRIFTER rfaudio starting — default %.3f MHz %s",
+             RFAUDIO_DEFAULT_FREQ_MHZ, RFAUDIO_DEFAULT_MODE)
+
+    client = make_mqtt_client('drifter-rfaudio')
+    client.on_message = on_message
+
+    while running:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, 60)
+            break
+        except (ConnectionRefusedError, OSError) as e:
+            log.warning("MQTT not yet: %s — retrying in 3s", e)
+            time.sleep(3)
+
+    client.subscribe(TOPICS['rfaudio_command'])
+    client.loop_start()
+    _publish_status(client)
+    publish_hw_state(client, 'rtl_sdr', probe_rtl_sdr())
+
+    last_hw_tick = time.time()
+    while running:
+        now = time.time()
+        # Hot-plug visibility: republish drifter/hw/rtl_sdr periodically so
+        # the dashboard reflects mid-session SDR plug/unplug.
+        if now - last_hw_tick >= HW_RESCAN_INTERVAL:
+            last_hw_tick = now
+            publish_hw_state(client, 'rtl_sdr', probe_rtl_sdr())
+        # Bail-out: if the operator started playback but rtl_fm exited
+        # (e.g. SDR was unplugged), reflect that in status without
+        # waiting for them to explicitly stop.
+        global _state
+        if _state == 'playing' and not _stream.is_running():
+            log.warning("stream died unexpectedly — returning to idle")
+            _state = 'idle'
+            _publish_status(client)
+            _resume_rtl_433(client)
+        time.sleep(1)
+
+    log.info("rfaudio shutting down")
+    _stop_scan()
+    _stream.stop()
+    _resume_rtl_433(client)
+    client.loop_stop()
+    client.disconnect()
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
