@@ -713,9 +713,6 @@ def main():
             log.warning(f"Waiting for MQTT broker... ({e})")
             time.sleep(3)
 
-    mqtt_client.subscribe(TOPICS['rf_command'])
-    mqtt_client.loop_start()
-
     if has_dump1090:
         log.info("dump1090 detected — ADS-B aircraft tracking enabled")
     else:
@@ -777,8 +774,13 @@ def main():
         log.info("rtl_433 listener started — decoding 433 MHz signals")
 
     # Expose pause/resume to MQTT-side callers (rfaudio) — see _rtl_control.
+    # Must be set BEFORE loop_start() so an early MQTT command can't slip
+    # through the on_message handler with a None lookup.
     _rtl_control['pause'] = pause_rtl_433
     _rtl_control['resume'] = resume_rtl_433
+
+    mqtt_client.subscribe(TOPICS['rf_command'])
+    mqtt_client.loop_start()
 
     # Publish initial drifter/hw/rtl_sdr snapshot so the dashboard knows
     # the current state immediately (lsusb-based probe — non-invasive).
