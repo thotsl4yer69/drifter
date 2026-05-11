@@ -530,7 +530,7 @@ footer{
 <section id="page-terminal" class="page active">
   <div class="card">
     <h2>QUICK PROBES</h2>
-    <div class="tile-grid" id="quick-tiles"></div>
+    <div class="tile-grid" id="quick-tiles"><div class="prompt" style="color:var(--text-mute);padding:8px">// awaiting probe set...</div></div>
   </div>
   <div class="card">
     <h2>OUTPUT <span class="blink" style="color:var(--text-mute)">_</span></h2>
@@ -565,7 +565,7 @@ footer{
 <section id="page-wardrive" class="page">
   <div class="card">
     <h2>WARDRIVE STATUS</h2>
-    <dl class="kv" id="wardrive-status"><dt>state</dt><dd>—</dd></dl>
+    <dl class="kv" id="wardrive-status"><dt>state</dt><dd>awaiting wardrive...</dd></dl>
   </div>
   <div class="card">
     <h2>WIFI <span class="count" id="wifi-count">0</span></h2>
@@ -729,7 +729,7 @@ function fmt(o, indent=0){
 function renderKV(elId, obj){
   const el = document.getElementById(elId);
   if (!obj || Object.keys(obj).length === 0){
-    el.innerHTML = '<dt>—</dt><dd>no data</dd>';
+    el.innerHTML = '<dt>state</dt><dd>no data yet</dd>';
     return;
   }
   el.innerHTML = '';
