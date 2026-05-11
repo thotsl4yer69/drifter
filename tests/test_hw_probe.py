@@ -55,8 +55,9 @@ def test_publish_hw_state_retains_payload_on_topic():
 
 
 def test_probe_can_handles_missing_adapter():
-    """No `ip` output → reports missing with actionable hint."""
-    with patch.object(hw_probe, '_run', return_value=''):
+    """No `ip` output AND no USB serial → reports missing with 'plug it in' hint."""
+    with patch.object(hw_probe, '_run', return_value=''), \
+         patch('hw_probe.globmod.glob', return_value=[]):
         r = hw_probe.probe_can()
     assert r['connected'] is False
     assert r['device'] == 'can'
