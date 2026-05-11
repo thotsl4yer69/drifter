@@ -12,14 +12,17 @@ wake_word: "hey vivi"
 
 # ── LLM backend (local Ollama) ──
 # Pi 5 actually has 15GB RAM (not 8 as the chassis sticker suggests on
-# this revision). With only one model resident, qwen2.5:3b finishes a
-# turn in ~25-40s and follows persona/no-invention rules far better than
-# 1.5b which fixates on coolant boilerplate regardless of prompt.
-# Timeout 120s gives headroom for cold-load + history-padded turns.
-ollama_model: qwen2.5:3b
+# Pi 5 (4-core, CPU-only inference): qwen2.5:3b takes 60-120s per turn
+# because of prompt-eval throughput on this hardware — every query falls
+# back to RAG on timeout, which is the wrong default. qwen2.5:1.5b
+# finishes a warm turn in ~20-40s and lets the LLM actually answer.
+# The trade-off: 1.5b is more prone to coolant-boilerplate fixations
+# (see no-invention guardrails in src/vivi.py). Stick with 3b on
+# hardware where you've measured <30s warm responses end-to-end.
+ollama_model: qwen2.5:1.5b
 ollama_host: localhost
 ollama_port: 11434
-ollama_timeout: 120
+ollama_timeout: 60
 
 # ── Speech-to-text (faster-whisper) ──
 whisper_model: base.en
