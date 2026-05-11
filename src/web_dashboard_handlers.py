@@ -201,6 +201,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_settings(self, parsed):          self._serve_json(load_settings())
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
+    def _get_rfaudio_status(self, parsed):    self._serve_json(state.latest_state.get('rfaudio_status', {}))
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
 
     def _get_feeds_summary(self, parsed):
@@ -918,6 +919,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/settings':              DashboardHandler._get_settings,
     '/api/state':                 DashboardHandler._get_state,
     '/api/hardware':              DashboardHandler._get_hardware,
+    '/api/rfaudio/status':        DashboardHandler._get_rfaudio_status,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,

@@ -306,3 +306,35 @@ def test_post_rfaudio_command_forwards_full_start_payload(monkeypatch):
     assert parsed['freq_mhz'] == 476.525
     assert parsed['mode'] == 'nfm'
     assert parsed['gain'] == 0
+
+
+def test_get_rfaudio_status_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/rfaudio/status' in routes
+    assert callable(routes['/api/rfaudio/status'])
+
+
+def test_get_rfaudio_status_serves_latest(monkeypatch):
+    """The handler must surface latest_state['rfaudio_status'] verbatim."""
+    state.latest_state.clear()
+    state.latest_state['rfaudio_status'] = {
+        'state': 'playing', 'freq_mhz': 476.525, 'mode': 'nfm',
+        'bands': [{'name': 'UHF-CB-Ch5', 'freq_mhz': 476.525, 'mode': 'nfm'}],
+        'ts': 0,
+    }
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_rfaudio_status(handler, None)
+    handler._serve_json.assert_called_once()
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['state'] == 'playing'
+    assert payload['freq_mhz'] == 476.525
+    assert len(payload['bands']) == 1
+
+
+def test_get_rfaudio_status_serves_empty_when_no_publish_yet():
+    state.latest_state.clear()
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_rfaudio_status(handler, None)
+    handler._serve_json.assert_called_once_with({})

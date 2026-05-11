@@ -262,6 +262,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   text-shadow:0 0 8px var(--accent-glow);
 }
 .tab-btn:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+
+/* SCANNER section (drifter-rfaudio control) */
+.rfa-band-btn,.rfa-btn{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:1px;
+  padding:6px 10px;background:var(--card);color:var(--text);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  cursor:pointer;transition:all .15s var(--ease);
+}
+.rfa-band-btn:hover,.rfa-btn:hover{background:var(--card-hi);border-color:var(--border-hi)}
+.rfa-band-btn.active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.rfa-btn:active{transform:translateY(1px)}
 html,body{background:var(--bg);color:var(--text);overscroll-behavior:none}
 body{
   font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -1617,6 +1628,24 @@ details[open] summary::before{content:"▾ "}
 <div class="section">RECENT DRIVES</div>
 <div id="sessions-list" style="padding:6px 16px 2px;font-size:12px;color:var(--dim)"><span class="skel skel-row"></span><span class="skel skel-row"></span><span class="skel skel-row"></span></div>
 
+<div class="section">SCANNER</div>
+<div id="rfaudio-panel" style="padding:6px 10px 8px">
+  <div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim);margin-bottom:6px">
+    <span>state: <b id="rfa-state" style="color:var(--text)">idle</b></span>
+    <span>·</span>
+    <span>freq: <b id="rfa-freq" style="color:var(--text)">—</b></span>
+    <span>·</span>
+    <span>mode: <b id="rfa-mode" style="color:var(--text)">—</b></span>
+  </div>
+  <div id="rfa-bands" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+  <div style="display:flex;gap:6px">
+    <button class="rfa-btn" id="rfa-stop" type="button">STOP</button>
+    <button class="rfa-btn" id="rfa-scan" type="button">SCAN</button>
+    <button class="rfa-btn" id="rfa-test" type="button">TEST TONE</button>
+  </div>
+  <div id="rfa-error" style="margin-top:6px;font-size:11px;color:var(--amber);min-height:1em"></div>
+</div>
+
 <div class="section">WARDRIVE</div>
 <div id="wardrive-panel" style="padding:6px 10px 4px">
   <div style="display:flex;gap:8px;font-size:11px;color:var(--dim);margin-bottom:6px">
@@ -1931,6 +1960,70 @@ function pollHardware(){
 // Poll hardware every 5s until data arrives
 pollHardware();
 hwPollTimer = setInterval(pollHardware, 5000);
+
+// ── SCANNER (drifter-rfaudio) controller ──
+// Posts to /api/rfaudio/command, polls drifter/rfaudio/status every 3s.
+function rfaPost(body){
+  return fetch('/api/rfaudio/command', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  }).then(r => r.ok ? r.json() : Promise.reject(r.status));
+}
+
+function renderRfaBands(bands){
+  const root = document.getElementById('rfa-bands');
+  if(!root) return;
+  root.innerHTML = (bands||[]).map(b =>
+    `<button class="rfa-band-btn" type="button" data-freq="${b.freq_mhz}" data-mode="${b.mode}">${escapeHtml(b.name)} · ${b.freq_mhz.toFixed(3)} ${b.mode.toUpperCase()}</button>`
+  ).join('');
+  root.querySelectorAll('.rfa-band-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const freq = parseFloat(btn.dataset.freq);
+      const mode = btn.dataset.mode;
+      rfaPost({action:'start', freq_mhz:freq, mode:mode}).catch(()=>{});
+    });
+  });
+}
+
+let _rfaLastBands = 0;
+function pollRfaudio(){
+  fetch('/api/rfaudio/status').then(r => r.ok ? r.json() : null).then(d => {
+    if(!d) return;
+    const st = d.state || 'idle';
+    const fs = document.getElementById('rfa-state'); if(fs) fs.textContent = st;
+    const ff = document.getElementById('rfa-freq'); if(ff) ff.textContent = d.freq_mhz != null ? d.freq_mhz.toFixed(3) + ' MHz' : '—';
+    const fm = document.getElementById('rfa-mode'); if(fm) fm.textContent = d.mode || '—';
+    const err = document.getElementById('rfa-error'); if(err) err.textContent = d.error || '';
+    document.querySelectorAll('.rfa-band-btn').forEach(b => {
+      const matches = d.state === 'playing' && parseFloat(b.dataset.freq) === d.freq_mhz;
+      b.classList.toggle('active', matches);
+    });
+    if(d.bands && d.bands.length){
+      renderRfaBands(d.bands);
+      _rfaLastBands = Date.now();
+    }
+  }).catch(()=>{});
+}
+
+// /api/rfaudio/status — read the retained MQTT status via dashboard proxy
+// (added by the same patch that exposes /api/rfaudio/command). If the
+// endpoint isn't there yet we just stay silent.
+function rfaPrime(){
+  // First publish list_bands to populate the panel; status poll picks it up.
+  rfaPost({action:'list_bands'}).catch(()=>{});
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const stop = document.getElementById('rfa-stop');
+  const scan = document.getElementById('rfa-scan');
+  const test = document.getElementById('rfa-test');
+  if(stop) stop.addEventListener('click', () => rfaPost({action:'stop'}).catch(()=>{}));
+  if(scan) scan.addEventListener('click', () => rfaPost({action:'scan'}).catch(()=>{}));
+  if(test) test.addEventListener('click', () => rfaPost({action:'test_tone'}).catch(()=>{}));
+  rfaPrime();
+  pollRfaudio();
+  setInterval(pollRfaudio, 3000);
+});
 
 // ── Color helpers ──
 function rpmColor(v){return v>6500?'var(--red)':v>5500?'var(--amber)':'var(--ok)'}
@@ -3113,7 +3206,7 @@ setInterval(refreshModePill, 10000);
 const SECTION_GROUP = {
   'ENGINE':'drive','FUEL':'drive','PERFORMANCE':'drive',
   'TIRES':'drive','DIAGNOSTICS':'drive',
-  'BLE':'opsec','WARDRIVE':'opsec','ADS-B AIRCRAFT':'opsec',
+  'BLE':'opsec','WARDRIVE':'opsec','ADS-B AIRCRAFT':'opsec','SCANNER':'opsec',
   'DIAGNOSIS':'diag','SYSTEM':'diag','RECENT DRIVES':'diag',
 };
 function setupTabs(){
