@@ -67,28 +67,23 @@ class AudioStream:
         self.mode: Optional[str] = None
 
     def start(self, freq_mhz: float, mode: str, gain: float) -> bool:
-        """Spawn rtl_fm and pipe stdout into aplay. Returns True on success.
-
-        rtl_fm will fail with `usb_claim_interface error -6` if drifter-rf
-        is still finishing a scan when we open the SDR — even after pause
-        + 3s wait. Retry the spawn a couple of times to cover that window."""
+        # Retry usb_claim_interface -6: drifter-rf may still be releasing the SDR.
         with self._lock:
             if self._rtl is not None:
                 self._stop_locked()
             for attempt in range(1, RFAUDIO_OPEN_RETRIES + 1):
-                if self._spawn_locked(freq_mhz, mode, gain):
-                    if self._rtl_alive_after(0.7):
-                        return True
-                    err = self._read_rtl_stderr_locked()
-                    self._stop_locked()
-                    if 'usb_claim_interface' not in err and 'Failed to open' not in err:
-                        log.warning("rtl_fm died early (no busy error): %r", err[:200])
-                        return False
-                    log.info("rtl_fm busy (attempt %d/%d) — backing off",
-                             attempt, RFAUDIO_OPEN_RETRIES)
-                    time.sleep(RFAUDIO_OPEN_RETRY_BACKOFF_SEC)
-                else:
+                if not self._spawn_locked(freq_mhz, mode, gain):
                     return False
+                time.sleep(0.7)
+                if self._rtl is not None and self._rtl.poll() is None:
+                    return True
+                err = self._read_rtl_stderr_locked()
+                self._stop_locked()
+                if 'usb_claim_interface' not in err and 'Failed to open' not in err:
+                    log.warning("rtl_fm died early: %r", err[:200])
+                    return False
+                log.info("rtl_fm busy (attempt %d/%d)", attempt, RFAUDIO_OPEN_RETRIES)
+                time.sleep(RFAUDIO_OPEN_RETRY_BACKOFF_SEC)
             log.warning("rtl_fm could not claim SDR after %d attempts",
                         RFAUDIO_OPEN_RETRIES)
             return False
@@ -132,12 +127,6 @@ class AudioStream:
         self.freq_mhz, self.mode = freq_mhz, mode
         return True
 
-    def _rtl_alive_after(self, seconds: float) -> bool:
-        """Sleep briefly then check whether rtl_fm is still running.
-        usb_claim_interface failures show up within ~200ms."""
-        time.sleep(seconds)
-        return self._rtl is not None and self._rtl.poll() is None
-
     def _read_rtl_stderr_locked(self) -> str:
         try:
             if self._rtl and self._rtl.stderr:
@@ -151,14 +140,9 @@ class AudioStream:
             self._stop_locked()
 
     def drain_stderr(self) -> tuple[str, str]:
-        """Collect any pending stderr from rtl_fm and aplay — used to
-        diagnose unexpected stream death."""
-        rtl_err = aplay_err = ''
-        try:
-            if self._rtl and self._rtl.stderr:
-                rtl_err = self._rtl.stderr.read().decode(errors='replace')[:500]
-        except Exception:
-            pass
+        # Used by the supervisor loop to log why a stream died.
+        rtl_err = self._read_rtl_stderr_locked()[:500]
+        aplay_err = ''
         try:
             if self._aplay and self._aplay.stderr:
                 aplay_err = self._aplay.stderr.read().decode(errors='replace')[:500]
@@ -202,12 +186,7 @@ def _publish_status(client) -> None:
 
 
 def _pause_rtl_433(client) -> None:
-    """Ask drifter-rf to release the SDR before we grab it.
-
-    Runs on a worker thread (see on_message dispatch), so paho's loop is free
-    to flush this publish before our sleep. The sleep covers MQTT round-trip
-    + drifter-rf's scan-kill latency + USB device release.
-    """
+    # Runs on a worker thread so paho's loop can flush this before we sleep.
     client.publish(TOPICS['rf_command'], json.dumps({
         'command': 'pause_rtl_433', 'ts': time.time(),
     }), qos=0)
@@ -354,10 +333,8 @@ def on_message(client, userdata, msg) -> None:  # noqa: ARG001 — paho callback
     if not isinstance(payload, dict):
         log.warning("payload not a JSON object")
         return
-    # Dispatch handle_command on a worker thread so paho's loop thread
-    # returns immediately. Otherwise our own publishes (e.g. the pause
-    # broadcast to drifter-rf) stay queued in memory until handle_command
-    # returns, which can be ~10s away thanks to the rtl_fm retry chain.
+    # Worker thread: paho's loop must stay free to flush our own publishes
+    # (e.g. pause_rtl_433) while _handle_command is in its retry chain.
     threading.Thread(
         target=_handle_command, args=(client, payload),
         name='rfaudio-cmd', daemon=True,
