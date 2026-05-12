@@ -40,6 +40,8 @@ from config import (
     EMERGENCY_AUDIO_BANDS,
     RFAUDIO_DEFAULT_FREQ_MHZ, RFAUDIO_DEFAULT_MODE, RFAUDIO_DEFAULT_GAIN,
     RFAUDIO_SAMPLE_RATE, RFAUDIO_OUTPUT_RATE, RFAUDIO_APLAY_DEVICE,
+    RFAUDIO_PAUSE_WAIT_SEC,
+    RFAUDIO_OPEN_RETRIES, RFAUDIO_OPEN_RETRY_BACKOFF_SEC,
 )
 from hw_probe import probe_rtl_sdr, publish_hw_state
 
@@ -65,51 +67,104 @@ class AudioStream:
         self.mode: Optional[str] = None
 
     def start(self, freq_mhz: float, mode: str, gain: float) -> bool:
-        """Spawn rtl_fm and pipe stdout into aplay. Returns True on success."""
+        """Spawn rtl_fm and pipe stdout into aplay. Returns True on success.
+
+        rtl_fm will fail with `usb_claim_interface error -6` if drifter-rf
+        is still finishing a scan when we open the SDR — even after pause
+        + 3s wait. Retry the spawn a couple of times to cover that window."""
         with self._lock:
             if self._rtl is not None:
                 self._stop_locked()
-            freq_hz = int(freq_mhz * 1_000_000)
-            gain_arg = ['-g', str(gain)] if gain and gain > 0 else []  # 0 = auto
-            rtl_cmd = [
-                'rtl_fm',
-                '-f', str(freq_hz),
-                '-M', mode,
-                '-s', str(RFAUDIO_SAMPLE_RATE),
-                '-r', str(RFAUDIO_OUTPUT_RATE),
-                *gain_arg,
-            ]
-            aplay_cmd = [
-                'aplay',
-                '-q',
-                '-f', 'S16_LE',
-                '-r', str(RFAUDIO_OUTPUT_RATE),
-                '-c', '1',
-                '-D', RFAUDIO_APLAY_DEVICE,
-            ]
-            log.info("rtl_fm %.3f MHz %s gain=%s → aplay %s",
-                     freq_mhz, mode, gain or 'auto', RFAUDIO_APLAY_DEVICE)
-            try:
-                self._rtl = subprocess.Popen(
-                    rtl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                )
-                self._aplay = subprocess.Popen(
-                    aplay_cmd, stdin=self._rtl.stdout, stderr=subprocess.PIPE,
-                )
-                # Detach the pipe end in the parent so rtl_fm exits cleanly
-                # when aplay is terminated.
-                if self._rtl.stdout:
-                    self._rtl.stdout.close()
-            except FileNotFoundError as e:
-                log.error("required binary missing: %s", e)
-                self._rtl = self._aplay = None
-                return False
-            self.freq_mhz, self.mode = freq_mhz, mode
-            return True
+            for attempt in range(1, RFAUDIO_OPEN_RETRIES + 1):
+                if self._spawn_locked(freq_mhz, mode, gain):
+                    if self._rtl_alive_after(0.7):
+                        return True
+                    err = self._read_rtl_stderr_locked()
+                    self._stop_locked()
+                    if 'usb_claim_interface' not in err and 'Failed to open' not in err:
+                        log.warning("rtl_fm died early (no busy error): %r", err[:200])
+                        return False
+                    log.info("rtl_fm busy (attempt %d/%d) — backing off",
+                             attempt, RFAUDIO_OPEN_RETRIES)
+                    time.sleep(RFAUDIO_OPEN_RETRY_BACKOFF_SEC)
+                else:
+                    return False
+            log.warning("rtl_fm could not claim SDR after %d attempts",
+                        RFAUDIO_OPEN_RETRIES)
+            return False
+
+    def _spawn_locked(self, freq_mhz: float, mode: str, gain: float) -> bool:
+        freq_hz = int(freq_mhz * 1_000_000)
+        gain_arg = ['-g', str(gain)] if gain and gain > 0 else []  # 0 = auto
+        rtl_cmd = [
+            'rtl_fm',
+            '-f', str(freq_hz),
+            '-M', mode,
+            '-s', str(RFAUDIO_SAMPLE_RATE),
+            '-r', str(RFAUDIO_OUTPUT_RATE),
+            *gain_arg,
+        ]
+        aplay_cmd = [
+            'aplay',
+            '-q',
+            '-f', 'S16_LE',
+            '-r', str(RFAUDIO_OUTPUT_RATE),
+            '-c', '1',
+            '-D', RFAUDIO_APLAY_DEVICE,
+        ]
+        log.info("rtl_fm %.3f MHz %s gain=%s → aplay %s",
+                 freq_mhz, mode, gain or 'auto', RFAUDIO_APLAY_DEVICE)
+        try:
+            self._rtl = subprocess.Popen(
+                rtl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self._aplay = subprocess.Popen(
+                aplay_cmd, stdin=self._rtl.stdout, stderr=subprocess.PIPE,
+            )
+            # Detach the pipe end in the parent so rtl_fm exits cleanly
+            # when aplay is terminated.
+            if self._rtl.stdout:
+                self._rtl.stdout.close()
+        except FileNotFoundError as e:
+            log.error("required binary missing: %s", e)
+            self._rtl = self._aplay = None
+            return False
+        self.freq_mhz, self.mode = freq_mhz, mode
+        return True
+
+    def _rtl_alive_after(self, seconds: float) -> bool:
+        """Sleep briefly then check whether rtl_fm is still running.
+        usb_claim_interface failures show up within ~200ms."""
+        time.sleep(seconds)
+        return self._rtl is not None and self._rtl.poll() is None
+
+    def _read_rtl_stderr_locked(self) -> str:
+        try:
+            if self._rtl and self._rtl.stderr:
+                return self._rtl.stderr.read().decode(errors='replace')
+        except Exception:
+            pass
+        return ''
 
     def stop(self) -> None:
         with self._lock:
             self._stop_locked()
+
+    def drain_stderr(self) -> tuple[str, str]:
+        """Collect any pending stderr from rtl_fm and aplay — used to
+        diagnose unexpected stream death."""
+        rtl_err = aplay_err = ''
+        try:
+            if self._rtl and self._rtl.stderr:
+                rtl_err = self._rtl.stderr.read().decode(errors='replace')[:500]
+        except Exception:
+            pass
+        try:
+            if self._aplay and self._aplay.stderr:
+                aplay_err = self._aplay.stderr.read().decode(errors='replace')[:500]
+        except Exception:
+            pass
+        return rtl_err, aplay_err
 
     def _stop_locked(self) -> None:
         for proc in (self._aplay, self._rtl):
@@ -147,12 +202,16 @@ def _publish_status(client) -> None:
 
 
 def _pause_rtl_433(client) -> None:
-    """Ask drifter-rf to release the SDR before we grab it."""
+    """Ask drifter-rf to release the SDR before we grab it.
+
+    Runs on a worker thread (see on_message dispatch), so paho's loop is free
+    to flush this publish before our sleep. The sleep covers MQTT round-trip
+    + drifter-rf's scan-kill latency + USB device release.
+    """
     client.publish(TOPICS['rf_command'], json.dumps({
         'command': 'pause_rtl_433', 'ts': time.time(),
-    }), qos=1)
-    # Give drifter-rf a moment to terminate rtl_433 and release the device.
-    time.sleep(0.5)
+    }), qos=0)
+    time.sleep(RFAUDIO_PAUSE_WAIT_SEC)
 
 
 def _resume_rtl_433(client) -> None:
@@ -295,7 +354,14 @@ def on_message(client, userdata, msg) -> None:  # noqa: ARG001 — paho callback
     if not isinstance(payload, dict):
         log.warning("payload not a JSON object")
         return
-    _handle_command(client, payload)
+    # Dispatch handle_command on a worker thread so paho's loop thread
+    # returns immediately. Otherwise our own publishes (e.g. the pause
+    # broadcast to drifter-rf) stay queued in memory until handle_command
+    # returns, which can be ~10s away thanks to the rtl_fm retry chain.
+    threading.Thread(
+        target=_handle_command, args=(client, payload),
+        name='rfaudio-cmd', daemon=True,
+    ).start()
 
 
 def main() -> int:
@@ -340,7 +406,9 @@ def main() -> int:
         # waiting for them to explicitly stop.
         global _state
         if _state == 'playing' and not _stream.is_running():
-            log.warning("stream died unexpectedly — returning to idle")
+            rtl_err, aplay_err = _stream.drain_stderr()
+            log.warning("stream died unexpectedly — returning to idle. "
+                        "rtl_fm stderr=%r aplay stderr=%r", rtl_err, aplay_err)
             _state = 'idle'
             _publish_status(client)
             _resume_rtl_433(client)

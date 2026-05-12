@@ -41,7 +41,35 @@ running = True
 # Cooperative hand-off hooks. main() installs the closures it creates for
 # pause_rtl_433/resume_rtl_433; on_message looks them up here so MQTT
 # commands from peer services (e.g. rfaudio) can release the SDR.
-_rtl_control: dict = {'pause': None, 'resume': None}
+# `held_external` suppresses the main loop's own periodic SDR scans
+# (spectrum / emergency / ADS-B) while a peer service holds the SDR —
+# otherwise rtl_power and dump1090 race rtl_fm for /dev/bus/usb access
+# and kill the audio stream within ~1s.
+# `scan_proc` is the currently-running scan subprocess (rtl_power / dump1090)
+# so an MQTT pause can interrupt it instead of waiting up to 120s for it
+# to time out. Populated by the scan helpers; cleared on completion.
+_rtl_control: dict = {'pause': None, 'resume': None,
+                      'held_external': False, 'scan_proc': None}
+
+
+def _kill_active_scan() -> None:
+    """Terminate any in-flight rtl_power / dump1090 so rfaudio can grab
+    the SDR without waiting for the scan's subprocess.run timeout."""
+    proc = _rtl_control.get('scan_proc')
+    if proc is None:
+        return
+    if proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -350,13 +378,25 @@ def run_spectrum_scan(mqtt_client):
             '-1',             # Single sweep
         ]
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        _rtl_control['scan_proc'] = proc
+        try:
+            stdout, stderr = proc.communicate(timeout=120)
+        finally:
+            _rtl_control['scan_proc'] = None
 
-        if result.returncode != 0:
-            log.warning(f"Spectrum scan failed: {result.stderr[:200]}")
+        if proc.returncode != 0:
+            if _rtl_control.get('held_external'):
+                # We were interrupted by an rfaudio pause — not an error.
+                log.info("Spectrum scan interrupted (peer service took SDR)")
+            else:
+                log.warning(f"Spectrum scan failed: {stderr[:200]}")
             return
+
+        result = type('R', (), {'stdout': stdout, 'stderr': stderr,
+                                'returncode': proc.returncode})
 
         # Parse CSV output into frequency → power map
         bands = {}
@@ -437,6 +477,9 @@ def run_emergency_scan(mqtt_client):
     results = []
 
     for band in EMERGENCY_BANDS:
+        if _rtl_control.get('held_external'):
+            # Peer service grabbed the SDR mid-loop; bail out cleanly.
+            break
         freq_hz = int(band['freq_mhz'] * 1e6)
         try:
             # Use rtl_power for a narrow scan around the frequency
@@ -447,10 +490,21 @@ def run_emergency_scan(mqtt_client):
                 '-i', '1',
                 '-1',
             ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=EMERGENCY_SCAN_DWELL + 5
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
+            _rtl_control['scan_proc'] = proc
+            try:
+                stdout, stderr = proc.communicate(
+                    timeout=EMERGENCY_SCAN_DWELL + 5
+                )
+            finally:
+                _rtl_control['scan_proc'] = None
+            result = type('R', (), {'stdout': stdout, 'stderr': stderr,
+                                    'returncode': proc.returncode})
+            if proc.returncode != 0 and _rtl_control.get('held_external'):
+                # Interrupted by rfaudio pause — stop scanning further bands.
+                break
 
             peak_db = -999
             for line in result.stdout.strip().split('\n'):
@@ -539,9 +593,14 @@ def run_adsb_scan(mqtt_client):
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        _rtl_control['scan_proc'] = proc
 
-        # Gather data for the scan window
-        time.sleep(ADSB_SCAN_DURATION)
+        # Gather data for the scan window — but break early if a peer
+        # service (rfaudio) takes the SDR via pause_rtl_433.
+        for _ in range(int(ADSB_SCAN_DURATION)):
+            if _rtl_control.get('held_external') or proc.poll() is not None:
+                break
+            time.sleep(1)
 
     except FileNotFoundError:
         log.warning(f"dump1090 not found — ADS-B scanning disabled. "
@@ -557,6 +616,7 @@ def run_adsb_scan(mqtt_client):
                 proc.wait(timeout=5)
             except Exception:
                 proc.kill()
+        _rtl_control['scan_proc'] = None
 
     # Read results
     try:
@@ -655,13 +715,19 @@ def on_message(client, userdata, msg):
                 }))
 
         elif command == 'pause_rtl_433':
-            # Peer service (rfaudio) needs exclusive SDR access.
+            # Peer service (rfaudio) needs exclusive SDR access. Setting the
+            # flag BEFORE stopping rtl_433 gates the next periodic-scan tick.
+            _rtl_control['held_external'] = True
+            # Also interrupt any in-flight scan subprocess so we don't block
+            # the peer for up to 120s waiting for rtl_power / dump1090 to finish.
+            _kill_active_scan()
             fn = _rtl_control.get('pause')
             if callable(fn):
                 was_running = fn()
                 log.info("rtl_433 paused via MQTT (was_running=%s)", was_running)
 
         elif command == 'resume_rtl_433':
+            _rtl_control['held_external'] = False
             fn = _rtl_control.get('resume')
             if callable(fn):
                 fn()
@@ -743,28 +809,47 @@ def main():
         rtl_thread.start()
 
     def pause_rtl_433():
-        """Stop rtl_433 temporarily for a scan. Returns True if it was running."""
+        """Stop rtl_433 temporarily for a scan. Returns True if either the
+        reader thread OR the rtl_433 subprocess was running. The subprocess
+        can outlive the reader thread (e.g. if readline() got EOF but rtl_433
+        kept its USB handle open), so we kill it independently of thread state."""
         nonlocal rtl_thread
-        if rtl_thread and rtl_thread.is_alive():
-            stop_event.set()
-            # Kill the rtl_433 subprocess directly for fast release
-            if rtl_proc[0] and rtl_proc[0].poll() is None:
+        was_active = False
+        # Kill the rtl_433 subprocess if it's alive — even if rtl_thread is
+        # already dead. Without this, an orphaned rtl_433 keeps the SDR.
+        proc = rtl_proc[0]
+        if proc and proc.poll() is None:
+            was_active = True
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
                 try:
-                    rtl_proc[0].terminate()
-                    rtl_proc[0].wait(timeout=3)
+                    proc.kill()
                 except Exception:
-                    try:
-                        rtl_proc[0].kill()
-                    except Exception:
-                        pass
+                    pass
+        if rtl_thread and rtl_thread.is_alive():
+            was_active = True
+            stop_event.set()
             rtl_thread.join(timeout=5)
-            rtl_thread = None
+        rtl_thread = None
+        rtl_proc[0] = None
+        if was_active:
             time.sleep(0.5)  # Let SDR hardware release
-            return True
-        return False
+        return was_active
 
     def resume_rtl_433():
-        """Restart rtl_433 after a scan."""
+        """Restart rtl_433 after a scan.
+
+        Skipped while a peer service is holding the SDR — otherwise a
+        scan-finally resume can race the peer and spawn an orphan rtl_433
+        that pause_rtl_433 will never see (different proc_ref slot)."""
+        if _rtl_control.get('held_external'):
+            log.debug("rtl_433 resume suppressed — peer service holds the SDR")
+            return
+        if rtl_thread and rtl_thread.is_alive():
+            log.debug("rtl_433 resume skipped — already running")
+            return
         if has_sdr and has_rtl433:
             start_rtl_433()
             log.debug("rtl_433 resumed after scan")
@@ -839,8 +924,13 @@ def main():
                                 json.dumps(snapshot), retain=True)
             last_tpms_snapshot = now
 
+        # Skip our own periodic SDR scans whenever a peer service (rfaudio)
+        # is holding the device; otherwise rtl_power / dump1090 race the
+        # peer's rtl_fm for USB access and kill its audio pipeline.
+        sdr_available = has_sdr and not _rtl_control.get('held_external')
+
         # Spectrum scan (pauses rtl_433 briefly via time-division)
-        if has_sdr and now - last_spectrum >= SPECTRUM_SCAN_INTERVAL:
+        if sdr_available and now - last_spectrum >= SPECTRUM_SCAN_INTERVAL:
             was_running = pause_rtl_433()
             try:
                 run_spectrum_scan(mqtt_client)
@@ -850,7 +940,7 @@ def main():
             last_spectrum = now
 
         # Emergency band scan (pauses rtl_433 briefly)
-        if has_sdr and now - last_emergency >= EMERGENCY_SCAN_INTERVAL:
+        if sdr_available and now - last_emergency >= EMERGENCY_SCAN_INTERVAL:
             was_running = pause_rtl_433()
             try:
                 run_emergency_scan(mqtt_client)
@@ -860,7 +950,7 @@ def main():
             last_emergency = now
 
         # ADS-B aircraft scan (pauses rtl_433 for ADSB_SCAN_DURATION seconds)
-        if has_sdr and has_dump1090 and now - last_adsb >= ADSB_SCAN_INTERVAL:
+        if sdr_available and has_dump1090 and now - last_adsb >= ADSB_SCAN_INTERVAL:
             was_running = pause_rtl_433()
             try:
                 run_adsb_scan(mqtt_client)

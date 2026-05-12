@@ -556,6 +556,9 @@ RFAUDIO_DEFAULT_GAIN     = 0          # 0 = automatic
 RFAUDIO_SAMPLE_RATE      = 200000     # rtl_fm input rate
 RFAUDIO_OUTPUT_RATE      = 48000      # aplay output rate
 RFAUDIO_APLAY_DEVICE     = 'plughw:0,0'  # USB Audio Device card 0 (C-Media on this Pi)
+RFAUDIO_PAUSE_WAIT_SEC   = 3.0   # MQTT round-trip + drifter-rf scan-kill + USB device release; further retries inside AudioStream
+RFAUDIO_OPEN_RETRIES     = 3     # rtl_fm retries on usb_claim_interface error (drifter-rf scan finishing)
+RFAUDIO_OPEN_RETRY_BACKOFF_SEC = 2.0  # Between retries; total worst-case latency ≈ 9s
 
 # ── MQTT Topics ──
 TOPICS = {
