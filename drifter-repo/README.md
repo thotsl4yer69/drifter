@@ -47,6 +47,65 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 - **Monitors** its own health — watchdog restarts failed services automatically
 - **Syncs** logs and calibration data to the Sentient Core home network (nanob) when in range
 
+## v2 Features (feature/drifter-v2)
+
+DRIFTER v2 adds a three-tier intelligence stack and a full infotainment + ADAS layer.
+
+### Three-tier diagnostics
+- **Tier 1 — `safety_engine.py`**: local deterministic safety rules (overrev, overspeed, hard brake, stall, crash, FCW, fatigue). Microsecond response, no network.
+- **Tier 2 — `ai_diagnostics.py`**: on-demand Claude diagnoses when DTCs appear or alerts escalate. Falls back through `llm_client_v2` (Claude → Groq → Ollama).
+- **Tier 3 — `session_reporter.py`**: post-drive markdown summary built from telemetry windows, safety events, and AI diagnoses.
+
+### LLM cascade
+`llm_client_v2.py` runs Claude (primary) → Groq (fast/free) → Ollama (offline) with prompt cache, retry, streaming, and per-backend health tracking.
+
+### Vivi v2
+`vivi_v2.py` is the new voice and chat brain — Claude-backed with streaming, persistent SQLite memory (`vivi_memory.py`), and proactive responses on safety events. Personality is editable at `/opt/drifter/vivi_personality.txt`.
+
+### Multi-vehicle support
+- `vehicle_id.py` auto-reads VIN over OBD-II Mode 09 and loads `vehicles/<VIN>.yaml`.
+- Unknown VINs get an AI-generated profile cached to disk.
+- `adaptive_thresholds.py` learns per-vehicle warm-idle baselines across sessions.
+- `vehicle_kb.py` + `vehicle_learn.py` grow a per-vehicle KB from observed events.
+
+### Infotainment
+- `spotify_bridge.py`: Spotify Connect via spotipy — play/pause/next/volume/playlist/queue/search.
+- `nav_engine.py`: GPS via NMEA, speed-camera proximity warnings, OSRM routing.
+- `trip_computer.py`: distance, fuel from MAF, GBP cost, per-trip summary.
+
+### Safety & comms
+- `crash_detect.py`: MPU6050 accel + OBD speed crash detection with SOS countdown.
+- `driver_assist.py`: rolling drive score, fatigue nudges, Open-Meteo weather pulls.
+- `sentry_mode.py`: parked-car bump detection + tamper log.
+- `comms_bridge.py`: SMS via AT-modem + ntfy/Telegram/Discord fan-out.
+
+### OBD bridge
+- `obd_bridge.py`: ELM327 fallback over `/dev/ttyUSB0` when no CAN hardware is present. Same metric topics as `can_bridge.py`.
+
+### Vision suite (Pi5 + Hailo node)
+- `vision_engine.py`: YOLO object detection on Hailo-8/8L with ONNX CPU fallback.
+- `alpr_engine.py`: licence-plate OCR via EasyOCR with OpenALPR fallback.
+- `dashcam.py`: ffmpeg-segmented continuous recording, prune to `DASHCAM_MAX_GB`.
+- `forward_collision.py`: time-to-collision warnings off detection bounding boxes.
+
+### Quick install for v2
+```bash
+# After the main install.sh has run:
+sudo ./scripts/install-safety.sh     # Tier 1+2+3 + crash + assist + sentry + comms
+sudo ./scripts/install-vivi.sh       # Vivi v2 voice
+sudo ./scripts/install-spotify.sh    # Spotify
+sudo ./scripts/install-nav.sh        # GPS + nav + speed cameras
+sudo ./scripts/install-obd.sh        # ELM327 fallback (if not using CAN)
+sudo ./scripts/install-vision.sh     # On the Hailo Pi5 node
+```
+
+### API keys
+Set in `/opt/drifter/.env`:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GROQ_API_KEY=gsk_...
+```
+
 ## Hardware
 
 | Component | What You Need |

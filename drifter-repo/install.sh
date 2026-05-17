@@ -161,14 +161,18 @@ pip install --quiet \
     "paho-mqtt<2.0" \
     psutil \
     websockets \
-    requests
+    requests \
+    pyyaml \
+    pyserial \
+    spotipy \
+    smbus2
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 6. Deploy Application ──
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py llm_client_v2.py telemetry_batcher.py safety_engine.py ai_diagnostics.py session_reporter.py vehicle_id.py adaptive_thresholds.py vivi_v2.py vivi_memory.py vehicle_kb.py vehicle_learn.py spotify_bridge.py nav_engine.py trip_computer.py crash_detect.py driver_assist.py sentry_mode.py comms_bridge.py obd_bridge.py vision_engine.py alpr_engine.py dashcam.py forward_collision.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -194,13 +198,43 @@ mkdir -p "${DRIFTER_DIR}/realdash"
 cp "${REPO_DIR}/realdash/drifter_channels.xml" "${DRIFTER_DIR}/realdash/"
 ok "RealDash channel map deployed"
 
-# Vivi config (don't overwrite if already customised)
-if [ ! -f "${DRIFTER_DIR}/vivi.yaml" ]; then
-    cp "${REPO_DIR}/config/vivi.yaml" "${DRIFTER_DIR}/"
-    ok "vivi.yaml deployed"
-else
-    ok "vivi.yaml already present — not overwriting"
+# v1 + v2 YAML configs (don't overwrite if already customised)
+V2_CONFIGS="vivi.yaml spotify.yaml nav.yaml safety.yaml vision.yaml obd.yaml"
+for cfg in $V2_CONFIGS; do
+    if [ ! -f "${DRIFTER_DIR}/${cfg}" ]; then
+        if [ -f "${REPO_DIR}/config/${cfg}" ]; then
+            cp "${REPO_DIR}/config/${cfg}" "${DRIFTER_DIR}/"
+            ok "${cfg} deployed"
+        fi
+    else
+        ok "${cfg} already present — not overwriting"
+    fi
+done
+
+# Vivi personality
+if [ ! -f "${DRIFTER_DIR}/vivi_personality.txt" ] && [ -f "${REPO_DIR}/config/vivi_personality.txt" ]; then
+    cp "${REPO_DIR}/config/vivi_personality.txt" "${DRIFTER_DIR}/"
+    ok "vivi_personality.txt deployed"
 fi
+
+# Vehicle profiles
+mkdir -p "${DRIFTER_DIR}/vehicles"
+if [ -d "${REPO_DIR}/vehicles" ]; then
+    cp -r "${REPO_DIR}/vehicles/." "${DRIFTER_DIR}/vehicles/" 2>/dev/null
+    ok "vehicle profiles deployed"
+fi
+
+# Speed-camera + tile data
+mkdir -p "${DRIFTER_DIR}/data" "${DRIFTER_DIR}/data/tiles"
+if [ -f "${REPO_DIR}/data/speed_cameras_vic.json" ]; then
+    cp "${REPO_DIR}/data/speed_cameras_vic.json" "${DRIFTER_DIR}/data/"
+    ok "speed_cameras_vic.json deployed"
+fi
+
+# v2 workspace dirs
+mkdir -p "${DRIFTER_DIR}/memory" "${DRIFTER_DIR}/kb" "${DRIFTER_DIR}/sentry" \
+         "${DRIFTER_DIR}/dashcam" "${DRIFTER_DIR}/vision-models"
+ok "v2 workspace directories created"
 
 # Log & session directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions
@@ -277,7 +311,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst drifter-batcher drifter-safety drifter-aidiag drifter-reporter drifter-vehicleid drifter-thresholds drifter-kb drifter-learn drifter-spotify drifter-nav drifter-trip drifter-crash drifter-assist drifter-sentry drifter-comms drifter-obdbridge drifter-vision drifter-dashcam drifter-alpr drifter-fcw"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
