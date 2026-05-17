@@ -13,6 +13,16 @@ DRIFTER_DIR = Path("/opt/drifter")
 LOG_DIR = DRIFTER_DIR / "logs"
 CALIBRATION_FILE = DRIFTER_DIR / "calibration.json"
 
+# ── v2 Paths ──
+VEHICLES_DIR = DRIFTER_DIR / "vehicles"
+DATA_DIR = DRIFTER_DIR / "data"
+KB_DIR = DRIFTER_DIR / "kb"
+MEMORY_DIR = DRIFTER_DIR / "memory"
+DASHCAM_DIR = DRIFTER_DIR / "dashcam"
+SENTRY_DIR = DRIFTER_DIR / "sentry"
+VEHICLE_PROFILE_FILE = DRIFTER_DIR / "vehicle.yaml"
+SPEED_CAMERAS_FILE = DATA_DIR / "speed_cameras_vic.json"
+
 # ── MQTT ──
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
@@ -488,6 +498,83 @@ TOPICS = {
     'vivi_status': 'drifter/vivi/status',
     # Audio (shared with voice_alerts)
     'audio_wav': 'drifter/audio/wav',
+
+    # ═══════════════════════════════════════════════════════════════
+    #  v2 TOPICS
+    # ═══════════════════════════════════════════════════════════════
+    # Safety engine (Tier 1 local rules)
+    'safety_alert': 'drifter/safety/alert',
+    'safety_status': 'drifter/safety/status',
+    # AI diagnostics (Tier 2 Claude API)
+    'ai_diag_request': 'drifter/diag/ai/request',
+    'ai_diag_response': 'drifter/diag/ai/response',
+    'ai_diag_status': 'drifter/diag/ai/status',
+    # Session reporter (Tier 3 post-drive)
+    'session_report': 'drifter/session/report',
+    'session_summary': 'drifter/session/summary',
+    # Vehicle identification
+    'vehicle_id': 'drifter/vehicle/id',
+    'vehicle_profile': 'drifter/vehicle/profile',
+    # Telemetry batcher
+    'telemetry_window': 'drifter/telemetry/window',
+    'telemetry_stats': 'drifter/telemetry/stats',
+    # Adaptive thresholds
+    'thresholds_learned': 'drifter/thresholds/learned',
+    'thresholds_update': 'drifter/thresholds/update',
+    # Vehicle KB / learning
+    'kb_query': 'drifter/kb/query',
+    'kb_response': 'drifter/kb/response',
+    'kb_update': 'drifter/kb/update',
+    'learn_event': 'drifter/learn/event',
+    # Vivi v2
+    'vivi2_query': 'drifter/vivi2/query',
+    'vivi2_response': 'drifter/vivi2/response',
+    'vivi2_status': 'drifter/vivi2/status',
+    'vivi2_stream': 'drifter/vivi2/stream',
+    'vivi2_proactive': 'drifter/vivi2/proactive',
+    'vivi2_memory': 'drifter/vivi2/memory',
+    # Spotify
+    'spotify_command': 'drifter/spotify/command',
+    'spotify_status': 'drifter/spotify/status',
+    'spotify_track': 'drifter/spotify/track',
+    # Navigation
+    'nav_position': 'drifter/nav/position',
+    'nav_route': 'drifter/nav/route',
+    'nav_alert': 'drifter/nav/alert',
+    'nav_camera': 'drifter/nav/camera',
+    # Trip computer
+    'trip_stats': 'drifter/trip/stats',
+    'trip_fuel': 'drifter/trip/fuel',
+    'trip_cost': 'drifter/trip/cost',
+    'trip_event': 'drifter/trip/event',
+    # Crash detection
+    'crash_event': 'drifter/crash/event',
+    'crash_sos': 'drifter/crash/sos',
+    'crash_status': 'drifter/crash/status',
+    # Driver assist
+    'driver_score': 'drifter/driver/score',
+    'driver_fatigue': 'drifter/driver/fatigue',
+    'driver_weather': 'drifter/driver/weather',
+    'driver_event': 'drifter/driver/event',
+    # Sentry mode
+    'sentry_event': 'drifter/sentry/event',
+    'sentry_status': 'drifter/sentry/status',
+    'sentry_clip': 'drifter/sentry/clip',
+    # Comms bridge
+    'comms_sms': 'drifter/comms/sms',
+    'comms_notify': 'drifter/comms/notify',
+    'comms_inbound': 'drifter/comms/inbound',
+    # OBD bridge (ELM327 fallback)
+    'obd_status': 'drifter/obd/status',
+    'obd_pid': 'drifter/obd/pid',
+    # Vision (Hailo Pi5 node)
+    'vision_object': 'drifter/vision/object',
+    'vision_status': 'drifter/vision/status',
+    'alpr_plate': 'drifter/vision/alpr/plate',
+    'dashcam_status': 'drifter/vision/dashcam/status',
+    'dashcam_clip': 'drifter/vision/dashcam/clip',
+    'fcw_warning': 'drifter/vision/fcw/warning',
+    'fcw_status': 'drifter/vision/fcw/status',
 }
 
 # ── LLM Analyst ──
@@ -525,5 +612,138 @@ SERVICES = [
     "drifter-realdash",
     "drifter-rf",
     "drifter-dashboard",
+    # v2 services
+    "drifter-safety",
+    "drifter-aidiag",
+    "drifter-reporter",
+    "drifter-vehicleid",
+    "drifter-batcher",
+    "drifter-thresholds",
+    "drifter-kb",
+    "drifter-learn",
+    "drifter-spotify",
+    "drifter-nav",
+    "drifter-trip",
+    "drifter-crash",
+    "drifter-assist",
+    "drifter-sentry",
+    "drifter-comms",
+    "drifter-obdbridge",
+    # Vision node (Pi5 + Hailo, separate host but managed here)
+    "drifter-vision",
+    "drifter-dashcam",
+    "drifter-alpr",
+    "drifter-fcw",
     # drifter-llm removed — superseded by drifter-analyst
 ]
+
+# ═══════════════════════════════════════════════════════════════════
+#  v2 Constants
+# ═══════════════════════════════════════════════════════════════════
+
+# ── LLM Cascade (v2) ──
+# Order: Claude (primary) → Groq (fast/free) → Ollama (offline)
+LLM_CASCADE_ORDER = ("claude", "groq", "ollama")
+LLM_CLAUDE_TIMEOUT = 30
+LLM_GROQ_TIMEOUT = 15
+LLM_OLLAMA_TIMEOUT = 45
+LLM_CACHE_TTL = 300         # seconds — cache identical prompts
+LLM_MAX_RETRIES = 2
+
+# ── Telemetry Batcher ──
+TELEMETRY_WINDOW_SECONDS = 60
+TELEMETRY_PUBLISH_HZ = 1
+TELEMETRY_KEEP_SAMPLES = 600
+
+# ── Adaptive Thresholds ──
+ADAPTIVE_LEARN_MIN_SAMPLES = 1800   # ~30 min of warm-running data
+ADAPTIVE_LEARN_SESSIONS = 5         # sessions before thresholds settle
+ADAPTIVE_DRIFT_LIMIT = 0.25         # max relative drift from defaults
+
+# ── Vehicle Identification ──
+VIN_OBD_MODE = 0x09
+VIN_OBD_PID = 0x02
+VIN_DETECT_RETRIES = 3
+VIN_DETECT_TIMEOUT = 2.0
+
+# ── Spotify ──
+SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
+SPOTIFY_SCOPES = "user-modify-playback-state user-read-playback-state user-read-currently-playing streaming"
+SPOTIFY_TOKEN_FILE = DRIFTER_DIR / ".spotify_token.json"
+SPOTIFY_DEVICE_NAME = "DRIFTER"
+
+# ── Navigation ──
+NAV_TILE_CACHE_DIR = DATA_DIR / "tiles"
+NAV_GPS_DEVICE = "/dev/ttyACM0"
+NAV_GPS_BAUD = 9600
+NAV_CAMERA_WARN_METERS = 300
+NAV_REROUTE_OFF_THRESHOLD = 50      # m off-route triggers reroute
+NAV_OSRM_HOST = "router.project-osrm.org"
+
+# ── Trip Computer ──
+TRIP_FUEL_PRICE_GBP_PER_L = 1.45    # default — overridden by config
+TRIP_FUEL_TANK_LITRES = 60
+TRIP_AVG_CONSUMPTION_L_PER_100KM = 9.5
+TRIP_SESSION_GAP_MIN = 10           # minutes idle = new session
+
+# ── Crash Detection ──
+CRASH_ACCEL_G_THRESHOLD = 3.0       # peak g over 100ms = crash
+CRASH_DECEL_KPH_PER_S = 25          # sudden stop ≥25 km/h/s
+CRASH_AIRBAG_GRACE_SEC = 10         # countdown before auto-SOS
+CRASH_SOS_NUMBER = ""               # set via crash.yaml
+
+# ── Driver Assist ──
+DRIVER_SCORE_WINDOW_KM = 50
+FATIGUE_DRIVE_HOURS = 2.0           # hours behind wheel = nudge
+FATIGUE_NIGHT_HOURS = 1.5           # tighter at night
+WEATHER_API_HOST = "api.open-meteo.com"
+
+# ── Sentry Mode ──
+SENTRY_ACCEL_TRIGGER_G = 0.5        # bump threshold
+SENTRY_CLIP_SECONDS = 30
+SENTRY_MAX_CLIPS = 50
+
+# ── Comms Bridge ──
+COMMS_MODEM_DEV = "/dev/ttyUSB2"
+COMMS_NOTIFY_BACKENDS = ("ntfy", "telegram", "discord")
+
+# ── OBD Bridge (ELM327 fallback when no CAN HW) ──
+OBD_SERIAL_DEV = "/dev/ttyUSB0"
+OBD_SERIAL_BAUD = 38400
+OBD_POLL_HZ = 5
+
+# ── Vivi v2 ──
+VIVI2_HISTORY_TURNS = 20
+VIVI2_MEMORY_MAX_ENTRIES = 200
+VIVI2_PROACTIVE_COOLDOWN_S = 120
+VIVI2_STREAMING = True
+VIVI2_PERSONALITY_FILE = DRIFTER_DIR / "vivi_personality.txt"
+
+# ── Vision (Hailo Pi5 node) ──
+VISION_MODEL_DIR = DRIFTER_DIR / "vision-models"
+VISION_YOLO_MODEL = "yolov8s.hef"
+VISION_INPUT_W = 640
+VISION_INPUT_H = 640
+VISION_CONFIDENCE = 0.35
+VISION_CLASSES_OF_INTEREST = (
+    "person", "bicycle", "car", "motorcycle", "bus", "truck",
+    "traffic light", "stop sign",
+)
+ALPR_MIN_CONFIDENCE = 0.55
+DASHCAM_SEGMENT_SECONDS = 60
+DASHCAM_MAX_GB = 32
+FCW_TTC_WARN = 2.5                  # time-to-collision warn (s)
+FCW_TTC_CRIT = 1.2                  # time-to-collision critical (s)
+
+# ── Vehicle profile defaults (overridden by vehicles/<VIN>.yaml) ──
+VEHICLE_DEFAULTS = {
+    "make": VEHICLE_MODEL,
+    "year": VEHICLE_YEAR,
+    "engine": VEHICLE_ENGINE,
+    "fuel_type": FUEL_TYPE,
+    "tank_litres": TRIP_FUEL_TANK_LITRES,
+    "avg_consumption_l_per_100km": TRIP_AVG_CONSUMPTION_L_PER_100KM,
+    "tire_size": TIRE_SIZE,
+    "tire_pressure_front": TIRE_PRESSURE_FRONT,
+    "tire_pressure_rear": TIRE_PRESSURE_REAR,
+}
