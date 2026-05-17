@@ -611,6 +611,7 @@ SERVICES = [
     "drifter-watchdog",
     "drifter-realdash",
     "drifter-rf",
+    "drifter-fbmirror",
     "drifter-dashboard",
     # v2 services
     "drifter-safety",

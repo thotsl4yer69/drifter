@@ -31,16 +31,16 @@ log = logging.getLogger(__name__)
 
 # Topic → sensor name mapping (for compute_sensor_avgs)
 TOPIC_TO_SENSOR = {
-    'drifter/engine/stft1': 'stft_b1',
-    'drifter/engine/stft2': 'stft_b2',
-    'drifter/engine/ltft1': 'ltft_b1',
-    'drifter/engine/ltft2': 'ltft_b2',
-    'drifter/engine/rpm':   'rpm',
-    'drifter/engine/coolant': 'coolant',
-    'drifter/engine/iat':   'iat',
-    'drifter/engine/maf':   'maf',
-    'drifter/engine/throttle': 'throttle',
-    'drifter/power/voltage': 'voltage',
+    TOPICS['stft1']: 'stft_b1',
+    TOPICS['stft2']: 'stft_b2',
+    TOPICS['ltft1']: 'ltft_b1',
+    TOPICS['ltft2']: 'ltft_b2',
+    TOPICS['rpm']:   'rpm',
+    TOPICS['coolant']: 'coolant',
+    TOPICS['iat']:   'iat',
+    TOPICS['maf']:   'maf',
+    TOPICS['throttle']: 'throttle',
+    TOPICS['voltage']: 'voltage',
 }
 
 

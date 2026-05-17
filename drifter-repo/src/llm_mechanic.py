@@ -323,7 +323,7 @@ class LLMMechanic:
             self.telemetry.update(topic, data)
             
             # Handle LLM queries
-            if topic == 'drifter/llm/query':
+            if topic == TOPICS['llm_query']:
                 query = data.get('query', '')
                 session_id = data.get('session_id', 'default')
                 asyncio.create_task(self._process_query(query, session_id))
@@ -370,7 +370,7 @@ class LLMMechanic:
         self.memory.add("assistant", response)
         
         # Publish response
-        self.mqtt.publish('drifter/llm/response', json.dumps({
+        self.mqtt.publish(TOPICS['llm_response'], json.dumps({
             'query': query,
             'response': response,
             'session_id': session_id,
@@ -401,7 +401,7 @@ class LLMMechanic:
         
         log.info("LLM Mechanic is LIVE")
         log.info(f"Model: {OLLAMA_MODEL}")
-        log.info("Send queries to: drifter/llm/query")
+        log.info(f"Send queries to: {TOPICS['llm_query']}")
         
         # Keep running
         while self.running:

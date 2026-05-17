@@ -122,7 +122,7 @@ def check_health(mqtt_client):
                 issues.append(f"{svc} is {status}")
 
     # Check MQTT data freshness (only for critical topics)
-    critical_topics = ['drifter/engine/rpm', 'drifter/snapshot']
+    critical_topics = [TOPICS['rpm'], TOPICS['snapshot']]
     for topic in critical_topics:
         last_time = last_mqtt_data.get(topic)
         if last_time and now - last_time > WATCHDOG_MQTT_TIMEOUT:

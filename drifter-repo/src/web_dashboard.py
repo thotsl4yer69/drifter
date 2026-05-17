@@ -182,7 +182,7 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload)
         topic = msg.topic
 
-        if topic == 'drifter/analysis/report':
+        if topic == TOPICS['analysis_report']:
             latest_report = data
             log.info("New diagnostic report received")
             return
@@ -1254,7 +1254,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/analyse':
             try:
-                mqtt_client.publish('drifter/analysis/request', '{}')
+                mqtt_client.publish(TOPICS['analysis_request'], '{}')
             except Exception:
                 pass
             self.send_response(200)
@@ -1364,8 +1364,8 @@ def on_alert_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload)
 
-        # Route 1: WAV from voice_alerts.py via drifter/audio/wav
-        if msg.topic == 'drifter/audio/wav':
+        # Route 1: WAV from voice_alerts.py via TOPICS['audio_wav']
+        if msg.topic == TOPICS['audio_wav']:
             import base64
             wav_b64 = data.get('wav_b64')
             if wav_b64:
@@ -1454,8 +1454,8 @@ def main():
     audio_mqtt.on_message = on_alert_message
     try:
         audio_mqtt.connect(MQTT_HOST, MQTT_PORT, 60)
-        audio_mqtt.subscribe("drifter/alert/message")
-        audio_mqtt.subscribe("drifter/audio/wav")
+        audio_mqtt.subscribe(TOPICS['alert_message'])
+        audio_mqtt.subscribe(TOPICS['audio_wav'])
         audio_mqtt.loop_start()
     except Exception:
         pass

@@ -136,7 +136,7 @@ def speak(text):
                 # Publish as base64 on a dedicated topic
                 voice_mqtt = mqtt.Client(client_id="drifter-voice-wav")
                 voice_mqtt.connect(MQTT_HOST, MQTT_PORT, 10)
-                voice_mqtt.publish('drifter/audio/wav', json.dumps({
+                voice_mqtt.publish(TOPICS['audio_wav'], json.dumps({
                     'text': text[:200],
                     'wav_b64': base64.b64encode(wav_data).decode(),
                     'ts': time.time()
