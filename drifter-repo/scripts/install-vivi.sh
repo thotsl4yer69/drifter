@@ -1,8 +1,7 @@
 #!/bin/bash
 # ============================================
-# MZ1312 DRIFTER — Vivi Voice Assistant Installer
-# Installs faster-whisper STT, sounddevice, pyyaml
-# and deploys the vivi service.
+# MZ1312 DRIFTER — Vivi v2 Voice Assistant Installer
+# Installs Whisper STT, sounddevice, pyyaml, and deploys vivi_v2 + memory.
 # UNCAGED TECHNOLOGY — EST 1991
 # ============================================
 # Usage: sudo ./scripts/install-vivi.sh
@@ -24,7 +23,7 @@ warn() { echo -e "${AMBER}  ! $1${NC}"; }
 fail() { echo -e "${RED}  ✗ $1${NC}"; exit 1; }
 step() { echo -e "\n${AMBER}[$1] $2${NC}"; }
 
-echo -e "${CYAN}  DRIFTER — Vivi Voice Assistant Installer${NC}"
+echo -e "${CYAN}  DRIFTER — Vivi v2 Voice Assistant Installer${NC}"
 echo -e "${CYAN}  MZ1312 UNCAGED TECHNOLOGY — EST 1991${NC}\n"
 
 if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./scripts/install-vivi.sh"; fi
@@ -38,38 +37,60 @@ apt-get install -y -qq \
 ok "Audio system packages installed"
 
 # ── 2. Python deps in venv ──
-step 2 "Installing Python packages (faster-whisper, sounddevice, pyyaml)"
+step 2 "Installing Python packages (whisper, sounddevice, pyyaml, requests)"
 source "${DRIFTER_DIR}/venv/bin/activate"
 pip install --quiet \
     "faster-whisper>=1.0.0" \
     sounddevice \
-    pyyaml
+    pyyaml \
+    requests
 ok "Python packages installed"
 
-# ── 3. Deploy vivi.py ──
-step 3 "Deploying vivi.py"
-cp "${REPO_DIR}/src/vivi.py" "${DRIFTER_DIR}/"
-chmod +x "${DRIFTER_DIR}/vivi.py"
-ok "vivi.py deployed to ${DRIFTER_DIR}"
+# ── 3. Deploy v2 modules ──
+step 3 "Deploying vivi_v2.py, vivi_memory.py, llm_client_v2.py"
+for f in vivi.py vivi_v2.py vivi_memory.py llm_client_v2.py; do
+    if [ -f "${REPO_DIR}/src/${f}" ]; then
+        cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
+        chmod +x "${DRIFTER_DIR}/${f}"
+        ok "${f} deployed"
+    fi
+done
 
-# ── 4. Deploy config ──
-step 4 "Deploying vivi.yaml config"
+# ── 4. Deploy configs ──
+step 4 "Deploying vivi.yaml + personality"
 if [ -f "${DRIFTER_DIR}/vivi.yaml" ]; then
     warn "vivi.yaml already exists — not overwriting (edit manually)"
 else
     cp "${REPO_DIR}/config/vivi.yaml" "${DRIFTER_DIR}/"
     ok "vivi.yaml deployed"
 fi
+if [ ! -f "${DRIFTER_DIR}/vivi_personality.txt" ]; then
+    cp "${REPO_DIR}/config/vivi_personality.txt" "${DRIFTER_DIR}/"
+    ok "vivi_personality.txt deployed"
+fi
+mkdir -p "${DRIFTER_DIR}/memory"
+ok "memory directory ready"
 
 # ── 5. systemd service ──
-step 5 "Installing drifter-vivi systemd service"
+step 5 "Installing drifter-vivi systemd service (v2)"
 cp "${REPO_DIR}/services/drifter-vivi.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable drifter-vivi
-ok "drifter-vivi service installed and enabled"
+ok "drifter-vivi service installed and enabled (vivi_v2.py)"
 
-# ── 6. Verify Ollama model ──
-step 6 "Checking Ollama llama3.2:3b model"
+# ── 6. API key reminder ──
+step 6 "Checking API keys"
+if [ -f "${DRIFTER_DIR}/.env" ]; then
+    grep -q "ANTHROPIC_API_KEY" "${DRIFTER_DIR}/.env" && ok "ANTHROPIC_API_KEY found in .env" || \
+        warn "ANTHROPIC_API_KEY missing — add to ${DRIFTER_DIR}/.env for Claude cascade"
+    grep -q "GROQ_API_KEY" "${DRIFTER_DIR}/.env" && ok "GROQ_API_KEY found in .env" || \
+        warn "GROQ_API_KEY missing — add to ${DRIFTER_DIR}/.env for Groq fallback"
+else
+    warn ".env missing — create ${DRIFTER_DIR}/.env with ANTHROPIC_API_KEY=... and GROQ_API_KEY=..."
+fi
+
+# ── 7. Verify Ollama ──
+step 7 "Checking Ollama llama3.2:3b model (offline fallback)"
 if command -v ollama &>/dev/null; then
     ollama list 2>/dev/null | grep -q "llama3.2:3b" && \
         ok "llama3.2:3b already present" || {
@@ -82,11 +103,11 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}  Vivi installed.${NC}"
+echo -e "${GREEN}  Vivi v2 installed.${NC}"
 echo -e "  Start now:   ${CYAN}sudo systemctl start drifter-vivi${NC}"
 echo -e "  Logs:        ${CYAN}journalctl -u drifter-vivi -f${NC}"
 echo -e "  Config:      ${CYAN}${DRIFTER_DIR}/vivi.yaml${NC}"
+echo -e "  Personality: ${CYAN}${DRIFTER_DIR}/vivi_personality.txt${NC}"
 echo ""
-echo -e "  Default mode is PTT — press Enter to talk."
-echo -e "  Change to 'wake_word' or 'always_on' in vivi.yaml for hands-free."
+echo -e "  Cascade: Claude → Groq → Ollama. Set API keys in /opt/drifter/.env."
 echo ""

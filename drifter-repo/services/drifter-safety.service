@@ -1,0 +1,17 @@
+[Unit]
+Description=MZ1312 DRIFTER Safety Engine (Tier 1)
+After=nanomq.service
+Wants=nanomq.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/safety_engine.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

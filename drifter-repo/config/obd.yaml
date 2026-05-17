@@ -1,0 +1,21 @@
+# MZ1312 DRIFTER — OBD Bridge (ELM327) Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Only used when the USB2CANFD bridge is not present. The ELM327 bridge
+# is a compatibility path for non-Jaguar vehicles after vehicle_id resolves
+# a different profile.
+
+serial_device: "/dev/ttyUSB0"
+serial_baud: 38400
+
+# Poll rate per PID (Hz). Most ELM327 clones can sustain ~5 Hz; cheap ones
+# need 2 Hz. The bridge will round-robin through every PID at this rate.
+poll_hz: 5
+
+# Skip the bridge entirely when the CAN interface is up — keeps both
+# can_bridge.py and obd_bridge.py from publishing the same metric topics.
+disable_when_can_active: true
+
+# Reconnect attempts on serial errors before giving up the loop
+reconnect_attempts: 5
+reconnect_backoff_s: 5

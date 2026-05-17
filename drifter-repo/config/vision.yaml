@@ -1,0 +1,36 @@
+# MZ1312 DRIFTER — Vision Engine Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Lives on the secondary Pi5 + Hailo node. Override defaults from
+# src/config.py VISION_* here.
+
+# Model files live in /opt/drifter/vision-models/
+# Preferred: yolov8s.hef (Hailo compiled). Fallback: yolov8s.onnx (CPU/ONNX).
+model_dir: "/opt/drifter/vision-models"
+hailo_model: "yolov8s.hef"
+onnx_fallback: "yolov8s.onnx"
+
+# Input frame size (must match model expectations)
+input_width: 640
+input_height: 640
+
+# Detection confidence floor — anything lower is ignored
+confidence: 0.35
+
+# Classes we forward downstream. The full COCO list is much larger but we
+# only care about the things that matter for driver assist.
+classes_of_interest:
+  - person
+  - bicycle
+  - car
+  - motorcycle
+  - bus
+  - truck
+  - traffic light
+  - stop sign
+
+# Camera selection (overridden by env DRIFTER_DASHCAM_DEV when present)
+camera_device: "/dev/video0"
+
+# Auto-restart capture if it dies after this many seconds idle
+restart_idle_seconds: 5

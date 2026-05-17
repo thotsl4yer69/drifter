@@ -1,29 +1,41 @@
-# MZ1312 DRIFTER — Vivi Voice Assistant Configuration
+# MZ1312 DRIFTER — Vivi v2 Configuration
 # UNCAGED TECHNOLOGY — EST 1991
+#
+# Vivi v2 uses the LLM cascade (Claude -> Groq -> Ollama) from llm_client_v2
+# and persistent memory in vivi_memory.py. This file overrides the v2
+# defaults declared in src/config.py (VIVI2_*).
 
 # Input mode: ptt | wake_word | always_on
-#   ptt        — press Enter to record, Enter again to stop
-#   wake_word  — always listening, activates on wake_word below
-#   always_on  — transcribe and respond to everything
-mode: ptt
+mode: wake_word
 
-# Wake word (case-insensitive) — only used in wake_word mode
+# Wake word (case-insensitive). v1 default kept for parity.
 wake_word: "hey vivi"
 
-# ── LLM backend (local Ollama) ──
+# Streaming responses (publishes deltas on TOPICS['vivi2_stream'])
+streaming: true
+
+# How many of the most recent conversation turns to feed back into prompts
+history_turns: 20
+
+# Cooldown (seconds) between proactive prompts for the same reason
+proactive_cooldown_s: 120
+
+# Use the personality file at /opt/drifter/vivi_personality.txt when present
+# Otherwise the default personality baked into src/vivi_v2.py is used
+personality_file: /opt/drifter/vivi_personality.txt
+
+# Local fallback for STT/TTS (kept for parity with v1)
+whisper_model: base.en
+whisper_device: cpu
+whisper_compute_type: int8
+audio_sample_rate: 16000
+audio_channels: 1
+max_recording_seconds: 30
+silence_threshold: 0.02
+silence_duration: 1.5
+
+# When all cloud backends are down, fall back to local Ollama
 ollama_model: llama3.2:3b
 ollama_host: localhost
 ollama_port: 11434
 ollama_timeout: 30
-
-# ── Speech-to-text (faster-whisper) ──
-whisper_model: base.en
-whisper_device: cpu
-whisper_compute_type: int8
-
-# ── Audio capture ──
-audio_sample_rate: 16000
-audio_channels: 1
-max_recording_seconds: 30
-silence_threshold: 0.02      # RMS below this = silence
-silence_duration: 1.5        # Seconds of silence before stopping recording

@@ -1,0 +1,25 @@
+# MZ1312 DRIFTER — Safety Engine Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Overrides for src/safety_engine.py SAFETY_CFG. Anything you omit falls
+# back to the module defaults (which are themselves derived from
+# src/config.py constants).
+
+# Hard limits — RED severity
+overrev_rpm: 6500
+overspeed_kph: 200
+
+# Deceleration considered hard braking (km/h per second over 1s window)
+hard_brake_kph_per_s: 22
+hard_accel_kph_per_s: 14
+
+# Stall detection — RPM = 0 while battery is above this counts as a stall
+stall_voltage_min: 10.0
+
+# Crash detection trigger (g-force). The MPU6050 driver itself uses
+# CRASH_ACCEL_G_THRESHOLD in src/config.py; this is the safety-engine echo
+# threshold for already-fired crash events.
+crash_g_threshold: 3.0
+
+# Forward-collision warning at or below this TTC (seconds) is "critical"
+fcw_ttc_critical_s: 1.2

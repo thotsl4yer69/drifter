@@ -1,16 +1,16 @@
 [Unit]
-Description=MZ1312 DRIFTER Vivi v2 Voice Assistant
-After=nanomq.service sound.target
+Description=MZ1312 DRIFTER Telemetry Batcher
+After=nanomq.service
 Wants=nanomq.service
-StartLimitIntervalSec=120
+StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
-ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/vivi_v2.py
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/telemetry_batcher.py
 Restart=on-failure
-RestartSec=10
+RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
 
