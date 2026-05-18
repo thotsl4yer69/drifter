@@ -179,7 +179,42 @@ need to happen there (and on the live Pi) for the node to flip from
 DEPLOY: ok
 ```
 
-Verified: `sudo ./scripts/oneshot.sh --skip-apt` completed on the live Pi (2026-05-06).
-All 5 stages passed: STAGE 10 OK → STAGE 20 OK (18 pass, 5 warn) → STAGE 30 OK (40 pass, 3 warn) → STAGE 40 OK (17 services enabled + running) → STAGE FINAL OK (`/healthz` returned HTTP 200, `status: ok`, all 17 services healthy).
+Verified: `sudo ./scripts/oneshot.sh` completed on the live Pi (2026-05-18).
+All 5 stages passed: STAGE 10 OK → STAGE 20 OK → STAGE 30 OK (46 pass, 1 warn) → STAGE 40 OK (21 services enabled + running) → STAGE FINAL OK (`/healthz` returned HTTP 200, `status: ok`, all 21 services healthy).
 
-Status has been flipped from **yellow → green**.
+Status remains **green**.
+
+### Service inventory now 21 (was 19)
+
+Added since last deploy: `drifter-rfaudio` (on-demand RTL-SDR → speaker) + `drifter-bleconv` and `drifter-gps` were already shipping but missed in the previous count. Full list:
+
+```
+drifter-canbridge   drifter-alerts      drifter-logger
+drifter-anomaly     drifter-analyst     drifter-voice
+drifter-vivi        drifter-hotspot     drifter-homesync
+drifter-watchdog    drifter-realdash    drifter-rf
+drifter-rfaudio     drifter-wardrive    drifter-dashboard
+drifter-fbmirror    drifter-voicein     drifter-flipper
+drifter-opsec       drifter-bleconv     drifter-gps
+```
+
+### Security hardening (2026-05-18, commit `eed90b9`)
+
+Pre-deploy review of the rfaudio surface found two issues that have been fixed and re-verified on this Pi with the RTL-SDR plugged in:
+
+- `POST /api/rfaudio/command` now gates on `_is_local_peer` (127.0.0.1 + 10.42.0.0/24) and rejects actions outside the allowlist `{start, stop, scan, test_tone, list_bands}`. Was unauthenticated on the hotspot subnet.
+- `rfaudio._handle_command` validates `freq_mhz ∈ [24, 1766]`, `gain ∈ [0, 49.6]`, `mode ∈ {nfm,wfm,fm,am,usb,lsb,raw}`, and catches `TypeError`/`ValueError` from `float()` casts (previously killed the worker thread silently).
+
+Mosquitto also rebound to `127.0.0.1:1883` (was `0.0.0.0`) — hotspot clients reach drifter via HTTP/WS, never direct MQTT. All 21 services reconnected cleanly to the loopback listener.
+
+Bench smoke test with RTL-SDR Blog V4 dongle confirmed:
+- rtl_fm tunes cleanly to 476.525 MHz nfm (UHF-CB Ch5)
+- All four invalid-param paths return clear operator-facing MQTT errors
+- Supervisor cleanly handles aplay-not-present (no zombie processes, state flips back to idle)
+- 492/492 unit tests pass
+
+### Outstanding before next vehicle session
+
+- **Plug in the C-Media USB audio dongle** (`plughw:0,0`) — bench has no playback device so `aplay` exits immediately after rtl_fm tunes. Not a code defect; rtl_fm side is verified working.
+- **Rotate the hotspot PSK** — `uncaged1312` is still in `~/CLAUDE.md`, `~/.claude/CLAUDE.md`, and the auto-memory file at `~/.claude/projects/-home-kali/memory/project_drifter.md`. Rotate via `nmcli connection modify MZ1312_DRIFTER wifi-sec.psk <new>` and redact docs.
+- **Optional follow-up:** add a `speaker`/`usb_audio` probe to `hw_probe` so the dashboard surfaces "Plug in USB audio dongle" the same way the `microphone` probe does, before the operator tries `start`.
