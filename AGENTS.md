@@ -123,5 +123,5 @@ MQTT client_id: `drifter-vivi`. Log tag: `[VIVI]`.
 
 - Zero cloud — all processing is local on the Pi (Groq/Anthropic API in `llm_client.py` is optional, disabled by default)
 - Home sync uses `NANOB_USER` ("sentient") with `username_pw_set()` (no password)
-- Wi-Fi hotspot: SSID `MZ1312_DRIFTER`, PSK `uncaged1312`, subnet `10.42.0.1/24`
+- Wi-Fi hotspot: SSID `MZ1312_DRIFTER`, PSK stored only in NetworkManager (`sudo nmcli --show-secrets connection show MZ1312_DRIFTER`), subnet `10.42.0.1/24`
 - RTL-SDR decodes only — no transmit capability. Emergency bands detected but encrypted traffic (TETRA) is not decoded

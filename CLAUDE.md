@@ -118,7 +118,7 @@ will tear down a leftover unit file from older deploys.
 
 | Endpoint | Where | Protocol | Use |
 |---|---|---|---|
-| Wi-Fi hotspot | `MZ1312_DRIFTER` / `uncaged1312` | WPA2 | phone tethers here |
+| Wi-Fi hotspot | `MZ1312_DRIFTER` / *(see NetworkManager)* | WPA2 | phone tethers here |
 | Hotspot subnet | `10.42.0.1/24` | DHCP | shared-mode NM |
 | Dashboard | `10.42.0.1:8080` | HTTP | UI + `/healthz` |
 | Telemetry WS | `10.42.0.1:8081` | WS | live MQTT fan-out |
@@ -216,5 +216,5 @@ Bench smoke test with RTL-SDR Blog V4 dongle confirmed:
 ### Outstanding before next vehicle session
 
 - **Plug in the C-Media USB audio dongle** (`plughw:0,0`) — bench has no playback device so `aplay` exits immediately after rtl_fm tunes. Not a code defect; rtl_fm side is verified working.
-- **Rotate the hotspot PSK** — `uncaged1312` is still in `~/CLAUDE.md`, `~/.claude/CLAUDE.md`, and the auto-memory file at `~/.claude/projects/-home-kali/memory/project_drifter.md`. Rotate via `nmcli connection modify MZ1312_DRIFTER wifi-sec.psk <new>` and redact docs.
+- ~~Rotate the hotspot PSK~~ — done 2026-05-18. PSK now lives only in NetworkManager; docs reference `nmcli --show-secrets connection show MZ1312_DRIFTER` rather than embedding the value. There is a duplicate `MZ1312_DRIFTER 1` infrastructure-mode profile from an older NM merge that also got the rotation; clean it up at next opportunity with `sudo nmcli connection delete "MZ1312_DRIFTER 1"`.
 - **Optional follow-up:** add a `speaker`/`usb_audio` probe to `hw_probe` so the dashboard surfaces "Plug in USB audio dongle" the same way the `microphone` probe does, before the operator tries `start`.
