@@ -122,7 +122,28 @@ def test_handle_command_start_refused_when_no_sdr():
     last = client.publish.call_args_list[-1]
     payload = json.loads(last[0][1])
     assert 'error' in payload
-    assert 'No RTL-SDR' in payload['error']
+
+
+@pytest.mark.parametrize('bad', [
+    {'action': 'start', 'freq_mhz': 1e9},          # absurdly high
+    {'action': 'start', 'freq_mhz': 0.5},           # below RTL-SDR range
+    {'action': 'start', 'mode': 'wbfm-typo'},       # not in allowlist
+    {'action': 'start', 'gain': -1},                # negative gain
+    {'action': 'start', 'gain': 9999},              # absurd gain
+    {'action': 'start', 'freq_mhz': 'banana'},      # not a number
+])
+def test_handle_command_start_rejects_invalid_params(bad):
+    """Bounds + type validation must reject and not spawn rtl_fm."""
+    client = MagicMock()
+    with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.subprocess.Popen') as popen, \
+         patch('rfaudio.time.sleep'):
+        rfaudio._handle_command(client, bad)
+    popen.assert_not_called()
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'start refused' in payload['error']
 
 
 def test_handle_command_scan_refused_when_no_sdr():

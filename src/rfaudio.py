@@ -171,6 +171,8 @@ class AudioStream:
 
 _stream = AudioStream()
 _state = 'idle'  # 'idle' | 'playing' | 'scanning'
+
+_RFAUDIO_MODES = {'nfm', 'wfm', 'fm', 'am', 'usb', 'lsb', 'raw'}
 _scan_thread: Optional[threading.Thread] = None
 _scan_stop = threading.Event()
 
@@ -283,10 +285,23 @@ def _handle_command(client, payload: dict) -> None:
         if not probe['connected']:
             _publish_error(client, f"start refused: {probe['detail']} — {probe['action']}")
             return
+        try:
+            freq = float(payload.get('freq_mhz', RFAUDIO_DEFAULT_FREQ_MHZ))
+            mode = str(payload.get('mode', RFAUDIO_DEFAULT_MODE)).lower()
+            gain = float(payload.get('gain', RFAUDIO_DEFAULT_GAIN))
+        except (TypeError, ValueError) as e:
+            _publish_error(client, f"start refused: bad params: {e}")
+            return
+        if not (24.0 <= freq <= 1766.0):
+            _publish_error(client, f"start refused: freq_mhz {freq} out of range [24, 1766]")
+            return
+        if mode not in _RFAUDIO_MODES:
+            _publish_error(client, f"start refused: mode {mode!r} not in {sorted(_RFAUDIO_MODES)}")
+            return
+        if not (0.0 <= gain <= 49.6):
+            _publish_error(client, f"start refused: gain {gain} out of range [0, 49.6]")
+            return
         _stop_scan()
-        freq = float(payload.get('freq_mhz', RFAUDIO_DEFAULT_FREQ_MHZ))
-        mode = str(payload.get('mode', RFAUDIO_DEFAULT_MODE)).lower()
-        gain = float(payload.get('gain', RFAUDIO_DEFAULT_GAIN))
         _pause_rtl_433(client)
         if _stream.start(freq, mode, gain):
             _state = 'playing'

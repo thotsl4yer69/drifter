@@ -251,12 +251,13 @@ import json as _json
 from unittest.mock import MagicMock
 
 
-def _build_post_handler(body: bytes):
+def _build_post_handler(body: bytes, peer: str = '127.0.0.1'):
     """Wire up a DashboardHandler instance enough to call a _post_ method."""
     handler = h.DashboardHandler.__new__(h.DashboardHandler)
     handler.rfile = io.BytesIO(body)
     handler.wfile = io.BytesIO()
     handler.headers = {'Content-Length': str(len(body))}
+    handler.client_address = (peer, 0)
     handler.send_response = MagicMock()
     handler.send_header = MagicMock()
     handler.end_headers = MagicMock()
@@ -306,6 +307,26 @@ def test_post_rfaudio_command_forwards_full_start_payload(monkeypatch):
     assert parsed['freq_mhz'] == 476.525
     assert parsed['mode'] == 'nfm'
     assert parsed['gain'] == 0
+
+
+def test_post_rfaudio_command_rejects_remote_peer():
+    """Hotspot ACL — anything outside 127.0.0.1 / 10.42.0.0/24 must 403."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"list_bands"}', peer='192.168.1.50')
+    handler._post_rfaudio_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_rfaudio_command_rejects_unknown_action():
+    """Action allowlist — only start/stop/scan/test_tone/list_bands."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"shutdown"}')
+    handler._post_rfaudio_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
 
 
 def test_get_rfaudio_status_route_registered():

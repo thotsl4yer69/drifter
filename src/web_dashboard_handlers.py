@@ -157,6 +157,8 @@ _STATIC_FILES = {
 
 _BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
 
+_RFAUDIO_ACTIONS = {'start', 'stop', 'scan', 'test_tone', 'list_bands'}
+
 
 def _is_local_peer(peer: str) -> bool:
     """Hotspot-only ACL — same gate Phase 4.5 used for /api/ble/recent.
@@ -534,6 +536,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
           {"action": "stop"} | {"action": "scan"} |
           {"action": "test_tone"} | {"action": "list_bands"}
         Returns {"ok": bool, "published": <topic>}."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'rfaudio: local network only')
+            return
         try:
             length = int(self.headers.get('Content-Length') or 0)
             length = min(length, MAX_POST_BODY)
@@ -544,6 +550,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if not isinstance(body, dict) or 'action' not in body:
             self.send_error(400, 'body must be a JSON object with an "action" field')
+            return
+        if body.get('action') not in _RFAUDIO_ACTIONS:
+            self.send_error(400, 'unknown action')
             return
         ok = False
         if state.mqtt_client is not None:
