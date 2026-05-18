@@ -645,7 +645,55 @@ TOPICS = {
     'ble_raw': 'drifter/ble/raw',
     # GPS (cached by ble_passive for detection geo-tagging)
     'gps_fix': 'drifter/gps/fix',
+
+    # v2 — Telemetry Batcher
+    'telemetry_window': 'drifter/telemetry/window',
+    'telemetry_stats': 'drifter/telemetry/stats',
+
+    # v2 — Trip Computer
+    'trip_stats': 'drifter/trip/stats',
+    'trip_event': 'drifter/trip/event',
+    'trip_fuel': 'drifter/trip/fuel',
+    'trip_cost': 'drifter/trip/cost',
+
+    # v2 — Adaptive Thresholds
+    'thresholds_learned': 'drifter/thresholds/learned',
+    'thresholds_update': 'drifter/thresholds/update',
+
+    # v2 — Session Reporter
+    'session_report': 'drifter/session/report',
+    'session_summary': 'drifter/session/summary',
+    'safety_alert': 'drifter/safety/alert',
+    'ai_diag_response': 'drifter/ai/diag/response',
 }
+
+# ── LLM v2 cascade config ──
+LLM_CASCADE_ORDER = os.getenv("LLM_CASCADE_ORDER", "ollama").split(",")
+LLM_CLAUDE_TIMEOUT = 60
+LLM_GROQ_TIMEOUT = 30
+LLM_OLLAMA_TIMEOUT = 300   # mirrored below as OLLAMA_TIMEOUT for back-compat
+LLM_CACHE_TTL = 3600
+LLM_MAX_RETRIES = 2
+
+# ── Telemetry Batcher ──
+TELEMETRY_WINDOW_SECONDS = 30
+TELEMETRY_PUBLISH_HZ = 1
+TELEMETRY_KEEP_SAMPLES = 200
+
+# ── Trip Computer ──
+TRIP_FUEL_PRICE_GBP_PER_L = 1.55
+TRIP_FUEL_TANK_LITRES = 60
+TRIP_AVG_CONSUMPTION_L_PER_100KM = 12
+TRIP_SESSION_GAP_MIN = 15
+
+# ── Adaptive Thresholds ──
+ADAPTIVE_LEARN_MIN_SAMPLES = 60
+ADAPTIVE_LEARN_SESSIONS = 5
+ADAPTIVE_DRIFT_LIMIT = 0.25
+
+# ── Vivi v2 Memory ──
+VIVI2_HISTORY_TURNS = 16
+VIVI2_MEMORY_MAX_ENTRIES = 256
 
 # ── LLM Analyst ──
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -722,6 +770,11 @@ SERVICES = [
     "drifter-bleconv",      # Phase 4.5 — passive BLE scanner
     "drifter-gps",          # Phase 5.2 — gpsd → MQTT GPS publisher
     "drifter-rfaudio",      # on-demand SDR → speaker (emergency listen)
+    # v2 services
+    "drifter-batcher",      # rolling telemetry window aggregator
+    "drifter-trip",         # per-trip distance + fuel computer
+    "drifter-thresholds",   # adaptive baseline learner
+    "drifter-reporter",     # post-drive markdown report via LLM
 ]
 
 # ── Modes ──
@@ -741,6 +794,11 @@ DRIVE_ONLY_SERVICES = [
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
     "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
     "drifter-gps",         # GPS feed for the cockpit map + drive_id geo-tagging
+    # v2 drive services
+    "drifter-batcher",     # rolling telemetry window aggregator
+    "drifter-trip",        # per-trip distance + fuel computer
+    "drifter-thresholds",  # adaptive baseline learner
+    "drifter-reporter",    # post-drive markdown report via LLM
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon

@@ -6,6 +6,7 @@ sys.path.insert(0, 'src')
 
 from unittest.mock import patch, MagicMock
 
+
 def make_mock_response(status_code, body):
     m = MagicMock()
     m.status_code = status_code
@@ -27,9 +28,8 @@ CLAUDE_SUCCESS = {
 }
 
 OLLAMA_SUCCESS = {
-    "message": {"content": '{"primary_suspect": {"diagnosis": "Coil pack"}}'},
+    "response": '{"primary_suspect": {"diagnosis": "Coil pack"}}',
     "eval_count": 300,
-    "prompt_eval_count": 200,
 }
 
 
@@ -42,7 +42,7 @@ def test_ollama_success():
         result = _call_ollama("test prompt")
     assert 'Coil pack' in result['text']
     assert result['model'].startswith('ollama/')
-    assert result['tokens'] == 500
+    assert result['tokens'] == 300
 
 def test_ollama_json_format_in_payload():
     from llm_client import _call_ollama
@@ -51,20 +51,19 @@ def test_ollama_json_format_in_payload():
         _call_ollama("test prompt")
     call_args = mock_post.call_args
     payload = call_args.kwargs.get('json') or call_args[1].get('json')
-    assert payload['format'] == 'json'
+    # v2 uses /api/generate with prompt/system/stream fields
     assert payload['stream'] is False
     assert payload['options']['temperature'] == 0.3
 
 def test_ollama_failure_falls_back_to_groq():
     from llm_client import query_llm
-    call_count = [0]
     def side_effect(*args, **kwargs):
-        call_count[0] += 1
         url = args[0] if args else kwargs.get('url', '')
-        if 'ollama' in str(url) or '11434' in str(url):
+        if '11434' in str(url):
             raise ConnectionError("Ollama down")
         return make_mock_response(200, GROQ_SUCCESS)
-    with patch('llm_client.LLM_PRIMARY', 'ollama'), \
+    with patch('llm_client.LLM_CASCADE_ORDER', ['ollama', 'groq']), \
+         patch('llm_client.GROQ_API_KEY', 'fake-key'), \
          patch('llm_client.requests.post', side_effect=side_effect):
         result = query_llm("test prompt")
     assert result['model'].startswith('groq/')
@@ -81,9 +80,10 @@ def test_ollama_non_200_raises():
 
 def test_groq_success():
     from llm_client import _call_groq
-    with patch('llm_client.requests.post') as mock_post:
+    with patch('llm_client.requests.post') as mock_post, \
+         patch('llm_client.GROQ_API_KEY', 'fake-key'):
         mock_post.return_value = make_mock_response(200, GROQ_SUCCESS)
-        result = _call_groq("test prompt")
+        result = _call_groq("test prompt", "system", 800)
     assert result['text'] == '{"primary_suspect": {"diagnosis": "MAF sensor"}}'
     assert result['model'] == 'groq/llama-3.3-70b-versatile'
     assert result['tokens'] == 500
@@ -96,7 +96,9 @@ def test_groq_failure_falls_back_to_claude():
         if call_count[0] == 1:
             raise ConnectionError("Groq down")
         return make_mock_response(200, CLAUDE_SUCCESS)
-    with patch('llm_client.LLM_PRIMARY', 'groq'), \
+    with patch('llm_client.LLM_CASCADE_ORDER', ['groq', 'claude']), \
+         patch('llm_client.GROQ_API_KEY', 'fake-key'), \
+         patch('llm_client.ANTHROPIC_API_KEY', 'fake-key'), \
          patch('llm_client.requests.post', side_effect=side_effect):
         result = query_llm("test prompt")
     assert result['model'].startswith('anthropic/')
@@ -107,10 +109,12 @@ def test_groq_non_200_falls_back():
     call_count = [0]
     def side_effect(*args, **kwargs):
         call_count[0] += 1
-        if call_count[0] == 1:
+        if call_count[0] <= 2:  # groq fails twice (LLM_MAX_RETRIES=2)
             return make_mock_response(429, {"error": "rate limit"})
         return make_mock_response(200, CLAUDE_SUCCESS)
-    with patch('llm_client.LLM_PRIMARY', 'groq'), \
+    with patch('llm_client.LLM_CASCADE_ORDER', ['groq', 'claude']), \
+         patch('llm_client.GROQ_API_KEY', 'fake-key'), \
+         patch('llm_client.ANTHROPIC_API_KEY', 'fake-key'), \
          patch('llm_client.requests.post', side_effect=side_effect):
         result = query_llm("test prompt")
     assert result['model'].startswith('anthropic/')
@@ -125,25 +129,25 @@ def test_all_backends_fail():
             query_llm("test prompt")
 
 def test_llm_primary_groq_changes_order():
-    """When LLM_PRIMARY=groq, Groq should be tried first."""
+    """When cascade order is ['groq'], Groq should be tried first and succeed."""
     from llm_client import query_llm
     calls = []
     def side_effect(*args, **kwargs):
         url = args[0] if args else ''
         calls.append(url)
         return make_mock_response(200, GROQ_SUCCESS)
-    with patch('llm_client.LLM_PRIMARY', 'groq'), \
+    with patch('llm_client.LLM_CASCADE_ORDER', ['groq']), \
+         patch('llm_client.GROQ_API_KEY', 'fake-key'), \
          patch('llm_client.requests.post', side_effect=side_effect):
         result = query_llm("test prompt")
     assert result['model'].startswith('groq/')
-    # Only one call should have been made (first backend succeeded)
     assert len(calls) == 1
 
 def test_llm_primary_ollama_is_default():
-    """Default LLM_PRIMARY should be ollama."""
-    from llm_client import query_llm
-    with patch('llm_client.LLM_PRIMARY', 'ollama'), \
-         patch('llm_client.requests.post') as mock_post:
+    """Default cascade order should start with ollama."""
+    from llm_client import query_llm, LLM_CASCADE_ORDER
+    assert LLM_CASCADE_ORDER[0] == 'ollama'
+    with patch('llm_client.requests.post') as mock_post:
         mock_post.return_value = make_mock_response(200, OLLAMA_SUCCESS)
         result = query_llm("test prompt")
     assert result['model'].startswith('ollama/')
@@ -191,23 +195,23 @@ def test_stream_chat_ollama_yields_tokens():
 
 
 def test_stream_chat_ollama_fallback_on_error():
-    """stream_chat_ollama falls back to non-streaming on HTTP error."""
+    """stream_chat_ollama falls back to non-streaming query_chat on HTTP error."""
     from llm_client import stream_chat_ollama
 
     mock_stream_resp = MagicMock()
     mock_stream_resp.status_code = 500
 
-    mock_chat_resp = make_mock_response(200, {
-        "message": {"content": "Fallback response"},
-        "eval_count": 20, "prompt_eval_count": 10,
+    # v2 fallback calls query_chat -> query -> _call_ollama -> /api/generate
+    # which returns {"response": ..., "eval_count": ...}
+    mock_fallback_resp = make_mock_response(200, {
+        "response": "Fallback response",
+        "eval_count": 20,
     })
 
     with patch('llm_client.requests.post') as mock_post:
-        # First call (streaming) fails, second call (non-streaming fallback) succeeds
-        mock_post.side_effect = [mock_stream_resp, mock_chat_resp]
+        mock_post.side_effect = [mock_stream_resp, mock_fallback_resp]
         chunks = list(stream_chat_ollama("test"))
 
-    # Should contain the fallback response
     token_chunks = [c for c in chunks if 'token' in c]
     assert len(token_chunks) >= 1
     assert 'Fallback response' in token_chunks[0]['token']
