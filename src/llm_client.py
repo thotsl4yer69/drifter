@@ -12,7 +12,7 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Iterable, Optional
+from typing import Iterable, Optional
 
 import requests
 
@@ -97,8 +97,6 @@ VEHICLE CONTEXT:
 - Current symptoms: P0303 cylinder 3 misfire, cruise control disabled, rough idle
 - Suspected: vacuum leaks (PCV hose, IMT valve O-ring, brake booster hose)
 """
-
-TIMEOUT_SECONDS = 45
 
 # ── Module state ──
 _cache: dict = {}

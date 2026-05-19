@@ -11,7 +11,6 @@ import logging
 import sqlite3
 import threading
 import time
-from pathlib import Path
 from typing import List, Optional
 
 from config import DRIFTER_DIR, VIVI2_HISTORY_TURNS, VIVI2_MEMORY_MAX_ENTRIES

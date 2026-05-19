@@ -13,14 +13,13 @@ import logging
 import signal
 import time
 from collections import defaultdict, deque
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, THRESHOLDS, WARMUP_COOLANT_THRESHOLD,
+    DRIFTER_DIR, WARMUP_COOLANT_THRESHOLD,
     ADAPTIVE_LEARN_MIN_SAMPLES, ADAPTIVE_LEARN_SESSIONS, ADAPTIVE_DRIFT_LIMIT,
 )
 

@@ -12,7 +12,6 @@ import json
 import logging
 import signal
 import time
-from pathlib import Path
 from typing import Optional
 
 import paho.mqtt.client as mqtt
