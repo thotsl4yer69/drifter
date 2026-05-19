@@ -418,7 +418,11 @@ class Feeds:
                     self.last_emv = items
                     snap = {'ts': time.time(), 'origin': o, 'count': len(items),
                             'items': items}
-                    self.mqtt.publish(T_EMV_SNAP, json.dumps(snap), qos=1, retain=True)
+                    # Not retained: emergency-vehicle positions are tied to the
+                    # current GPS origin. A retained snap outlives the fix and
+                    # can present a phantom incident list from a wrong location
+                    # (same class of bug as the ADS-B snapshot retention).
+                    self.mqtt.publish(T_EMV_SNAP, json.dumps(snap), qos=1)
                     new_ids: list[str] = []
                     for it in items:
                         if it['id'] not in self.emv_seen:
@@ -474,7 +478,10 @@ class Feeds:
                 if j is not None:
                     shaped = shape_weather(j)
                     self.last_weather = shaped
-                    self.mqtt.publish(T_WEATHER, json.dumps(shaped), qos=1, retain=True)
+                    # Not retained: weather is sampled at the current origin.
+                    # A stale wrong-city reading after a GPS dropout is
+                    # misleading; consumers poll on schedule anyway.
+                    self.mqtt.publish(T_WEATHER, json.dumps(shaped), qos=1)
                     log.info('weather: %s°C feels %s°C wind %s km/h',
                              shaped.get('temp_c'), shaped.get('feels_c'),
                              shaped.get('wind_kmh'))
@@ -561,11 +568,14 @@ class Feeds:
                                   for e in elements) if s]
             shaped.sort(key=lambda x: x['distance_km'])
             self.last_pois = shaped
+            # Not retained: POI list is keyed to the current origin. An hour
+            # of retained POIs from a wrong city is long enough for a
+            # consumer to act on phantom data.
             self.mqtt.publish(
                 T_POI,
                 json.dumps({'ts': time.time(), 'origin': o, 'count': len(shaped),
                             'items': shaped}),
-                qos=1, retain=True,
+                qos=1,
             )
             log.info('POIs: %d police/fire/hospital/ambo', len(shaped))
             await asyncio.wait([asyncio.create_task(self.stop_event.wait())], timeout=3600)
@@ -578,7 +588,15 @@ class Feeds:
             [asyncio.create_task(self.stop_event.wait())], timeout=10)
         while not self.stop_event.is_set():
             o = origin()
-            w = self.last_weather or {}
+            # Location-dependent fields (weather, incidents, aircraft, POIs)
+            # are only included when there's a current fix. The poller loops
+            # already skip cycles while awaiting, but the in-memory caches
+            # (self.last_weather etc.) persist from the previous fix — and
+            # would otherwise leak into this summary as "current data" from
+            # a location we no longer have. Warnings + radar are state-level
+            # BOM data and remain regardless of fix state.
+            has_fix = _has_origin(o)
+            w = (self.last_weather or {}) if has_fix else {}
             payload = {
                 'ts': time.time(),
                 'origin': o,
@@ -591,23 +609,27 @@ class Feeds:
                     'rain_mm':  w.get('rain_mm'),
                     'code':     w.get('code'),
                 },
-                'incidents_nearby': len(self.last_emv),
-                'incidents_top':    self.last_emv[:5],
+                'incidents_nearby': len(self.last_emv) if has_fix else 0,
+                'incidents_top':    self.last_emv[:5] if has_fix else [],
                 'warnings_count':   len(self.last_warn),
                 'warnings_top':     self.last_warn[:3],
-                'aircraft_total':   len(self.last_aircraft),
-                'aircraft_source':  self.last_aircraft_source,
+                'aircraft_total':   len(self.last_aircraft) if has_fix else 0,
+                'aircraft_source':  self.last_aircraft_source if has_fix else 'none',
                 'aircraft_interesting': [a for a in self.last_aircraft
-                                         if a.get('interesting')][:5],
+                                         if a.get('interesting')][:5] if has_fix else [],
                 'radar_image':      self.last_radar_meta.get('path'),
-                'pois_total':       len(self.last_pois),
+                'pois_total':       len(self.last_pois) if has_fix else 0,
             }
             try:
                 atomic_write_json(SUMMARY_PATH, payload)
             except OSError as e:
                 log.warning('summary write failed: %s', e)
-            self.mqtt.publish(T_SUMMARY, json.dumps(payload, default=str),
-                              qos=1, retain=True)
+            # Not retained: summary is the aggregate rollup keyed to the
+            # current origin (aircraft count, incidents, weather, POIs).
+            # A stale origin poisons every field at once. The disk-persisted
+            # SUMMARY_PATH above is the source of truth for /api/feeds/summary;
+            # MQTT here is a fan-out signal that consumers re-fetch from disk.
+            self.mqtt.publish(T_SUMMARY, json.dumps(payload, default=str), qos=1)
             await asyncio.wait(
                 [asyncio.create_task(self.stop_event.wait())], timeout=30)
 
