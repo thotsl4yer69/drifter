@@ -174,3 +174,35 @@ def test_main_unknown_mode_subcommand_exits_nonzero():
     with pytest.raises(SystemExit) as ei:
         mode.main(['beast-mode'])
     assert ei.value.code != 0
+
+
+# ── canonical-path regression ──────────────────────────────────────────
+#
+# Pre-2026-05 deploys wrote the persona to /opt/drifter/state/mode; the
+# canonical path is /opt/drifter/mode.state (config.MODE_STATE_PATH).
+# These tests pin the codebase to that single path so the drift never
+# comes back.
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_mode_state_path_is_canonical():
+    """config.MODE_STATE_PATH must be /opt/drifter/mode.state (single file)."""
+    assert config.MODE_STATE_PATH.name == 'mode.state'
+    assert config.MODE_STATE_PATH.parent == config.DRIFTER_DIR
+
+
+def test_no_source_references_legacy_state_mode_path():
+    """No file in src/ or services/ may reference the deprecated
+    `/opt/drifter/state/mode` path."""
+    legacy = 'state/mode'
+    offenders = []
+    for path in list((_REPO_ROOT / 'src').rglob('*.py')) + \
+                list((_REPO_ROOT / 'services').rglob('*.service')):
+        text = path.read_text(encoding='utf-8', errors='ignore')
+        if legacy in text:
+            offenders.append(str(path.relative_to(_REPO_ROOT)))
+    assert not offenders, (
+        f"Legacy mode-state path {legacy!r} reappeared in: {offenders}. "
+        f"Use config.MODE_STATE_PATH (/opt/drifter/mode.state) instead."
+    )
