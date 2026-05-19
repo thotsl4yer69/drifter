@@ -134,6 +134,34 @@ def test_probe_microphone_with_cards():
     assert r['connected'] is True
 
 
+def test_probe_speaker_no_cards():
+    with patch.object(hw_probe, '_has_binary', return_value=True), \
+         patch.object(hw_probe, '_run', return_value=''):
+        r = hw_probe.probe_speaker()
+    assert r['connected'] is False
+    assert 'USB audio dongle' in r['action']
+
+
+def test_probe_speaker_with_cards():
+    fake = (
+        'card 0: U18dB [USB Audio Device], device 0: USB Audio [USB Audio]\n'
+        '  Subdevices: 1/1\n'
+        '  Subdevice #0: subdevice #0'
+    )
+    with patch.object(hw_probe, '_has_binary', return_value=True), \
+         patch.object(hw_probe, '_run', return_value=fake):
+        r = hw_probe.probe_speaker()
+    assert r['connected'] is True
+    assert '1 playback device' in r['detail']
+
+
+def test_probe_speaker_aplay_missing():
+    with patch.object(hw_probe, '_has_binary', return_value=False):
+        r = hw_probe.probe_speaker()
+    assert r['connected'] is False
+    assert 'aplay not installed' in r['detail']
+
+
 def test_probe_flipper_via_usb_id():
     with patch.object(hw_probe, '_run', return_value='Bus 003 Device 007: ID 0483:5740 STMicroelectronics'), \
          patch('hw_probe.globmod.glob', return_value=['/dev/ttyACM0']):

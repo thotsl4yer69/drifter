@@ -37,6 +37,7 @@ _DEVICE_LABELS = {
     'rtl_sdr':     'RTL-SDR',
     'bluetooth':   'Bluetooth',
     'microphone':  'Microphone',
+    'speaker':     'USB Audio',
     'flipper':     'Flipper Zero',
     'framebuffer': 'SPI LCD (fb1)',
 }
