@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
 """
-MZ1312 DRIFTER — Model-Agnostic LLM Client
-Primary: Ollama (local, offline)
-Fallback: Groq (Llama 3.3 70B, free tier) → Claude (claude-sonnet-4-6)
+MZ1312 DRIFTER — LLM Client (v2, adapted for main)
+Cascade: Ollama (local, offline) → Groq → Claude.
+Default cascade order is ['ollama'] — no cloud keys required.
+Adds prompt caching, retries, streaming hook, and per-backend health tracking.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import hashlib
 import json
 import logging
+import threading
+import time
+from typing import Iterable, Optional
+
 import requests
-from typing import Optional
 
 from config import (
     GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL,
     ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
     OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, OLLAMA_TIMEOUT,
-    LLM_PRIMARY,
+    LLM_CASCADE_ORDER, LLM_CLAUDE_TIMEOUT, LLM_GROQ_TIMEOUT, LLM_OLLAMA_TIMEOUT,
+    LLM_CACHE_TTL, LLM_MAX_RETRIES,
 )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [LLMV2] %(message)s',
+    datefmt='%H:%M:%S'
+)
 log = logging.getLogger(__name__)
 
+# ── System prompts (preserved from previous llm_client) ──
 SYSTEM_PROMPT = """You are an expert diagnostic technician specialising in the \
 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, \
 right-hand-drive, AWD vehicle with Jatco JF506E 5-speed automatic.
@@ -62,10 +74,6 @@ Rules:
 - Consider Australian conditions (heat stress on cooling, rubber, fluids)
 """
 
-TIMEOUT_SECONDS = 45
-
-# Conversational system prompt — for the Ask Mechanic dashboard feature.
-# This is separate from SYSTEM_PROMPT (above) which forces JSON output for reports.
 CHAT_SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the \
 2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, \
 right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
@@ -90,68 +98,80 @@ VEHICLE CONTEXT:
 - Suspected: vacuum leaks (PCV hose, IMT valve O-ring, brake booster hose)
 """
 
+# ── Module state ──
+_cache: dict = {}
+_cache_lock = threading.Lock()
+_health: dict = {name: {"ok": True, "last_fail": 0.0, "fails": 0} for name in LLM_CASCADE_ORDER}
+_health_lock = threading.Lock()
 
-def _call_ollama(prompt: str) -> dict:
-    """Call local Ollama instance. Raises on any failure."""
-    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "format": "json",
-        "options": {
-            "temperature": 0.3,
-            "num_predict": 400,
-        },
-    }
-    resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
-    if resp.status_code != 200:
-        raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
-    text = data.get("message", {}).get("content", "")
-    tokens = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)
-    return {
-        "text": text,
-        "model": f"ollama/{OLLAMA_MODEL}",
-        "tokens": tokens,
-    }
+BACKEND_COOLDOWN_SECONDS = 60
+BACKEND_FAIL_THRESHOLD = 3
 
 
-def _call_groq(prompt: str) -> dict:
-    """Call Groq API. Raises on any failure."""
-    resp = requests.post(
-        f"{GROQ_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model": GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 1000,
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Groq HTTP {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
-    try:
-        text = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise RuntimeError(f"Unexpected Groq response structure: {e}") from e
-    return {
-        "text": text,
-        "model": f"groq/{GROQ_MODEL}",
-        "tokens": data.get("usage", {}).get("total_tokens", 0),
-    }
+def _cache_key(prompt: str, system: str) -> str:
+    h = hashlib.sha256()
+    h.update(system.encode('utf-8'))
+    h.update(b'\x1f')
+    h.update(prompt.encode('utf-8'))
+    return h.hexdigest()
 
 
-def _call_claude(prompt: str) -> dict:
-    """Call Anthropic Claude API. Raises on any failure."""
+def _cache_get(key: str) -> Optional[dict]:
+    with _cache_lock:
+        entry = _cache.get(key)
+        if not entry:
+            return None
+        if time.time() - entry['ts'] > LLM_CACHE_TTL:
+            _cache.pop(key, None)
+            return None
+        return entry['result']
+
+
+def _cache_put(key: str, result: dict) -> None:
+    with _cache_lock:
+        _cache[key] = {'ts': time.time(), 'result': result}
+        if len(_cache) > 200:
+            oldest = sorted(_cache.items(), key=lambda kv: kv[1]['ts'])[:20]
+            for k, _ in oldest:
+                _cache.pop(k, None)
+
+
+def _backend_ok(name: str) -> bool:
+    with _health_lock:
+        info = _health.get(name, {})
+        if info.get('fails', 0) >= BACKEND_FAIL_THRESHOLD:
+            if time.time() - info.get('last_fail', 0) < BACKEND_COOLDOWN_SECONDS:
+                return False
+            info['fails'] = 0
+        return True
+
+
+def _mark_fail(name: str, err: str) -> None:
+    with _health_lock:
+        info = _health.setdefault(name, {"ok": True, "last_fail": 0.0, "fails": 0})
+        info['fails'] += 1
+        info['last_fail'] = time.time()
+        info['ok'] = False
+    log.warning(f"{name} failed: {err}")
+
+
+def _mark_ok(name: str) -> None:
+    with _health_lock:
+        info = _health.setdefault(name, {"ok": True, "last_fail": 0.0, "fails": 0})
+        info['ok'] = True
+        info['fails'] = 0
+
+
+def health() -> dict:
+    with _health_lock:
+        return {k: dict(v) for k, v in _health.items()}
+
+
+# ── Backend implementations ──
+
+def _call_claude(prompt: str, system: str, max_tokens: int) -> dict:
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
     resp = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={
@@ -161,173 +181,156 @@ def _call_claude(prompt: str) -> dict:
         },
         json={
             "model": ANTHROPIC_MODEL,
-            "max_tokens": 1000,
-            "system": SYSTEM_PROMPT,
+            "max_tokens": max_tokens,
+            "system": system,
             "messages": [{"role": "user", "content": prompt}],
         },
-        timeout=TIMEOUT_SECONDS,
+        timeout=LLM_CLAUDE_TIMEOUT,
     )
     if resp.status_code != 200:
         raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
     usage = data.get("usage", {})
-    try:
-        text = data["content"][0]["text"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise RuntimeError(f"Unexpected Claude response structure: {e}") from e
     return {
-        "text": text,
+        "text": data["content"][0]["text"],
         "model": f"anthropic/{ANTHROPIC_MODEL}",
+        "backend": "claude",
         "tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
     }
 
+
+def _call_groq(prompt: str, system: str, max_tokens: int) -> dict:
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY not set")
+    resp = requests.post(
+        f"{GROQ_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        json={
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.3,
+            "max_tokens": max_tokens,
+        },
+        timeout=LLM_GROQ_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Groq HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    return {
+        "text": data["choices"][0]["message"]["content"],
+        "model": f"groq/{GROQ_MODEL}",
+        "backend": "groq",
+        "tokens": data.get("usage", {}).get("total_tokens", 0),
+    }
+
+
+def _call_ollama(prompt: str, system: str = SYSTEM_PROMPT, max_tokens: int = 800) -> dict:
+    """Call Ollama /api/generate. Accepts both (prompt,) and (prompt, system, max_tokens)."""
+    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/generate"
+    resp = requests.post(
+        url,
+        json={
+            'model': OLLAMA_MODEL,
+            'prompt': prompt,
+            'system': system,
+            'stream': False,
+            'options': {'temperature': 0.3, 'num_predict': max_tokens},
+        },
+        timeout=LLM_OLLAMA_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    return {
+        "text": data.get("response", "").strip(),
+        "model": f"ollama/{OLLAMA_MODEL}",
+        "backend": "ollama",
+        "tokens": data.get("eval_count", 0),
+    }
+
+
+_BACKEND_FN = {
+    "claude": _call_claude,
+    "groq": _call_groq,
+    "ollama": _call_ollama,
+}
+
+
+# ── Public cascade API ──
+
+def query(
+    prompt: str,
+    system: str = "",
+    max_tokens: int = 800,
+    cache: bool = True,
+    order: Optional[Iterable[str]] = None,
+) -> dict:
+    """Query the cascade. Returns dict with text, model, backend, tokens."""
+    if order is None:
+        order = LLM_CASCADE_ORDER
+    if cache:
+        cached = _cache_get(_cache_key(prompt, system))
+        if cached:
+            log.info(f"Cache hit ({cached.get('backend')})")
+            return {**cached, 'cached': True}
+
+    last_err: Optional[Exception] = None
+    for name in order:
+        fn = _BACKEND_FN.get(name)
+        if fn is None or not _backend_ok(name):
+            continue
+        for attempt in range(LLM_MAX_RETRIES):
+            try:
+                result = fn(prompt, system, max_tokens)
+                _mark_ok(name)
+                if cache:
+                    _cache_put(_cache_key(prompt, system), result)
+                log.info(f"{name} -> {result.get('tokens', 0)} tokens")
+                return {**result, 'cached': False}
+            except Exception as e:
+                last_err = e
+                _mark_fail(name, str(e))
+                if attempt + 1 < LLM_MAX_RETRIES:
+                    time.sleep(0.5 * (attempt + 1))
+
+    raise RuntimeError(f"All LLM backends failed: {last_err}")
+
+
+def query_json(prompt: str, system: str = "", max_tokens: int = 800) -> dict:
+    """Query cascade and parse response as JSON. Strips markdown fences."""
+    result = query(prompt, system, max_tokens)
+    text = result.get('text', '').strip()
+    if text.startswith('```'):
+        lines = text.split('\n')
+        text = '\n'.join(lines[1:])
+        if text.endswith('```'):
+            text = text[:-3]
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {**result, 'json': None, 'parse_error': True}
+    return {**result, 'json': parsed, 'parse_error': False}
+
+
+# ── Backward-compatible API for existing callers ──
 
 def query_llm(prompt: str) -> dict:
-    """
-    Query the LLM for structured JSON diagnostic reports.
-    Returns: {"text": str, "model": str, "tokens": int}
-    Priority configurable via LLM_PRIMARY env var.
-    """
-    if LLM_PRIMARY == "ollama":
-        chain = [("Ollama", _call_ollama), ("Groq", _call_groq), ("Claude", _call_claude)]
-    else:
-        chain = [("Groq", _call_groq), ("Claude", _call_claude), ("Ollama", _call_ollama)]
-
-    last_error = None
-    for name, fn in chain:
-        try:
-            result = fn(prompt)
-            log.info(f"{name} response: {result['tokens']} tokens")
-            return result
-        except Exception as e:
-            log.warning(f"{name} failed ({e}), trying next backend")
-            last_error = e
-
-    raise RuntimeError("All LLM backends failed") from last_error
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Conversational Chat — for Ask Mechanic dashboard feature
-# ═══════════════════════════════════════════════════════════════════
-
-def _chat_ollama(prompt: str) -> dict:
-    """Ollama chat — no JSON format, conversational."""
-    url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": [
-            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "options": {
-            "temperature": 0.7,
-            "num_predict": 200,
-        },
-    }
-    resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
-    if resp.status_code != 200:
-        raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
-    text = data.get("message", {}).get("content", "")
-    tokens = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)
-    return {"text": text, "model": f"ollama/{OLLAMA_MODEL}", "tokens": tokens}
-
-
-def _chat_groq(prompt: str) -> dict:
-    """Groq chat — conversational."""
-    resp = requests.post(
-        f"{GROQ_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model": GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.7,
-            "max_tokens": 500,
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Groq HTTP {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
-    try:
-        text = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise RuntimeError(f"Unexpected Groq chat response structure: {e}") from e
-    return {
-        "text": text,
-        "model": f"groq/{GROQ_MODEL}",
-        "tokens": data.get("usage", {}).get("total_tokens", 0),
-    }
-
-
-def _chat_claude(prompt: str) -> dict:
-    """Claude chat — conversational."""
-    resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": ANTHROPIC_MODEL,
-            "max_tokens": 500,
-            "system": CHAT_SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:200]}")
-    data = resp.json()
-    usage = data.get("usage", {})
-    try:
-        text = data["content"][0]["text"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise RuntimeError(f"Unexpected Claude chat response structure: {e}") from e
-    return {
-        "text": text,
-        "model": f"anthropic/{ANTHROPIC_MODEL}",
-        "tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-    }
+    """Structured JSON diagnostic query (existing callers: session_analyst.py)."""
+    return query(prompt, system=SYSTEM_PROMPT)
 
 
 def query_chat(prompt: str) -> dict:
-    """
-    Conversational LLM query for Ask Mechanic.
-    Returns natural language (NOT JSON). Same cascading fallback.
-    Returns: {"text": str, "model": str, "tokens": int}
-    """
-    if LLM_PRIMARY == "ollama":
-        chain = [("Ollama", _chat_ollama), ("Groq", _chat_groq), ("Claude", _chat_claude)]
-    else:
-        chain = [("Groq", _chat_groq), ("Claude", _chat_claude), ("Ollama", _chat_ollama)]
+    """Conversational chat query (existing callers: web_dashboard_handlers.py)."""
+    return query(prompt, system=CHAT_SYSTEM_PROMPT)
 
-    last_error = None
-    for name, fn in chain:
-        try:
-            result = fn(prompt)
-            log.info(f"Chat [{name}]: {result['tokens']} tokens")
-            return result
-        except Exception as e:
-            log.warning(f"Chat {name} failed ({e}), trying next backend")
-            last_error = e
-
-    raise RuntimeError("All LLM backends failed") from last_error
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Streaming Chat — yields tokens as they arrive from Ollama
-# ═══════════════════════════════════════════════════════════════════
 
 def stream_chat_ollama(prompt: str):
     """
     Stream tokens from Ollama for the Ask Mechanic feature.
-    Yields dicts: {"token": str} for each token, then {"done": True, "model": str, "tokens": int}.
+    Yields {"token": str} per chunk, then {"done": True, "model": str, "tokens": int}.
     Falls back to non-streaming query_chat if Ollama streaming fails.
     """
     url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"

@@ -179,23 +179,35 @@ need to happen there (and on the live Pi) for the node to flip from
 DEPLOY: ok
 ```
 
-Verified: `sudo ./scripts/oneshot.sh` completed on the live Pi (2026-05-18).
-All 5 stages passed: STAGE 10 OK → STAGE 20 OK → STAGE 30 OK (46 pass, 1 warn) → STAGE 40 OK (21 services enabled + running) → STAGE FINAL OK (`/healthz` returned HTTP 200, `status: ok`, all 21 services healthy).
+Verified: `sudo ./install.sh` (cherry-pick branch) completed on the live Pi (2026-05-19) over an oneshot.sh baseline from 2026-05-18.
+Bench result: 25 services tracked, 14 active under foot mode (10 drive-only services correctly inactive per mode-aware design), 0 services_failed. `/healthz` returns `ok-hw-pending` (only `drifter-voicein` waiting on USB mic).
 
 Status remains **green**.
 
-### Service inventory now 21 (was 19)
+### Service inventory now 25 (was 21)
 
-Added since last deploy: `drifter-rfaudio` (on-demand RTL-SDR → speaker) + `drifter-bleconv` and `drifter-gps` were already shipping but missed in the previous count. Full list:
+Cherry-pick branch `cherry-pick/v2-first-wave` (PR #9) landed 4 new services + 1 library module from `feature/drifter-v2`:
+
+- `drifter-batcher` — telemetry rolling stats publisher (`drifter/telemetry/window` + `drifter/telemetry/stats`)
+- `drifter-trip` — per-trip distance + fuel from MAF (`drifter/trip/{stats,fuel,cost,event}`)
+- `drifter-thresholds` — drift-capped adaptive baseline learner (`drifter/thresholds/{learned,update}`)
+- `drifter-reporter` — post-drive markdown report via LLM (`drifter/session/{report,summary}`)
+- `vivi_memory.py` — library (SQLite persistent memory; no service yet)
+
+Plus `src/llm_client.py` rewritten as a Claude→Groq→Ollama cascade with caching/retry/health (`LLM_CASCADE_ORDER=['ollama']` default; existing callers preserved via backward-compat shims `query_chat`, `stream_chat_ollama`, `query_llm`, `SYSTEM_PROMPT`, `CHAT_SYSTEM_PROMPT`).
+
+Full service list:
 
 ```
-drifter-canbridge   drifter-alerts      drifter-logger
-drifter-anomaly     drifter-analyst     drifter-voice
-drifter-vivi        drifter-hotspot     drifter-homesync
-drifter-watchdog    drifter-realdash    drifter-rf
-drifter-rfaudio     drifter-wardrive    drifter-dashboard
-drifter-fbmirror    drifter-voicein     drifter-flipper
-drifter-opsec       drifter-bleconv     drifter-gps
+drifter-canbridge      drifter-alerts       drifter-logger
+drifter-anomaly        drifter-analyst      drifter-voice
+drifter-vivi           drifter-hotspot      drifter-homesync
+drifter-watchdog       drifter-realdash     drifter-rf
+drifter-rfaudio        drifter-wardrive     drifter-dashboard
+drifter-fbmirror       drifter-voicein      drifter-flipper
+drifter-opsec          drifter-bleconv      drifter-gps
+drifter-batcher        drifter-trip         drifter-thresholds
+drifter-reporter
 ```
 
 ### Security hardening (2026-05-18, commit `eed90b9`)
