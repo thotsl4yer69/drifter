@@ -395,7 +395,7 @@ nmcli con add type wifi \
     wifi-sec.key-mgmt wpa-psk \
     wifi-sec.psk "uncaged1312" 2>/dev/null
 
-ok "Hotspot: MZ1312_DRIFTER / uncaged1312 / 10.42.0.1"
+ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
 
 # ── 10. systemd Services ──
 step 10 "Installing systemd services"
