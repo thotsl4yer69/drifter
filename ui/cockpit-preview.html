@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<script src="/static/leaflet/leaflet.js" defer></script>
 <style>
   /* ────────────────────────────────────────────────────────────
      DRIFTER COCKPIT v2 — modern automotive HUD prototype
@@ -227,15 +229,61 @@
     background: var(--bg-0);
     overflow: hidden;
   }
-  /* Map placeholder — in production this becomes the Leaflet iframe */
+  /* Map canvas — Leaflet attaches here. Background tint is fallback
+     before tiles paint; dark base so the load isn't a white flash. */
   .map-canvas {
     position: absolute; inset: 0;
-    background:
-      radial-gradient(circle at 50% 50%, rgba(125,211,252,0.06) 0%, transparent 50%),
-      repeating-linear-gradient(0deg, transparent 0, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px),
-      repeating-linear-gradient(90deg, transparent 0, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px),
-      var(--bg-1);
+    background: var(--bg-1);
   }
+  .map-canvas .leaflet-container {
+    background: var(--bg-1);
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  }
+  /* Hide Leaflet's bottom-right attribution and zoom — we have our own
+     attribution strip and the map is gesture-only. */
+  .map-canvas .leaflet-control-attribution,
+  .map-canvas .leaflet-control-zoom {
+    display: none !important;
+  }
+  /* Origin marker — pulsing amber dot using DivIcon. */
+  .marker-origin {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: var(--amber-glow), 0 0 0 3px rgba(10,13,18,0.6);
+    position: relative;
+  }
+  .marker-origin::after {
+    content: '';
+    position: absolute; inset: -8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--amber);
+    animation: ping 2.4s ease-out infinite;
+  }
+  /* Aircraft marker — small triangle rotated to heading. */
+  .marker-ac {
+    width: 14px; height: 14px;
+    transform-origin: 50% 50%;
+    color: var(--cyan);
+    filter: drop-shadow(0 0 4px rgba(125,211,252,0.5));
+  }
+  .marker-ac.interesting { color: var(--amber); filter: drop-shadow(0 0 6px rgba(255,174,66,0.6)); }
+  .marker-ac svg { width: 100%; height: 100%; display: block; }
+  /* Leaflet popup styling to match the glass aesthetic. */
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: var(--glass-bg-strong) !important;
+    color: var(--fg) !important;
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-stroke);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
+  }
+  .leaflet-popup-content {
+    margin: 8px 12px !important;
+    font-size: 11px;
+    line-height: 1.4;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .leaflet-popup-content b { color: var(--amber); font-weight: 600; }
   /* Awaiting overlay — calm, not alarming */
   .awaiting {
     position: absolute;
@@ -879,6 +927,180 @@
     pointer-events: none;
   }
 
+  /* ── Overlay sheet — used by Mechanic / Vivi / Sessions ──── */
+  .overlay-root {
+    position: fixed; inset: 0;
+    z-index: 200;
+    display: none;
+    background: rgba(10,13,18,0.78);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  /* Use flex centering — grid `place-items: center` had quirks in
+     headless Chromium screenshots where the card wouldn't paint. */
+  .overlay-root.open { display: flex; align-items: center; justify-content: center; opacity: 1; }
+  .overlay-card {
+    width: min(640px, calc(100vw - 48px));
+    max-height: min(720px, calc(100vh - 96px));
+    background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+    border: 1px solid rgba(255,174,66,0.22);
+    border-radius: var(--r-lg);
+    box-shadow:
+      0 24px 64px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 0 48px rgba(255,174,66,0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .overlay-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--glass-stroke);
+  }
+  .overlay-glyph {
+    width: 32px; height: 32px;
+    border-radius: var(--r-sm);
+    display: grid; place-items: center;
+    background: rgba(255,174,66,0.1);
+    color: var(--amber);
+    font-size: 16px;
+  }
+  .overlay-title {
+    flex: 1;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    font-size: 14px;
+  }
+  .overlay-title .sub {
+    display: block;
+    font-size: 10px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .overlay-close {
+    width: 32px; height: 32px;
+    border-radius: var(--r-sm);
+    display: grid; place-items: center;
+    color: var(--fg-mute);
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease;
+    font-size: 18px;
+  }
+  .overlay-close:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+  .overlay-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-4) var(--space-5);
+  }
+  .overlay-body::-webkit-scrollbar { width: 4px; }
+  .overlay-body::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+  .overlay-foot {
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--glass-stroke);
+    background: rgba(0,0,0,0.18);
+  }
+
+  /* Chat overlay */
+  .chat-stream { display: flex; flex-direction: column; gap: var(--space-3); }
+  .chat-msg {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--r-md);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 90%;
+  }
+  .chat-msg.user {
+    background: rgba(255,174,66,0.08);
+    border: 1px solid rgba(255,174,66,0.22);
+    color: var(--fg);
+    align-self: flex-end;
+  }
+  .chat-msg.assistant {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--glass-stroke);
+    color: var(--fg);
+    align-self: flex-start;
+    white-space: pre-wrap;
+  }
+  .chat-msg.pending {
+    color: var(--fg-mute);
+    font-style: italic;
+  }
+  .chat-msg.error {
+    background: rgba(255,107,107,0.08);
+    border-color: rgba(255,107,107,0.32);
+    color: var(--red);
+  }
+  .chat-input-row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .chat-input {
+    flex: 1;
+    background: var(--bg-3);
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-md);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+  .chat-input:focus { border-color: var(--glass-stroke-active); }
+  .chat-send {
+    background: var(--amber);
+    color: var(--bg-0);
+    border: none;
+    border-radius: var(--r-md);
+    padding: 10px 18px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: opacity 150ms ease, transform 100ms ease;
+  }
+  .chat-send:hover { opacity: 0.85; }
+  .chat-send:active { transform: scale(0.97); }
+  .chat-send:disabled { background: var(--fg-deep); color: var(--fg-dim); cursor: not-allowed; }
+
+  /* Session row in sessions overlay */
+  .session-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+  }
+  .session-row:last-child { border-bottom: none; }
+  .session-id {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .session-meta {
+    font-size: 10px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+  .session-dur {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-mute);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
   /* Preview banner */
   .preview-banner {
     position: fixed;
@@ -908,20 +1130,20 @@
   <header class="top">
     <div class="wordmark">
       <span class="mk-d">D</span><span class="mk-rest">RIFTER</span>
-      <span class="mk-serial" id="mk-serial">MZ1312 · NODE-0001 · DRIVE</span>
+      <span class="mk-serial" id="mk-serial">MZ1312 · NODE-0001 · —</span>
     </div>
     <div class="top-meta">
-      <div class="meta-cell">
-        <span class="meta-dot warn"></span>GPS <span class="v">AWAITING</span>
+      <div class="meta-cell" data-cell="gps">
+        <span class="meta-dot warn"></span>GPS <span class="v">—</span>
       </div>
-      <div class="meta-cell">
-        <span class="meta-dot idle"></span>CAN <span class="v">SLCAN0</span>
+      <div class="meta-cell" data-cell="can">
+        <span class="meta-dot idle"></span>CAN <span class="v">—</span>
       </div>
-      <div class="meta-cell">
-        <span class="meta-dot live"></span>NET <span class="v">PHONE</span>
+      <div class="meta-cell" data-cell="net">
+        <span class="meta-dot idle"></span>NET <span class="v">—</span>
       </div>
-      <div class="meta-cell">
-        <span class="meta-dot live"></span>MQTT <span class="v">22/25</span>
+      <div class="meta-cell" data-cell="mqtt">
+        <span class="meta-dot idle"></span>MQTT <span class="v">—</span>
       </div>
       <div class="meta-cell mono" id="clock">--:--:--</div>
     </div>
@@ -929,18 +1151,18 @@
 
   <!-- ── LEFT RAIL ─────────────────────────────────────────── -->
   <nav class="rail">
-    <div class="rail-btn active" title="Cockpit">⌂<span class="rail-tip">Cockpit</span></div>
-    <div class="rail-btn" title="Mechanic">⚙<span class="rail-tip">Mechanic</span></div>
-    <div class="rail-btn" title="Hardware">▤<span class="rail-tip">Hardware</span></div>
-    <div class="rail-btn" title="Sessions">∿<span class="rail-tip">Sessions</span></div>
-    <div class="rail-btn" title="Settings">◌<span class="rail-tip">Settings</span></div>
+    <div class="rail-btn active" data-rail="cockpit" title="Cockpit">⌂<span class="rail-tip">Cockpit</span></div>
+    <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">⚙<span class="rail-tip">Mechanic</span></div>
+    <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">▤<span class="rail-tip">Hardware</span></div>
+    <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">∿<span class="rail-tip">Sessions</span></div>
+    <div class="rail-btn" data-rail="settings" title="Settings">◌<span class="rail-tip">Settings</span></div>
     <div class="rail-spacer"></div>
-    <div class="rail-vivi" title="Talk to Vivi"></div>
+    <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
   </nav>
 
   <!-- ── MAIN (map + HUD) ──────────────────────────────────── -->
-  <main class="main">
-    <div class="map-canvas"></div>
+  <main class="main" id="main">
+    <div class="map-canvas" id="map-canvas"></div>
 
     <!-- Awaiting GPS overlay (calm, not alarming) -->
     <div class="awaiting">
@@ -965,9 +1187,9 @@
     </div>
 
     <div class="map-controls">
-      <div class="map-btn" title="Toggle satellite">◑</div>
-      <div class="map-btn" title="Recenter">⊙</div>
-      <div class="map-btn" title="Fullscreen">⛶</div>
+      <div class="map-btn" data-map="satellite" title="Toggle satellite layer">◑</div>
+      <div class="map-btn" data-map="recenter"  title="Recenter on origin">⊙</div>
+      <div class="map-btn" data-map="fullscreen" title="Toggle fullscreen">⛶</div>
     </div>
 
     <div class="attr">DATA · EMV · BOM · OPENSTREETMAP · ADSB.LOL</div>
@@ -1009,6 +1231,11 @@
   </aside>
 </div>
 
+<!-- Overlay root — Mechanic / Vivi chat + Sessions list mount here -->
+<div class="overlay-root" id="overlay-root">
+  <div class="overlay-card" id="overlay-card" role="dialog" aria-modal="true"></div>
+</div>
+
 <script>
   // Live fetches from the same APIs the real cockpit uses. Nothing
   // baked in — what you see is the current state of this Pi right now.
@@ -1025,7 +1252,7 @@
   // ── State caches shared across renders ────────────────────────────
   const cache = {
     ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
-    state: null, healthz: null,
+    state: null, healthz: null, feeds: null,
   };
   // What counts as a "live" BLE detection. Anything older is history,
   // not live — showing 13-minute-old AirTags as live was misleading.
@@ -1339,6 +1566,8 @@
       const interesting = list.filter(a => a.interesting).length;
       setCount('aircraft', list.length, { live: interesting > 0 });
       if (activeTab === 'aircraft') render();
+      refreshMap();
+      updateMetaCells();
     } catch(e) {}
   }
   async function loadAlerts(){
@@ -1375,13 +1604,8 @@
       const total = Object.values(services).length;
       // System tab counter = active count; "live" when anything is down.
       setCount('system', active, { live: active < total });
-      // Top bar MQTT cell
-      document.querySelectorAll('.top-meta .meta-cell').forEach(c => {
-        if (c.textContent.trim().startsWith('MQTT')) {
-          c.innerHTML = `<span class="meta-dot live"></span>MQTT <span class="v">${active}/${total}</span>`;
-        }
-      });
       if (activeTab === 'system') render();
+      updateMetaCells();
     } catch(e) {}
   }
   async function loadState(){
@@ -1391,20 +1615,23 @@
       cache.state = await r.json();
       renderTelemetryChips(cache.state);
       if (activeTab === 'system') render();
+      updateMetaCells();
     } catch(e) {}
   }
   async function loadOrigin(){
     try {
       const r = await fetch('/api/feeds/summary');
       if (!r.ok) return;
-      const j = await r.json();
-      const o = j.origin || {};
+      cache.feeds = await r.json();
+      const o = cache.feeds.origin || {};
       const awaiting = document.querySelector('.awaiting');
       if (o.lat != null && o.lon != null) {
         if (awaiting) awaiting.style.display = 'none';
       } else if (awaiting) {
         awaiting.style.display = '';
       }
+      refreshMap();
+      updateMetaCells();
     } catch(e) {}
   }
 
@@ -1496,9 +1723,368 @@
       `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  // ── Top-bar meta cells (GPS / CAN / NET / mode wordmark) ─────────
+  function setCell(name, dotClass, value){
+    const cell = document.querySelector(`.meta-cell[data-cell="${name}"]`);
+    if (!cell) return;
+    cell.innerHTML =
+      `<span class="meta-dot ${dotClass}"></span>${name.toUpperCase()} <span class="v">${esc(value)}</span>`;
+  }
+  function updateMetaCells(){
+    // GPS — from /api/feeds/summary.origin
+    const origin = cache.aircraft && cache.aircraft.origin
+                || (cache.feeds && cache.feeds.origin)
+                || null;
+    if (origin && origin.lat != null && origin.lon != null) {
+      const src = origin.source ? origin.source.toUpperCase() : 'LOCKED';
+      setCell('gps', 'live', src);
+    } else {
+      setCell('gps', 'warn', 'AWAITING');
+    }
+
+    // CAN — fresh engine_* telemetry implies CAN frames are flowing.
+    // No need for a dedicated probe; the bus is "up" iff any OBD topic
+    // has been seen recently.
+    const st = cache.state || {};
+    const now = Date.now() / 1000;
+    const canKeys = ['engine_rpm', 'engine_speed_mph', 'engine_coolant', 'engine_throttle'];
+    const canSeen = canKeys.some(k => {
+      const node = st[k];
+      const ts = node && (node.ts || (typeof node === 'object' && node._ts));
+      // /api/state nodes don't always carry their own ts; treat presence
+      // since last loadState() call as fresh.
+      return node != null;
+    });
+    if (canSeen) setCell('can', 'live', 'UP');
+    else setCell('can', 'idle', 'OFF');
+
+    // NET — derived from healthz. mqtt_connected + non-zero services
+    // means the broker is reachable; if homesync service is up we're
+    // reaching the LAN sync target too.
+    const h = cache.healthz || {};
+    const services = h.services || {};
+    const mqtt = h.mqtt_connected;
+    if (mqtt && services['drifter-homesync']) setCell('net', 'live', 'LAN+HOTSPOT');
+    else if (mqtt) setCell('net', 'live', 'HOTSPOT');
+    else setCell('net', 'warn', 'OFFLINE');
+
+    // MQTT cell — active/total count
+    if (services && Object.keys(services).length) {
+      const active = Object.values(services).filter(v => v === true).length;
+      const total = Object.values(services).length;
+      setCell('mqtt', 'live', `${active}/${total}`);
+    }
+  }
+  async function loadMode(){
+    try {
+      const r = await fetch('/api/mode');
+      if (!r.ok) return;
+      const j = await r.json();
+      const mode = (j.mode || '—').toUpperCase();
+      const el = document.getElementById('mk-serial');
+      if (el) el.textContent = `MZ1312 · NODE-0001 · ${mode}`;
+    } catch(e) {}
+  }
+
+  // ── Map (Leaflet) ────────────────────────────────────────────────
+  // Two tile layers wired up: OSM dark for default, Esri imagery for
+  // the satellite toggle. Origin marker + aircraft markers stay in sync
+  // with the cache. Map only initializes once Leaflet has loaded; we
+  // re-attempt on the first paint after readiness.
+  const TILES = {
+    dark: {
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '© OSM contributors · © CARTO',
+      maxZoom: 19,
+    },
+    sat: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles © Esri',
+      maxZoom: 19,
+    },
+  };
+  const map = {
+    instance: null,
+    layer: null,
+    originMarker: null,
+    acMarkers: new Map(),  // hex → L.marker
+    mode: 'dark',          // current tile style
+    hasFitOnce: false,     // first GPS fix centers once, user can pan after
+  };
+  function _initMap(){
+    if (map.instance || typeof L === 'undefined') return false;
+    const el = document.getElementById('map-canvas');
+    if (!el) return false;
+    map.instance = L.map(el, {
+      attributionControl: false,
+      zoomControl: false,
+      worldCopyJump: true,
+    }).setView([-37.85, 145.0], 5);  // Melbourne-ish until first fix
+    map.layer = L.tileLayer(TILES.dark.url, TILES.dark).addTo(map.instance);
+    return true;
+  }
+  function _setOrigin(lat, lon){
+    if (!map.instance) return;
+    if (!map.originMarker) {
+      map.originMarker = L.marker([lat, lon], {
+        icon: L.divIcon({ className: '', html: '<div class="marker-origin"></div>',
+                          iconSize: [16,16], iconAnchor: [8,8] }),
+      }).addTo(map.instance).bindPopup('<b>DRIFTER</b><br>origin');
+    } else {
+      map.originMarker.setLatLng([lat, lon]);
+    }
+    if (!map.hasFitOnce) {
+      map.instance.setView([lat, lon], 13);
+      map.hasFitOnce = true;
+    }
+  }
+  function _setAircraft(list){
+    if (!map.instance) return;
+    const present = new Set();
+    for (const a of (list || [])) {
+      if (a.lat == null || a.lon == null) continue;
+      present.add(a.hex);
+      const rot = a.track != null ? a.track : 0;
+      const cls = 'marker-ac' + (a.interesting ? ' interesting' : '');
+      const html = `<div class="${cls}" style="transform: rotate(${rot}deg)">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1L10 11L14 13L14 14L8 12L2 14L2 13L6 11L8 1Z"/>
+        </svg></div>`;
+      const popup = `<b>${esc(a.flight || a.hex)}</b><br>${esc(a.type || '')}${a.alt_baro ? '<br>alt ' + a.alt_baro + (a.alt_baro==='ground'?'':' ft') : ''}${a.gs ? '<br>'+Math.round(a.gs)+' kt' : ''}`;
+      let m = map.acMarkers.get(a.hex);
+      if (!m) {
+        m = L.marker([a.lat, a.lon], {
+          icon: L.divIcon({ className: '', html, iconSize: [14,14], iconAnchor: [7,7] }),
+        }).addTo(map.instance).bindPopup(popup);
+        map.acMarkers.set(a.hex, m);
+      } else {
+        m.setLatLng([a.lat, a.lon]);
+        m.setIcon(L.divIcon({ className: '', html, iconSize: [14,14], iconAnchor: [7,7] }));
+        m.setPopupContent(popup);
+      }
+    }
+    // Remove markers for aircraft no longer in the snapshot.
+    for (const [hex, m] of map.acMarkers) {
+      if (!present.has(hex)) { map.instance.removeLayer(m); map.acMarkers.delete(hex); }
+    }
+  }
+  function refreshMap(){
+    if (!_initMap()) return;
+    const origin = (cache.aircraft && cache.aircraft.origin) || (cache.feeds && cache.feeds.origin);
+    if (origin && origin.lat != null && origin.lon != null) {
+      _setOrigin(origin.lat, origin.lon);
+    }
+    _setAircraft(cache.aircraft && cache.aircraft.aircraft);
+  }
+  // ── Map controls
+  function toggleSatellite(){
+    if (!map.instance) return;
+    map.mode = map.mode === 'dark' ? 'sat' : 'dark';
+    if (map.layer) map.instance.removeLayer(map.layer);
+    const t = TILES[map.mode];
+    map.layer = L.tileLayer(t.url, t).addTo(map.instance);
+  }
+  function recenter(){
+    if (!map.instance || !map.originMarker) return;
+    map.instance.setView(map.originMarker.getLatLng(), 14, { animate: true });
+  }
+  function toggleFullscreen(){
+    const el = document.getElementById('main');
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen().catch(() => {});
+  }
+
+  // ── Overlay (Mechanic / Vivi / Sessions) ─────────────────────────
+  const overlay = {
+    root: null, card: null,
+    open(html){
+      this.root = this.root || document.getElementById('overlay-root');
+      this.card = this.card || document.getElementById('overlay-card');
+      this.card.innerHTML = html;
+      this.root.classList.add('open');
+      // Bind close handlers (idempotent — re-binding is fine).
+      this.root.onclick = (e) => { if (e.target === this.root) this.close(); };
+      document.addEventListener('keydown', this._onKey);
+      const close = this.card.querySelector('.overlay-close');
+      if (close) close.onclick = () => this.close();
+    },
+    close(){
+      if (this.root) this.root.classList.remove('open');
+      document.removeEventListener('keydown', this._onKey);
+    },
+    _onKey(e){ if (e.key === 'Escape') overlay.close(); },
+  };
+
+  // Chat overlay — Mechanic and Vivi both use /api/query. The header
+  // differs (glyph + title) so the operator knows which persona they
+  // invoked. Conversation state is per-overlay-open; not persisted.
+  function openChat(kind){
+    const META = {
+      mechanic: { glyph: '⚙', title: 'Mechanic',
+                  sub: 'POST /api/query · diagnostic LLM' },
+      vivi:     { glyph: '✦', title: 'Vivi',
+                  sub: 'POST /api/query · voice assistant' },
+    }[kind] || { glyph: '?', title: kind, sub: '' };
+    overlay.open(`
+      <div class="overlay-head">
+        <div class="overlay-glyph">${META.glyph}</div>
+        <div class="overlay-title">${esc(META.title)}<span class="sub">${esc(META.sub)}</span></div>
+        <div class="overlay-close" title="Close (Esc)">×</div>
+      </div>
+      <div class="overlay-body">
+        <div class="chat-stream" id="chat-stream">
+          <div class="chat-msg assistant">Ask anything about the current vehicle state, recent telemetry, or DTCs. The model has live access to the cockpit's MQTT state.</div>
+        </div>
+      </div>
+      <div class="overlay-foot">
+        <form class="chat-input-row" id="chat-form">
+          <input class="chat-input" id="chat-input" type="text"
+                 placeholder="What's the coolant doing?" autocomplete="off" required>
+          <button class="chat-send" type="submit">Ask</button>
+        </form>
+      </div>`);
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+    const stream = document.getElementById('chat-stream');
+    const send = form.querySelector('.chat-send');
+    setTimeout(() => input.focus(), 80);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      input.value = ''; input.disabled = true; send.disabled = true;
+      stream.insertAdjacentHTML('beforeend',
+        `<div class="chat-msg user">${esc(q)}</div>
+         <div class="chat-msg pending" id="pending">…</div>`);
+      stream.scrollTop = stream.scrollHeight;
+      try {
+        const r = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        });
+        const pending = document.getElementById('pending');
+        if (r.ok) {
+          const j = await r.json();
+          pending.classList.remove('pending');
+          pending.classList.add('assistant');
+          pending.textContent = j.text || j.error || '(empty response)';
+        } else {
+          pending.classList.remove('pending');
+          pending.classList.add('error');
+          pending.textContent = `Error ${r.status}: ${await r.text()}`;
+        }
+      } catch (err) {
+        const pending = document.getElementById('pending');
+        pending.classList.remove('pending');
+        pending.classList.add('error');
+        pending.textContent = `Network error: ${err.message}`;
+      }
+      input.disabled = false; send.disabled = false; input.focus();
+      stream.scrollTop = stream.scrollHeight;
+    });
+  }
+
+  async function openSessions(){
+    overlay.open(`
+      <div class="overlay-head">
+        <div class="overlay-glyph">∿</div>
+        <div class="overlay-title">Sessions<span class="sub">GET /api/sessions · last 10 drives</span></div>
+        <div class="overlay-close" title="Close (Esc)">×</div>
+      </div>
+      <div class="overlay-body" id="sessions-body">
+        <div class="empty"><span class="gl">∿</span>Loading…</div>
+      </div>`);
+    try {
+      const r = await fetch('/api/sessions');
+      const body = document.getElementById('sessions-body');
+      if (!r.ok) {
+        body.innerHTML = `<div class="empty"><span class="gl">!</span>HTTP ${r.status}</div>`;
+        return;
+      }
+      const list = await r.json();
+      if (!Array.isArray(list) || !list.length) {
+        body.innerHTML = `<div class="empty"><span class="gl">∿</span>No completed sessions yet. Start the car and drive — each ignition cycle becomes a session.</div>`;
+        return;
+      }
+      body.innerHTML = list.map(s => {
+        const startTs = s.start_ts || s.started_at || s.ts;
+        const endTs   = s.end_ts || s.ended_at;
+        const dur     = (startTs && endTs) ? Math.round((endTs - startTs) / 60) + 'm' : '—';
+        const id      = s.id || s.session_id || s.uuid || '—';
+        return `<div class="session-row">
+          <div>
+            <div class="session-id">${esc(id)}</div>
+            <div class="session-meta">${startTs ? fmtAge(startTs) : 'unknown start'}${s.miles ? ' · ' + s.miles + 'mi' : ''}${s.dtc_count ? ' · ' + s.dtc_count + ' DTC' : ''}</div>
+          </div>
+          <div class="session-dur">${esc(dur)}</div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      document.getElementById('sessions-body').innerHTML =
+        `<div class="empty"><span class="gl">!</span>${esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Rail navigation
+  function initRail(){
+    document.querySelectorAll('[data-rail]').forEach(el => {
+      el.addEventListener('click', () => {
+        const target = el.dataset.rail;
+        switch (target) {
+          case 'cockpit':
+            // Already here — refresh map state to be honest about it.
+            refreshMap();
+            break;
+          case 'mechanic':
+            openChat('mechanic');
+            break;
+          case 'vivi':
+            openChat('vivi');
+            break;
+          case 'hardware':
+            // Surface the Hardware drawer tab + ensure drawer is open.
+            if (drawerCollapsed) setCollapsed(false);
+            selectTab('hardware');
+            break;
+          case 'sessions':
+            openSessions();
+            break;
+          case 'settings':
+            window.location.href = '/settings';
+            break;
+        }
+      });
+    });
+  }
+  function initMapControls(){
+    document.querySelectorAll('[data-map]').forEach(el => {
+      el.addEventListener('click', () => {
+        switch (el.dataset.map) {
+          case 'satellite':  toggleSatellite(); break;
+          case 'recenter':   recenter(); break;
+          case 'fullscreen': toggleFullscreen(); break;
+        }
+      });
+    });
+  }
+
   initDrawer();
+  initRail();
+  initMapControls();
+  // Wait for Leaflet to load (deferred script), then init map. If Leaflet
+  // is already there (cached) initialize immediately; otherwise listen.
+  if (typeof L !== 'undefined') { refreshMap(); }
+  else { window.addEventListener('load', () => { refreshMap(); }); }
+  // ?overlay=mechanic|vivi|sessions auto-opens the named overlay on
+  // load. Deep-linking for support flows + headless verification.
+  const _urlOverlay = new URLSearchParams(location.search).get('overlay');
+  if (_urlOverlay === 'mechanic' || _urlOverlay === 'vivi') openChat(_urlOverlay);
+  else if (_urlOverlay === 'sessions') openSessions();
+
   loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadHardware();
-  loadOrigin(); loadHealth(); loadState();
+  loadOrigin(); loadHealth(); loadState(); loadMode();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(loadBle,        15000);
   setInterval(loadPersistent, 60000);
@@ -1508,6 +2094,7 @@
   setInterval(loadHealth,     15000);
   setInterval(loadState,      10000);
   setInterval(loadOrigin,     15000);
+  setInterval(loadMode,       30000);
   // Re-tick surveil count every 30s so detections aging out of the
   // BLE_LIVE_WINDOW are reflected without waiting for the next BLE fetch.
   setInterval(_refreshSurveilCount, 30000);
