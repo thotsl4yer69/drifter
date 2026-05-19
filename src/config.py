@@ -671,7 +671,7 @@ TOPICS = {
 LLM_CASCADE_ORDER = os.getenv("LLM_CASCADE_ORDER", "ollama").split(",")
 LLM_CLAUDE_TIMEOUT = 60
 LLM_GROQ_TIMEOUT = 30
-LLM_OLLAMA_TIMEOUT = 300   # mirrored below as OLLAMA_TIMEOUT for back-compat
+LLM_OLLAMA_TIMEOUT = int(os.getenv("LLM_OLLAMA_TIMEOUT", "300"))
 LLM_CACHE_TTL = 3600
 LLM_MAX_RETRIES = 2
 
@@ -707,9 +707,7 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # 1.5b fabricates static-spec ranges as live readings; 3b follows the no-invention rule.
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
-LLM_PRIMARY = os.getenv("LLM_PRIMARY", "ollama")  # "ollama" = offline-first, "groq" = cloud-first
 
 # ── Voice Input (STT) ──
 VOSK_MODEL_DIR = DRIFTER_DIR / "vosk-models" / "vosk-model-small-en-us-0.15"
