@@ -19,7 +19,7 @@ import requests
 from config import (
     GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL,
     ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
-    OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL,
     LLM_CASCADE_ORDER, LLM_CLAUDE_TIMEOUT, LLM_GROQ_TIMEOUT, LLM_OLLAMA_TIMEOUT,
     LLM_CACHE_TTL, LLM_MAX_RETRIES,
 )
@@ -347,7 +347,7 @@ def stream_chat_ollama(prompt: str):
         },
     }
     try:
-        resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT, stream=True)
+        resp = requests.post(url, json=payload, timeout=LLM_OLLAMA_TIMEOUT, stream=True)
         if resp.status_code != 200:
             raise RuntimeError(f"Ollama HTTP {resp.status_code}")
         full_text = ""
