@@ -95,10 +95,29 @@ const TARGET_COLORS = { axon:'#ff5151', airtag:'#3b82f6', tile:'#22c55e' };
 function colorFor(t){ return TARGET_COLORS[t] || '#9ca3af'; }
 function esc(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
 
-// Default centre: DRIFTER home (Long Gully). Replaced as soon as
-// /api/feeds/summary lands with the live origin (or a real GPS fix).
+// No default centre. A vehicle node has no fixed home — we render
+// a low-zoom world view and overlay an "AWAITING GPS" notice until
+// the first real origin lands (browser geolocation POST, gpsd, or
+// any other source via /opt/drifter/state/gps.json).
 const map = L.map('map', { zoomControl: true, worldCopyJump: true })
-  .setView([-36.7596, 144.2531], 11);
+  .setView([0, 0], 2);
+const _awaitNotice = L.control({position:'topright'});
+_awaitNotice.onAdd = function(){
+  const d = L.DomUtil.create('div','await-gps');
+  d.style.cssText = 'background:#000c;color:#ffae42;padding:6px 10px;'
+    + 'font:12px system-ui,sans-serif;letter-spacing:.08em;'
+    + 'border:1px solid #ffae4288;border-radius:3px';
+  d.textContent = 'AWAITING GPS FIX';
+  return d;
+};
+_awaitNotice.addTo(map);
+let _haveOrigin = false;
+function _clearAwaiting(){
+  if (!_haveOrigin){
+    _haveOrigin = true;
+    try { _awaitNotice.remove(); } catch(e){}
+  }
+}
 
 // Track the last time the operator manually panned/zoomed. Auto-recenter
 // (origin updates, browser-geo broadcasts) is suppressed for 30s after
@@ -110,13 +129,15 @@ function _canAutoRecenter(){
   return (Date.now() - _lastUserPanTs) > PAN_DEBOUNCE_MS;
 }
 
-// On load, snap to the feeds-summary origin so first paint shows the
-// operator's actual region, not a degenerate (0,0) world view.
+// On load, snap to the feeds-summary origin if it exists. lat/lon are
+// null when source==='awaiting', in which case we leave the world
+// view and the "AWAITING GPS" notice up.
 fetch('/api/feeds/summary').then(r => r.ok ? r.json() : null).then(s => {
   const o = s && s.origin;
   if (o && typeof o.lat === 'number' && typeof o.lon === 'number') {
     map.setView([o.lat, o.lon], 13);
-    renderOrigin(o.lat, o.lon, o.source || 'home');
+    renderOrigin(o.lat, o.lon, o.source || 'gps');
+    _clearAwaiting();
   }
 }).catch(() => {});
 
@@ -317,9 +338,12 @@ setInterval(loadAndRender, 60000);
 window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.type === 'recenter' && typeof d.lat === 'number' && typeof d.lng === 'number') {
-    // Honour the same pan-debounce as origin updates — the operator's
-    // manual pan should stick over a stale browser-geo broadcast.
-    if (_canAutoRecenter()) {
+    const _firstOrigin = !_haveOrigin;
+    _clearAwaiting();
+    // Force-recenter on the very first GPS arrival regardless of pan
+    // state — any prior pan was on the meaningless world view. After
+    // that, honour the pan-debounce so the operator's view sticks.
+    if (_firstOrigin || _canAutoRecenter()) {
       map.setView([d.lat, d.lng], d.zoom || 14, { animate: true });
     }
     if (!window._youPin) {
@@ -350,11 +374,13 @@ window.addEventListener('message', (e) => {
     renderRadar(d.meta);
   }
   if (d.type === 'origin' && typeof d.lat === 'number' && typeof d.lon === 'number') {
-    const newSource = d.source || 'home';
-    // Recenter only when the source flips (home↔gps) AND the operator
-    // hasn't manually panned in the last 30s. The pin always moves so
-    // the orange/grey marker is current regardless.
-    if (window._originSource !== newSource && _canAutoRecenter()) {
+    const newSource = d.source || 'gps';
+    const _firstOrigin = !_haveOrigin;
+    _clearAwaiting();
+    // Recenter on the very first origin AND on any source change
+    // (browser↔gps↔readsb), subject to pan-debounce after the first.
+    const sourceFlipped = window._originSource !== newSource;
+    if (_firstOrigin || (sourceFlipped && _canAutoRecenter())) {
       map.setView([d.lat, d.lon], 13, { animate: true });
     }
     window._originSource = newSource;

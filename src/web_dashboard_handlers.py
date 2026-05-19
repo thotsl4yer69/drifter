@@ -159,6 +159,11 @@ _BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
 
 _RFAUDIO_ACTIONS = {'start', 'stop', 'scan', 'test_tone', 'list_bands'}
 
+# Phone-as-GPS sink. The tethered phone POSTs its browser-geolocation
+# fix here; we drop it at the same path drifter-gps writes to so
+# feeds.origin() sees it without any wiring change.
+_GPS_STATE_PATH = Path('/opt/drifter/state/gps.json')
+
 
 def _is_local_peer(peer: str) -> bool:
     """Hotspot-only ACL — same gate Phase 4.5 used for /api/ble/recent.
@@ -527,7 +532,73 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/rfaudio/command':
             self._post_rfaudio_command()
             return
+        if self.path == '/api/gps/manual':
+            self._post_gps_manual()
+            return
         self.send_error(404)
+
+    def _post_gps_manual(self):
+        """Accept a browser-geolocation fix from the tethered phone and
+        drop it into /opt/drifter/state/gps.json so feeds.origin() and
+        every downstream consumer treat it as the authoritative position.
+
+        Body: {"lat": float, "lng": float, "accuracy_m": float?, "ts": float?}
+        Local-network only; the hotspot is the only intended client.
+
+        Also republishes to drifter/gps/fix so the cockpit's existing
+        MQTT-driven map follow path fires immediately, without waiting
+        for the 30s feeds-summary cycle.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'gps manual: local network only')
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        try:
+            lat = float(body['lat'])
+            lng = float(body.get('lng', body.get('lon')))
+        except (KeyError, TypeError, ValueError):
+            self.send_error(400, 'body requires numeric lat and lng')
+            return
+        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
+            self.send_error(400, 'lat/lng out of range')
+            return
+        now = time.time()
+        fix = {
+            'lat': lat,
+            'lng': lng,
+            'lon': lng,
+            'fix': True,
+            'mode': 2,
+            'ts': now,
+            'source': 'browser',
+            'accuracy_m': body.get('accuracy_m'),
+        }
+        try:
+            tmp = _GPS_STATE_PATH.with_suffix('.json.tmp')
+            tmp.write_text(json.dumps(fix))
+            tmp.replace(_GPS_STATE_PATH)
+        except OSError as e:
+            log.warning("gps manual write failed: %s", e)
+            self.send_error(500, 'failed to persist fix')
+            return
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/gps/fix', json.dumps(fix), retain=True)
+            except Exception as e:
+                log.warning("gps manual mqtt publish failed: %s", e)
+        self._serve_json({'ok': True, 'lat': lat, 'lng': lng, 'ts': now})
 
     def _post_rfaudio_command(self):
         """Forward a JSON body to drifter/rfaudio/command via MQTT.

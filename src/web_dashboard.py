@@ -26,9 +26,13 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import signal
+import ssl
+import subprocess
 import threading
 import time
+from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
@@ -53,8 +57,17 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 WEB_PORT = 8080
+HTTPS_PORT = 8443
 WS_PORT = 8081
 AUDIO_WS_PORT = 8082
+
+# HTTPS exists so browser geolocation works on the tethered phone —
+# navigator.geolocation requires a secure context, and 10.42.0.1 over
+# plain HTTP doesn't qualify. The cert is self-signed and regenerated
+# on first start; operators accept it once per phone.
+CERT_DIR = Path('/opt/drifter/state')
+CERT_PATH = CERT_DIR / 'dashboard.crt'
+KEY_PATH = CERT_DIR / 'dashboard.key'
 
 # ── Audio de-duplication so the same alert doesn't loop forever ──────
 _AUDIO_REPEAT_COOLDOWN = 60     # same text won't replay for this many seconds
@@ -79,6 +92,72 @@ def run_http_server() -> None:
     log.info("HTTP dashboard on http://0.0.0.0:%d", WEB_PORT)
     while state.running:
         server.handle_request()
+    server.server_close()
+
+
+def _ensure_self_signed_cert() -> bool:
+    """Generate a self-signed cert at CERT_PATH/KEY_PATH if missing.
+    Returns True on success. Uses openssl from the base system rather
+    than the cryptography library so we don't add a Python dep.
+    """
+    if CERT_PATH.exists() and KEY_PATH.exists():
+        return True
+    try:
+        CERT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.warning("HTTPS: cannot create %s: %s", CERT_DIR, e)
+        return False
+    # SAN covers loopback + the hotspot IP; phones connect to 10.42.0.1.
+    san = 'subjectAltName=IP:10.42.0.1,IP:127.0.0.1,DNS:localhost'
+    cmd = [
+        'openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', str(KEY_PATH), '-out', str(CERT_PATH),
+        '-days', '3650',
+        '-subj', '/CN=drifter.local/O=MZ1312 DRIFTER',
+        '-addext', san,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except (FileNotFoundError, subprocess.SubprocessError) as e:
+        log.warning("HTTPS: openssl invocation failed: %s", e)
+        return False
+    if r.returncode != 0:
+        log.warning("HTTPS: openssl exit %d: %s", r.returncode, r.stderr.strip())
+        return False
+    try:
+        os.chmod(KEY_PATH, 0o600)
+        os.chmod(CERT_PATH, 0o644)
+    except OSError:
+        pass
+    log.info("HTTPS: generated self-signed cert at %s", CERT_PATH)
+    return True
+
+
+def run_https_server() -> None:
+    """Same dispatcher as run_http_server, wrapped in TLS on HTTPS_PORT.
+    If cert generation fails we log and return — the HTTP listener
+    still works, only browser geolocation (which needs a secure
+    context) is then unavailable from the phone."""
+    if not _ensure_self_signed_cert():
+        log.warning("HTTPS: cert unavailable, skipping HTTPS listener "
+                    "(phone geolocation will not work)")
+        return
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        ctx.load_cert_chain(certfile=str(CERT_PATH), keyfile=str(KEY_PATH))
+    except (ssl.SSLError, OSError) as e:
+        log.warning("HTTPS: load_cert_chain failed: %s", e)
+        return
+    server = ThreadingHTTPServer(('0.0.0.0', HTTPS_PORT), DashboardHandler)
+    server.daemon_threads = True
+    server.timeout = 2
+    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    log.info("HTTPS dashboard on https://0.0.0.0:%d (self-signed)", HTTPS_PORT)
+    while state.running:
+        try:
+            server.handle_request()
+        except ssl.SSLError as e:
+            log.debug("HTTPS handshake error: %s", e)
     server.server_close()
 
 
@@ -254,7 +333,8 @@ async def _run_ws_servers():
             log.info("WebSocket audio on ws://0.0.0.0:%d", AUDIO_WS_PORT)
             log.info("")
             log.info("=== DRIFTER DASHBOARD LIVE ===")
-            log.info("  Open on phone: http://10.42.0.1:%d", WEB_PORT)
+            log.info("  Open on phone: https://10.42.0.1:%d  (geolocation)", HTTPS_PORT)
+            log.info("                  http://10.42.0.1:%d  (no geo, /healthz)", WEB_PORT)
             log.info("  Local:         http://localhost:%d", WEB_PORT)
             log.info("  RealDash TCP:  10.42.0.1:35000 (still available)")
             log.info("")
@@ -288,8 +368,11 @@ def main() -> None:
         ["drifter/alert/message", "drifter/audio/wav"],
     )
 
-    # ── HTTP Server Thread ──
+    # ── HTTP + HTTPS Server Threads ──
+    # HTTP keeps the /healthz fleet contract on 8080. HTTPS on 8443 is
+    # what makes navigator.geolocation work on the tethered phone.
     threading.Thread(target=run_http_server, daemon=True).start()
+    threading.Thread(target=run_https_server, daemon=True).start()
 
     # ── Async Event Loop (WebSocket servers) ──
     loop = asyncio.new_event_loop()

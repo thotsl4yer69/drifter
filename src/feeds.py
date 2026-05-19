@@ -17,11 +17,12 @@ Sources:
 
 Origin resolution:
   /opt/drifter/state/gps.json with fix=true and ts<120s old → 'gps'
-  Otherwise DRIFTER_HOME_LAT/LON env (defaults Long Gully) → 'home'
+  Otherwise → 'awaiting' (lat/lon=None). Geo-bound loops skip a cycle
+  instead of inventing a position; the dashboard renders an explicit
+  "GPS acquiring" state. This is a vehicle node — there is no "home".
 
 Config (env, all optional):
   DRIFTER_MQTT_HOST/PORT/USER/PASS
-  DRIFTER_HOME_LAT, DRIFTER_HOME_LON
   DRIFTER_FEED_RADIUS_KM           default 50
   DRIFTER_STATE_DIR                default /opt/drifter/state
   DRIFTER_READSB_AIRCRAFT          default /run/readsb/aircraft.json
@@ -63,8 +64,6 @@ MQTT_PORT = int(os.environ.get('DRIFTER_MQTT_PORT', '1883'))
 MQTT_USER = os.environ.get('DRIFTER_MQTT_USER') or None
 MQTT_PASS = os.environ.get('DRIFTER_MQTT_PASS') or None
 
-HOME_LAT = float(os.environ.get('DRIFTER_HOME_LAT', '-36.7596'))
-HOME_LON = float(os.environ.get('DRIFTER_HOME_LON', '144.2531'))
 RADIUS_KM = float(os.environ.get('DRIFTER_FEED_RADIUS_KM', '50'))
 
 STATE_DIR = Path(os.environ.get('DRIFTER_STATE_DIR', '/opt/drifter/state'))
@@ -126,14 +125,28 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def origin() -> dict:
-    """Resolve origin: live GPS fix (≤120s old) or env home."""
+    """Resolve origin from the live GPS fix file (≤120s old).
+
+    Sources (in /opt/drifter/state/gps.json, written by either drifter-gps
+    from gpsd OR by POST /api/gps/manual from the phone's browser):
+      fresh fix → {'lat':…, 'lon':…, 'source':'gps'}
+      no fix    → {'lat':None, 'lon':None, 'source':'awaiting'}
+
+    Callers that need lat/lon for distance/URL math MUST check for None
+    and skip rather than fabricate a position. There is intentionally
+    no fallback — a vehicle node has no fixed home.
+    """
     try:
         j = json.loads(GPS_PATH.read_text())
         if j.get('fix') and time.time() - float(j.get('ts', 0)) <= 120:
             return {'lat': float(j['lat']), 'lon': float(j['lon']), 'source': 'gps'}
     except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError, TypeError):
         pass
-    return {'lat': HOME_LAT, 'lon': HOME_LON, 'source': 'home'}
+    return {'lat': None, 'lon': None, 'source': 'awaiting'}
+
+
+def _has_origin(o: dict) -> bool:
+    return o.get('lat') is not None and o.get('lon') is not None
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -389,28 +402,30 @@ class Feeds:
     async def loop_emv(self) -> None:
         while not self.stop_event.is_set():
             o = origin()
-            j = await self._get_json(EMV_URL)
-            if j is not None:
-                feats = j.get('features') or []
-                items = [
-                    n for n in (
-                        normalise_emv(f, o['lat'], o['lon'], RADIUS_KM)
-                        for f in feats
-                    ) if n
-                ]
-                items.sort(key=lambda x: x['distance_km'])
-                self.last_emv = items
-                snap = {'ts': time.time(), 'origin': o, 'count': len(items),
-                        'items': items}
-                self.mqtt.publish(T_EMV_SNAP, json.dumps(snap), qos=1, retain=True)
-                # Per-new-item events (only fire for IDs we haven't seen).
-                new_ids: list[str] = []
-                for it in items:
-                    if it['id'] not in self.emv_seen:
-                        self.emv_seen.add(it['id'])
-                        self.mqtt.publish(T_EMV_EVENT, json.dumps(it), qos=1)
-                        new_ids.append(it['id'])
-                log.info('EMV: %d items (%d new)', len(items), len(new_ids))
+            if not _has_origin(o):
+                log.info('EMV: skipping cycle, awaiting GPS fix')
+            else:
+                j = await self._get_json(EMV_URL)
+                if j is not None:
+                    feats = j.get('features') or []
+                    items = [
+                        n for n in (
+                            normalise_emv(f, o['lat'], o['lon'], RADIUS_KM)
+                            for f in feats
+                        ) if n
+                    ]
+                    items.sort(key=lambda x: x['distance_km'])
+                    self.last_emv = items
+                    snap = {'ts': time.time(), 'origin': o, 'count': len(items),
+                            'items': items}
+                    self.mqtt.publish(T_EMV_SNAP, json.dumps(snap), qos=1, retain=True)
+                    new_ids: list[str] = []
+                    for it in items:
+                        if it['id'] not in self.emv_seen:
+                            self.emv_seen.add(it['id'])
+                            self.mqtt.publish(T_EMV_EVENT, json.dumps(it), qos=1)
+                            new_ids.append(it['id'])
+                    log.info('EMV: %d items (%d new)', len(items), len(new_ids))
             await asyncio.wait([asyncio.create_task(self.stop_event.wait())], timeout=60)
 
     # ── BOM ────────────────────────────────────────────────────────
@@ -452,14 +467,17 @@ class Feeds:
     async def loop_weather(self) -> None:
         while not self.stop_event.is_set():
             o = origin()
-            j = await self._get_json(OPEN_METEO_URL.format(lat=o['lat'], lon=o['lon']))
-            if j is not None:
-                shaped = shape_weather(j)
-                self.last_weather = shaped
-                self.mqtt.publish(T_WEATHER, json.dumps(shaped), qos=1, retain=True)
-                log.info('weather: %s°C feels %s°C wind %s km/h',
-                         shaped.get('temp_c'), shaped.get('feels_c'),
-                         shaped.get('wind_kmh'))
+            if not _has_origin(o):
+                log.info('weather: skipping cycle, awaiting GPS fix')
+            else:
+                j = await self._get_json(OPEN_METEO_URL.format(lat=o['lat'], lon=o['lon']))
+                if j is not None:
+                    shaped = shape_weather(j)
+                    self.last_weather = shaped
+                    self.mqtt.publish(T_WEATHER, json.dumps(shaped), qos=1, retain=True)
+                    log.info('weather: %s°C feels %s°C wind %s km/h',
+                             shaped.get('temp_c'), shaped.get('feels_c'),
+                             shaped.get('wind_kmh'))
             await asyncio.wait([asyncio.create_task(self.stop_event.wait())], timeout=600)
 
     # ── ADS-B ──────────────────────────────────────────────────────
@@ -467,17 +485,20 @@ class Feeds:
     async def loop_aircraft(self) -> None:
         while not self.stop_event.is_set():
             o = origin()
-            ac, source = await self._get_aircraft(o)
-            self.last_aircraft = ac
-            self.last_aircraft_source = source
-            payload = {
-                'ts': time.time(), 'source': source, 'origin': o,
-                'count': len(ac),
-                'interesting_count': sum(1 for x in ac if x.get('interesting')),
-                'aircraft': ac,
-            }
-            self.mqtt.publish(T_AIRCRAFT, json.dumps(payload), qos=1, retain=True)
-            log.info('ADS-B: %d aircraft (source=%s)', len(ac), source)
+            if not _has_origin(o):
+                log.info('ADS-B: skipping cycle, awaiting GPS fix')
+            else:
+                ac, source = await self._get_aircraft(o)
+                self.last_aircraft = ac
+                self.last_aircraft_source = source
+                payload = {
+                    'ts': time.time(), 'source': source, 'origin': o,
+                    'count': len(ac),
+                    'interesting_count': sum(1 for x in ac if x.get('interesting')),
+                    'aircraft': ac,
+                }
+                self.mqtt.publish(T_AIRCRAFT, json.dumps(payload), qos=1, retain=True)
+                log.info('ADS-B: %d aircraft (source=%s)', len(ac), source)
             await asyncio.wait([asyncio.create_task(self.stop_event.wait())], timeout=30)
 
     async def _get_aircraft(self, o: dict) -> tuple[list[dict], str]:
@@ -506,6 +527,11 @@ class Feeds:
     async def loop_pois(self) -> None:
         while not self.stop_event.is_set():
             o = origin()
+            if not _has_origin(o):
+                log.info('POIs: skipping cycle, awaiting GPS fix')
+                await asyncio.wait(
+                    [asyncio.create_task(self.stop_event.wait())], timeout=60)
+                continue
             radius_m = int(RADIUS_KM * 1000)
             q = overpass_query(o['lat'], o['lon'], radius_m)
             try:

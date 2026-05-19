@@ -3604,31 +3604,46 @@ window.addEventListener('drifter-gps-fix',(e)=>{
   try{frame.contentWindow.postMessage({type:'recenter',lat:d.lat,lng:d.lng,zoom:15},'*');}catch(e){}
 });
 
-// Browser-geolocation → map recenter (BENCH PATH ONLY — desktop
-// browsers triangulate off IP/Wi-Fi BSSID and don't follow the
-// vehicle). For real in-car following see the MQTT handler above.
-// We keep this so phones tethered to the hotspot, with their own
-// GPS chip, follow naturally without a Pi GPS publisher.
+// Browser-geolocation → map recenter AND server-side origin.
+// On a tethered phone the browser triangulates off its own GPS chip
+// (and Wi-Fi/cell), then we POST the fix to /api/gps/manual so it
+// lands in /opt/drifter/state/gps.json — the same file drifter-gps
+// would write from a USB dongle. feeds.origin() picks it up next
+// cycle, so the *entire* dashboard (incidents, weather, POIs, the
+// origin pin) follows the phone, not just the map view.
+//
+// Requires a secure context — modern browsers only expose
+// navigator.geolocation on https://, localhost, or file://. The
+// dashboard's HTTPS listener (port 8443) is what makes this work
+// from a phone on the hotspot.
 (function cockpitGeo(){
   const frame = document.getElementById('cp-map-frame');
   if (!frame || !navigator.geolocation) return;
   let lastFix = null;
+  let lastPostTs = 0;
+  const MIN_POST_GAP_MS = 5000;  // throttle POSTs to once per ~5s
   function postRecenter(lat, lng, zoom){
     try{
       frame.contentWindow.postMessage({type:'recenter',lat,lng,zoom},'*');
     }catch(e){}
   }
+  function postFixToServer(lat, lng, accuracy){
+    const now = performance.now();
+    if (now - lastPostTs < MIN_POST_GAP_MS) return;
+    lastPostTs = now;
+    fetch('/api/gps/manual', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({lat, lng, accuracy_m: accuracy}),
+    }).catch(e => console.debug('drifter: gps POST failed', e));
+  }
   function onPosition(p){
     const c = p.coords;
     lastFix = {lat:c.latitude, lng:c.longitude};
-    // MQTT-fix lockout — if a `drifter/gps/fix` arrived in the
-    // last MQTT_LOCKOUT_MS, the in-vehicle path is alive and the
-    // bench-grade browser fix would just thrash the map. Skip the
-    // postMessage but keep lastFix updated so a takeover can
-    // resume cleanly when MQTT goes quiet.
+    postFixToServer(c.latitude, c.longitude, c.accuracy);
     const sinceMqtt = performance.now() - window.__drifterLastMqttFix;
     if (window.__drifterLastMqttFix && sinceMqtt < MQTT_LOCKOUT_MS) {
-      console.debug('drifter: geolocation suppressed — MQTT fix '+
+      console.debug('drifter: map-recenter suppressed — MQTT fix '+
                     Math.round(sinceMqtt)+'ms ago');
       return;
     }
