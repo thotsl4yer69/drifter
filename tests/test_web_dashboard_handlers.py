@@ -477,3 +477,74 @@ def test_on_message_skips_alert_with_empty_message():
     state.on_message(None, None, _FakeMsg('drifter/alert/message',
                     {'level': 0, 'name': 'nominal', 'message': '', 'ts': 1.0}))
     assert len(state.recent_alerts) == 0
+
+
+# ── POST /api/gps/manual — accuracy gate ──────────────────────────────
+# Background: the handler was accepting any browser-geolocation payload
+# as an authoritative fix. A laptop without GPS hardware reports IP-based
+# geolocation with 1-50km accuracy, which then poisoned feeds.origin()
+# and produced a phantom vehicle position. The accuracy gate rejects
+# anything coarser than GPS_MAX_ACCURACY_M (100m).
+
+def _gps_manual_handler(payload: dict, peer: str = '127.0.0.1', tmp_path=None,
+                        monkeypatch=None):
+    handler = _build_post_handler(_json.dumps(payload).encode(), peer=peer)
+    handler._serve_json = MagicMock()
+    if tmp_path is not None and monkeypatch is not None:
+        monkeypatch.setattr(h, '_GPS_STATE_PATH', tmp_path / 'gps.json')
+    state.mqtt_client = MagicMock()
+    handler._post_gps_manual()
+    return handler
+
+
+def test_post_gps_manual_rejects_missing_accuracy(monkeypatch, tmp_path):
+    handler = _gps_manual_handler({'lat': -37.85, 'lng': 145.12},
+                                  tmp_path=tmp_path, monkeypatch=monkeypatch)
+    handler.send_error.assert_called_once()
+    code = handler.send_error.call_args[0][0]
+    assert code == 400
+
+
+def test_post_gps_manual_rejects_25km_ip_geolocation(monkeypatch, tmp_path):
+    handler = _gps_manual_handler(
+        {'lat': -37.85, 'lng': 145.12, 'accuracy_m': 25000},
+        tmp_path=tmp_path, monkeypatch=monkeypatch)
+    handler.send_error.assert_called_once()
+    code, msg = handler.send_error.call_args[0]
+    assert code == 400
+    assert '25000m' in msg or '25000.' in msg
+
+
+def test_post_gps_manual_rejects_zero_accuracy(monkeypatch, tmp_path):
+    handler = _gps_manual_handler(
+        {'lat': -37.85, 'lng': 145.12, 'accuracy_m': 0.0},
+        tmp_path=tmp_path, monkeypatch=monkeypatch)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_post_gps_manual_accepts_real_gps_accuracy(monkeypatch, tmp_path):
+    handler = _gps_manual_handler(
+        {'lat': -37.85, 'lng': 145.12, 'accuracy_m': 8.5},
+        tmp_path=tmp_path, monkeypatch=monkeypatch)
+    handler.send_error.assert_not_called()
+    handler._serve_json.assert_called_once()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/gps/fix'
+    fix = _json.loads(payload)
+    assert fix['accuracy_m'] == 8.5
+    assert fix['source'] == 'browser'
+
+
+def test_post_gps_manual_threshold_boundary(monkeypatch, tmp_path):
+    # Exactly at GPS_MAX_ACCURACY_M (100m) must pass; one over must fail.
+    pass_h = _gps_manual_handler(
+        {'lat': 0.0, 'lng': 0.0, 'accuracy_m': h.GPS_MAX_ACCURACY_M},
+        tmp_path=tmp_path, monkeypatch=monkeypatch)
+    pass_h.send_error.assert_not_called()
+
+    fail_h = _gps_manual_handler(
+        {'lat': 0.0, 'lng': 0.0, 'accuracy_m': h.GPS_MAX_ACCURACY_M + 0.1},
+        tmp_path=tmp_path, monkeypatch=monkeypatch)
+    fail_h.send_error.assert_called_once()

@@ -497,7 +497,11 @@ class Feeds:
                     'interesting_count': sum(1 for x in ac if x.get('interesting')),
                     'aircraft': ac,
                 }
-                self.mqtt.publish(T_AIRCRAFT, json.dumps(payload), qos=1, retain=True)
+                # Not retained: aircraft positions are transient (planes
+                # move; service restarts; GPS can drop). A retained snapshot
+                # outlives the conditions it was captured under and
+                # downstream consumers treat hours-old data as "overhead".
+                self.mqtt.publish(T_AIRCRAFT, json.dumps(payload), qos=1)
                 log.info('ADS-B: %d aircraft (source=%s)', len(ac), source)
             await asyncio.wait([asyncio.create_task(self.stop_event.wait())], timeout=30)
 

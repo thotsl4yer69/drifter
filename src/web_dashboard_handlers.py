@@ -34,6 +34,13 @@ log = logging.getLogger(__name__)
 # a handler thread by announcing a giant Content-Length.
 MAX_POST_BODY = 64 * 1024
 
+# Maximum accepted browser-geolocation accuracy radius. Real phone GPS
+# typically reports 5–30m even on a moving vehicle; Wi-Fi triangulation
+# adds another ~20m. Anything coarser is almost certainly IP geolocation,
+# which is useless as a vehicle position and historically poisoned the
+# entire feeds pipeline with a phantom origin.
+GPS_MAX_ACCURACY_M = 100.0
+
 # OBD-II / manufacturer DTC format — P/C/B/U followed by four hex digits.
 # Anything else on /api/mechanic/dtc/:code is rejected.
 _DTC_RE = re.compile(r'^[PCBU][0-9A-F]{4}$')
@@ -607,6 +614,22 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
             self.send_error(400, 'lat/lng out of range')
             return
+        # Accuracy gate. Browsers without a GPS chip (or with location
+        # disabled) fall back to Wi-Fi/IP geolocation, which reports
+        # 1km–50km error. A 25 km IP-fix was being accepted as a real
+        # position and downstream consumers (feeds, cockpit map) treated
+        # it as the vehicle's location — fabricating ADS-B and map
+        # context for a city the Pi has never been in.
+        try:
+            accuracy_m = float(body['accuracy_m'])
+        except (KeyError, TypeError, ValueError):
+            self.send_error(400, 'body requires numeric accuracy_m')
+            return
+        if not (0.0 < accuracy_m <= GPS_MAX_ACCURACY_M):
+            self.send_error(400,
+                f'accuracy {accuracy_m:.0f}m exceeds {GPS_MAX_ACCURACY_M:.0f}m '
+                'threshold — not a real fix (likely IP-based geolocation)')
+            return
         now = time.time()
         fix = {
             'lat': lat,
@@ -616,7 +639,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             'mode': 2,
             'ts': now,
             'source': 'browser',
-            'accuracy_m': body.get('accuracy_m'),
+            'accuracy_m': accuracy_m,
         }
         try:
             tmp = _GPS_STATE_PATH.with_suffix('.json.tmp')

@@ -1260,6 +1260,10 @@
   // What counts as a "live" BLE detection. Anything older is history,
   // not live — showing 13-minute-old AirTags as live was misleading.
   const BLE_LIVE_WINDOW_SEC = 300;
+  // ADS-B snapshots cover ~30-50 km of moving targets — anything older
+  // than a minute is misleading by the time it renders. Stale snapshots
+  // (e.g. captured before GPS dropped) must NOT be presented as overhead.
+  const AIRCRAFT_FRESH_WINDOW_SEC = 60;
   // Last-seen counts so we can detect increments and trigger the pulse.
   const lastCount = { surveil: 0, aircraft: 0, incidents: 0, hardware: 0, system: 0 };
 
@@ -1391,11 +1395,22 @@
 
     aircraft(){
       const snap = cache.aircraft || {};
-      const list = snap.aircraft || [];
+      const now = Date.now() / 1000;
+      const snapAge = snap.ts ? (now - snap.ts) : null;
+      const fresh = snapAge != null && snapAge <= AIRCRAFT_FRESH_WINDOW_SEC;
+      const list = (fresh ? snap.aircraft : null) || [];
       if (!list.length) {
-        const detail = snap.origin && snap.origin.source === 'awaiting'
-          ? 'Awaiting position fix before scanning ADS-B.'
-          : 'No aircraft in range right now.';
+        // Honest about why nothing is shown — and never re-render a stale
+        // snapshot as if it were current.
+        const liveOrigin = (cache.feeds && cache.feeds.origin) || null;
+        let detail;
+        if (!liveOrigin || liveOrigin.source === 'awaiting' || liveOrigin.lat == null) {
+          detail = 'Awaiting GPS fix before scanning ADS-B.';
+        } else if (snapAge != null && !fresh) {
+          detail = `Last snapshot ${Math.round(snapAge/60)}m old. Feeds service hasn't returned a fresh aircraft list yet.`;
+        } else {
+          detail = 'No aircraft in range right now.';
+        }
         return emptyState('✈', detail);
       }
       // Sort by distance ascending; flag interesting ones.
@@ -1565,7 +1580,12 @@
       const r = await fetch('/api/aircraft/recent');
       if (!r.ok) return;
       cache.aircraft = await r.json();
-      const list = cache.aircraft.aircraft || [];
+      // Counter only counts aircraft from a fresh snapshot. A stale
+      // snapshot is not "X overhead" — it's history with no live signal.
+      const now = Date.now() / 1000;
+      const fresh = cache.aircraft.ts &&
+                    (now - cache.aircraft.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
+      const list = fresh ? (cache.aircraft.aircraft || []) : [];
       const interesting = list.filter(a => a.interesting).length;
       setCount('aircraft', list.length, { live: interesting > 0 });
       if (activeTab === 'aircraft') render();
@@ -1734,10 +1754,10 @@
       `<span class="meta-dot ${dotClass}"></span>${name.toUpperCase()} <span class="v">${esc(value)}</span>`;
   }
   function updateMetaCells(){
-    // GPS — from /api/feeds/summary.origin
-    const origin = cache.aircraft && cache.aircraft.origin
-                || (cache.feeds && cache.feeds.origin)
-                || null;
+    // GPS — origin must come from /api/feeds/summary (live, 120s gated).
+    // The aircraft snapshot can carry an old origin from before GPS
+    // dropped; reading that here re-fabricated a phantom fix.
+    const origin = (cache.feeds && cache.feeds.origin) || null;
     if (origin && origin.lat != null && origin.lon != null) {
       const src = origin.source ? origin.source.toUpperCase() : 'LOCKED';
       setCell('gps', 'live', src);
@@ -1818,11 +1838,15 @@
     if (map.instance || typeof L === 'undefined') return false;
     const el = document.getElementById('map-canvas');
     if (!el) return false;
+    // Neutral world view until the first real GPS fix lands. Earlier
+    // versions defaulted to Melbourne and that location persisted in
+    // the UI even on a Pi that had never been there. The map is mostly
+    // covered by the awaiting overlay in this state anyway.
     map.instance = L.map(el, {
       attributionControl: false,
       zoomControl: false,
       worldCopyJump: true,
-    }).setView([-37.85, 145.0], 5);  // Melbourne-ish until first fix
+    }).setView([0, 0], 2);
     map.layer = L.tileLayer(TILES.dark.url, TILES.dark).addTo(map.instance);
     return true;
   }
@@ -1840,6 +1864,16 @@
       map.instance.setView([lat, lon], 13);
       map.hasFitOnce = true;
     }
+  }
+  function _clearOrigin(){
+    // Called when feeds.origin() reports awaiting — the map should not
+    // keep a stale marker pinned to where the Pi was hours ago.
+    if (!map.instance) return;
+    if (map.originMarker) {
+      map.instance.removeLayer(map.originMarker);
+      map.originMarker = null;
+    }
+    map.hasFitOnce = false;
   }
   function _setAircraft(list){
     if (!map.instance) return;
@@ -1873,11 +1907,21 @@
   }
   function refreshMap(){
     if (!_initMap()) return;
-    const origin = (cache.aircraft && cache.aircraft.origin) || (cache.feeds && cache.feeds.origin);
+    // Origin must come from /api/feeds/summary, which honors feeds.origin()'s
+    // 120s freshness gate. Reading from the aircraft snapshot would
+    // re-anchor the map to a stale fix even after GPS dropped.
+    const origin = cache.feeds && cache.feeds.origin;
     if (origin && origin.lat != null && origin.lon != null) {
       _setOrigin(origin.lat, origin.lon);
+    } else {
+      _clearOrigin();
     }
-    _setAircraft(cache.aircraft && cache.aircraft.aircraft);
+    // Aircraft markers also gated on snapshot freshness; stale snapshots
+    // get cleared off the map rather than persisted as ghosts.
+    const now = Date.now() / 1000;
+    const snap = cache.aircraft;
+    const fresh = snap && snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
+    _setAircraft(fresh ? snap.aircraft : []);
   }
   // ── Map controls
   function toggleSatellite(){
