@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,12 @@ latest_report: dict = {}
 # Sets of asyncio.Queue instances — one per connected WebSocket client.
 ws_clients: set = set()
 audio_ws_clients: set = set()
+
+# Bounded ring of the most recent alert_message payloads, oldest-first.
+# alert_engine publishes the highest-priority active condition each cycle on
+# drifter/alert/message; this deque keeps the last 50 so the cockpit drawer
+# can render a real timeline instead of just the current-top alert.
+recent_alerts: deque = deque(maxlen=50)
 
 # Paho MQTT client — set by web_dashboard.main().
 mqtt_client = None
@@ -87,6 +94,20 @@ def on_message(client, userdata, msg) -> None:
             latest_report = data
             log.info("New diagnostic report received")
             return
+
+        # Capture alert messages into a ring buffer for the Incidents tab.
+        # Only append when the message text actually changes — alert_engine
+        # republishes the same retained payload on every cooldown tick and
+        # we'd otherwise pile up duplicates.
+        if topic == 'drifter/alert/message' and isinstance(data, dict):
+            msg = data.get('message')
+            if msg and (not recent_alerts or recent_alerts[-1].get('message') != msg):
+                recent_alerts.append({
+                    'ts': data.get('ts') or time.time(),
+                    'level': data.get('level'),
+                    'name': data.get('name'),
+                    'message': msg,
+                })
 
         key = topic.replace('drifter/', '').replace('/', '_')
         latest_state[key] = data

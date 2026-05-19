@@ -359,3 +359,121 @@ def test_get_rfaudio_status_serves_empty_when_no_publish_yet():
     handler._serve_json = MagicMock()
     h.DashboardHandler._get_rfaudio_status(handler, None)
     handler._serve_json.assert_called_once_with({})
+
+
+# ── /api/alerts/recent ────────────────────────────────────────────────
+
+def test_get_recent_alerts_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/alerts/recent' in routes
+    assert callable(routes['/api/alerts/recent'])
+
+
+def test_get_recent_alerts_returns_newest_first():
+    state.recent_alerts.clear()
+    state.recent_alerts.append({'ts': 1.0, 'level': 1, 'name': 'info',     'message': 'old'})
+    state.recent_alerts.append({'ts': 2.0, 'level': 2, 'name': 'warn',     'message': 'mid'})
+    state.recent_alerts.append({'ts': 3.0, 'level': 3, 'name': 'critical', 'message': 'new'})
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_recent_alerts(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    assert [a['message'] for a in payload['alerts']] == ['new', 'mid', 'old']
+
+
+def test_get_recent_alerts_empty_when_none():
+    state.recent_alerts.clear()
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_recent_alerts(handler, None)
+    handler._serve_json.assert_called_once_with({'alerts': []})
+
+
+# ── /api/aircraft/recent ──────────────────────────────────────────────
+
+def test_get_recent_aircraft_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/aircraft/recent' in routes
+    assert callable(routes['/api/aircraft/recent'])
+
+
+def test_get_recent_aircraft_returns_snapshot():
+    state.latest_state.clear()
+    snap = {
+        'ts': 100.0,
+        'origin': {'lat': -37.85, 'lon': 145.12, 'source': 'gps'},
+        'count': 2,
+        'aircraft': [
+            {'hex': 'abc', 'flight': 'QFA1', 'distance_km': 3.1, 'interesting': False},
+            {'hex': 'def', 'flight': 'JST2', 'distance_km': 8.4, 'interesting': True},
+        ],
+    }
+    state.latest_state['feeds_aircraft_snapshot'] = snap
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_recent_aircraft(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['count'] == 2
+    assert len(payload['aircraft']) == 2
+    assert payload['aircraft'][1]['interesting'] is True
+
+
+def test_get_recent_aircraft_empty_when_no_snapshot():
+    state.latest_state.clear()
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_recent_aircraft(handler, None)
+    handler._serve_json.assert_called_once_with({})
+
+
+# ── on_message → recent_alerts capture ────────────────────────────────
+
+class _FakeMsg:
+    def __init__(self, topic, payload):
+        self.topic = topic
+        self.payload = payload if isinstance(payload, (bytes, bytearray)) else _json.dumps(payload).encode()
+
+
+def test_on_message_captures_alert_to_ring_buffer():
+    state.recent_alerts.clear()
+    state.latest_state.clear()
+    msg = _FakeMsg('drifter/alert/message',
+                   {'level': 2, 'name': 'warn', 'message': 'coolant rising', 'ts': 42.0})
+    state.on_message(None, None, msg)
+    assert len(state.recent_alerts) == 1
+    captured = state.recent_alerts[0]
+    assert captured['message'] == 'coolant rising'
+    assert captured['level'] == 2
+    assert captured['ts'] == 42.0
+
+
+def test_on_message_dedupes_identical_consecutive_alerts():
+    state.recent_alerts.clear()
+    payload = {'level': 1, 'name': 'info', 'message': 'idle', 'ts': 1.0}
+    for _ in range(5):
+        state.on_message(None, None, _FakeMsg('drifter/alert/message', payload))
+    assert len(state.recent_alerts) == 1
+
+
+def test_on_message_appends_when_message_changes():
+    state.recent_alerts.clear()
+    state.on_message(None, None, _FakeMsg('drifter/alert/message',
+                    {'level': 1, 'name': 'info', 'message': 'first',  'ts': 1.0}))
+    state.on_message(None, None, _FakeMsg('drifter/alert/message',
+                    {'level': 2, 'name': 'warn', 'message': 'second', 'ts': 2.0}))
+    assert len(state.recent_alerts) == 2
+    assert state.recent_alerts[-1]['message'] == 'second'
+
+
+def test_on_message_ignores_non_alert_topics_for_ring_buffer():
+    state.recent_alerts.clear()
+    state.on_message(None, None, _FakeMsg('drifter/engine/rpm', {'rpm': 850}))
+    state.on_message(None, None, _FakeMsg('drifter/alert/level', {'level': 2}))
+    assert len(state.recent_alerts) == 0
+
+
+def test_on_message_skips_alert_with_empty_message():
+    state.recent_alerts.clear()
+    state.on_message(None, None, _FakeMsg('drifter/alert/message',
+                    {'level': 0, 'name': 'nominal', 'message': '', 'ts': 1.0}))
+    assert len(state.recent_alerts) == 0

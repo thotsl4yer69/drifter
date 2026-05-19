@@ -1,0 +1,1516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DRIFTER · cockpit preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ────────────────────────────────────────────────────────────
+     DRIFTER COCKPIT v2 — modern automotive HUD prototype
+     Visual-only mock. Real JS hooks will be ported in phase B.
+     ──────────────────────────────────────────────────────────── */
+  :root {
+    /* Base — deep neutral, not pure black, slight cool */
+    --bg-0: #0a0d12;
+    --bg-1: #11151c;
+    --bg-2: #161b24;
+    --bg-3: #1d2330;
+
+    /* Glass surface tokens */
+    --glass-bg: rgba(22, 27, 36, 0.55);
+    --glass-bg-strong: rgba(22, 27, 36, 0.82);
+    --glass-stroke: rgba(255, 255, 255, 0.06);
+    --glass-stroke-active: rgba(255, 174, 66, 0.45);
+    --glass-blur: blur(18px) saturate(140%);
+
+    /* Type — Bricolage display/UI, JetBrains numerics */
+    --fg: #e8eaed;
+    --fg-mute: #9aa3b1;
+    --fg-dim: #5a6471;
+    --fg-deep: #3a424e;
+
+    /* Accent — heritage amber, reserved for LIVE/ACTIVE states */
+    --amber: #ffae42;
+    --amber-glow: 0 0 24px rgba(255, 174, 66, 0.28);
+
+    /* Cool channel for ambient data (map, telemetry trace) */
+    --cyan: #7dd3fc;
+    --cyan-dim: rgba(125, 211, 252, 0.5);
+
+    /* Critical */
+    --red: #ff6b6b;
+    --red-glow: 0 0 28px rgba(255, 107, 107, 0.4);
+
+    /* Success */
+    --teal: #5eead4;
+
+    --r-sm: 4px;
+    --r-md: 10px;
+    --r-lg: 16px;
+    --r-pill: 999px;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+    font-feature-settings: 'ss01' 1, 'cv01' 1;
+    background: var(--bg-0);
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.4;
+    /* Subtle vertical gradient for depth */
+    background-image:
+      radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,174,66,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgba(125,211,252,0.025) 0%, transparent 60%);
+  }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ── Grid: thin top bar / 3-col body / no bottom (gauges overlay map) */
+  .shell {
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: 44px 1fr;
+    grid-template-columns: 64px 1fr var(--drawer-w, 360px);
+    grid-template-areas:
+      "top  top    top"
+      "rail main   drawer";
+    gap: 0;
+    transition: grid-template-columns 260ms cubic-bezier(.4,.0,.2,1);
+  }
+  .shell.drawer-collapsed { --drawer-w: 72px; }
+
+  /* ── TOP BAR ───────────────────────────────────────────────── */
+  .top {
+    grid-area: top;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-4);
+    background: linear-gradient(180deg, rgba(10,13,18,0.95) 0%, rgba(10,13,18,0.7) 100%);
+    border-bottom: 1px solid var(--glass-stroke);
+    backdrop-filter: var(--glass-blur);
+    z-index: 30;
+    gap: var(--space-5);
+  }
+  .wordmark {
+    font-weight: 700;
+    font-stretch: 75%;       /* Bricolage variable axis */
+    letter-spacing: 0.04em;
+    font-size: 14px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .wordmark .mk-d { color: var(--amber); }
+  .wordmark .mk-rest { color: var(--fg); }
+  .wordmark .mk-serial {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--fg-deep);
+    letter-spacing: 0.08em;
+    margin-left: 6px;
+    text-transform: uppercase;
+  }
+  .top-meta {
+    display: flex;
+    gap: var(--space-4);
+    align-items: center;
+    margin-left: auto;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-mute);
+  }
+  .meta-cell { display: flex; align-items: center; gap: 6px; }
+  .meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-deep); }
+  .meta-dot.live { background: var(--amber); box-shadow: var(--amber-glow); animation: pulse 2s ease-in-out infinite; }
+  .meta-dot.warn { background: var(--red); box-shadow: var(--red-glow); }
+  .meta-dot.idle { background: var(--cyan); opacity: 0.7; }
+  .meta-cell .v { color: var(--fg); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  /* ── LEFT RAIL — narrow, glyph-only, ambient ───────────────── */
+  .rail {
+    grid-area: rail;
+    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    border-right: 1px solid var(--glass-stroke);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-4) 0;
+    gap: var(--space-2);
+    z-index: 20;
+  }
+  .rail-btn {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-md);
+    color: var(--fg-mute);
+    cursor: pointer;
+    transition: background 180ms ease, color 180ms ease;
+    position: relative;
+    font-size: 18px;
+  }
+  .rail-btn:hover { background: rgba(255,255,255,0.04); color: var(--fg); }
+  .rail-btn.active {
+    background: rgba(255,174,66,0.1);
+    color: var(--amber);
+  }
+  .rail-btn.active::before {
+    content: '';
+    position: absolute;
+    left: -1px; top: 8px; bottom: 8px;
+    width: 2px;
+    background: var(--amber);
+    box-shadow: var(--amber-glow);
+    border-radius: 0 2px 2px 0;
+  }
+  .rail-tip {
+    position: absolute;
+    left: 56px;
+    background: var(--bg-3);
+    color: var(--fg);
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+    border: 1px solid var(--glass-stroke);
+  }
+  .rail-btn:hover .rail-tip { opacity: 1; }
+  .rail-spacer { flex: 1; }
+  .rail-vivi {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, var(--amber) 0%, #c4801e 60%, #6d4710 100%);
+    box-shadow: var(--amber-glow), inset 0 0 12px rgba(0,0,0,0.4);
+    position: relative;
+    cursor: pointer;
+  }
+  .rail-vivi::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,174,66,0.3);
+    animation: viviPulse 3s ease-in-out infinite;
+  }
+  @keyframes viviPulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.15); opacity: 0; }
+  }
+
+  /* ── MAIN — map dominates, HUD overlays ────────────────────── */
+  .main {
+    grid-area: main;
+    position: relative;
+    background: var(--bg-0);
+    overflow: hidden;
+  }
+  /* Map placeholder — in production this becomes the Leaflet iframe */
+  .map-canvas {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(125,211,252,0.06) 0%, transparent 50%),
+      repeating-linear-gradient(0deg, transparent 0, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px),
+      repeating-linear-gradient(90deg, transparent 0, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px),
+      var(--bg-1);
+  }
+  /* Awaiting overlay — calm, not alarming */
+  .awaiting {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(10,13,18,0.7) 100%);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .awaiting-card {
+    text-align: center;
+    color: var(--fg);
+  }
+  .awaiting-card .glyph {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 1.5px solid var(--amber);
+    margin: 0 auto var(--space-4);
+    position: relative;
+    box-shadow: var(--amber-glow);
+  }
+  .awaiting-card .glyph::before,
+  .awaiting-card .glyph::after {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,174,66,0.4);
+    animation: ping 2.4s ease-out infinite;
+  }
+  .awaiting-card .glyph::after { animation-delay: 1.2s; }
+  @keyframes ping {
+    0% { transform: scale(0.6); opacity: 1; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  .awaiting-card h2 {
+    font-family: 'Bricolage Grotesque';
+    font-weight: 500;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 0 0 var(--space-2);
+    color: var(--fg);
+  }
+  .awaiting-card p {
+    margin: 0;
+    color: var(--fg-mute);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    max-width: 320px;
+  }
+
+  /* HUD overlay chips — float on the map, glass surfaces */
+  .hud-overlay {
+    position: absolute;
+    inset: 0;
+    padding: var(--space-5);
+    pointer-events: none;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    z-index: 10;
+  }
+  .hud-row {
+    display: flex;
+    gap: var(--space-3);
+    pointer-events: auto;
+  }
+  .hud-row.top { align-items: flex-start; }
+  .hud-row.bottom { align-self: end; align-items: flex-end; }
+
+  .chip {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-md);
+    padding: var(--space-3) var(--space-4);
+    min-width: 84px;
+  }
+  .chip .label {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .chip .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 28px;
+    line-height: 1;
+    color: var(--fg);
+    font-weight: 400;
+  }
+  .chip .value .unit {
+    font-size: 11px;
+    color: var(--fg-mute);
+    margin-left: 4px;
+  }
+  .chip.dim .value { color: var(--fg-deep); }
+  .chip.dim .value::after { content: ''; display: inline-block; width: 2ch; }
+  .chip.live { border-color: var(--glass-stroke-active); }
+  .chip.live .label { color: var(--amber); }
+  .chip.critical { border-color: rgba(255,107,107,0.45); }
+  .chip.critical .value { color: var(--red); }
+
+  .chip-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .chip-row { display: flex; gap: var(--space-2); }
+
+  /* Big speed readout — hero */
+  .chip.hero {
+    padding: var(--space-4) var(--space-5);
+    min-width: 140px;
+  }
+  .chip.hero .value { font-size: 56px; font-weight: 300; }
+  .chip.hero .label { font-size: 10px; }
+
+  /* Alert ribbon — overlays on top of map */
+  .alert-ribbon {
+    background: linear-gradient(90deg, rgba(255,107,107,0.18) 0%, rgba(255,107,107,0.06) 100%);
+    border: 1px solid rgba(255,107,107,0.45);
+    border-radius: var(--r-md);
+    padding: var(--space-3) var(--space-4);
+    backdrop-filter: var(--glass-blur);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--red);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    box-shadow: var(--red-glow);
+    pointer-events: auto;
+    flex: 1;
+    max-width: 600px;
+  }
+  .alert-ribbon .alert-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: var(--red-glow);
+    animation: pulse 1.4s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .alert-ribbon .alert-msg { flex: 1; color: var(--fg); }
+  .alert-ribbon .alert-meta { color: var(--fg-mute); font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  /* Informational variant — cyan, no red glow. Used for hardware-pending
+     conditions ("turn ignition on", "plug in dongle") that aren't faults. */
+  .alert-ribbon.info {
+    background: linear-gradient(90deg, rgba(125,211,252,0.12) 0%, rgba(125,211,252,0.04) 100%);
+    border-color: rgba(125,211,252,0.4);
+    color: var(--cyan);
+    box-shadow: none;
+  }
+  .alert-ribbon.info .alert-dot { background: var(--cyan); box-shadow: 0 0 14px rgba(125,211,252,0.4); animation: none; }
+
+  /* Map controls — basemap toggle etc */
+  .map-controls {
+    position: absolute;
+    bottom: var(--space-5);
+    right: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    z-index: 11;
+  }
+  .map-btn {
+    width: 40px; height: 40px;
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-md);
+    color: var(--fg-mute);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 150ms ease;
+  }
+  .map-btn:hover { color: var(--amber); border-color: var(--glass-stroke-active); }
+
+  /* ── DRAWER — collapsible right column ─────────────────────── */
+  .drawer {
+    grid-area: drawer;
+    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    border-left: 1px solid var(--glass-stroke);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 20;
+    position: relative;
+  }
+  .drawer-head {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--glass-stroke);
+    min-height: 48px;
+  }
+  .drawer-tabs {
+    display: flex;
+    flex: 1;
+    padding: 0 var(--space-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .drawer-tabs::-webkit-scrollbar { display: none; }
+  .drawer-tab {
+    flex-shrink: 0;
+    padding: 0 var(--space-3);
+    color: var(--fg-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    position: relative;
+    transition: color 150ms ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  }
+  .drawer-tab .glyph {
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.9;
+  }
+  .drawer-tab .label { font-weight: 600; }
+  .drawer-tab:hover { color: var(--fg-mute); }
+  .drawer-tab.active { color: var(--fg); }
+  .drawer-tab.active::after {
+    content: '';
+    position: absolute;
+    left: var(--space-3); right: var(--space-3);
+    bottom: -1px; height: 1px;
+    background: var(--amber);
+    box-shadow: var(--amber-glow);
+  }
+  .drawer-tab .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-deep);
+    background: rgba(255,255,255,0.04);
+    padding: 1px 6px;
+    border-radius: var(--r-pill);
+    min-width: 18px;
+    text-align: center;
+    transition: transform 280ms cubic-bezier(.34,1.56,.64,1), color 280ms ease, background 280ms ease;
+  }
+  .drawer-tab.active .count {
+    color: var(--amber);
+    background: rgba(255,174,66,0.1);
+  }
+  .drawer-tab .count.live {
+    color: var(--amber);
+    background: rgba(255,174,66,0.18);
+  }
+  .drawer-tab .count.pulse {
+    transform: scale(1.18);
+  }
+  .drawer-collapse {
+    flex-shrink: 0;
+    width: 36px;
+    display: grid;
+    place-items: center;
+    color: var(--fg-dim);
+    cursor: pointer;
+    border-left: 1px solid var(--glass-stroke);
+    font-size: 12px;
+    transition: color 150ms ease, background 150ms ease;
+  }
+  .drawer-collapse:hover { color: var(--amber); background: rgba(255,255,255,0.02); }
+  .drawer-collapse .chev { transition: transform 260ms cubic-bezier(.4,.0,.2,1); }
+  .shell.drawer-collapsed .drawer-collapse .chev { transform: rotate(180deg); }
+
+  /* Status strip under the header — names the active tab */
+  .drawer-strip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--fg-deep);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 6px var(--space-4);
+    border-bottom: 1px solid var(--glass-stroke);
+    background: rgba(0,0,0,0.18);
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .drawer-strip .meta-tag { color: var(--fg-mute); }
+  .drawer-strip .meta-tag.amber { color: var(--amber); }
+
+  .drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-4);
+  }
+  .drawer-body::-webkit-scrollbar { width: 4px; }
+  .drawer-body::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+
+  /* ── Collapsed drawer state ────────────────────────────────── */
+  .shell.drawer-collapsed .drawer-head { flex-direction: column; min-height: 0; }
+  .shell.drawer-collapsed .drawer-tabs {
+    flex-direction: column;
+    padding: var(--space-2) 0;
+    gap: 2px;
+    overflow: visible;
+  }
+  .shell.drawer-collapsed .drawer-tab {
+    padding: var(--space-3) 0;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+    width: 72px;
+  }
+  .shell.drawer-collapsed .drawer-tab .label { display: none; }
+  .shell.drawer-collapsed .drawer-tab .glyph { font-size: 18px; opacity: 1; }
+  .shell.drawer-collapsed .drawer-tab.active::after {
+    left: 0; right: auto;
+    top: 8px; bottom: 8px;
+    width: 2px; height: auto;
+    border-radius: 0 2px 2px 0;
+  }
+  .shell.drawer-collapsed .drawer-collapse {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--glass-stroke);
+    padding: var(--space-3) 0;
+  }
+  .shell.drawer-collapsed .drawer-strip { display: none; }
+  .shell.drawer-collapsed .drawer-body { display: none; }
+
+  /* Drawer section heading */
+  .d-section { margin-bottom: var(--space-5); }
+  .d-section:last-child { margin-bottom: 0; }
+  .d-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
+  }
+  .d-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--fg-dim);
+    font-weight: 600;
+  }
+  .d-section-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-deep);
+  }
+
+  /* BLE row */
+  .ble-row {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+    transition: background 200ms ease;
+  }
+  .ble-row:last-child { border-bottom: none; }
+  .ble-row.alert {
+    background: linear-gradient(90deg, rgba(255,174,66,0.06) 0%, transparent 70%);
+    margin: 0 calc(var(--space-4) * -1);
+    padding-left: var(--space-4); padding-right: var(--space-4);
+  }
+  .ble-mark { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-deep); justify-self: center; }
+  .ble-mark.alert { background: var(--amber); box-shadow: var(--amber-glow); }
+  .ble-info { min-width: 0; }
+  .ble-target {
+    color: var(--fg);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    font-stretch: 92%;
+  }
+  .ble-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ble-rssi {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--fg-mute);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .ble-rssi .small { display: block; font-size: 9px; color: var(--fg-deep); }
+
+  /* Empty state — calm absence, not error */
+  .empty {
+    color: var(--fg-dim);
+    font-size: 12px;
+    text-align: center;
+    padding: var(--space-6) var(--space-3);
+    letter-spacing: 0.02em;
+  }
+  .empty .gl {
+    display: block;
+    font-size: 22px;
+    color: var(--fg-deep);
+    margin-bottom: var(--space-2);
+    line-height: 1;
+    opacity: 0.7;
+  }
+
+  /* ── Aircraft tab row ──────────────────────────────────────── */
+  .ac-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+  }
+  .ac-row:last-child { border-bottom: none; }
+  .ac-flight {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--fg);
+    background: rgba(125,211,252,0.08);
+    border: 1px solid rgba(125,211,252,0.18);
+    padding: 3px 7px;
+    border-radius: var(--r-sm);
+    letter-spacing: 0.05em;
+    min-width: 64px;
+    text-align: center;
+  }
+  .ac-row.interesting .ac-flight {
+    background: rgba(255,174,66,0.08);
+    border-color: rgba(255,174,66,0.32);
+    color: var(--amber);
+  }
+  .ac-info { min-width: 0; }
+  .ac-type {
+    color: var(--fg);
+    font-weight: 500;
+    font-stretch: 92%;
+  }
+  .ac-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-top: 2px;
+  }
+  .ac-alt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--fg-mute);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .ac-alt .small { display: block; font-size: 9px; color: var(--fg-deep); margin-top: 1px; }
+
+  /* ── Incident row ──────────────────────────────────────────── */
+  .inc-row {
+    display: grid;
+    grid-template-columns: 6px 1fr;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+  }
+  .inc-row:last-child { border-bottom: none; }
+  .inc-mark {
+    border-radius: 3px;
+    background: var(--fg-deep);
+    align-self: stretch;
+  }
+  .inc-mark.lvl-1 { background: var(--cyan); box-shadow: 0 0 8px rgba(125,211,252,0.4); }
+  .inc-mark.lvl-2 { background: var(--amber); box-shadow: var(--amber-glow); }
+  .inc-mark.lvl-3 { background: var(--red); box-shadow: var(--red-glow); }
+  .inc-body { min-width: 0; }
+  .inc-name {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--fg-dim);
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+  .inc-row.lvl-2 .inc-name { color: var(--amber); }
+  .inc-row.lvl-3 .inc-name { color: var(--red); }
+  .inc-msg {
+    color: var(--fg);
+    line-height: 1.4;
+  }
+  .inc-when {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-deep);
+    margin-top: 4px;
+  }
+
+  /* ── Hardware row ──────────────────────────────────────────── */
+  .hw-tab-row {
+    display: grid;
+    grid-template-columns: 10px 1fr;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+    align-items: flex-start;
+  }
+  .hw-tab-row:last-child { border-bottom: none; }
+  .hw-tab-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+  .hw-tab-dot.ok { background: var(--teal); }
+  .hw-tab-dot.missing { background: var(--fg-deep); }
+  .hw-tab-dot.waiting { background: var(--cyan); box-shadow: 0 0 8px rgba(125,211,252,0.4); }
+  .hw-tab-dot.error { background: var(--red); box-shadow: var(--red-glow); }
+  .hw-tab-body { min-width: 0; }
+  .hw-tab-name {
+    color: var(--fg);
+    font-weight: 500;
+    font-stretch: 92%;
+  }
+  .hw-tab-detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-top: 2px;
+  }
+  .hw-tab-action {
+    font-size: 11px;
+    color: var(--amber);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
+  /* ── System tab: services pill grid ────────────────────────── */
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px 8px;
+  }
+  .svc-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--fg-mute);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .svc-cell .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .svc-cell .dot.up { background: var(--teal); }
+  .svc-cell .dot.down { background: var(--red); }
+  .svc-cell .dot.hw { background: var(--cyan); }
+  .svc-cell .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Hardware status list */
+  .hw-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-stroke);
+    font-size: 12px;
+  }
+  .hw-row:last-child { border-bottom: none; }
+  .hw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .hw-dot.ok { background: var(--teal); }
+  .hw-dot.missing { background: var(--fg-deep); }
+  .hw-dot.waiting { background: var(--cyan); }
+  .hw-dot.error { background: var(--red); }
+  .hw-name { color: var(--fg); flex-shrink: 0; min-width: 80px; font-weight: 500; }
+  .hw-detail {
+    flex: 1;
+    color: var(--fg-mute);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* System chip row (bottom of drawer) */
+  .sys-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+  .sys-cell {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-sm);
+    padding: var(--space-2) var(--space-3);
+  }
+  .sys-cell .lbl {
+    font-size: 9px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
+  }
+  .sys-cell .val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .sys-cell .val .u { color: var(--fg-dim); font-size: 10px; margin-left: 2px; }
+
+  /* Attribution — floats at very bottom of map */
+  .attr {
+    position: absolute;
+    bottom: var(--space-2);
+    left: var(--space-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--fg-deep);
+    letter-spacing: 0.06em;
+    z-index: 12;
+    pointer-events: none;
+  }
+
+  /* Preview banner */
+  .preview-banner {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(125,211,252,0.1);
+    border: 1px solid var(--cyan-dim);
+    color: var(--cyan);
+    padding: 4px 14px;
+    border-radius: var(--r-pill);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    z-index: 100;
+    font-family: 'JetBrains Mono', monospace;
+    backdrop-filter: var(--glass-blur);
+  }
+</style>
+</head>
+<body>
+<div class="preview-banner">PREVIEW · cockpit v2 · real-snapshot data</div>
+
+<div class="shell">
+
+  <!-- ── TOP BAR ───────────────────────────────────────────── -->
+  <header class="top">
+    <div class="wordmark">
+      <span class="mk-d">D</span><span class="mk-rest">RIFTER</span>
+      <span class="mk-serial" id="mk-serial">MZ1312 · NODE-0001 · DRIVE</span>
+    </div>
+    <div class="top-meta">
+      <div class="meta-cell">
+        <span class="meta-dot warn"></span>GPS <span class="v">AWAITING</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-dot idle"></span>CAN <span class="v">SLCAN0</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-dot live"></span>NET <span class="v">PHONE</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-dot live"></span>MQTT <span class="v">22/25</span>
+      </div>
+      <div class="meta-cell mono" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- ── LEFT RAIL ─────────────────────────────────────────── -->
+  <nav class="rail">
+    <div class="rail-btn active" title="Cockpit">⌂<span class="rail-tip">Cockpit</span></div>
+    <div class="rail-btn" title="Mechanic">⚙<span class="rail-tip">Mechanic</span></div>
+    <div class="rail-btn" title="Hardware">▤<span class="rail-tip">Hardware</span></div>
+    <div class="rail-btn" title="Sessions">∿<span class="rail-tip">Sessions</span></div>
+    <div class="rail-btn" title="Settings">◌<span class="rail-tip">Settings</span></div>
+    <div class="rail-spacer"></div>
+    <div class="rail-vivi" title="Talk to Vivi"></div>
+  </nav>
+
+  <!-- ── MAIN (map + HUD) ──────────────────────────────────── -->
+  <main class="main">
+    <div class="map-canvas"></div>
+
+    <!-- Awaiting GPS overlay (calm, not alarming) -->
+    <div class="awaiting">
+      <div class="awaiting-card">
+        <div class="glyph"></div>
+        <h2>Awaiting GPS Fix</h2>
+        <p>No live position yet. Allow location in your browser, or wait for the USB GPS dongle to acquire.</p>
+      </div>
+    </div>
+
+    <!-- HUD overlay — telemetry chips appear ONLY when their topic is
+         publishing fresh data. No placeholders. When CAN/OBD isn't
+         flowing, the map is the only thing on screen. -->
+    <div class="hud-overlay">
+      <div class="hud-row top" id="telemetry-chips"><!-- populated by JS when real data lands --></div>
+
+      <div></div>
+
+      <div class="hud-row bottom" id="hud-status">
+        <!-- status ribbon appears here when there's a real condition to surface -->
+      </div>
+    </div>
+
+    <div class="map-controls">
+      <div class="map-btn" title="Toggle satellite">◑</div>
+      <div class="map-btn" title="Recenter">⊙</div>
+      <div class="map-btn" title="Fullscreen">⛶</div>
+    </div>
+
+    <div class="attr">DATA · EMV · BOM · OPENSTREETMAP · ADSB.LOL</div>
+  </main>
+
+  <!-- ── DRAWER (right column, tabbed + collapsible) ────────── -->
+  <aside class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-tabs" id="drawer-tabs">
+        <div class="drawer-tab active" data-tab="surveil" title="Surveil — BLE + persistent contacts">
+          <span class="glyph">⌖</span><span class="label">Surveil</span><span class="count" data-count="surveil">0</span>
+        </div>
+        <div class="drawer-tab" data-tab="aircraft" title="Aircraft — overhead via ADS-B">
+          <span class="glyph">✈</span><span class="label">Aircraft</span><span class="count" data-count="aircraft">0</span>
+        </div>
+        <div class="drawer-tab" data-tab="incidents" title="Incidents — recent alerts">
+          <span class="glyph">▲</span><span class="label">Incidents</span><span class="count" data-count="incidents">0</span>
+        </div>
+        <div class="drawer-tab" data-tab="hardware" title="Hardware — probe + dongles">
+          <span class="glyph">▤</span><span class="label">Hardware</span><span class="count" data-count="hardware">0</span>
+        </div>
+        <div class="drawer-tab" data-tab="system" title="System — services + load">
+          <span class="glyph">◌</span><span class="label">System</span><span class="count" data-count="system">0</span>
+        </div>
+      </div>
+      <div class="drawer-collapse" id="drawer-collapse" title="Collapse drawer">
+        <span class="chev">›</span>
+      </div>
+    </div>
+
+    <div class="drawer-strip">
+      <span><span class="meta-tag amber" id="strip-tab">SURVEIL</span></span>
+      <span class="meta-tag" id="strip-meta">—</span>
+    </div>
+
+    <div class="drawer-body" id="drawer-body">
+      <!-- Tab content is rendered into here by JS based on active tab. -->
+    </div>
+  </aside>
+</div>
+
+<script>
+  // Live fetches from the same APIs the real cockpit uses. Nothing
+  // baked in — what you see is the current state of this Pi right now.
+
+  function fmtAge(ts){
+    const d = (Date.now()/1000) - ts;
+    if (d < 60) return Math.round(d) + 's ago';
+    if (d < 3600) return Math.round(d/60) + 'm ago';
+    if (d < 86400) return Math.round(d/3600) + 'h ago';
+    return Math.round(d/86400) + 'd ago';
+  }
+  function esc(s){ const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+  // ── State caches shared across renders ────────────────────────────
+  const cache = {
+    ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
+    state: null, healthz: null,
+  };
+  // What counts as a "live" BLE detection. Anything older is history,
+  // not live — showing 13-minute-old AirTags as live was misleading.
+  const BLE_LIVE_WINDOW_SEC = 300;
+  // Last-seen counts so we can detect increments and trigger the pulse.
+  const lastCount = { surveil: 0, aircraft: 0, incidents: 0, hardware: 0, system: 0 };
+
+  // Active tab — URL ?tab= wins, else last-used (localStorage), else surveil.
+  // Deep-linking ?tab=hardware is handy for support ("send me a screenshot
+  // of the hardware tab") and for the headless verification path.
+  const _urlTab = new URLSearchParams(location.search).get('tab');
+  const VALID_TABS = ['surveil', 'aircraft', 'incidents', 'hardware', 'system'];
+  let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
+    ? _urlTab
+    : (localStorage.getItem('drifter.drawer.tab') || 'surveil');
+  let drawerCollapsed = localStorage.getItem('drifter.drawer.collapsed') === '1';
+
+  // ── Counter helpers ───────────────────────────────────────────────
+  function setCount(tab, n, opts={}){
+    const el = document.querySelector(`.count[data-count="${tab}"]`);
+    if (!el) return;
+    const prev = lastCount[tab] ?? 0;
+    el.textContent = String(n);
+    el.classList.toggle('live', !!opts.live && n > 0);
+    if (n > prev) {
+      el.classList.add('pulse');
+      setTimeout(() => el.classList.remove('pulse'), 400);
+    }
+    lastCount[tab] = n;
+  }
+
+  function updateStrip(){
+    const tabEl = document.querySelector(`.drawer-tab[data-tab="${activeTab}"]`);
+    const name = tabEl ? tabEl.querySelector('.label').textContent : activeTab;
+    document.getElementById('strip-tab').textContent = name.toUpperCase();
+    const n = lastCount[activeTab] ?? 0;
+    const meta = ({
+      surveil:   () => `${n} contact${n===1?'':'s'}`,
+      aircraft:  () => `${n} overhead`,
+      incidents: () => `${n} recent`,
+      hardware:  () => `${n} probe${n===1?'':'s'}`,
+      system:    () => {
+        const services = (cache.healthz && cache.healthz.services) || {};
+        const active = Object.values(services).filter(v => v === true).length;
+        const total = Object.values(services).length;
+        return total ? `${active}/${total} services` : 'no data';
+      },
+    })[activeTab] || (() => '—');
+    document.getElementById('strip-meta').textContent = meta();
+  }
+
+  // ── Tab renderers — each consumes the cache and writes drawer-body
+  // ── No placeholder data. If the cache is null or empty, show absence.
+  function render(){
+    const body = document.getElementById('drawer-body');
+    if (!body) return;
+    const fn = RENDERERS[activeTab] || RENDERERS.surveil;
+    body.innerHTML = fn();
+    updateStrip();
+  }
+
+  function emptyState(glyph, msg){
+    return `<div class="empty"><span class="gl">${glyph}</span>${esc(msg)}</div>`;
+  }
+
+  const RENDERERS = {
+    surveil(){
+      const now = Date.now() / 1000;
+      const allDets = (cache.ble && cache.ble.detections) || [];
+      // Live = within freshness window. History rows past that aren't
+      // "live BLE", they're the database tail — don't claim otherwise.
+      const live = allDets.filter(d => d.ts && (now - d.ts) <= BLE_LIVE_WINDOW_SEC);
+
+      const persistent = (cache.persistent && cache.persistent.contacts) || [];
+
+      const out = [];
+
+      // ── Persistent contacts (always above live)
+      if (persistent.length) {
+        const pRows = persistent.map(c => {
+          const last = c.last_seen_ts || c.last_seen;
+          return `<div class="ble-row alert">
+            <div class="ble-mark alert"></div>
+            <div class="ble-info">
+              <div class="ble-target">${esc((c.target||'contact').replace(/-class$/,'').toUpperCase())}</div>
+              <div class="ble-meta">${esc(c.mac||'')} · ${c.unique_drives||1} drives</div>
+            </div>
+            <div class="ble-rssi">${c.severity ? esc(c.severity).toUpperCase() : '—'}<span class="small">${last ? fmtAge(last) : ''}</span></div>
+          </div>`;
+        }).join('');
+        out.push(`<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Persistent Contacts</div>
+            <div class="d-section-meta">${persistent.length} tracked · ${cache.persistent.window || '7d'}</div>
+          </div>
+          ${pRows}
+        </div>`);
+      }
+
+      // ── Live BLE (last N minutes)
+      const liveMins = Math.round(BLE_LIVE_WINDOW_SEC/60);
+      if (!live.length) {
+        out.push(`<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Live BLE</div>
+            <div class="d-section-meta">last ${liveMins}m · 0 detected</div>
+          </div>
+          ${emptyState('⌖', allDets.length
+            ? `Nothing live right now. ${allDets.length} older detection${allDets.length===1?'':'s'} in history.`
+            : 'No BLE detections yet this session.')}
+        </div>`);
+      } else {
+        const lRows = live.map(d => `
+          <div class="ble-row ${d.is_alert ? 'alert' : ''}">
+            <div class="ble-mark ${d.is_alert ? 'alert' : ''}"></div>
+            <div class="ble-info">
+              <div class="ble-target">${esc((d.target||'unknown').replace(/-class$/,'').toUpperCase())}</div>
+              <div class="ble-meta">${esc(d.mac||'')} · ${esc(d.manufacturer_id||'—')}</div>
+            </div>
+            <div class="ble-rssi">${d.rssi ?? '—'}<span class="small">${d.ts ? fmtAge(d.ts) : ''}</span></div>
+          </div>`).join('');
+        out.push(`<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Live BLE</div>
+            <div class="d-section-meta">last ${liveMins}m · ${live.length} detected</div>
+          </div>
+          ${lRows}
+        </div>`);
+      }
+
+      return out.join('');
+    },
+
+    aircraft(){
+      const snap = cache.aircraft || {};
+      const list = snap.aircraft || [];
+      if (!list.length) {
+        const detail = snap.origin && snap.origin.source === 'awaiting'
+          ? 'Awaiting position fix before scanning ADS-B.'
+          : 'No aircraft in range right now.';
+        return emptyState('✈', detail);
+      }
+      // Sort by distance ascending; flag interesting ones.
+      const sorted = list.slice().sort((a,b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
+      const rows = sorted.map(a => {
+        const alt = a.alt_baro === 'ground' ? 'GND'
+                  : (typeof a.alt_baro === 'number' ? Math.round(a.alt_baro).toLocaleString() : '—');
+        const dist = a.distance_km != null ? `${a.distance_km.toFixed(1)}km` : '—';
+        const flight = a.flight || a.registration || a.hex.toUpperCase();
+        return `<div class="ac-row ${a.interesting ? 'interesting' : ''}">
+          <div class="ac-flight">${esc(flight)}</div>
+          <div class="ac-info">
+            <div class="ac-type">${esc(a.type || 'unknown')}${a.registration ? ' · ' + esc(a.registration) : ''}</div>
+            <div class="ac-meta">${esc(dist)}${a.gs ? ' · ' + Math.round(a.gs) + 'kt' : ''}${a.track != null ? ' · ' + Math.round(a.track) + '°' : ''}</div>
+          </div>
+          <div class="ac-alt">${esc(alt)}<span class="small">${alt === 'GND' ? '' : 'ft'}</span></div>
+        </div>`;
+      }).join('');
+      const interesting = list.filter(a => a.interesting).length;
+      return `<div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Overhead</div>
+          <div class="d-section-meta">${list.length} aircraft${interesting ? ' · ' + interesting + ' flagged' : ''}</div>
+        </div>
+        ${rows}
+      </div>`;
+    },
+
+    incidents(){
+      const list = (cache.alerts && cache.alerts.alerts) || [];
+      if (!list.length) return emptyState('▲', 'No incidents recorded this session.');
+      const rows = list.map(a => {
+        const lvl = a.level || 0;
+        return `<div class="inc-row lvl-${lvl}">
+          <div class="inc-mark lvl-${lvl}"></div>
+          <div class="inc-body">
+            <div class="inc-name">${esc(a.name || 'alert')}</div>
+            <div class="inc-msg">${esc(a.message)}</div>
+            <div class="inc-when">${a.ts ? fmtAge(a.ts) : ''}</div>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Recent Alerts</div>
+          <div class="d-section-meta">${list.length} of last 50</div>
+        </div>
+        ${rows}
+      </div>`;
+    },
+
+    hardware(){
+      const items = (cache.hardware && cache.hardware.summary) || [];
+      if (!items.length) return emptyState('▤', 'Hardware probe unavailable.');
+      // Sort: error > waiting > missing > ok, so problems are top.
+      const PRI = { error: 3, waiting: 2, missing: 1, ok: 0 };
+      const sorted = items.slice().sort((a,b) =>
+        (PRI[b.status] || 0) - (PRI[a.status] || 0));
+      const rows = sorted.map(i => `
+        <div class="hw-tab-row">
+          <div class="hw-tab-dot ${esc(i.status)}"></div>
+          <div class="hw-tab-body">
+            <div class="hw-tab-name">${esc(i.item)}</div>
+            <div class="hw-tab-detail">${esc(i.detail || '')}</div>
+            ${i.action ? `<div class="hw-tab-action">${esc(i.action)}</div>` : ''}
+          </div>
+        </div>`).join('');
+      const ok = items.filter(i => i.status === 'ok').length;
+      return `<div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Probe</div>
+          <div class="d-section-meta">${ok}/${items.length} ok</div>
+        </div>
+        ${rows}
+      </div>`;
+    },
+
+    system(){
+      const st = cache.state || {};
+      const sys = (st.system_watchdog || {}).system;
+      const services = (cache.healthz && cache.healthz.services) || {};
+      const failed = (cache.healthz && cache.healthz.services_failed) || [];
+      const hwPending = (cache.healthz && cache.healthz.services_hw_pending) || [];
+
+      let metricsHtml = emptyState('◌', 'No watchdog metrics yet.');
+      let upHtml = '—';
+      if (sys) {
+        const fmt = (v, u) => `${(Math.round(v*10)/10)}<span class="u">${u}</span>`;
+        metricsHtml = `<div class="sys-grid">
+          <div class="sys-cell"><div class="lbl">CPU</div><div class="val">${fmt(sys.cpu_percent, '%')}</div></div>
+          <div class="sys-cell"><div class="lbl">Mem</div><div class="val">${fmt(sys.memory_percent, '%')}</div></div>
+          <div class="sys-cell"><div class="lbl">Temp</div><div class="val">${fmt(sys.cpu_temp, '°C')}</div></div>
+          <div class="sys-cell"><div class="lbl">Disk</div><div class="val">${fmt(sys.disk_percent, '%')}</div></div>
+        </div>`;
+        if (sys.uptime_seconds) {
+          const up = sys.uptime_seconds|0;
+          const h = (up/3600)|0;
+          const m = ((up%3600)/60)|0;
+          upHtml = `${h}h ${m}m`;
+        }
+      }
+
+      // Services pill grid — every known service with state dot.
+      const svcCells = Object.keys(services).sort().map(name => {
+        const up = services[name] === true;
+        const isFailed = failed.includes(name);
+        const isHwPending = hwPending.includes(name);
+        const cls = up ? 'up' : (isHwPending ? 'hw' : 'down');
+        const short = name.replace('drifter-', '');
+        return `<div class="svc-cell" title="${esc(name)}${isFailed?' (failed)':''}${isHwPending?' (hw pending)':''}">
+          <span class="dot ${cls}"></span><span class="name">${esc(short)}</span>
+        </div>`;
+      }).join('');
+      const svcHtml = svcCells
+        ? `<div class="svc-grid">${svcCells}</div>`
+        : emptyState('◌', 'No service inventory yet.');
+
+      return `<div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Load</div>
+          <div class="d-section-meta">uptime ${upHtml}</div>
+        </div>
+        ${metricsHtml}
+      </div>
+      <div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Services</div>
+          <div class="d-section-meta">${Object.values(services).filter(v=>v===true).length}/${Object.keys(services).length}</div>
+        </div>
+        ${svcHtml}
+      </div>`;
+    },
+  };
+
+  // ── Loaders — fetch + cache + counters; re-render if their tab is up
+  function _refreshSurveilCount(){
+    // Counter = live detections + persistent contacts. Stale history is
+    // not "surveil activity" — counting it pumped the badge to 20 even
+    // when nothing was actually around.
+    const now = Date.now() / 1000;
+    const dets = (cache.ble && cache.ble.detections) || [];
+    const liveCount = dets.filter(d => d.ts && (now - d.ts) <= BLE_LIVE_WINDOW_SEC).length;
+    const persistentCount = (cache.persistent && cache.persistent.contacts || []).length;
+    const liveAlert = dets.some(d => d.is_alert && d.ts && (now - d.ts) <= BLE_LIVE_WINDOW_SEC);
+    setCount('surveil', liveCount + persistentCount, { live: liveAlert || persistentCount > 0 });
+  }
+  async function loadBle(){
+    try {
+      const r = await fetch('/api/ble/recent');
+      if (!r.ok) return;
+      cache.ble = await r.json();
+      _refreshSurveilCount();
+      if (activeTab === 'surveil') render();
+    } catch(e) {}
+  }
+  async function loadPersistent(){
+    try {
+      const r = await fetch('/api/ble/persistent');
+      if (!r.ok) return;
+      cache.persistent = await r.json();
+      _refreshSurveilCount();
+      if (activeTab === 'surveil') render();
+    } catch(e) {}
+  }
+  async function loadAircraft(){
+    try {
+      const r = await fetch('/api/aircraft/recent');
+      if (!r.ok) return;
+      cache.aircraft = await r.json();
+      const list = cache.aircraft.aircraft || [];
+      const interesting = list.filter(a => a.interesting).length;
+      setCount('aircraft', list.length, { live: interesting > 0 });
+      if (activeTab === 'aircraft') render();
+    } catch(e) {}
+  }
+  async function loadAlerts(){
+    try {
+      const r = await fetch('/api/alerts/recent');
+      if (!r.ok) return;
+      cache.alerts = await r.json();
+      const list = cache.alerts.alerts || [];
+      const live = list.some(a => (a.level || 0) >= 2);
+      setCount('incidents', list.length, { live });
+      if (activeTab === 'incidents') render();
+    } catch(e) {}
+  }
+  async function loadHardware(){
+    try {
+      const r = await fetch('/api/hardware');
+      if (!r.ok) return;
+      cache.hardware = await r.json();
+      const items = cache.hardware.summary || [];
+      const problems = items.filter(i => i.status !== 'ok').length;
+      setCount('hardware', items.length, { live: problems > 0 });
+      // The HUD ribbon still wants this same data.
+      renderHudHardware(items);
+      if (activeTab === 'hardware') render();
+    } catch(e) {}
+  }
+  async function loadHealth(){
+    try {
+      const r = await fetch('/healthz');
+      if (!r.ok) return;
+      cache.healthz = await r.json();
+      const services = cache.healthz.services || {};
+      const active = Object.values(services).filter(v => v === true).length;
+      const total = Object.values(services).length;
+      // System tab counter = active count; "live" when anything is down.
+      setCount('system', active, { live: active < total });
+      // Top bar MQTT cell
+      document.querySelectorAll('.top-meta .meta-cell').forEach(c => {
+        if (c.textContent.trim().startsWith('MQTT')) {
+          c.innerHTML = `<span class="meta-dot live"></span>MQTT <span class="v">${active}/${total}</span>`;
+        }
+      });
+      if (activeTab === 'system') render();
+    } catch(e) {}
+  }
+  async function loadState(){
+    try {
+      const r = await fetch('/api/state');
+      if (!r.ok) return;
+      cache.state = await r.json();
+      renderTelemetryChips(cache.state);
+      if (activeTab === 'system') render();
+    } catch(e) {}
+  }
+  async function loadOrigin(){
+    try {
+      const r = await fetch('/api/feeds/summary');
+      if (!r.ok) return;
+      const j = await r.json();
+      const o = j.origin || {};
+      const awaiting = document.querySelector('.awaiting');
+      if (o.lat != null && o.lon != null) {
+        if (awaiting) awaiting.style.display = 'none';
+      } else if (awaiting) {
+        awaiting.style.display = '';
+      }
+    } catch(e) {}
+  }
+
+  function renderHudHardware(items){
+    // Reuse the existing HUD ribbon for the highest-priority actionable
+    // hardware item. Unchanged behavior from v1 — drawer tab now also
+    // owns the full list.
+    const slot = document.getElementById('hud-status');
+    if (!slot) return;
+    const PRI = { error: 3, waiting: 2, missing: 1, ok: 0 };
+    const sorted = items.filter(i => i.action && i.status !== 'ok')
+                        .sort((a,b) => (PRI[b.status]||0) - (PRI[a.status]||0));
+    if (!sorted.length) { slot.innerHTML = ''; return; }
+    const top = sorted[0];
+    const tone = top.status === 'error' ? 'alert-ribbon' : 'alert-ribbon info';
+    slot.innerHTML = `
+      <div class="${tone}">
+        <span class="alert-dot"></span>
+        <span class="alert-msg">${esc(top.action)}</span>
+        <span class="alert-meta">${esc(top.item)} · ${esc(top.status)}</span>
+      </div>`;
+  }
+
+  function renderTelemetryChips(state){
+    const slot = document.getElementById('telemetry-chips');
+    if (!slot) return;
+    // Map: state-key → {label, unit, fmt, hero?}. Add a chip only when
+    // the corresponding key has a fresh numeric value.
+    const SENSORS = [
+      {key:'engine_speed_mph',  label:'Speed',    unit:'mph',  fmt:v=>Math.round(v),    hero:true},
+      {key:'engine_rpm',        label:'RPM',      unit:'×1000',fmt:v=>(v/1000).toFixed(1)},
+      {key:'engine_coolant',    label:'Coolant',  unit:'°C',   fmt:v=>Math.round(v)},
+      {key:'engine_fuel_level', label:'Fuel',     unit:'%',    fmt:v=>Math.round(v)},
+      {key:'engine_intake_air', label:'Intake',   unit:'°C',   fmt:v=>Math.round(v)},
+    ];
+    const chips = [];
+    for (const s of SENSORS) {
+      const node = state[s.key];
+      let v = null;
+      if (node == null) { continue; }
+      if (typeof node === 'number') v = node;
+      else if (typeof node === 'object') {
+        const cands = ['value', s.key.split('_').slice(1).join('_'), 'mph', 'rpm', 'temp', 'percent'];
+        for (const k of cands) {
+          if (typeof node[k] === 'number') { v = node[k]; break; }
+        }
+      }
+      if (v == null || !isFinite(v)) continue;
+      chips.push(`
+        <div class="chip live ${s.hero ? 'hero' : ''}">
+          <div class="label">${s.label}</div>
+          <div class="value">${s.fmt(v)} <span class="unit">${s.unit}</span></div>
+        </div>`);
+    }
+    slot.innerHTML = chips.join('');
+  }
+
+  // ── Tab + collapse wiring ─────────────────────────────────────────
+  function selectTab(name){
+    activeTab = name;
+    localStorage.setItem('drifter.drawer.tab', name);
+    document.querySelectorAll('.drawer-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.tab === name);
+    });
+    render();
+  }
+  function setCollapsed(state){
+    drawerCollapsed = state;
+    localStorage.setItem('drifter.drawer.collapsed', state ? '1' : '0');
+    document.querySelector('.shell').classList.toggle('drawer-collapsed', state);
+  }
+  function initDrawer(){
+    document.querySelectorAll('.drawer-tab').forEach(t => {
+      t.addEventListener('click', () => {
+        if (drawerCollapsed) setCollapsed(false);
+        selectTab(t.dataset.tab);
+      });
+    });
+    document.getElementById('drawer-collapse').addEventListener('click',
+      () => setCollapsed(!drawerCollapsed));
+    setCollapsed(drawerCollapsed);
+    selectTab(activeTab);
+  }
+
+  function tickClock(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('clock').textContent =
+      `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  initDrawer();
+  loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadHardware();
+  loadOrigin(); loadHealth(); loadState();
+  tickClock(); setInterval(tickClock, 1000);
+  setInterval(loadBle,        15000);
+  setInterval(loadPersistent, 60000);
+  setInterval(loadAircraft,   20000);
+  setInterval(loadAlerts,     10000);
+  setInterval(loadHardware,   20000);
+  setInterval(loadHealth,     15000);
+  setInterval(loadState,      10000);
+  setInterval(loadOrigin,     15000);
+  // Re-tick surveil count every 30s so detections aging out of the
+  // BLE_LIVE_WINDOW are reflected without waiting for the next BLE fetch.
+  setInterval(_refreshSurveilCount, 30000);
+</script>
+</body>
+</html>

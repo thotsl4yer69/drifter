@@ -205,10 +205,44 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     # Route bodies — one method per endpoint. Most are one-liners.
     def _serve_dashboard_page(self, parsed):  self._serve_html(DASHBOARD_HTML)
     def _serve_settings_page(self, parsed):   self._serve_html(SETTINGS_HTML)
+
+    def _serve_preview_cockpit(self, parsed):
+        """Serve the work-in-progress cockpit redesign prototype.
+
+        Reads /opt/drifter/ui/cockpit-preview.html fresh on each request
+        so design iterations don't need a service restart. Local-network
+        only — this is an unfinished design surface, not for the public
+        internet (the hotspot is the only intended caller anyway).
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'preview: local network only')
+            return
+        path = Path('/opt/drifter/ui/cockpit-preview.html')
+        if not path.exists():
+            self.send_error(404, 'preview not deployed')
+            return
+        try:
+            self._serve_html(path.read_text(encoding='utf-8'))
+        except OSError as e:
+            self.send_error(500, f'preview read error: {e}')
     def _get_settings(self, parsed):          self._serve_json(load_settings())
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_rfaudio_status(self, parsed):    self._serve_json(state.latest_state.get('rfaudio_status', {}))
+
+    def _get_recent_alerts(self, parsed):
+        """Return the in-memory ring of recent alert messages, newest first."""
+        self._serve_json({'alerts': list(reversed(state.recent_alerts))})
+
+    def _get_recent_aircraft(self, parsed):
+        """Aircraft snapshot from drifter-feeds, captured into latest_state.
+
+        Returns the raw snapshot payload (aircraft list + origin + count)
+        so the drawer can render whatever the ADS-B source last produced.
+        Empty object if no snapshot has landed yet.
+        """
+        self._serve_json(state.latest_state.get('feeds_aircraft_snapshot', {}))
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
 
     def _get_feeds_summary(self, parsed):
@@ -1000,6 +1034,8 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/state':                 DashboardHandler._get_state,
     '/api/hardware':              DashboardHandler._get_hardware,
     '/api/rfaudio/status':        DashboardHandler._get_rfaudio_status,
+    '/api/alerts/recent':         DashboardHandler._get_recent_alerts,
+    '/api/aircraft/recent':       DashboardHandler._get_recent_aircraft,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,
@@ -1013,4 +1049,5 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/radar.gif':             DashboardHandler._get_radar_gif,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
+    '/preview/cockpit':           DashboardHandler._serve_preview_cockpit,
 }
