@@ -82,11 +82,21 @@ def load_settings() -> dict:
 
 
 def save_settings(settings: dict) -> bool:
-    """Persist user settings to settings.json. Returns True on success."""
+    """Persist user settings to settings.json.
+
+    Only keys present in SETTINGS_DEFAULTS are persisted. Unknown keys
+    from the request body are silently dropped — the settings file is
+    not a key-value bag; new settings must land in SETTINGS_DEFAULTS
+    first. This keeps a local-network POST from injecting arbitrary
+    fields into the runtime config.
+    """
     try:
+        if not isinstance(settings, dict):
+            return False
+        filtered = {k: v for k, v in settings.items() if k in SETTINGS_DEFAULTS}
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=2)
+            json.dump(filtered, f, indent=2)
         return True
     except Exception as e:
         _log.warning(f"Failed to save settings: {e}")
