@@ -70,11 +70,16 @@ DRIVE_PATH_NEW    = STATE_DIR / 'current_drive'
 
 SCAN_SECS         = float(os.environ.get('DRIFTER_BLE_SCAN_SECS', '8'))
 ALERT_COOLDOWN_S  = float(os.environ.get('DRIFTER_BLE_ALERT_COOLDOWN', '60'))
-STATS_INTERVAL_S  = 3600
+STATS_INTERVAL_S  = float(os.environ.get('DRIFTER_BLE_STATS_INTERVAL', '60'))
 PERSIST_WINDOW_S  = 30 * 86400
+
+# Wide-scan mode: record every BLE advertisement seen (target=civilian-class).
+# Off by default — would balloon the DB fast in a populated area.
+RECORD_ALL = os.environ.get('DRIFTER_BLE_RECORD_ALL', '0') == '1'
 
 # OUI longest-prefix table — lowercase, no separators, hex.
 OUI_RULES: list[tuple[str, str, str, str]] = [
+    # ── Surveillance / law-enforcement gear ─────────────────────────
     ('0025df', 'axon-class',         'high',
         'Axon Enterprise (police body cam, TASER, Signal)'),
     ('003044', 'cradlepoint-class',  'high',
@@ -83,6 +88,13 @@ OUI_RULES: list[tuple[str, str, str, str]] = [
         'Cradlepoint mobile router (police vehicle network)'),
     ('f8e71e', 'ruckus-class',       'medium',
         'Ruckus AP (used in police facilities)'),
+    # ── Bluetooth trackers (stable-MAC, follower-detect signal) ─────
+    ('a0e6f8', 'tile',               'medium', 'Tile tracker'),
+    ('f80f08', 'tile',               'medium', 'Tile tracker'),
+    ('f819cd', 'tile',               'medium', 'Tile tracker'),
+    ('e45f01', 'samsung-smarttag',   'medium', 'Samsung SmartTag'),
+    ('d4631f', 'samsung-smarttag',   'medium', 'Samsung SmartTag'),
+    ('e836a3', 'chipolo',            'medium', 'Chipolo tracker'),
 ]
 OUI_RULES.sort(key=lambda r: -len(r[0]))   # longest-prefix-wins
 
@@ -274,6 +286,7 @@ class Bleconv:
         self._cooldown: dict[str, float] = {}
         self._stats_window: dict[str, int] = {}
         self._stats_started_at = time.time()
+        self._seen_macs: set[str] = set()
         self._stop = asyncio.Event()
 
     def _cooldown_ok(self, mac: str) -> bool:
@@ -320,22 +333,31 @@ class Bleconv:
             'window_started_ts': self._stats_started_at,
             'window_ended_ts':   time.time(),
             'counts': dict(self._stats_window),
+            'seen_unique': len(self._seen_macs),
         }
         self.mqtt.publish(TOPIC_STATS, json.dumps(snap), qos=1, retain=True)
+        log.info('stats: seen_unique=%d matched=%s',
+                 snap['seen_unique'], snap['counts'] or '{}')
         self._stats_window = {}
+        self._seen_macs = set()
         self._stats_started_at = time.time()
-        log.info('stats: %s', snap['counts'] or '(empty)')
 
     def _process(self, mac_raw: str, rssi: Optional[int], adv) -> None:
         mac = normalise_mac(mac_raw)
+        self._seen_macs.add(mac)
         cls = classify_oui(mac)
         mfr = dict(getattr(adv, 'manufacturer_data', None) or {})
         is_findmy = (cls is None) and is_apple_findmy(mfr)
 
         if cls is None and not is_findmy:
-            return
-
-        if cls is not None:
+            if not RECORD_ALL:
+                return
+            # Wide-scan mode: log everything else as civilian-class, low sev.
+            target, severity, description = (
+                'civilian-class', 'low',
+                'Unclassified BLE advertisement (wide-scan mode)',
+            )
+        elif cls is not None:
             target, severity, description = cls
         else:
             target, severity, description = (
@@ -397,10 +419,11 @@ class Bleconv:
             log.exception('callback error')
 
     async def run(self) -> None:
-        log.info('DRIFTER bleconv v2 starting — %d OUI rules + Apple Find My',
-                 len(OUI_RULES))
-        log.info('mqtt %s:%s · db %s · scan %.0fs · cooldown %.0fs',
-                 MQTT_HOST, MQTT_PORT, DB_PATH, SCAN_SECS, ALERT_COOLDOWN_S)
+        log.info('DRIFTER bleconv v2 starting — %d OUI rules + Apple Find My%s',
+                 len(OUI_RULES), ' + wide-scan' if RECORD_ALL else '')
+        log.info('mqtt %s:%s · db %s · scan %.0fs · cooldown %.0fs · stats %.0fs',
+                 MQTT_HOST, MQTT_PORT, DB_PATH, SCAN_SECS, ALERT_COOLDOWN_S,
+                 STATS_INTERVAL_S)
 
         last_hw_state: Optional[bool] = None
         while not self._stop.is_set():

@@ -2691,6 +2691,9 @@ async function loadBle(){
     renderBle(d.detections||[]);
   }catch(e){}
 }
+// Detections older than this are rendered greyed-out as "STALE" — these
+// are historical rows from ble_history.db, not live activity.
+const BLE_STALE_AFTER_S = 300;
 function renderBle(detections){
   const panel=document.getElementById('ble-panel');
   if(!panel) return;
@@ -2699,13 +2702,18 @@ function renderBle(detections){
     return;
   }
   const now=Date.now()/1000;
-  panel.innerHTML=detections.slice(0,8).map(d=>{
+  const fresh=detections.filter(d=>(now-(d.ts||0))<=BLE_STALE_AFTER_S).length;
+  const header=`<div style="font-size:10px;color:var(--dim);padding:2px 0 4px;border-bottom:1px solid #1a1a1a">${fresh} live · ${detections.length-fresh} stale</div>`;
+  panel.innerHTML=header+detections.slice(0,8).map(d=>{
     const age=Math.max(0,Math.round(now-(d.ts||0)));
+    const stale=age>BLE_STALE_AFTER_S;
     const ageStr=age<60?age+'s':age<3600?Math.round(age/60)+'m':Math.round(age/3600)+'h';
     const macPfx=(d.mac||'').slice(0,8);
-    const alertCol=d.is_alert?'#ff5151':'var(--accent)';
-    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a">
-      <span style="color:${alertCol};font-weight:bold">${esc(d.target||'?')}${d.is_alert?' ⚠':''}</span>
+    const alertCol=stale?'var(--dim)':(d.is_alert?'#ff5151':'var(--accent)');
+    const opacity=stale?'opacity:0.45':'';
+    const badge=stale?' <span style="font-size:9px;color:#666">STALE</span>':'';
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a1a;${opacity}">
+      <span style="color:${alertCol};font-weight:bold">${esc(d.target||'?')}${d.is_alert&&!stale?' ⚠':''}${badge}</span>
       <span style="color:var(--dim)">${esc(macPfx)}&hellip;&ensp;${d.rssi}dBm&ensp;${ageStr}</span>
     </div>`;
   }).join('');
@@ -3374,14 +3382,20 @@ async function cpRefreshIntel(){
     if(r.ok){
       const d = await r.json();
       const dets = d.detections||[];
-      document.getElementById('cp-ble-count').textContent = dets.length;
-      document.getElementById('cp-count-ble').textContent = dets.length;
+      const now = Date.now()/1000;
+      const fresh = dets.filter(b=>(now-(b.ts||0))<=BLE_STALE_AFTER_S).length;
+      document.getElementById('cp-ble-count').textContent = fresh;
+      document.getElementById('cp-count-ble').textContent = fresh;
       const body = document.getElementById('cp-ble-body');
       if(body){
         if(!dets.length) body.textContent = 'No detections.';
         else body.innerHTML = dets.map(b=>{
-          return `<div style="padding:2px 0;font-size:10px">
-            <span style="color:var(--accent)">${esc(b.target||'?')}</span>
+          const stale = (now-(b.ts||0))>BLE_STALE_AFTER_S;
+          const op = stale?'opacity:0.45':'';
+          const col = stale?'var(--text-mute)':'var(--accent)';
+          const badge = stale?' <span style="font-size:8px;color:#666">STALE</span>':'';
+          return `<div style="padding:2px 0;font-size:10px;${op}">
+            <span style="color:${col}">${esc(b.target||'?')}${badge}</span>
             <span style="color:var(--text-mute);margin-left:6px">${esc((b.mac||'').slice(0,8))}…</span>
             <span style="float:right;color:var(--text-mute)">${b.rssi||0}dBm</span>
           </div>`;
