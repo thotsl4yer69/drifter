@@ -431,6 +431,11 @@ systemctl daemon-reload
 systemctl disable --now drifter-llm 2>/dev/null || true
 rm -f /etc/systemd/system/drifter-llm.service
 
+# Pre-2026-05 deploys wrote the persona to /opt/drifter/state/mode; the
+# canonical path is /opt/drifter/mode.state (config.py MODE_STATE_PATH).
+# Drop the stale file so it can't drift out of sync with mode.state.
+rm -f "${DRIFTER_DIR}/state/mode"
+
 SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
