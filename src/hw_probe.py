@@ -33,6 +33,7 @@ DEVICES = (
     'rtl_sdr',
     'bluetooth',
     'microphone',
+    'speaker',
     'flipper',
     'framebuffer',
 )
@@ -166,6 +167,19 @@ def probe_microphone() -> dict[str, Any]:
                    'Plug in USB mic — voice input + Vivi PTT disabled until then')
 
 
+def probe_speaker() -> dict[str, Any]:
+    """aplay -l for playback cards. Advisory — rfaudio does not depend on this."""
+    if not _has_binary('aplay'):
+        return _result('speaker', False, 'aplay not installed',
+                       'sudo apt install alsa-utils')
+    out = _run(['aplay', '-l'])
+    cards = [line for line in out.splitlines() if line.startswith('card ')]
+    if cards:
+        return _result('speaker', True, f'{len(cards)} playback device(s)')
+    return _result('speaker', False, 'No ALSA playback device',
+                   'Plug in USB audio dongle — rfaudio + Piper TTS will have no output')
+
+
 def probe_flipper() -> dict[str, Any]:
     """Flipper Zero presents as /dev/ttyACM* with USB ID 0483:5740."""
     lsusb = _run(['lsusb']).lower()
@@ -191,6 +205,7 @@ _PROBES = {
     'rtl_sdr': probe_rtl_sdr,
     'bluetooth': probe_bluetooth,
     'microphone': probe_microphone,
+    'speaker': probe_speaker,
     'flipper': probe_flipper,
     'framebuffer': probe_framebuffer,
 }
