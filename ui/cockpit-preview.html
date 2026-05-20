@@ -1070,7 +1070,12 @@
   /* ── Overlay sheet — used by Mechanic / Vivi / Sessions ──── */
   .overlay-root {
     position: fixed; inset: 0;
-    z-index: 200;
+    /* Must stay above Leaflet's max pane z-index (1000 for controls;
+       400 for overlay-pane). z=200 caused Leaflet tiles + panes to
+       paint OVER our modal everywhere the map existed — the modal
+       only showed through where the drawer's stacking context blocked
+       Leaflet. Bumped to 1100 (just above Leaflet's max). */
+    z-index: 1100;
     display: none;
     background: rgba(10,13,18,0.78);
     opacity: 0;
@@ -2844,6 +2849,10 @@
   // Re-tick surveil count every 30s so detections aging out of the
   // BLE_LIVE_WINDOW are reflected without waiting for the next BLE fetch.
   setInterval(_refreshSurveilCount, 30000);
+
+  // (Debug instrumentation removed 2026-05-21 — the bug was in
+  // .overlay-root z-index colliding with Leaflet's pane stack; see
+  // the CSS rule above the overlay-root selector.)
 </script>
 </body>
 </html>
