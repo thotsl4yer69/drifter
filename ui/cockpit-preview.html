@@ -199,26 +199,37 @@
     z-index: 20;
   }
   .rail-btn {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
+    width: 56px;
+    min-height: 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
     border-radius: var(--r-md);
     color: var(--fg-mute);
     cursor: pointer;
     transition: background 180ms ease, color 180ms ease;
     position: relative;
-    font-size: 20px;
     line-height: 1;
-    /* Glyph fallback chain — Bricolage Grotesque ships only Latin +
-       Greek + common punctuation. Several rail glyphs (⌁, ∿, ◌) live in
-       Unicode blocks Bricolage doesn't cover, so they were rendering
-       as blank tofu. The fallback chain picks up DejaVu Sans / Symbola
-       / Apple Symbols (all common on Linux + macOS) which DO cover
-       Misc Technical, Misc Symbols, and Geometric Shapes. */
     font-family: 'Symbola', 'DejaVu Sans', 'Apple Symbols', 'Bricolage Grotesque', system-ui, sans-serif;
     user-select: none;
+    -webkit-tap-highlight-color: rgba(255,174,66,0.18);
   }
+  .rail-btn .rail-glyph {
+    font-size: 18px;
+    line-height: 1;
+  }
+  .rail-btn .rail-label {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-deep);
+    transition: color 180ms ease;
+  }
+  .rail-btn:hover .rail-label,
+  .rail-btn.active .rail-label { color: var(--amber); }
+  .rail-btn:active { background: rgba(255,174,66,0.12); }
   .rail-btn.rail-btn-text {
     font-size: 11px;
     font-weight: 700;
@@ -513,7 +524,8 @@
     z-index: 11;
   }
   .map-btn {
-    width: 40px; height: 40px;
+    width: 44px; height: 44px;
+    -webkit-tap-highlight-color: rgba(255,174,66,0.18);
     background: var(--glass-bg-strong);
     backdrop-filter: var(--glass-blur);
     border: 1px solid var(--glass-stroke);
@@ -1279,12 +1291,18 @@
 
   <!-- ── LEFT RAIL ─────────────────────────────────────────── -->
   <nav class="rail">
-    <div class="rail-btn active" data-rail="cockpit" title="Cockpit">⌂<span class="rail-tip">Cockpit</span></div>
-    <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">⚙<span class="rail-tip">Mechanic</span></div>
-    <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">▤<span class="rail-tip">Hardware</span></div>
-    <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">∿<span class="rail-tip">Sessions</span></div>
-    <div class="rail-btn rail-btn-text" data-rail="rf" title="RF — scan + capture + replay">RF<span class="rail-tip">RF</span></div>
-    <div class="rail-btn" data-rail="settings" title="Settings">◌<span class="rail-tip">Settings</span></div>
+    <div class="rail-btn active" data-rail="cockpit" title="Cockpit">
+      <span class="rail-glyph">⌂</span><span class="rail-label">Map</span></div>
+    <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">
+      <span class="rail-glyph">⚙</span><span class="rail-label">Mech</span></div>
+    <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">
+      <span class="rail-glyph">▤</span><span class="rail-label">HW</span></div>
+    <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">
+      <span class="rail-glyph">∿</span><span class="rail-label">Trip</span></div>
+    <div class="rail-btn" data-rail="rf" title="RF — scan + capture + replay">
+      <span class="rail-glyph">⊚</span><span class="rail-label">RF</span></div>
+    <div class="rail-btn" data-rail="settings" title="Settings">
+      <span class="rail-glyph">◌</span><span class="rail-label">Set</span></div>
     <div class="rail-spacer"></div>
     <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
   </nav>
