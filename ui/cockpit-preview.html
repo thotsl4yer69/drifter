@@ -836,6 +836,78 @@
     line-height: 1.4;
   }
 
+  /* ── Tires tab: 4-corner visual ─────────────────────────────── */
+  .tpms-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: var(--space-3);
+    aspect-ratio: 1 / 1.2;
+    max-width: 280px;
+    margin: var(--space-2) auto var(--space-4);
+    /* Subtle car silhouette behind the tires */
+    background:
+      radial-gradient(ellipse 70% 80% at 50% 50%, rgba(255,255,255,0.025) 0%, transparent 70%);
+    border-radius: var(--r-lg);
+    padding: var(--space-4);
+    position: relative;
+  }
+  .tpms-grid::before {
+    /* Wheel-axle ghost lines */
+    content: '';
+    position: absolute;
+    inset: 50% var(--space-5) auto var(--space-5);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--glass-stroke) 30%, var(--glass-stroke) 70%, transparent);
+    transform: translateY(-50%);
+  }
+  .tire {
+    background: var(--bg-3);
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-md);
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    min-height: 80px;
+    transition: border-color 200ms ease, background 200ms ease;
+  }
+  .tire.amber { border-color: rgba(255,174,66,0.4); background: rgba(255,174,66,0.04); }
+  .tire.red   { border-color: rgba(255,107,107,0.5); background: rgba(255,107,107,0.06); }
+  .tire.stale { opacity: 0.45; }
+  .tire-pos {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--fg-dim);
+    font-weight: 600;
+  }
+  .tire-psi {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 22px;
+    color: var(--fg);
+    line-height: 1;
+  }
+  .tire.amber .tire-psi { color: var(--amber); }
+  .tire.red   .tire-psi { color: var(--red); }
+  .tire-psi .unit { font-size: 10px; color: var(--fg-mute); margin-left: 3px; }
+  .tire-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--fg-dim);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .tire-meta .stale-tag {
+    color: var(--fg-deep);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
   /* ── System tab: services pill grid ────────────────────────── */
   .svc-grid {
     display: grid;
@@ -1214,6 +1286,9 @@
         <div class="drawer-tab" data-tab="hardware" title="Hardware — probe + dongles">
           <span class="glyph">▤</span><span class="label">Hardware</span><span class="count" data-count="hardware">0</span>
         </div>
+        <div class="drawer-tab" data-tab="tires" title="Tires — live TPMS pressures">
+          <span class="glyph">◉</span><span class="label">Tires</span><span class="count" data-count="tires">0</span>
+        </div>
         <div class="drawer-tab" data-tab="system" title="System — services + load">
           <span class="glyph">◌</span><span class="label">System</span><span class="count" data-count="system">0</span>
         </div>
@@ -1255,8 +1330,14 @@
   // ── State caches shared across renders ────────────────────────────
   const cache = {
     ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
-    state: null, healthz: null, feeds: null,
+    tpms: null, state: null, healthz: null, feeds: null,
   };
+  // X-Type stock thresholds (mirror config.THRESHOLDS tpms_*). Used for
+  // colour state on the Tires tab — green ok, amber outside spec,
+  // red critically low.
+  const TPMS_PSI_LOW   = 26.0;
+  const TPMS_PSI_CRIT  = 20.0;
+  const TPMS_PSI_HIGH  = 38.0;
   // What counts as a "live" BLE detection. Anything older is history,
   // not live — showing 13-minute-old AirTags as live was misleading.
   const BLE_LIVE_WINDOW_SEC = 300;
@@ -1265,13 +1346,13 @@
   // (e.g. captured before GPS dropped) must NOT be presented as overhead.
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
   // Last-seen counts so we can detect increments and trigger the pulse.
-  const lastCount = { surveil: 0, aircraft: 0, incidents: 0, hardware: 0, system: 0 };
+  const lastCount = { surveil: 0, aircraft: 0, incidents: 0, hardware: 0, tires: 0, system: 0 };
 
   // Active tab — URL ?tab= wins, else last-used (localStorage), else surveil.
   // Deep-linking ?tab=hardware is handy for support ("send me a screenshot
   // of the hardware tab") and for the headless verification path.
   const _urlTab = new URLSearchParams(location.search).get('tab');
-  const VALID_TABS = ['surveil', 'aircraft', 'incidents', 'hardware', 'system'];
+  const VALID_TABS = ['surveil', 'aircraft', 'incidents', 'hardware', 'tires', 'system'];
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
     : (localStorage.getItem('drifter.drawer.tab') || 'surveil');
@@ -1301,6 +1382,13 @@
       aircraft:  () => `${n} overhead`,
       incidents: () => `${n} recent`,
       hardware:  () => `${n} probe${n===1?'':'s'}`,
+      tires:     () => {
+        const t = cache.tpms || {};
+        const known = Object.keys(t).length;
+        if (!known) return 'no tpms data';
+        const fresh = Object.values(t).filter(x => x && !x.stale).length;
+        return `${fresh}/${known} live`;
+      },
       system:    () => {
         const services = (cache.healthz && cache.healthz.services) || {};
         const active = Object.values(services).filter(v => v === true).length;
@@ -1488,6 +1576,59 @@
       </div>`;
     },
 
+    tires(){
+      const snap = cache.tpms || {};
+      const positions = ['fl', 'fr', 'rl', 'rr'];
+      const known = positions.filter(p => snap[p] && snap[p].pressure_psi != null);
+      if (!known.length) {
+        // True empty: no TPMS sensors learned, no RTL-SDR plugged in, or
+        // service hasn't seen a fresh packet yet. Honest absence.
+        return emptyState('◉',
+          'No TPMS readings yet. Sensors auto-learn after the first packet — drive briefly to populate.');
+      }
+      const cellFor = (pos) => {
+        const t = snap[pos] || {position: pos};
+        const psi = t.pressure_psi;
+        let cls = '';
+        if (psi != null) {
+          if (psi <= TPMS_PSI_CRIT)      cls = 'red';
+          else if (psi <= TPMS_PSI_LOW)  cls = 'amber';
+          else if (psi >= TPMS_PSI_HIGH) cls = 'amber';
+        }
+        if (t.stale) cls += ' stale';
+        const psiTxt = psi == null ? '—' : psi.toFixed(1);
+        const tempTxt = t.temp_c == null ? '—' : `${Math.round(t.temp_c)}°C`;
+        const ageTxt = t.ts ? fmtAge(t.ts) : (t.stale ? 'stale' : '—');
+        return `<div class="tire ${cls}">
+          <div>
+            <div class="tire-pos">${pos.toUpperCase()}</div>
+            <div class="tire-psi">${esc(psiTxt)}<span class="unit">psi</span></div>
+          </div>
+          <div class="tire-meta">
+            <span>${esc(tempTxt)}</span>
+            <span class="${t.stale ? 'stale-tag' : ''}">${esc(ageTxt)}</span>
+          </div>
+        </div>`;
+      };
+      const fresh = known.filter(p => !snap[p].stale).length;
+      const warn = known.filter(p => {
+        const psi = snap[p].pressure_psi;
+        return psi <= TPMS_PSI_LOW || psi >= TPMS_PSI_HIGH;
+      }).length;
+      return `<div class="d-section">
+        <div class="d-section-head">
+          <div class="d-section-title">Tire Pressures</div>
+          <div class="d-section-meta">${fresh}/${known.length} live${warn ? ' · ' + warn + ' out of spec' : ''}</div>
+        </div>
+        <div class="tpms-grid">
+          ${cellFor('fl')}
+          ${cellFor('fr')}
+          ${cellFor('rl')}
+          ${cellFor('rr')}
+        </div>
+      </div>`;
+    },
+
     system(){
       const st = cache.state || {};
       const sys = (st.system_watchdog || {}).system;
@@ -1602,6 +1743,21 @@
       const live = list.some(a => (a.level || 0) >= 2);
       setCount('incidents', list.length, { live });
       if (activeTab === 'incidents') render();
+    } catch(e) {}
+  }
+  async function loadTpms(){
+    try {
+      const r = await fetch('/api/tpms/recent');
+      if (!r.ok) return;
+      cache.tpms = await r.json();
+      const t = cache.tpms || {};
+      const known = Object.values(t).filter(x => x && x.pressure_psi != null).length;
+      const warn = Object.values(t).filter(x => {
+        const psi = x && x.pressure_psi;
+        return psi != null && (psi <= TPMS_PSI_LOW || psi >= TPMS_PSI_HIGH);
+      }).length;
+      setCount('tires', known, { live: warn > 0 });
+      if (activeTab === 'tires') render();
     } catch(e) {}
   }
   async function loadHardware(){
@@ -2217,13 +2373,14 @@
   else if (_urlOverlay === 'settings') openSettings();
 
   loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadHardware();
-  loadOrigin(); loadHealth(); loadState(); loadMode();
+  loadTpms(); loadOrigin(); loadHealth(); loadState(); loadMode();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(loadBle,        15000);
   setInterval(loadPersistent, 60000);
   setInterval(loadAircraft,   20000);
   setInterval(loadAlerts,     10000);
   setInterval(loadHardware,   20000);
+  setInterval(loadTpms,       10000);
   setInterval(loadHealth,     15000);
   setInterval(loadState,      10000);
   setInterval(loadOrigin,     15000);

@@ -275,6 +275,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         Empty object if no snapshot has landed yet.
         """
         self._serve_json(state.latest_state.get('feeds_aircraft_snapshot', {}))
+
+    def _get_recent_tpms(self, parsed):
+        """4-corner TPMS snapshot from drifter-rf.
+
+        Returns the rf_monitor.TpmsState.get_snapshot() payload — one
+        entry per position (fl/fr/rl/rr) with pressure_psi, temp_c, ts,
+        stale flag. Empty object if no snapshot has landed yet (no RTL-SDR
+        plugged in, or no sensors learned).
+        """
+        self._serve_json(state.latest_state.get('rf_tpms_snapshot', {}))
     def _get_report(self, parsed):            self._serve_json(state.latest_report)
 
     def _get_feeds_summary(self, parsed):
@@ -1085,6 +1095,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/rfaudio/status':        DashboardHandler._get_rfaudio_status,
     '/api/alerts/recent':         DashboardHandler._get_recent_alerts,
     '/api/aircraft/recent':       DashboardHandler._get_recent_aircraft,
+    '/api/tpms/recent':           DashboardHandler._get_recent_tpms,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,
