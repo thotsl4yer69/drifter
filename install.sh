@@ -8,6 +8,27 @@
 
 set -eo pipefail
 
+# ── Argument parsing ──
+# --skip-apt: skip step 1 (apt update + apt upgrade). Useful for repeated
+# deploys where the system is already up to date and you just want to push
+# new source/services. Step 2+ still run (apt install of specific packages
+# is idempotent — dpkg no-ops if already installed).
+SKIP_APT=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-apt) SKIP_APT=1 ;;
+        -h|--help)
+            echo "Usage: sudo ./install.sh [--skip-apt]"
+            echo "  --skip-apt: skip step 1 system update/upgrade"
+            exit 0
+            ;;
+        *)
+            echo "unknown arg: $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,9 +64,13 @@ TOTAL=12
 
 # ── 1. System Update ──
 step 1 "Updating system packages"
-apt-get update -qq 2>/dev/null
-apt-get upgrade -y -qq 2>/dev/null
-ok "System updated"
+if [[ "${SKIP_APT:-0}" != "1" ]]; then
+    apt-get update -qq 2>/dev/null
+    apt-get upgrade -y -qq 2>/dev/null
+    ok "System updated"
+else
+    ok "Skipped (--skip-apt)"
+fi
 
 # ── 2. Core Dependencies ──
 step 2 "Installing core dependencies"
