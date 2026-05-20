@@ -124,10 +124,17 @@ def _healthz_payload() -> tuple[dict, int]:
         status_str = 'ok-hw-pending'  # pi is healthy, dongles aren't plugged in yet
     else:
         status_str = 'ok'
+    # System hostname — the cockpit wordmark reads this instead of a
+    # baked-in node id. Cached because /etc/hostname is read-mostly.
+    try:
+        node_id = Path('/etc/hostname').read_text(encoding='utf-8').strip()
+    except OSError:
+        node_id = 'unknown'
     payload = {
         'status':              status_str,
         'mode':                mode,
         'ts':                  now,
+        'node_id':             node_id,
         'services':            services,
         'services_failed':     failed,
         'services_hw_pending': degraded,

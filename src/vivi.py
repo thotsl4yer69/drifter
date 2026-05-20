@@ -638,7 +638,7 @@ def _build_context(query: str) -> str:
     if feeds:
         parts.append(feeds)
 
-    # Corpus hook — Phase 2 wires retrieval here. corpus_search returns
+    # Corpus retrieval (active). corpus_search returns
     # the single best chunk (or None). Format compresses topic + body into
     # a one-shot reference; the persona prompt tells Vivi to use it without
     # quoting headers.

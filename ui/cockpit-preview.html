@@ -1243,7 +1243,7 @@
   <header class="top">
     <div class="wordmark">
       <span class="mk-d">D</span><span class="mk-rest">RIFTER</span>
-      <span class="mk-serial" id="mk-serial">MZ1312 · NODE-0001 · —</span>
+      <span class="mk-serial" id="mk-serial">—</span>
     </div>
     <div class="top-meta">
       <div class="meta-cell" data-cell="gps">
@@ -1370,7 +1370,7 @@
   const cache = {
     ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
     tpms: null, dtcs: null, wardrive: null,
-    state: null, healthz: null, feeds: null,
+    state: null, healthz: null, feeds: null, mode: null,
   };
   // X-Type stock thresholds (mirror config.THRESHOLDS tpms_*). Used for
   // colour state on the Tires tab — green ok, amber outside spec,
@@ -1926,6 +1926,7 @@
       setCount('system', active, { live: active < total });
       if (activeTab === 'system') render();
       updateMetaCells();
+      _refreshSerial();
     } catch(e) {}
   }
   async function loadState(){
@@ -2100,10 +2101,18 @@
       const r = await fetch('/api/mode');
       if (!r.ok) return;
       const j = await r.json();
-      const mode = (j.mode || '—').toUpperCase();
-      const el = document.getElementById('mk-serial');
-      if (el) el.textContent = `MZ1312 · NODE-0001 · ${mode}`;
+      cache.mode = j.mode;
+      _refreshSerial();
     } catch(e) {}
+  }
+  function _refreshSerial(){
+    // Serial = brand · live hostname (from /healthz) · current mode.
+    // Both halves come from real system state — no baked-in node id.
+    const el = document.getElementById('mk-serial');
+    if (!el) return;
+    const node = (cache.healthz && cache.healthz.node_id) || '—';
+    const mode = (cache.mode || '—').toUpperCase();
+    el.textContent = `MZ1312 · ${esc(node)} · ${mode}`;
   }
 
   // ── Map (Leaflet) ────────────────────────────────────────────────
@@ -2279,6 +2288,9 @@
       <div class="overlay-body">
         <div class="chat-stream" id="chat-stream">
           <div class="chat-msg assistant">Ask anything about the current vehicle state, recent telemetry, or DTCs. The model has live access to the cockpit's MQTT state.</div>
+          <div class="chat-msg" style="background: rgba(125,211,252,0.06); border: 1px solid rgba(125,211,252,0.25); color: var(--cyan); font-size: 11px">
+            ⏱ Local LLM on a Pi 5 — first response after idle can take 30-180s. If a query exceeds 3 minutes, treat it as offline; the cockpit's drawer tabs all read live MQTT state without the LLM.
+          </div>
         </div>
       </div>
       <div class="overlay-foot">
