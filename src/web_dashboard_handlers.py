@@ -268,6 +268,36 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         """
         self._serve_json(state.latest_state.get('feeds_aircraft_snapshot', {}))
 
+    def _get_rf_spectrum(self, parsed):
+        """Latest spectrum sweep from drifter-rf (RTL-SDR)."""
+        self._serve_json(state.latest_state.get('rf_spectrum', {}))
+
+    def _get_rf_adsb(self, parsed):
+        """Latest RTL-SDR ADS-B scan (separate from /api/aircraft/recent
+        which is the feeds.py ADSB.lol path)."""
+        self._serve_json(state.latest_state.get('rf_adsb', {}))
+
+    def _get_rf_emergency(self, parsed):
+        """Latest emergency-band activity scan."""
+        self._serve_json(state.latest_state.get('rf_emergency', {}))
+
+    def _get_flipper_status(self, parsed):
+        """Flipper Zero connection + firmware status."""
+        self._serve_json(state.latest_state.get('flipper_status', {}))
+
+    def _get_flipper_captures(self, parsed):
+        """Recent sub-GHz captures from the Flipper monitor, newest first.
+
+        Each entry is whatever flipper_bridge.run_subghz_monitor
+        published: frequency, modulation, raw frame text, ts.
+        """
+        self._serve_json({'captures': list(reversed(state.recent_flipper_captures))})
+
+    def _get_flipper_results(self, parsed):
+        """Recent command outcomes from the Flipper bridge — needed to
+        surface HIGH-risk confirmation prompts and command success."""
+        self._serve_json({'results': list(reversed(state.recent_flipper_results))})
+
     def _get_recent_dtcs(self, parsed):
         """Current DTCs (Diagnostic Trouble Codes) from drifter-diag.
 
@@ -620,6 +650,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/vivi/conversation_mode':
             self._post_vivi_conversation_mode()
             return
+        if self.path == '/api/flipper/command':
+            self._post_flipper_command()
+            return
         if self.path == '/api/rfaudio/command':
             self._post_rfaudio_command()
             return
@@ -706,6 +739,49 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("gps manual mqtt publish failed: %s", e)
         self._serve_json({'ok': True, 'lat': lat, 'lng': lng, 'ts': now})
+
+    def _post_flipper_command(self):
+        """Forward a JSON body to drifter/flipper/command via MQTT.
+
+        The bridge runs its own risk classifier (LOW/MEDIUM/HIGH/BLOCKED)
+        and gates HIGH-risk commands behind a {command:'confirm', id:...}
+        round-trip. This handler does not re-classify — it relays. The
+        only thing it enforces here is the local-network ACL.
+
+        Body shape:
+          {"command": "subghz tx_from_file /ext/subghz/test.sub",
+           "id": "client-generated-uuid"}
+          {"command": "subghz_monitor_start"}
+          {"command": "subghz_monitor_stop"}
+          {"command": "confirm", "id": "<pending-id>"}
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'flipper: local network only')
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        if not isinstance(body, dict) or not body.get('command'):
+            self.send_error(400, 'body requires a non-empty "command" string')
+            return
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/flipper/command',
+                    json.dumps(body),
+                    qos=1,
+                )
+                ok = True
+            except Exception as e:
+                log.warning("flipper command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/flipper/command'})
 
     def _post_rfaudio_command(self):
         """Forward a JSON body to drifter/rfaudio/command via MQTT.
@@ -1112,6 +1188,12 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/tpms/recent':           DashboardHandler._get_recent_tpms,
     '/api/trip/recent':           DashboardHandler._get_recent_trip,
     '/api/dtcs/recent':           DashboardHandler._get_recent_dtcs,
+    '/api/rf/spectrum':           DashboardHandler._get_rf_spectrum,
+    '/api/rf/adsb':               DashboardHandler._get_rf_adsb,
+    '/api/rf/emergency':          DashboardHandler._get_rf_emergency,
+    '/api/flipper/status':        DashboardHandler._get_flipper_status,
+    '/api/flipper/captures':      DashboardHandler._get_flipper_captures,
+    '/api/flipper/results':       DashboardHandler._get_flipper_results,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,

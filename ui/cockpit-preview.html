@@ -1268,6 +1268,7 @@
     <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">⚙<span class="rail-tip">Mechanic</span></div>
     <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">▤<span class="rail-tip">Hardware</span></div>
     <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">∿<span class="rail-tip">Sessions</span></div>
+    <div class="rail-btn" data-rail="rf" title="RF — scan + capture + replay">⌁<span class="rail-tip">RF</span></div>
     <div class="rail-btn" data-rail="settings" title="Settings">◌<span class="rail-tip">Settings</span></div>
     <div class="rail-spacer"></div>
     <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
@@ -2329,6 +2330,202 @@
     });
   }
 
+  // RF overlay — Flipper Zero monitor / capture / replay + RTL-SDR
+  // spectrum view. The bridge runs its own risk classifier; HIGH-risk
+  // commands round-trip a confirmation prompt that surfaces here as
+  // an inline confirm/cancel pair.
+  async function openRf(){
+    overlay.open(`
+      <div class="overlay-head">
+        <div class="overlay-glyph">⌁</div>
+        <div class="overlay-title">RF<span class="sub">Flipper sub-GHz + RTL-SDR spectrum</span></div>
+        <div class="overlay-close" title="Close (Esc)">×</div>
+      </div>
+      <div class="overlay-body">
+        <div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Flipper Zero</div>
+            <div class="d-section-meta" id="rf-flipper-status">checking…</div>
+          </div>
+          <div class="chat-input-row" style="margin-bottom: var(--space-3); gap: var(--space-2)">
+            <button class="chat-send" data-flipper="subghz_monitor_start" style="background: var(--cyan)">Start monitor</button>
+            <button class="chat-send" data-flipper="subghz_monitor_stop" style="background: var(--bg-3); color: var(--fg)">Stop</button>
+          </div>
+          <div class="chat-input-row" style="margin-bottom: var(--space-3)">
+            <input class="chat-input" id="rf-cmd-input" placeholder="raw Flipper CLI command (e.g. subghz tx_from_file /ext/subghz/test.sub)">
+            <button class="chat-send" id="rf-cmd-send">Send</button>
+          </div>
+          <div id="rf-results" style="font-family:'JetBrains Mono',monospace; font-size:11px; max-height:140px; overflow-y:auto; padding: var(--space-2); background: rgba(0,0,0,0.25); border-radius: var(--r-sm); margin-bottom: var(--space-3)">awaiting commands…</div>
+        </div>
+
+        <div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Recent Sub-GHz Captures</div>
+            <div class="d-section-meta" id="rf-captures-count">0</div>
+          </div>
+          <div id="rf-captures-list"><div class="empty"><span class="gl">⌁</span>No captures yet. Press <b>Start monitor</b> to begin listening on 433.92 MHz.</div></div>
+        </div>
+
+        <div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">RTL-SDR Spectrum</div>
+            <div class="d-section-meta" id="rf-spectrum-meta">awaiting scan</div>
+          </div>
+          <div id="rf-spectrum-body"><div class="empty"><span class="gl">~</span>No spectrum scan yet. drifter-rf runs sweeps on its own schedule; results land here.</div></div>
+        </div>
+      </div>`);
+
+    const results = document.getElementById('rf-results');
+    const status = document.getElementById('rf-flipper-status');
+    const cmdInput = document.getElementById('rf-cmd-input');
+    const cmdSend = document.getElementById('rf-cmd-send');
+    const capList = document.getElementById('rf-captures-list');
+    const capCount = document.getElementById('rf-captures-count');
+    const specMeta = document.getElementById('rf-spectrum-meta');
+    const specBody = document.getElementById('rf-spectrum-body');
+
+    // ── Helpers ─────────────────────────────────────────────────
+    const newId = () => 'cmd-' + Math.random().toString(36).slice(2, 10);
+    function appendResult(text, tone) {
+      const colour = ({ok:'var(--teal)', err:'var(--red)', warn:'var(--amber)', high:'var(--amber)'})[tone] || 'var(--fg-mute)';
+      const ts = new Date().toLocaleTimeString();
+      results.insertAdjacentHTML('beforeend',
+        `<div style="color:${colour}">[${ts}] ${esc(text)}</div>`);
+      results.scrollTop = results.scrollHeight;
+    }
+    async function sendCmd(payload) {
+      try {
+        const r = await fetch('/api/flipper/command', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) appendResult(`HTTP ${r.status} ${await r.text()}`, 'err');
+        else appendResult(`→ sent: ${payload.command}${payload.id ? ' [' + payload.id + ']' : ''}`, 'ok');
+      } catch (e) {
+        appendResult(`network error: ${e.message}`, 'err');
+      }
+    }
+
+    // ── Quick-action buttons (monitor start/stop) ──────────────
+    document.querySelectorAll('[data-flipper]').forEach(btn => {
+      btn.addEventListener('click', () => sendCmd({command: btn.dataset.flipper, id: newId()}));
+    });
+
+    // ── Free-form command ──────────────────────────────────────
+    cmdSend.addEventListener('click', async () => {
+      const cmd = cmdInput.value.trim();
+      if (!cmd) return;
+      cmdInput.value = '';
+      await sendCmd({command: cmd, id: newId()});
+    });
+    cmdInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); cmdSend.click(); }
+    });
+
+    // ── Live polling: status + captures + results + spectrum ───
+    let lastResultTs = 0;
+    let timer = null;
+    async function poll() {
+      try {
+        const [s, c, r, sp] = await Promise.all([
+          fetch('/api/flipper/status').then(x => x.ok ? x.json() : {}),
+          fetch('/api/flipper/captures').then(x => x.ok ? x.json() : {captures: []}),
+          fetch('/api/flipper/results').then(x => x.ok ? x.json() : {results: []}),
+          fetch('/api/rf/spectrum').then(x => x.ok ? x.json() : {}),
+        ]);
+
+        // Flipper status
+        const conn = s.state || 'unknown';
+        const fw = s.firmware || '';
+        status.textContent = `${conn}${fw ? ' · fw ' + fw : ''}`;
+
+        // Captures
+        const caps = c.captures || [];
+        capCount.textContent = caps.length;
+        if (!caps.length) {
+          capList.innerHTML = `<div class="empty"><span class="gl">⌁</span>No captures yet. Press <b>Start monitor</b> to begin listening on 433.92 MHz.</div>`;
+        } else {
+          capList.innerHTML = caps.slice(0, 20).map(x => {
+            const f = x.frequency || x.freq || '433.92 MHz';
+            const m = x.modulation || x.mod || '';
+            const dat = (x.data || x.raw || x.text || '').slice(0, 80);
+            const age = x.ts ? fmtAge(x.ts) : '';
+            // Replay button — replay is HIGH risk; bridge will round-trip a confirm.
+            // Persist the capture path so confirm can refer back. For an in-memory
+            // capture without a saved .sub file, the operator must save it first.
+            const replayBtn = x.path
+              ? `<button class="chat-send" style="font-size:10px; padding:4px 10px"
+                       data-replay="${esc(x.path)}">Replay</button>`
+              : `<span style="font-size:9px; color:var(--fg-deep); text-transform:uppercase; letter-spacing:0.1em">capture-only</span>`;
+            return `<div class="ble-row" style="grid-template-columns: 1fr auto">
+              <div class="ble-info">
+                <div class="ble-target">${esc(f)} ${esc(m)}</div>
+                <div class="ble-meta">${esc(dat || '(no payload data)')}${age ? ' · ' + age : ''}</div>
+              </div>
+              <div>${replayBtn}</div>
+            </div>`;
+          }).join('');
+          // Wire replay buttons
+          capList.querySelectorAll('[data-replay]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const path = btn.dataset.replay;
+              const id = newId();
+              appendResult(`replay requested: ${path} (HIGH risk — bridge will ask for confirmation)`, 'warn');
+              sendCmd({command: `subghz tx_from_file ${path}`, id});
+            });
+          });
+        }
+
+        // Results — append anything we haven't seen
+        const rs = (r.results || []).slice().reverse();
+        for (const item of rs) {
+          if ((item.ts || 0) <= lastResultTs) continue;
+          const tone = item.success ? 'ok' : (item.risk === 'HIGH' ? 'high' :
+                       item.risk === 'BLOCKED' ? 'err' : 'warn');
+          appendResult(`← [${item.risk || '?'}] ${item.response || item.command}`, tone);
+          // If HIGH-risk pending confirmation, render a confirm button.
+          if (item.risk === 'HIGH' && !item.confirmed && item.id) {
+            const cid = item.id;
+            results.insertAdjacentHTML('beforeend',
+              `<div style="margin: 6px 0; padding: 8px; background: rgba(255,174,66,0.08); border: 1px solid rgba(255,174,66,0.3); border-radius: var(--r-sm)">
+                <span style="color:var(--amber)">HIGH-risk confirmation needed:</span>
+                <button class="chat-send" data-confirm="${esc(cid)}" style="margin-left: 8px; font-size:10px; padding:4px 10px">Confirm</button>
+                <button class="chat-send" data-cancel="${esc(cid)}" style="margin-left: 4px; font-size:10px; padding:4px 10px; background: var(--bg-3); color: var(--fg)">Cancel</button>
+              </div>`);
+            results.scrollTop = results.scrollHeight;
+            results.querySelector(`[data-confirm="${cid}"]`).onclick = () => {
+              sendCmd({command: 'confirm', id: cid});
+            };
+            results.querySelector(`[data-cancel="${cid}"]`).onclick = (e) => {
+              e.target.closest('div').remove();
+              appendResult(`cancelled ${cid}`, 'warn');
+            };
+          }
+          lastResultTs = item.ts || lastResultTs;
+        }
+
+        // Spectrum
+        if (sp && sp.ts) {
+          specMeta.textContent = `${sp.scan_range_mhz || '?'} MHz · ${fmtAge(sp.ts)}`;
+          const bands = sp.bands || [];
+          const strongest = sp.strongest_signal || {};
+          specBody.innerHTML = `
+            <div class="sys-grid">
+              <div class="sys-cell"><div class="lbl">Strongest</div><div class="val">${strongest.freq != null ? strongest.freq + '<span class="u">MHz</span>' : '—'}</div></div>
+              <div class="sys-cell"><div class="lbl">Power</div><div class="val">${strongest.power != null ? strongest.power + '<span class="u">dB</span>' : '—'}</div></div>
+            </div>
+            ${bands.length ? `<div style="margin-top: var(--space-3); font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-mute)">${bands.length} band${bands.length===1?'':'s'} swept</div>` : ''}`;
+        }
+      } catch (e) {}
+      // Reschedule only if overlay still open
+      if (document.getElementById('rf-results')) {
+        timer = setTimeout(poll, 3000);
+      }
+    }
+    poll();
+  }
+
   // Settings overlay — inline so the operator never leaves the cockpit.
   // Loads /api/settings, renders one input per known field (type derived
   // from the value), saves back via POST. Mirrors the field set in
@@ -2549,6 +2746,9 @@
           case 'settings':
             openSettings();
             break;
+          case 'rf':
+            openRf();
+            break;
         }
       });
     });
@@ -2578,6 +2778,7 @@
   if (_urlOverlay === 'mechanic' || _urlOverlay === 'vivi') openChat(_urlOverlay);
   else if (_urlOverlay === 'sessions') openSessions();
   else if (_urlOverlay === 'settings') openSettings();
+  else if (_urlOverlay === 'rf') openRf();
 
   loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadDtcs();
   loadWardrive(); loadHardware(); loadTpms(); loadOrigin(); loadHealth();

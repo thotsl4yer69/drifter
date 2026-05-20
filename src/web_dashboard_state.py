@@ -36,6 +36,19 @@ audio_ws_clients: set = set()
 # can render a real timeline instead of just the current-top alert.
 recent_alerts: deque = deque(maxlen=50)
 
+# Bounded ring of recent Flipper Zero sub-GHz captures. flipper_bridge
+# publishes on drifter/flipper/subghz when its monitor catches a frame
+# (key-fob, garage door, weather station, TPMS sensor, etc.). The deque
+# keeps the last 50 so the cockpit can show a capture log and offer
+# replay against any captured frame.
+recent_flipper_captures: deque = deque(maxlen=50)
+
+# Bounded ring of recent flipper_result payloads — every command sent to
+# the Flipper produces a result (success/fail, risk class, HIGH-risk
+# confirmation prompts, etc.). UI polls this to know what the bridge
+# did with the last command.
+recent_flipper_results: deque = deque(maxlen=50)
+
 # Paho MQTT client — set by web_dashboard.main().
 mqtt_client = None
 
@@ -94,6 +107,17 @@ def on_message(client, userdata, msg) -> None:
             latest_report = data
             log.info("New diagnostic report received")
             return
+
+        # Capture Flipper sub-GHz frames into a ring buffer for the RF
+        # overlay's capture log. Every catch gets appended (we want the
+        # full timeline, not just unique entries — replay is per-capture).
+        if topic == 'drifter/flipper/subghz' and isinstance(data, dict):
+            recent_flipper_captures.append(data)
+
+        # Capture flipper_result so the cockpit can show command outcomes
+        # (success/fail responses, HIGH-risk confirmation prompts).
+        if topic == 'drifter/flipper/result' and isinstance(data, dict):
+            recent_flipper_results.append(data)
 
         # Capture alert messages into a ring buffer for the Incidents tab.
         # Only append when the message text actually changes — alert_engine
