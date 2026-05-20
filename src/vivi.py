@@ -1049,8 +1049,120 @@ def on_message(client, userdata, msg) -> None:
                 _maybe_unprompted_comment(3, "Low aircraft overhead.")
 
 
+# ── RF intent dispatch ──────────────────────────────────────────────
+# Voice commands that map deterministically to RF actions get
+# intercepted BEFORE the LLM. This is more reliable than asking the
+# LLM to emit a tool call (voice transcription is messy; LLMs add
+# latency + sometimes hallucinate confirmations). Regex match → MQTT
+# publish → spoken confirmation.
+#
+# Two safety constraints:
+#  1. Replay (sub-GHz TX) is NOT exposed via voice. The Flipper bridge
+#     already classifies TX as HIGH-risk and requires a confirm round-
+#     trip; that confirmation must happen at the cockpit UI, not over
+#     a misheard voice token. The operator can request a replay via
+#     voice ("queue a replay of the last capture") which speaks back
+#     a reminder to confirm at the cockpit — but Vivi never sends the
+#     bridge a `confirm` message itself.
+#  2. Intent matching is anchored on intent verbs ("start", "stop",
+#     "scan") plus a domain noun ("monitor", "radio", "rf", "band").
+#     Bare "monitor" or "scan" in conversation will NOT trigger.
+
+_RF_INTENTS: tuple = (
+    # (regex, topic, payload, voice_response) — order matters; more
+    # specific intents come first.
+
+    # Emergency-band scan — matched before generic start-monitor so
+    # "start an emergency band scan" goes to rfaudio, not Flipper.
+    (re.compile(r'\bscan\b.*\b(emergency|emer|aud(io)?|band)\b'
+                r'|\b(emergency|aud(io)?|band)s?\b.*\bscan\b'),
+     'drifter/rfaudio/command',
+     lambda: {'action': 'scan'},
+     'Cycling emergency audio bands.'),
+    # Domain-first match: explicit RF/Flipper words paired with a start verb.
+    (re.compile(r'\b(start|begin|fire up|kick off)\b.*\b(monitor(ing)?|listen(ing)?|scan(ning)?|capture|radio|sub.?ghz|flipper)\b'),
+     'drifter/flipper/command',
+     lambda: {'command': 'subghz_monitor_start', 'id': _rf_cmd_id()},
+     'Flipper sub-GHz monitor starting on 433.92 megahertz.'),
+    (re.compile(r'\b(stop|cease|kill|end|halt)\b.*\b(monitor(ing)?|scan(ning)?|listen(ing)?|sub.?ghz|flipper)\b'),
+     'drifter/flipper/command',
+     lambda: {'command': 'subghz_monitor_stop', 'id': _rf_cmd_id()},
+     'Flipper monitor stopped.'),
+    (re.compile(r'\b(stop|kill|halt)\b.*\b(audio|rfaudio|tuner|radio)\b'),
+     'drifter/rfaudio/command',
+     lambda: {'action': 'stop'},
+     'Audio tuner stopped.'),
+    # List bands — must be explicit ("rf bands", "audio bands",
+    # "frequencies") to avoid matching unrelated "what bands does X
+    # work in" conversation.
+    (re.compile(r'\b(list|show|what(\'s| are))\b.*\b(rf|audio|emergency)\b.*\bbands?\b'
+                r'|\b(list|show|what(\'s| are))\b.*\bfrequencies\b'),
+     'drifter/rfaudio/command',
+     lambda: {'action': 'list_bands'},
+     'Published the configured band list to MQTT.'),
+)
+
+# Replay intents — recognised so Vivi can respond intelligently, but
+# never auto-dispatched. The voice response steers the operator to the
+# cockpit RF overlay where the HIGH-risk confirmation lives.
+_RF_REPLAY_RE = re.compile(
+    r'\breplay\b'
+    r'|\b(re-?)?transmit\b'
+    r'|\b(send|fire)\b.*\b(capture|signal|frame|sub)\b')
+
+
+def _rf_cmd_id() -> str:
+    return f'vivi-{int(time.time() * 1000) % 10**8:08d}'
+
+
+def _classify_rf_intent(query: str) -> Optional[dict]:
+    """Return {topic, payload, voice} for a matched RF command, or None.
+
+    Pure function. No side effects. Lower-cased input matching.
+    """
+    q = (query or '').lower().strip()
+    if not q:
+        return None
+    for pattern, topic, payload_fn, voice in _RF_INTENTS:
+        if pattern.search(q):
+            return {'topic': topic, 'payload': payload_fn(), 'voice': voice}
+    if _RF_REPLAY_RE.search(q):
+        # Recognised but deliberately not dispatched. Reason in module docstring.
+        return {'topic': None, 'payload': None,
+                'voice': ('Replay is high-risk — open the cockpit RF panel and '
+                          'tap Confirm on the capture you want to transmit. '
+                          'I will not transmit by voice.')}
+    return None
+
+
+def _dispatch_rf_intent(intent: dict) -> str:
+    """Publish the intent's MQTT command (if any) and return voice text."""
+    topic = intent.get('topic')
+    payload = intent.get('payload')
+    if topic and payload is not None and _mqtt_client is not None:
+        try:
+            _mqtt_client.publish(topic, json.dumps(payload), qos=1)
+            log.info("RF intent dispatched → %s: %s", topic, payload)
+        except Exception as e:
+            log.warning("RF intent publish failed: %s", e)
+            return f"I could not publish that — {e}"
+    return intent.get('voice') or 'Done.'
+
+
+def process_query(text: str) -> str:
+    """Front door for any query path (text, PTT, wake-word, always-on).
+
+    Routes deterministic RF commands through the intent dispatcher;
+    everything else falls through to the LLM via ask_vivi.
+    """
+    intent = _classify_rf_intent(text)
+    if intent is not None:
+        return _dispatch_rf_intent(intent)
+    return ask_vivi(text)
+
+
 def _handle_text_query(query: str) -> None:
-    response = ask_vivi(query)
+    response = process_query(query)
     _publish_response(query, response)
     _publish_status("speaking")
     speak(response)
@@ -1081,7 +1193,7 @@ def _ptt_loop(running: list) -> None:
         if not text:
             _publish_status("idle")
             continue
-        response = ask_vivi(text)
+        response = process_query(text)
         _publish_response(text, response)
         _publish_status("speaking")
         speak(response)
@@ -1108,7 +1220,7 @@ def _wake_word_loop(running: list) -> None:
                 audio2 = record_audio()
                 query = transcribe(audio2) if audio2 else ''
             if query:
-                response = ask_vivi(query)
+                response = process_query(query)
                 _publish_response(query, response)
                 _publish_status("speaking")
                 speak(response)
@@ -1127,7 +1239,7 @@ def _always_on_loop(running: list) -> None:
         text = transcribe(audio)
         if not text or len(text.split()) < 2:
             continue
-        response = ask_vivi(text)
+        response = process_query(text)
         _publish_response(text, response)
         _publish_status("speaking")
         speak(response)
