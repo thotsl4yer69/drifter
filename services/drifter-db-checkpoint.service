@@ -13,10 +13,15 @@ DefaultDependencies=no
 Requires=local-fs.target
 After=local-fs.target drifter-canbridge.service drifter-logger.service
 Before=shutdown.target umount.target final.target
-# Conflicts= dropped per 2026-05-20 architect follow-up: the
-# DefaultDependencies=no + Before=... ordering is sufficient to
-# bind us into the shutdown sequence; the Conflicts= was cargo
-# culted noise that didn't add ordering guarantees.
+# Conflicts= restored 2026-05-20 (architect re-review caught the
+# regression): per `man systemd.special` shutdown.target, services
+# that shall be terminated on system shutdown MUST add both
+# Conflicts= AND Before= — Before= alone is purely ordering and
+# does NOT trigger the stop. DefaultDependencies=no removes the
+# implicit Conflicts=shutdown.target, so we must re-add it
+# explicitly here, otherwise ExecStop (the wal_checkpoint) never
+# fires on systemctl reboot.
+Conflicts=reboot.target shutdown.target halt.target poweroff.target
 StartLimitIntervalSec=120
 StartLimitBurst=3
 
