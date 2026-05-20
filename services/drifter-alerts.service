@@ -4,6 +4,10 @@ After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
+# Vehicle-survival hardening 2026-05-20: alerts are the driver-safety
+# layer (overheat, low oil pressure, etc.). Without them the operator
+# has no warnings — reboot rather than silently fail.
+StartLimitAction=reboot-force
 
 [Service]
 User=drifter
@@ -14,6 +18,11 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/alert_engine.py
 Restart=on-failure
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1
+
+# Vehicle-survival hardening 2026-05-20: driver-safety service —
+# bias global OOM killer away from us. See progress.txt for the
+# Ollama-uncapped OOM-priority-inversion discussion.
+OOMScoreAdjust=-500
 
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc

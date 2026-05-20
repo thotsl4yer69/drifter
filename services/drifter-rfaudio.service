@@ -16,6 +16,10 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/default/drifter
+
+# Vehicle-survival hardening 2026-05-20: rtl_fm + aplay pipeline; cap
+# to keep an audio stall from accumulating buffered frames.
+MemoryMax=384M
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/drifter/state

@@ -13,5 +13,12 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# Vehicle-survival hardening 2026-05-20: cap vivi to ~1.5G hard /
+# 1.2G soft. Ollama llm runtime is intentionally uncapped; total RAM
+# budget assumes vivi+dashboard+rfaudio caps absorb other growth.
+MemoryHigh=1.2G
+MemoryMax=1.5G
+TasksMax=256
+
 [Install]
 WantedBy=multi-user.target

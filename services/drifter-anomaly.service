@@ -16,6 +16,9 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
+# Vehicle-survival hardening 2026-05-20
+MemoryMax=512M
+
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
 # read-only while leaving /opt/drifter writable for logs/state.

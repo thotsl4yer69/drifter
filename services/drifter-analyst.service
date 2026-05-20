@@ -16,6 +16,10 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# Vehicle-survival hardening 2026-05-20: LLM-adjacent service; cap so
+# a stuck request can't take the Pi with it.
+MemoryMax=512M
+
 NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true

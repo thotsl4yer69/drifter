@@ -4,6 +4,10 @@ After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
+# Vehicle-survival hardening 2026-05-20: without watchdog, no
+# flap-detection or telemetry-health observability exists. Reboot
+# if it can't stay up.
+StartLimitAction=reboot-force
 
 [Service]
 Type=simple
@@ -12,6 +16,11 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/watchdog.py
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+
+# Vehicle-survival hardening 2026-05-20: without the watchdog there
+# is no flap-detection or telemetry-health observability — bias the
+# global OOM killer away from us. See progress.txt for context.
+OOMScoreAdjust=-500
 
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc

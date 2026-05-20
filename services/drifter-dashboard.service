@@ -15,6 +15,11 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
+# Vehicle-survival hardening 2026-05-20: dashboard is the HUD; it
+# should not be the thing that OOMs the Pi.
+MemoryMax=512M
+TasksMax=128
+
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
 # read-only while leaving /opt/drifter writable for logs/state.
