@@ -143,7 +143,10 @@ def _handle_session_end(client: mqtt.Client, session: dict) -> None:
     log.info(f"Building report for session {session.get('session_id')}")
     report = _build_report(session)
     _persist(report)
-    client.publish(TOPICS['session_report'], json.dumps(report), retain=True)
+    # Not retained: full reports are already persisted under REPORTS_DIR.
+    # A retained MQTT copy means a fresh subscriber sees the prior drive's
+    # report as if it were current.
+    client.publish(TOPICS['session_report'], json.dumps(report))
     client.publish(TOPICS['session_summary'], json.dumps({
         'session_id': report['session_id'],
         'narrative': report['narrative'],

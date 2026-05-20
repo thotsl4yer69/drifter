@@ -235,11 +235,14 @@ def do_wifi_scan(mqtt_client):
     update_session(networks, [])
     with _session_lock:
         session_total = len(session_networks)
+    # Not retained: per-scan Wi-Fi results are location-correlated and
+    # transient. A retained scan from a previous location appears valid
+    # to a fresh subscriber. Session counters survive in memory.
     mqtt_client.publish(TOPICS['wardrive_wifi'], json.dumps({
         'scan': networks,
         'session_total': session_total,
         'ts': time.time(),
-    }), retain=True)
+    }))
     if networks:
         log.info("Wi-Fi: %d visible, %d unique this session",
                  len(networks), session_total)
@@ -253,13 +256,14 @@ def do_bt_scan(mqtt_client):
     ble = [d for d in devices if d['type'] == 'ble']
     with _session_lock:
         session_total = len(session_bt_devices)
+    # Not retained: same reasoning as wardrive_wifi above.
     mqtt_client.publish(TOPICS['wardrive_bt'], json.dumps({
         'devices': devices,
         'classic_count': len(classic),
         'ble_count': len(ble),
         'session_total': session_total,
         'ts': time.time(),
-    }), retain=True)
+    }))
     if devices:
         log.info("Bluetooth: %d classic + %d BLE, %d unique this session",
                  len(classic), len(ble), session_total)
@@ -275,6 +279,8 @@ def publish_snapshot(mqtt_client):
         )[:10]
         unique_ssids = len(session_networks)
         unique_bt = len(session_bt_devices)
+    # Not retained: session snapshot is republished every 60s. A fresh
+    # subscriber gets the next live snapshot rather than a frozen one.
     mqtt_client.publish(TOPICS['wardrive_snapshot'], json.dumps({
         'session_start': session_start,
         'duration_s': round(time.time() - session_start),
@@ -282,7 +288,7 @@ def publish_snapshot(mqtt_client):
         'unique_bt': unique_bt,
         'top_networks': top_networks,
         'ts': time.time(),
-    }), retain=True)
+    }))
 
 
 # ═══════════════════════════════════════════════════════════════════

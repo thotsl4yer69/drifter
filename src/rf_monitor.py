@@ -423,7 +423,10 @@ def run_spectrum_scan(mqtt_client):
             'ts': time.time(),
         }
 
-        mqtt_client.publish(TOPICS['rf_spectrum'], json.dumps(scan_result), retain=True)
+        # Not retained: spectrum sweeps are transient and re-run on a
+        # schedule. A retained scan can imply current activity at bands
+        # that have since gone quiet.
+        mqtt_client.publish(TOPICS['rf_spectrum'], json.dumps(scan_result))
         log.info(f"Spectrum scan complete — strongest signal at "
                  f"{strongest['freq']} MHz ({strongest['power']} dB)")
 
@@ -535,7 +538,9 @@ def run_emergency_scan(mqtt_client):
         'active_count': sum(1 for r in results if r.get('active')),
         'ts': time.time(),
     }
-    mqtt_client.publish(TOPICS['rf_emergency'], json.dumps(scan_data), retain=True)
+    # Not retained: emergency-band activity is a moment-in-time signal.
+    # A retained scan from minutes ago should not flag an ongoing event.
+    mqtt_client.publish(TOPICS['rf_emergency'], json.dumps(scan_data))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -628,7 +633,11 @@ def run_adsb_scan(mqtt_client):
             'ts': time.time(),
         }
 
-        mqtt_client.publish(TOPICS['rf_adsb'], json.dumps(result), retain=True)
+        # Not retained: ADS-B aircraft positions are transient. Even with
+        # the per-aircraft 'seen' field, a retained scan from a previous
+        # location/time will surface as "current overhead" to a fresh
+        # subscriber. Matches the feeds.py policy on aircraft snapshots.
+        mqtt_client.publish(TOPICS['rf_adsb'], json.dumps(result))
 
         if visible:
             callsigns = [a.get('flight', a.get('hex', '?')).strip()
