@@ -21,7 +21,6 @@ from config import (
     MODES, MODE_STATE_PATH, DEFAULT_MODE,
 )
 from corpus import corpus_search, dtc_lookup
-from web_dashboard_html import DASHBOARD_HTML, SETTINGS_HTML
 from ble_map_html import BLE_MAP_HTML
 import ble_history
 import ble_persistence
@@ -227,17 +226,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except OSError as e:
             self.send_error(500, f'cockpit read error: {e}')
 
-    def _serve_legacy_dashboard(self, parsed):
-        """The old DASHBOARD_HTML, kept here as a fallback while features
-        are ported into the cockpit. Removed once parity is reached."""
-        self._serve_html(DASHBOARD_HTML)
-
-    def _serve_settings_page(self, parsed):   self._serve_html(SETTINGS_HTML)
-
-    def _redirect_preview_cockpit(self, parsed):
-        """The cockpit moved from /preview/cockpit to /. Keep the old
-        URL working with a permanent redirect so bookmarks and the
-        previous desktop launcher don't break."""
+    def _redirect_to_root(self, parsed):
+        """Permanent redirect for URLs whose surface moved into the
+        cockpit: /settings (now the cockpit's inline overlay) and the
+        previous /preview/cockpit alias. Operator bookmarks survive."""
         self.send_response(301)
         self.send_header('Location', '/')
         self.send_header('Content-Length', '0')
@@ -1109,8 +1101,7 @@ def build_query_context(query: str) -> str:
 DashboardHandler._EXACT_GET_ROUTES = {
     '/':                          DashboardHandler._serve_dashboard_page,
     '/index.html':                DashboardHandler._serve_dashboard_page,
-    '/legacy':                    DashboardHandler._serve_legacy_dashboard,
-    '/settings':                  DashboardHandler._serve_settings_page,
+    '/settings':                  DashboardHandler._redirect_to_root,
     '/healthz':                   DashboardHandler._get_healthz,
     '/api/settings':              DashboardHandler._get_settings,
     '/api/state':                 DashboardHandler._get_state,
@@ -1134,5 +1125,5 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/radar.gif':             DashboardHandler._get_radar_gif,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
-    '/preview/cockpit':           DashboardHandler._redirect_preview_cockpit,
+    '/preview/cockpit':           DashboardHandler._redirect_to_root,
 }

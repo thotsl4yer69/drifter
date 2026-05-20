@@ -12,32 +12,32 @@ import web_dashboard_state as state
 
 def test_exact_get_route_table_covers_key_endpoints():
     routes = h.DashboardHandler._EXACT_GET_ROUTES
-    for path in ['/', '/index.html', '/legacy', '/settings', '/healthz',
+    for path in ['/', '/index.html', '/settings', '/healthz',
                  '/api/state', '/api/hardware', '/api/settings',
                  '/api/mechanic/advice', '/api/mode']:
         assert path in routes, f"missing route {path}"
 
 
-def test_root_route_serves_cockpit_not_legacy_dashboard():
-    """After the cockpit cutover, / must point at the cockpit handler
-    (which reads /opt/drifter/ui/cockpit-preview.html). The old DASHBOARD_HTML
-    is reachable only at /legacy until the port-and-delete phases finish."""
+def test_root_route_serves_cockpit():
+    """The front door is the cockpit. The old DASHBOARD_HTML and
+    /legacy route are gone (Phase 5 of the cutover)."""
     routes = h.DashboardHandler._EXACT_GET_ROUTES
     assert routes['/'] is h.DashboardHandler._serve_dashboard_page
-    assert routes['/legacy'] is h.DashboardHandler._serve_legacy_dashboard
-    # Sanity: the legacy and root handlers are distinct functions.
-    assert routes['/'] is not routes['/legacy']
+    assert '/legacy' not in routes
+    assert not hasattr(h.DashboardHandler, '_serve_legacy_dashboard')
 
 
-def test_preview_cockpit_redirects_to_root():
-    """/preview/cockpit is the old URL; must 301 to / so bookmarks survive."""
+def test_legacy_urls_redirect_to_root():
+    """/preview/cockpit (cockpit's old URL) and /settings (replaced by
+    the inline overlay) both 301 to / so bookmarks survive."""
     routes = h.DashboardHandler._EXACT_GET_ROUTES
-    assert routes['/preview/cockpit'] is h.DashboardHandler._redirect_preview_cockpit
+    assert routes['/preview/cockpit'] is h.DashboardHandler._redirect_to_root
+    assert routes['/settings']        is h.DashboardHandler._redirect_to_root
     handler = h.DashboardHandler.__new__(h.DashboardHandler)
     handler.send_response = MagicMock()
     handler.send_header = MagicMock()
     handler.end_headers = MagicMock()
-    h.DashboardHandler._redirect_preview_cockpit(handler, None)
+    h.DashboardHandler._redirect_to_root(handler, None)
     handler.send_response.assert_called_once_with(301)
     location_header = [c for c in handler.send_header.call_args_list
                        if c[0][0] == 'Location']
