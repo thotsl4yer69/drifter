@@ -644,6 +644,7 @@ TOPICS = {
     # Conversation mode (Vivi ↔ voice_input loop)
     'voice_listen_now':       'drifter/voice/listen_now',
     'vivi_conversation_mode': 'drifter/vivi/conversation_mode',
+    'vivi_say':               'drifter/vivi/say',
 
     # Phase 5 — cockpit interrupt + voice control of HUD layers
     'adsb_police':            'drifter/adsb/police',

@@ -951,6 +951,28 @@ def on_message(client, userdata, msg) -> None:
     except (json.JSONDecodeError, UnicodeDecodeError):
         payload = msg.payload.decode('utf-8', errors='replace')
 
+    # drifter/vivi/say — raw TTS pass-through. Payload is either a bare
+    # string OR {"text": "..."}. No LLM, no intent classifier, no
+    # filtering. Operator-only by virtue of the broker being bound to
+    # 127.0.0.1; whatever lands here gets spoken verbatim. Used for
+    # voice-path verification and operator-authored alerts.
+    if topic == TOPICS.get('vivi_say', 'drifter/vivi/say'):
+        log.info("vivi/say received: %r", payload)
+        if isinstance(payload, dict):
+            text = (payload.get('text') or '').strip()
+        else:
+            text = str(payload).strip()
+        if text:
+            log.info("vivi/say speaking: %r", text[:80])
+            _publish_status("speaking")
+            try:
+                speak(text)
+            except Exception as e:
+                log.error("vivi/say speak failed: %s", e)
+            finally:
+                _publish_status("idle")
+        return
+
     if topic == TOPICS.get('vivi_conversation_mode', 'drifter/vivi/conversation_mode'):
         global _conversation_mode
         if isinstance(payload, dict):
@@ -1280,6 +1302,8 @@ def main() -> None:
         (TOPICS.get('ble_detection', 'drifter/ble/detection'), 0),
         # Conversation mode toggle (retained — operator sets via dashboard)
         (TOPICS.get('vivi_conversation_mode', 'drifter/vivi/conversation_mode'), 0),
+        # Raw TTS pass-through — operator speaks any phrase via mosquitto_pub
+        (TOPICS.get('vivi_say', 'drifter/vivi/say'), 0),
         # Phase 5 — police-adjacent interrupt feeds (police helicopter,
         # drone RF). Watchers/detectors publish here; vivi narrates.
         (TOPICS.get('adsb_police', 'drifter/adsb/police'), 0),
