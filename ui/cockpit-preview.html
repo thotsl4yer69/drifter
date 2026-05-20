@@ -208,7 +208,16 @@
     cursor: pointer;
     transition: background 180ms ease, color 180ms ease;
     position: relative;
-    font-size: 18px;
+    font-size: 20px;
+    line-height: 1;
+    /* Glyph fallback chain — Bricolage Grotesque ships only Latin +
+       Greek + common punctuation. Several rail glyphs (⌁, ∿, ◌) live in
+       Unicode blocks Bricolage doesn't cover, so they were rendering
+       as blank tofu. The fallback chain picks up DejaVu Sans / Symbola
+       / Apple Symbols (all common on Linux + macOS) which DO cover
+       Misc Technical, Misc Symbols, and Geometric Shapes. */
+    font-family: 'Symbola', 'DejaVu Sans', 'Apple Symbols', 'Bricolage Grotesque', system-ui, sans-serif;
+    user-select: none;
   }
   .rail-btn:hover { background: rgba(255,255,255,0.04); color: var(--fg); }
   .rail-btn.active {
@@ -1268,7 +1277,7 @@
     <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">⚙<span class="rail-tip">Mechanic</span></div>
     <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">▤<span class="rail-tip">Hardware</span></div>
     <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">∿<span class="rail-tip">Sessions</span></div>
-    <div class="rail-btn" data-rail="rf" title="RF — scan + capture + replay">⌁<span class="rail-tip">RF</span></div>
+    <div class="rail-btn" data-rail="rf" title="RF — scan + capture + replay"><span style="font-size:11px; font-weight:700; letter-spacing:0.04em">RF</span><span class="rail-tip">RF</span></div>
     <div class="rail-btn" data-rail="settings" title="Settings">◌<span class="rail-tip">Settings</span></div>
     <div class="rail-spacer"></div>
     <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
