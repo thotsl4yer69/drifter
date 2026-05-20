@@ -120,28 +120,18 @@ VEHICLE_YEAR = 2004
 VEHICLE_MODEL = "X-Type"
 VEHICLE_ENGINE = "2.5 V6"
 
-# Engine — Ford/Jaguar AJ-V6 (Duratec-derived)
-ENGINE_CODE = "AJ-V6"
-DISPLACEMENT_CC = 2495
-BORE_MM = 82.4
-STROKE_MM = 79.5
-COMPRESSION_RATIO = 10.0
-PEAK_HP = 194          # bhp @ 6800 RPM
-PEAK_TORQUE_NM = 245   # Nm @ 3500 RPM
-FIRING_ORDER = [1, 4, 2, 5, 3, 6]
-CYLINDER_COUNT = 6
-COIL_TYPE = "COP"      # Coil-on-plug, 6 individual coils
+# Engine — Ford/Jaguar AJ-V6 (Duratec-derived).
+# Full spec sheet (bore/stroke/firing order/etc.) lives in mechanic.py's
+# YAML-loaded VEHICLE_SPECS, not here, so we don't duplicate it as
+# Python constants that no code reads.
 
 # RPM
-REDLINE_RPM = 6500
 IDLE_RPM_MAX = 1000
 IDLE_RPM_WARM_LOW = 650    # Normal warm idle floor
 IDLE_RPM_WARM_HIGH = 780   # Normal warm idle ceiling
-FAST_IDLE_COLD_MAX = 1400  # Cold-start fast idle ceiling
 
 # Thermostat — plastic housing behind timing cover (known failure)
 THERMOSTAT_OPEN_C = 88      # Starts opening
-THERMOSTAT_FULL_C = 97      # Fully open
 COOLANT_NORMAL_LOW = 86     # Normal operating range low
 COOLANT_NORMAL_HIGH = 98    # Normal operating range high
 
@@ -153,7 +143,6 @@ WARMUP_COOLANT_TARGET = 80      # °C — should reach this within WARMUP_TIME_M
 # MAF — expected ranges for the AJ-V6
 MAF_IDLE_MIN = 2.5     # g/s — below this at warm idle = dirty/failing MAF
 MAF_IDLE_MAX = 6.0     # g/s — above this at idle = implausible
-MAF_CRUISE_MIN = 8.0   # g/s — cruising 60-70 km/h typical minimum
 
 # Drivetrain
 DRIVETRAIN = "AWD"     # Haldex coupling to rear axle
