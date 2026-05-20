@@ -276,6 +276,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         """
         self._serve_json(state.latest_state.get('feeds_aircraft_snapshot', {}))
 
+    def _get_recent_dtcs(self, parsed):
+        """Current DTCs (Diagnostic Trouble Codes) from drifter-diag.
+
+        Returns the latest payload from drifter/diag/dtc — typically a
+        list of {code, severity, ts, description?} entries. Empty if
+        no OBD scan has run or no faults present.
+        """
+        self._serve_json(state.latest_state.get('diag_dtc', {}))
+
     def _get_recent_trip(self, parsed):
         """Live trip-computer state from drifter-trip.
 
@@ -1111,6 +1120,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/aircraft/recent':       DashboardHandler._get_recent_aircraft,
     '/api/tpms/recent':           DashboardHandler._get_recent_tpms,
     '/api/trip/recent':           DashboardHandler._get_recent_trip,
+    '/api/dtcs/recent':           DashboardHandler._get_recent_dtcs,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,

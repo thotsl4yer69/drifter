@@ -66,6 +66,44 @@
     --space-7: 48px;
   }
 
+  /* ── Theme variants (data-theme on <html>) ──────────────────
+     `uncaged` is the default amber+cool-dark aesthetic. `nightrun`
+     is for night drives — pure red HUD, no cyan, no blue, preserves
+     low-light vision. `daylight` is for parked admin work — bumped
+     contrast for sun-on-screen legibility. */
+  :root[data-theme="nightrun"] {
+    --fg: #ff7878;
+    --fg-mute: #c44545;
+    --fg-dim: #843030;
+    --fg-deep: #4d1c1c;
+    --amber: #ff3030;
+    --amber-glow: 0 0 24px rgba(255,48,48,0.28);
+    --cyan: #c44545;
+    --teal: #ff7878;
+    --bg-0: #0a0606;
+    --bg-1: #100808;
+    --bg-2: #160c0c;
+    --bg-3: #1f1010;
+  }
+  :root[data-theme="daylight"] {
+    --bg-0: #e9ecef;
+    --bg-1: #f1f3f5;
+    --bg-2: #f8f9fa;
+    --bg-3: #ffffff;
+    --fg: #1a1d23;
+    --fg-mute: #495057;
+    --fg-dim: #6c757d;
+    --fg-deep: #adb5bd;
+    --amber: #d97706;
+    --cyan: #0284c7;
+    --teal: #059669;
+    --red: #dc2626;
+    --glass-bg: rgba(255,255,255,0.7);
+    --glass-bg-strong: rgba(255,255,255,0.92);
+    --glass-stroke: rgba(0,0,0,0.08);
+    --glass-stroke-active: rgba(217,119,6,0.5);
+  }
+
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
   body {
@@ -1330,7 +1368,8 @@
   // ── State caches shared across renders ────────────────────────────
   const cache = {
     ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
-    tpms: null, state: null, healthz: null, feeds: null,
+    tpms: null, dtcs: null, wardrive: null,
+    state: null, healthz: null, feeds: null,
   };
   // X-Type stock thresholds (mirror config.THRESHOLDS tpms_*). Used for
   // colour state on the Tires tab — green ok, amber outside spec,
@@ -1347,6 +1386,15 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
   // Last-seen counts so we can detect increments and trigger the pulse.
   const lastCount = { surveil: 0, aircraft: 0, incidents: 0, hardware: 0, tires: 0, system: 0 };
+
+  // Theme — restore from localStorage on boot. Valid values are
+  // attribute selectors that match the CSS blocks above.
+  const VALID_THEMES = ['uncaged', 'nightrun', 'daylight'];
+  (function applyTheme(){
+    let t = localStorage.getItem('drifter.theme') || 'uncaged';
+    if (!VALID_THEMES.includes(t)) t = 'uncaged';
+    if (t !== 'uncaged') document.documentElement.dataset.theme = t;
+  })();
 
   // Active tab — URL ?tab= wins, else last-used (localStorage), else surveil.
   // Deep-linking ?tab=hardware is handy for support ("send me a screenshot
@@ -1478,6 +1526,37 @@
         </div>`);
       }
 
+      // ── Wi-Fi (wardrive) — most recent scan
+      const wd = cache.wardrive || {};
+      const wifiScan = (wd.wifi && wd.wifi.scan) || [];
+      if (wifiScan.length) {
+        // Sort by signal strongest first, top 12 to keep the panel scannable.
+        const top = wifiScan.slice().sort((a,b) =>
+          (b.signal_dbm ?? -999) - (a.signal_dbm ?? -999)).slice(0, 12);
+        const rows = top.map(n => {
+          const ssid = n.ssid || '<hidden>';
+          const sig = n.signal_dbm != null ? `${n.signal_dbm}` : '—';
+          const ch = n.channel ? `ch${n.channel}` : '';
+          const sec = n.security || '';
+          return `<div class="ble-row">
+            <div class="ble-mark"></div>
+            <div class="ble-info">
+              <div class="ble-target">${esc(ssid)}</div>
+              <div class="ble-meta">${esc(n.bssid || '')}${ch ? ' · ' + ch : ''}${sec ? ' · ' + esc(sec) : ''}</div>
+            </div>
+            <div class="ble-rssi">${esc(sig)}<span class="small">dBm</span></div>
+          </div>`;
+        }).join('');
+        const totalSession = (wd.wifi && wd.wifi.session_total) || wifiScan.length;
+        out.push(`<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Wi-Fi (wardrive)</div>
+            <div class="d-section-meta">${wifiScan.length} now · ${totalSession} this session</div>
+          </div>
+          ${rows}
+        </div>`);
+      }
+
       return out.join('');
     },
 
@@ -1528,9 +1607,42 @@
     },
 
     incidents(){
-      const list = (cache.alerts && cache.alerts.alerts) || [];
-      if (!list.length) return emptyState('▲', 'No incidents recorded this session.');
-      const rows = list.map(a => {
+      const alerts = (cache.alerts && cache.alerts.alerts) || [];
+      const dtcSnap = cache.dtcs || {};
+      const dtcList = Array.isArray(dtcSnap.codes) ? dtcSnap.codes
+                    : Array.isArray(dtcSnap) ? dtcSnap
+                    : [];
+      const out = [];
+
+      // Active DTCs above alerts — fault codes are higher priority than
+      // process alerts (a P0301 is a real engine misfire).
+      if (dtcList.length) {
+        const rows = dtcList.map(d => {
+          const code = (d && d.code) || d;
+          const desc = (d && d.description) || '';
+          const sev = (d && d.severity) || '';
+          return `<div class="inc-row lvl-${sev === 'critical' ? 3 : sev === 'warn' ? 2 : 1}">
+            <div class="inc-mark lvl-${sev === 'critical' ? 3 : sev === 'warn' ? 2 : 1}"></div>
+            <div class="inc-body">
+              <div class="inc-name">${esc(code)}</div>
+              <div class="inc-msg">${esc(desc || 'Tap to look up — corpus or built-in lookup will return ECU action + likely causes.')}</div>
+            </div>
+          </div>`;
+        }).join('');
+        out.push(`<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Active DTCs</div>
+            <div class="d-section-meta">${dtcList.length} fault${dtcList.length===1?'':'s'}</div>
+          </div>
+          ${rows}
+        </div>`);
+      }
+
+      if (!alerts.length && !dtcList.length) {
+        return emptyState('▲', 'No incidents recorded this session.');
+      }
+
+      const rows = alerts.map(a => {
         const lvl = a.level || 0;
         return `<div class="inc-row lvl-${lvl}">
           <div class="inc-mark lvl-${lvl}"></div>
@@ -1541,13 +1653,14 @@
           </div>
         </div>`;
       }).join('');
-      return `<div class="d-section">
+      out.push(`<div class="d-section">
         <div class="d-section-head">
           <div class="d-section-title">Recent Alerts</div>
-          <div class="d-section-meta">${list.length} of last 50</div>
+          <div class="d-section-meta">${alerts.length} of last 50</div>
         </div>
-        ${rows}
-      </div>`;
+        ${rows || emptyState('▲', 'No alerts this session.')}
+      </div>`);
+      return out.join('');
     },
 
     hardware(){
@@ -1739,10 +1852,37 @@
       const r = await fetch('/api/alerts/recent');
       if (!r.ok) return;
       cache.alerts = await r.json();
-      const list = cache.alerts.alerts || [];
-      const live = list.some(a => (a.level || 0) >= 2);
-      setCount('incidents', list.length, { live });
+      _refreshIncidentCount();
       if (activeTab === 'incidents') render();
+    } catch(e) {}
+  }
+  async function loadDtcs(){
+    try {
+      const r = await fetch('/api/dtcs/recent');
+      if (!r.ok) return;
+      cache.dtcs = await r.json();
+      _refreshIncidentCount();
+      if (activeTab === 'incidents') render();
+    } catch(e) {}
+  }
+  function _refreshIncidentCount(){
+    // Counter = alerts + active DTCs. DTCs are higher priority so any
+    // active fault marks the tab live.
+    const alerts = (cache.alerts && cache.alerts.alerts) || [];
+    const snap = cache.dtcs || {};
+    const dtcs = Array.isArray(snap.codes) ? snap.codes
+               : Array.isArray(snap) ? snap : [];
+    const live = dtcs.length > 0 || alerts.some(a => (a.level || 0) >= 2);
+    setCount('incidents', alerts.length + dtcs.length, { live });
+  }
+  async function loadWardrive(){
+    try {
+      const r = await fetch('/api/wardrive');
+      if (!r.ok) return;
+      cache.wardrive = await r.json();
+      // Wi-Fi count adds to Surveil counter alongside BLE.
+      _refreshSurveilCount();
+      if (activeTab === 'surveil') render();
     } catch(e) {}
   }
   async function loadTpms(){
@@ -2223,7 +2363,20 @@
       return;
     }
     const keys = Object.keys(current).sort();
-    body.innerHTML = `<div style="display: grid; grid-template-columns: 1fr; gap: var(--space-3)">` +
+    const curTheme = localStorage.getItem('drifter.theme') || 'uncaged';
+    body.innerHTML =
+      // Theme picker — cockpit-local, persists in localStorage. Applies
+      // immediately on change so the operator sees the result without
+      // hitting Save (it's a client preference, not a server setting).
+      `<div style="margin-bottom: var(--space-4); padding-bottom: var(--space-4); border-bottom: 1px solid var(--glass-stroke)">
+        <label style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); color:var(--fg)">
+          <span style="font-size:12px; color:var(--fg-mute)">theme</span>
+          <select class="chat-input" id="theme-select" style="max-width:220px">
+            ${VALID_THEMES.map(t => `<option value="${t}"${t===curTheme?' selected':''}>${esc(t)}</option>`).join('')}
+          </select>
+        </label>
+      </div>` +
+      `<div style="display: grid; grid-template-columns: 1fr; gap: var(--space-3)">` +
       keys.map(k => {
         const v = current[k];
         const id = `set-${k}`;
@@ -2247,6 +2400,14 @@
         }
         return input;
       }).join('') + `</div>`;
+
+    document.getElementById('theme-select').addEventListener('change', (e) => {
+      const t = e.target.value;
+      if (!VALID_THEMES.includes(t)) return;
+      if (t === 'uncaged') delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = t;
+      localStorage.setItem('drifter.theme', t);
+    });
 
     saveBtn.addEventListener('click', async () => {
       const payload = {};
@@ -2418,8 +2579,9 @@
   else if (_urlOverlay === 'sessions') openSessions();
   else if (_urlOverlay === 'settings') openSettings();
 
-  loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadHardware();
-  loadTpms(); loadOrigin(); loadHealth(); loadState(); loadMode();
+  loadBle(); loadPersistent(); loadAircraft(); loadAlerts(); loadDtcs();
+  loadWardrive(); loadHardware(); loadTpms(); loadOrigin(); loadHealth();
+  loadState(); loadMode();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(loadBle,        15000);
   setInterval(loadPersistent, 60000);
@@ -2427,6 +2589,8 @@
   setInterval(loadAlerts,     10000);
   setInterval(loadHardware,   20000);
   setInterval(loadTpms,       10000);
+  setInterval(loadDtcs,       30000);
+  setInterval(loadWardrive,   30000);
   setInterval(loadHealth,     15000);
   setInterval(loadState,      10000);
   setInterval(loadOrigin,     15000);
