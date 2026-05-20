@@ -85,6 +85,8 @@ def test_audiostream_stop_terminates_both_processes():
 
 _PRESENT_SDR = {'device': 'rtl_sdr', 'connected': True, 'detail': 'RTL-SDR dongle on USB bus', 'action': '', 'ts': 0}
 _MISSING_SDR = {'device': 'rtl_sdr', 'connected': False, 'detail': 'No RTL-SDR detected', 'action': 'Plug in RTL-SDR dongle', 'ts': 0}
+_PRESENT_SPK = {'device': 'speaker', 'connected': True, 'detail': '1 playback device(s)', 'action': '', 'ts': 0}
+_MISSING_SPK = {'device': 'speaker', 'connected': False, 'detail': 'No ALSA playback device', 'action': 'Plug in USB audio dongle — rfaudio + Piper TTS will have no output', 'ts': 0}
 
 
 def test_handle_command_start_paused_rtl_433_first():
@@ -95,6 +97,7 @@ def test_handle_command_start_paused_rtl_433_first():
     client.publish.side_effect = lambda topic, payload, **kw: publish_calls.append((topic, payload))
 
     with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK), \
          patch('rfaudio.subprocess.Popen') as popen, \
          patch('rfaudio.time.sleep'):
         popen.side_effect = [_fake_proc(), _fake_proc()]
@@ -114,6 +117,7 @@ def test_handle_command_start_refused_when_no_sdr():
     """The SDR guard must fail fast with a clear error, not spawn rtl_fm."""
     client = MagicMock()
     with patch('rfaudio.probe_rtl_sdr', return_value=_MISSING_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK), \
          patch('rfaudio.subprocess.Popen') as popen:
         rfaudio._handle_command(client, {'action': 'start', 'freq_mhz': 476.525})
     popen.assert_not_called()
@@ -122,6 +126,23 @@ def test_handle_command_start_refused_when_no_sdr():
     last = client.publish.call_args_list[-1]
     payload = json.loads(last[0][1])
     assert 'error' in payload
+
+
+def test_handle_command_start_refused_when_no_speaker():
+    """No ALSA playback device → refuse with the operator-facing 'Plug in
+    USB audio dongle' message, don't spawn rtl_fm."""
+    client = MagicMock()
+    with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_MISSING_SPK), \
+         patch('rfaudio.subprocess.Popen') as popen:
+        rfaudio._handle_command(client, {'action': 'start', 'freq_mhz': 476.525})
+    popen.assert_not_called()
+    assert rfaudio._state == 'idle'
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'start refused' in payload['error']
+    assert 'USB audio dongle' in payload['error']
 
 
 @pytest.mark.parametrize('bad', [
@@ -136,6 +157,7 @@ def test_handle_command_start_rejects_invalid_params(bad):
     """Bounds + type validation must reject and not spawn rtl_fm."""
     client = MagicMock()
     with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK), \
          patch('rfaudio.subprocess.Popen') as popen, \
          patch('rfaudio.time.sleep'):
         rfaudio._handle_command(client, bad)
@@ -148,7 +170,8 @@ def test_handle_command_start_rejects_invalid_params(bad):
 
 def test_handle_command_scan_refused_when_no_sdr():
     client = MagicMock()
-    with patch('rfaudio.probe_rtl_sdr', return_value=_MISSING_SDR):
+    with patch('rfaudio.probe_rtl_sdr', return_value=_MISSING_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK):
         rfaudio._handle_command(client, {'action': 'scan'})
     last = client.publish.call_args_list[-1]
     payload = json.loads(last[0][1])
@@ -156,10 +179,23 @@ def test_handle_command_scan_refused_when_no_sdr():
     assert 'No RTL-SDR' in payload['error']
 
 
+def test_handle_command_scan_refused_when_no_speaker():
+    client = MagicMock()
+    with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_MISSING_SPK):
+        rfaudio._handle_command(client, {'action': 'scan'})
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'scan refused' in payload['error']
+    assert 'USB audio dongle' in payload['error']
+
+
 def test_handle_command_test_tone_calls_speaker_test():
     """test_tone must run speaker-test against the configured ALSA device."""
     client = MagicMock()
-    with patch('rfaudio.subprocess.run') as run:
+    with patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK), \
+         patch('rfaudio.subprocess.run') as run:
         rfaudio._handle_command(client, {'action': 'test_tone'})
     run.assert_called_once()
     cmd = run.call_args[0][0]
@@ -168,6 +204,21 @@ def test_handle_command_test_tone_calls_speaker_test():
     assert '-D' in cmd
     d_idx = cmd.index('-D')
     assert cmd[d_idx + 1] == rfaudio.RFAUDIO_APLAY_DEVICE
+
+
+def test_handle_command_test_tone_refused_when_no_speaker():
+    """test_tone without a speaker is the operator's primary signal that
+    the audio dongle isn't plugged in — refuse before invoking speaker-test."""
+    client = MagicMock()
+    with patch('rfaudio.probe_speaker', return_value=_MISSING_SPK), \
+         patch('rfaudio.subprocess.run') as run:
+        rfaudio._handle_command(client, {'action': 'test_tone'})
+    run.assert_not_called()
+    last = client.publish.call_args_list[-1]
+    payload = json.loads(last[0][1])
+    assert 'error' in payload
+    assert 'test_tone refused' in payload['error']
+    assert 'USB audio dongle' in payload['error']
 
 
 def test_handle_command_list_bands_publishes_full_band_list():
@@ -215,6 +266,7 @@ def test_handle_command_uses_defaults_when_fields_missing():
     """start with no freq_mhz / mode must use the RFAUDIO_DEFAULT_* knobs."""
     client = MagicMock()
     with patch('rfaudio.probe_rtl_sdr', return_value=_PRESENT_SDR), \
+         patch('rfaudio.probe_speaker', return_value=_PRESENT_SPK), \
          patch('rfaudio.subprocess.Popen') as popen, \
          patch('rfaudio.time.sleep'):
         popen.side_effect = [_fake_proc(), _fake_proc()]

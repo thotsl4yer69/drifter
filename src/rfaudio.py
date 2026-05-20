@@ -20,8 +20,9 @@ Commands (drifter/rfaudio/command, JSON):
 Status (drifter/rfaudio/status, retained):
   {"state": "idle"|"playing"|"scanning", "freq_mhz": float, "mode": str, "ts": float}
 
-The "start" action refuses if hw_probe reports no SDR — fail fast with a
-clear error rather than letting rtl_fm spawn and immediately die.
+The "start" and "test_tone" actions refuse if hw_probe reports no SDR
+or no ALSA playback device — fail fast with a clear error rather than
+letting rtl_fm / aplay spawn and immediately die.
 
 UNCAGED TECHNOLOGY — EST 1991
 """
@@ -43,7 +44,7 @@ from config import (
     RFAUDIO_PAUSE_WAIT_SEC,
     RFAUDIO_OPEN_RETRIES, RFAUDIO_OPEN_RETRY_BACKOFF_SEC,
 )
-from hw_probe import probe_rtl_sdr, publish_hw_state
+from hw_probe import probe_rtl_sdr, probe_speaker, publish_hw_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -279,11 +280,17 @@ def _handle_command(client, payload: dict) -> None:
     action = payload.get('action', '').lower()
 
     if action == 'start':
-        # Fail fast when the SDR isn't physically present, so we don't
-        # spawn rtl_fm just to watch it die a second later.
+        # Fail fast when the SDR or speaker isn't physically present, so
+        # we don't spawn rtl_fm / aplay just to watch them die a second
+        # later. SDR first: it's the rarer hardware and the more
+        # actionable error.
         probe = probe_rtl_sdr()
         if not probe['connected']:
             _publish_error(client, f"start refused: {probe['detail']} — {probe['action']}")
+            return
+        spk = probe_speaker()
+        if not spk['connected']:
+            _publish_error(client, f"start refused: {spk['detail']} — {spk['action']}")
             return
         try:
             freq = float(payload.get('freq_mhz', RFAUDIO_DEFAULT_FREQ_MHZ))
@@ -324,11 +331,19 @@ def _handle_command(client, payload: dict) -> None:
         if not probe['connected']:
             _publish_error(client, f"scan refused: {probe['detail']} — {probe['action']}")
             return
+        spk = probe_speaker()
+        if not spk['connected']:
+            _publish_error(client, f"scan refused: {spk['detail']} — {spk['action']}")
+            return
         _pause_rtl_433(client)
         _start_scan(client)
         return
 
     if action == 'test_tone':
+        spk = probe_speaker()
+        if not spk['connected']:
+            _publish_error(client, f"test_tone refused: {spk['detail']} — {spk['action']}")
+            return
         _play_test_tone(client)
         return
 
@@ -384,15 +399,17 @@ def main() -> int:
     client.loop_start()
     _publish_status(client)
     publish_hw_state(client, 'rtl_sdr', probe_rtl_sdr())
+    publish_hw_state(client, 'speaker', probe_speaker())
 
     last_hw_tick = time.time()
     while running:
         now = time.time()
-        # Hot-plug visibility: republish drifter/hw/rtl_sdr periodically so
-        # the dashboard reflects mid-session SDR plug/unplug.
+        # Hot-plug visibility: republish drifter/hw/{rtl_sdr,speaker}
+        # periodically so the dashboard reflects mid-session plug/unplug.
         if now - last_hw_tick >= HW_RESCAN_INTERVAL:
             last_hw_tick = now
             publish_hw_state(client, 'rtl_sdr', probe_rtl_sdr())
+            publish_hw_state(client, 'speaker', probe_speaker())
         # Bail-out: if the operator started playback but rtl_fm exited
         # (e.g. SDR was unplugged), reflect that in status without
         # waiting for them to explicitly stop.
