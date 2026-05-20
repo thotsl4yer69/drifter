@@ -1,6 +1,7 @@
 # tests/test_web_dashboard_handlers.py
 """Tests for the refactored dispatch table in web_dashboard_handlers."""
 import sys
+from unittest.mock import MagicMock
 
 import pytest
 sys.path.insert(0, 'src')
@@ -11,10 +12,36 @@ import web_dashboard_state as state
 
 def test_exact_get_route_table_covers_key_endpoints():
     routes = h.DashboardHandler._EXACT_GET_ROUTES
-    for path in ['/', '/index.html', '/settings', '/healthz',
+    for path in ['/', '/index.html', '/legacy', '/settings', '/healthz',
                  '/api/state', '/api/hardware', '/api/settings',
                  '/api/mechanic/advice', '/api/mode']:
         assert path in routes, f"missing route {path}"
+
+
+def test_root_route_serves_cockpit_not_legacy_dashboard():
+    """After the cockpit cutover, / must point at the cockpit handler
+    (which reads /opt/drifter/ui/cockpit-preview.html). The old DASHBOARD_HTML
+    is reachable only at /legacy until the port-and-delete phases finish."""
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert routes['/'] is h.DashboardHandler._serve_dashboard_page
+    assert routes['/legacy'] is h.DashboardHandler._serve_legacy_dashboard
+    # Sanity: the legacy and root handlers are distinct functions.
+    assert routes['/'] is not routes['/legacy']
+
+
+def test_preview_cockpit_redirects_to_root():
+    """/preview/cockpit is the old URL; must 301 to / so bookmarks survive."""
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert routes['/preview/cockpit'] is h.DashboardHandler._redirect_preview_cockpit
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    h.DashboardHandler._redirect_preview_cockpit(handler, None)
+    handler.send_response.assert_called_once_with(301)
+    location_header = [c for c in handler.send_header.call_args_list
+                       if c[0][0] == 'Location']
+    assert location_header and location_header[0][0][1] == '/'
 
 
 def test_static_panel_routes_are_gone():

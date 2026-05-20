@@ -210,17 +210,42 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     # Route bodies — one method per endpoint. Most are one-liners.
-    def _serve_dashboard_page(self, parsed):  self._serve_html(DASHBOARD_HTML)
+    def _serve_dashboard_page(self, parsed):
+        """Front door. Serves the cockpit (formerly /preview/cockpit) from
+        disk so design iterations land without a service restart.
+        Local-network only — same ACL as before."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'cockpit: local network only')
+            return
+        path = Path('/opt/drifter/ui/cockpit-preview.html')
+        if not path.exists():
+            self.send_error(503, 'cockpit not deployed')
+            return
+        try:
+            self._serve_html(path.read_text(encoding='utf-8'))
+        except OSError as e:
+            self.send_error(500, f'cockpit read error: {e}')
+
+    def _serve_legacy_dashboard(self, parsed):
+        """The old DASHBOARD_HTML, kept here as a fallback while features
+        are ported into the cockpit. Removed once parity is reached."""
+        self._serve_html(DASHBOARD_HTML)
+
     def _serve_settings_page(self, parsed):   self._serve_html(SETTINGS_HTML)
 
-    def _serve_preview_cockpit(self, parsed):
-        """Serve the work-in-progress cockpit redesign prototype.
+    def _redirect_preview_cockpit(self, parsed):
+        """The cockpit moved from /preview/cockpit to /. Keep the old
+        URL working with a permanent redirect so bookmarks and the
+        previous desktop launcher don't break."""
+        self.send_response(301)
+        self.send_header('Location', '/')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
 
-        Reads /opt/drifter/ui/cockpit-preview.html fresh on each request
-        so design iterations don't need a service restart. Local-network
-        only — this is an unfinished design surface, not for the public
-        internet (the hotspot is the only intended caller anyway).
-        """
+    def _serve_preview_cockpit(self, parsed):
+        """Deprecated alias — kept for backward compatibility on any
+        client that bypasses the redirect (curl, etc.)."""
         peer = self.client_address[0] if self.client_address else ''
         if not _is_local_peer(peer):
             self.send_error(403, 'preview: local network only')
@@ -1051,6 +1076,7 @@ def build_query_context(query: str) -> str:
 DashboardHandler._EXACT_GET_ROUTES = {
     '/':                          DashboardHandler._serve_dashboard_page,
     '/index.html':                DashboardHandler._serve_dashboard_page,
+    '/legacy':                    DashboardHandler._serve_legacy_dashboard,
     '/settings':                  DashboardHandler._serve_settings_page,
     '/healthz':                   DashboardHandler._get_healthz,
     '/api/settings':              DashboardHandler._get_settings,
@@ -1072,5 +1098,5 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/radar.gif':             DashboardHandler._get_radar_gif,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
-    '/preview/cockpit':           DashboardHandler._serve_preview_cockpit,
+    '/preview/cockpit':           DashboardHandler._redirect_preview_cockpit,
 }
