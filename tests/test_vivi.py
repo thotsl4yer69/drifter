@@ -103,22 +103,34 @@ def test_ask_vivi_passes_context_to_ollama(monkeypatch):
 
 # ── ask_vivi: fallback path ──
 
-def test_ask_vivi_falls_back_to_rag(monkeypatch):
-    """ask_vivi should return RAG result when Ollama is down. The
-    fallback chain is corpus_search → kb_search; we stub corpus_search
-    to empty so the test exercises the kb_search branch."""
+def test_ask_vivi_offline_does_not_quote_kb_or_corpus(monkeypatch):
+    """When Ollama is down, ask_vivi must NOT substitute corpus/kb
+    workshop notes for a real answer. Earlier versions did this and
+    leaked spec ranges ("normal_range 85-100°C") to a Pi on a bench
+    with no car connected — violating the real-data-only rule. The
+    fallback now refuses outright. Both corpus and kb_search are
+    stubbed to return content; the assertion is that NONE of it
+    leaks into the returned text."""
     import vivi
     import corpus as _corpus
     monkeypatch.setattr(vivi, '_telemetry', {})
     monkeypatch.setattr(vivi, '_mqtt_client', None)
-    monkeypatch.setattr(_corpus, 'corpus_search', lambda *a, **kw: [])
+    # Even when both lookup paths have something to say...
+    monkeypatch.setattr(_corpus, 'corpus_search', lambda *a, **kw: [
+        {'content': 'normal_range 85-100°C cold: below 80°C',
+         'source': 'manual'},
+    ])
     with patch('vivi._query_ollama', return_value=None):
         with patch('vivi.kb_search', return_value=[{
             'title': 'Coil Pack Failure',
             'fix': 'Swap coil pack to another cylinder and retest.',
         }]):
             result = vivi.ask_vivi("rough idle misfire")
-    assert 'Coil Pack' in result
+    # ...the fallback must refuse, not quote them.
+    assert 'LLM offline' in result
+    for leaked in ['Coil Pack', 'normal_range', '85-100', 'Swap coil',
+                   'cold:', 'manual']:
+        assert leaked not in result, f"fallback leaked: {leaked!r}"
 
 
 def test_ask_vivi_message_when_nothing_available(monkeypatch):

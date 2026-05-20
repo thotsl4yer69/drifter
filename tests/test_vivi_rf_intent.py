@@ -158,3 +158,20 @@ def test_dispatch_without_mqtt_client_returns_voice_text(vivi, monkeypatch):
     response = vivi._dispatch_rf_intent(intent)
     assert isinstance(response, str)
     assert response  # non-empty
+
+
+# ── LLM-offline fallback must NOT quote sensor reference data ────────
+
+def test_llm_offline_fallback_does_not_quote_corpus(vivi):
+    """Earlier versions quoted the X-Type manual ("coolant normal_range
+    85-100°C") when the LLM was down. On a bench Pi with no car, that
+    read like a live answer. The fallback must now be a flat truthful
+    refusal — never any spec ranges, never any manual quotes."""
+    msg = vivi._rag_fallback('what is the coolant temperature')
+    # Must be the honest refusal.
+    assert 'LLM offline' in msg
+    # Must NOT leak any of the historical corpus/spec content.
+    forbidden = ['normal_range', 'normal range', '°C', '85', '100', '105',
+                 'thermostat', 'manual:', 'workshop note']
+    for token in forbidden:
+        assert token not in msg, f"fallback leaked reference data: {token!r} in {msg!r}"

@@ -836,27 +836,20 @@ def ask_vivi(query: str) -> str:
 
 
 def _rag_fallback(query: str) -> str:
-    """Honest offline reply when Ollama is unreachable. Phase 2's corpus
-    layer takes over from kb_search once it's wired in."""
-    try:
-        from corpus import corpus_search
-        hits = corpus_search(query, k=1, min_similarity=0.4)
-        if hits:
-            h = hits[0]
-            body = (h.get('content') or '').strip().replace('\n', ' ')[:200]
-            return f"LLM offline. From the manual: {body}"
-    except ImportError:
-        pass
-    except Exception as e:
-        log.debug(f"corpus fallback failed: {e}")
-    results = kb_search(query)
-    if results:
-        r = results[0]
-        fix = r.get('fix', r.get('cause', '')).strip()
-        body = f"{r['title']}" + (f" — {fix[:160]}" if fix else "")
-        return f"LLM offline. Closest workshop note: {body}"
-    return ("LLM offline and no matching workshop note. "
-            "Check that ollama is running and the model is pulled.")
+    """Honest offline reply when Ollama is unreachable.
+
+    Earlier versions quoted the X-Type manual (corpus_search) or the
+    DTC knowledge base when the LLM was down. That sounded like a real
+    answer — e.g. "coolant temperature" → "normal_range 85-100°C" —
+    even on a Pi sitting on a bench with no car connected. The user's
+    "real data only" rule forbids that exact failure mode.
+
+    This path now refuses to substitute reference data for live answers.
+    Operator gets a truthful "I can't answer right now" so they know
+    the reading is unavailable, not stale or fabricated."""
+    return ("LLM offline. I can't answer that right now — try again "
+            "once Ollama is responding. For DTC or spec lookups, use "
+            "the cockpit Mechanic panel.")
 
 
 def _resolve_piper_bin() -> str:
