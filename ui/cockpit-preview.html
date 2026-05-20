@@ -2278,41 +2278,87 @@
     overlay.open(`
       <div class="overlay-head">
         <div class="overlay-glyph">∿</div>
-        <div class="overlay-title">Sessions<span class="sub">GET /api/sessions · last 10 drives</span></div>
+        <div class="overlay-title">Sessions<span class="sub">live trip + recent drives</span></div>
         <div class="overlay-close" title="Close (Esc)">×</div>
       </div>
       <div class="overlay-body" id="sessions-body">
         <div class="empty"><span class="gl">∿</span>Loading…</div>
       </div>`);
+    const body = document.getElementById('sessions-body');
+
+    // ── Current trip section
+    let tripHtml = '';
+    try {
+      const tr = await fetch('/api/trip/recent');
+      if (tr.ok) {
+        const t = await tr.json();
+        const s = t.stats || {};
+        const driving = (s.distance_km && s.distance_km > 0) || (s.speed_kph && s.speed_kph > 0);
+        const fmtDur = (sec) => {
+          if (!sec) return '—';
+          const h = (sec/3600)|0, m = ((sec%3600)/60)|0, ss = (sec%60)|0;
+          return h > 0 ? `${h}h ${m}m` : `${m}m ${ss}s`;
+        };
+        tripHtml = `<div class="d-section">
+          <div class="d-section-head">
+            <div class="d-section-title">Current Trip</div>
+            <div class="d-section-meta">${driving ? 'live' : 'idle'}</div>
+          </div>
+          <div class="sys-grid">
+            <div class="sys-cell"><div class="lbl">Distance</div><div class="val">${(s.distance_km ?? 0).toFixed(1)}<span class="u">km</span></div></div>
+            <div class="sys-cell"><div class="lbl">Duration</div><div class="val">${esc(fmtDur(s.duration_s))}</div></div>
+            <div class="sys-cell"><div class="lbl">Fuel</div><div class="val">${(s.fuel_l ?? 0).toFixed(2)}<span class="u">L</span></div></div>
+            <div class="sys-cell"><div class="lbl">Cost</div><div class="val">£${(s.cost_gbp ?? 0).toFixed(2)}</div></div>
+            <div class="sys-cell"><div class="lbl">Avg cons</div><div class="val">${s.avg_l_per_100km != null ? s.avg_l_per_100km.toFixed(1) : '—'}<span class="u">L/100km</span></div></div>
+            <div class="sys-cell"><div class="lbl">Speed</div><div class="val">${s.speed_kph != null ? Math.round(s.speed_kph) : '—'}<span class="u">kph</span></div></div>
+          </div>
+        </div>`;
+      }
+    } catch(e) {}
+
+    // ── Recent drives section
+    let drivesHtml = '';
     try {
       const r = await fetch('/api/sessions');
-      const body = document.getElementById('sessions-body');
       if (!r.ok) {
-        body.innerHTML = `<div class="empty"><span class="gl">!</span>HTTP ${r.status}</div>`;
-        return;
+        drivesHtml = `<div class="d-section"><div class="d-section-head"><div class="d-section-title">Recent Drives</div></div>
+          <div class="empty"><span class="gl">!</span>HTTP ${r.status}</div></div>`;
+      } else {
+        const list = await r.json();
+        if (!Array.isArray(list) || !list.length) {
+          drivesHtml = `<div class="d-section">
+            <div class="d-section-head"><div class="d-section-title">Recent Drives</div></div>
+            <div class="empty"><span class="gl">∿</span>No completed sessions yet. Each ignition cycle becomes a session.</div>
+          </div>`;
+        } else {
+          const rows = list.map(s => {
+            const startTs = s.start_ts || s.started_at || s.ts;
+            const endTs   = s.end_ts || s.ended_at;
+            const dur     = (startTs && endTs) ? Math.round((endTs - startTs) / 60) + 'm' : '—';
+            const id      = s.id || s.session_id || s.uuid || '—';
+            return `<div class="session-row">
+              <div>
+                <div class="session-id">${esc(id)}</div>
+                <div class="session-meta">${startTs ? fmtAge(startTs) : 'unknown start'}${s.miles ? ' · ' + s.miles + 'mi' : ''}${s.dtc_count ? ' · ' + s.dtc_count + ' DTC' : ''}</div>
+              </div>
+              <div class="session-dur">${esc(dur)}</div>
+            </div>`;
+          }).join('');
+          drivesHtml = `<div class="d-section">
+            <div class="d-section-head">
+              <div class="d-section-title">Recent Drives</div>
+              <div class="d-section-meta">${list.length} of last 10</div>
+            </div>
+            ${rows}
+          </div>`;
+        }
       }
-      const list = await r.json();
-      if (!Array.isArray(list) || !list.length) {
-        body.innerHTML = `<div class="empty"><span class="gl">∿</span>No completed sessions yet. Start the car and drive — each ignition cycle becomes a session.</div>`;
-        return;
-      }
-      body.innerHTML = list.map(s => {
-        const startTs = s.start_ts || s.started_at || s.ts;
-        const endTs   = s.end_ts || s.ended_at;
-        const dur     = (startTs && endTs) ? Math.round((endTs - startTs) / 60) + 'm' : '—';
-        const id      = s.id || s.session_id || s.uuid || '—';
-        return `<div class="session-row">
-          <div>
-            <div class="session-id">${esc(id)}</div>
-            <div class="session-meta">${startTs ? fmtAge(startTs) : 'unknown start'}${s.miles ? ' · ' + s.miles + 'mi' : ''}${s.dtc_count ? ' · ' + s.dtc_count + ' DTC' : ''}</div>
-          </div>
-          <div class="session-dur">${esc(dur)}</div>
-        </div>`;
-      }).join('');
     } catch (e) {
-      document.getElementById('sessions-body').innerHTML =
-        `<div class="empty"><span class="gl">!</span>${esc(e.message)}</div>`;
+      drivesHtml = `<div class="d-section"><div class="empty"><span class="gl">!</span>${esc(e.message)}</div></div>`;
     }
+
+    body.innerHTML = tripHtml + drivesHtml ||
+      `<div class="empty"><span class="gl">∿</span>No trip data yet.</div>`;
   }
 
   // ── Rail navigation

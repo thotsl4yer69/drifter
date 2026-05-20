@@ -276,6 +276,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         """
         self._serve_json(state.latest_state.get('feeds_aircraft_snapshot', {}))
 
+    def _get_recent_trip(self, parsed):
+        """Live trip-computer state from drifter-trip.
+
+        Returns the three trip topics merged into a single payload:
+        stats (distance/duration/avg consumption/speed), fuel (current
+        and average L/100km), cost (cumulative + fuel price). Empty
+        fields if drifter-trip hasn't published yet.
+        """
+        self._serve_json({
+            'stats': state.latest_state.get('trip_stats', {}),
+            'fuel':  state.latest_state.get('trip_fuel', {}),
+            'cost':  state.latest_state.get('trip_cost', {}),
+        })
+
     def _get_recent_tpms(self, parsed):
         """4-corner TPMS snapshot from drifter-rf.
 
@@ -1096,6 +1110,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/alerts/recent':         DashboardHandler._get_recent_alerts,
     '/api/aircraft/recent':       DashboardHandler._get_recent_aircraft,
     '/api/tpms/recent':           DashboardHandler._get_recent_tpms,
+    '/api/trip/recent':           DashboardHandler._get_recent_trip,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,
     '/api/sessions':              DashboardHandler._get_sessions,
