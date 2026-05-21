@@ -71,6 +71,35 @@ _suppressed_errors = 0
 
 
 
+def _serial_dev_is_known_not_can(dev: str) -> bool:
+    """Return True if /dev/ttyUSB* is a USB-serial chip we know is NOT a CAN
+    adapter (e.g. CH340 inside a USB hub / mic dongle / GPS puck).
+
+    Without this gate, can_bridge blindly runs slcand on the first ttyUSB it
+    finds, creating a phantom slcan0 that "succeeds" but never sees a CAN
+    frame — the cockpit then claims CAN is live while telemetry stays stale.
+    Real CAN-over-serial adapters use FTDI/STMicro/SiLabs/Microchip chips;
+    none use CH340 or PL2303.
+    """
+    try:
+        import subprocess
+        r = subprocess.run(
+            ['udevadm', 'info', '--name', dev, '--query=property'],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode != 0:
+            return False
+        vid = None
+        for line in r.stdout.splitlines():
+            if line.startswith('ID_VENDOR_ID='):
+                vid = line.split('=', 1)[1].lower()
+                break
+        # Hard reject: vendor IDs that never make CAN adapters.
+        return vid in {'1a86', '067b'}  # QinHeng CH340/CH341, Prolific PL2303
+    except Exception:
+        return False
+
+
 def find_can_interface():
     """Auto-detect the USB2CANFD interface."""
     # Try common interface names
@@ -87,6 +116,10 @@ def find_can_interface():
     import glob
     usb_devs = glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*')
     for dev in usb_devs:
+        if _serial_dev_is_known_not_can(dev):
+            log.info(f"Skipping {dev}: USB vendor ID is not a CAN adapter "
+                     f"(generic serial chip — e.g. CH340 in a hub/mic/GPS)")
+            continue
         try:
             import subprocess
             # Try to set up slcan
