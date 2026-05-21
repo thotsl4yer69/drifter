@@ -993,3 +993,98 @@ def test_cockpit_titles_v3sper_panel():
     """Operator callsign for the Flipper unit is 'v3sper' — must be surfaced."""
     html = _cockpit_html()
     assert 'V3SPER' in html or 'v3sper' in html
+
+
+# ── /api/voice/listen_now ─────────────────────────────────────────────
+
+def test_post_voice_listen_now_route_registered():
+    """do_POST must dispatch /api/voice/listen_now to the new handler."""
+    import inspect
+    src = inspect.getsource(h.DashboardHandler.do_POST)
+    assert '/api/voice/listen_now' in src
+    assert '_post_voice_listen_now' in src
+    assert hasattr(h.DashboardHandler, '_post_voice_listen_now')
+
+
+def test_post_voice_listen_now_publishes_topic(monkeypatch):
+    """A POST from the hotspot publishes {ts} to drifter/voice/listen_now."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{}')
+    handler._post_voice_listen_now()
+    state.mqtt_client.publish.assert_called_once()
+    args, kwargs = state.mqtt_client.publish.call_args
+    topic, payload = args[0], args[1]
+    assert topic == 'drifter/voice/listen_now'
+    parsed = _json.loads(payload)
+    assert isinstance(parsed.get('ts'), (int, float))
+    assert kwargs.get('retain') is False
+    assert kwargs.get('qos') == 0
+    handler.send_error.assert_not_called()
+
+
+def test_post_voice_listen_now_rejects_remote_peer():
+    """Hotspot ACL — anything outside 127.0.0.1 / 10.42.0.0/24 must 403."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{}', peer='192.168.1.50')
+    handler._post_voice_listen_now()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_voice_listen_now_503_when_mqtt_offline():
+    """No silent success — operator UI must see 503 to flash failure."""
+    state.mqtt_client = None
+    handler = _build_post_handler(b'{}')
+    handler._post_voice_listen_now()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+# ── /api/driver ───────────────────────────────────────────────────────
+
+def test_get_driver_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/driver' in routes
+    assert routes['/api/driver'] is h.DashboardHandler._get_driver
+
+
+def test_get_driver_returns_only_whitelisted_fields(monkeypatch, tmp_path):
+    """Whitelist: only preferred_name, name, registration_plate may leak.
+    Other fields (postcode/address/etc.) must NOT appear in the payload."""
+    yaml_path = tmp_path / 'driver.yaml'
+    yaml_path.write_text(
+        'name: Jack Smith\n'
+        'preferred_name: Jack\n'
+        'registration_plate: ABC123\n'
+        'home_postcode: SW1A 1AA\n'
+        'phone: "+447700900000"\n'
+        'address: 10 Downing Street\n'
+        'units: metric\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(h, '_DRIVER_YAML_PATH', yaml_path)
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    captured: dict = {}
+    handler._serve_json = lambda payload: captured.update({'payload': payload})
+    handler._get_driver(None)
+    body = captured['payload']
+    assert set(body.keys()) == {'preferred_name', 'name', 'registration_plate'}
+    assert body['preferred_name'] == 'Jack'
+    assert body['name'] == 'Jack Smith'
+    assert body['registration_plate'] == 'ABC123'
+    # Negative assertions — guard against future regressions adding more keys.
+    for leak_key in ('home_postcode', 'phone', 'address', 'units'):
+        assert leak_key not in body
+
+
+def test_get_driver_returns_nulls_when_missing(monkeypatch, tmp_path):
+    """Missing file must NOT 500 the cockpit; returns null fields at 200."""
+    monkeypatch.setattr(h, '_DRIVER_YAML_PATH', tmp_path / 'no_such.yaml')
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    captured: dict = {}
+    handler._serve_json = lambda payload: captured.update({'payload': payload})
+    handler._get_driver(None)
+    body = captured['payload']
+    assert body == {'preferred_name': None, 'name': None,
+                    'registration_plate': None}

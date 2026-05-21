@@ -2691,6 +2691,27 @@
     if (j && j.mode) cache.mode = j.mode;
     updateTopPills();
   }
+  async function loadDriver(){
+    // /api/driver returns {preferred_name, name, registration_plate} —
+    // all may be null on a fresh bench Pi. Patch the topbar pill, drawer
+    // foot, and reg plate so a hardcoded "MAZ" / "N7-DRFT-X25" never
+    // ships as the operator identity.
+    const j = await safeFetch('/api/driver');
+    const dn = (j && (j.preferred_name || j.name) || '').trim();
+    const label = dn ? dn.toUpperCase() : 'OPERATOR';
+    const pill = document.getElementById('pill-driver');
+    if (pill) {
+      // Preserve the leading status dot; replace the text node only.
+      pill.innerHTML = '<span class="dot"></span>OPERATOR · ' + esc(label);
+    }
+    const foot = document.getElementById('foot-driver');
+    if (foot) foot.textContent = label;
+    const reg = (j && j.registration_plate || '').trim();
+    if (reg) {
+      const regEl = document.getElementById('reg-id');
+      if (regEl) regEl.innerHTML = 'REG. <b>' + esc(reg) + '</b>';
+    }
+  }
   async function loadRfStatus(){
     // Derive RF status from /healthz services (active states)
     if (cache.healthz && cache.healthz.services) {
@@ -3376,14 +3397,26 @@
     const trigger = async () => {
       if (talkActive) return;
       talkActive = true; btn.classList.add('live');
+      let ok = false;
       try {
-        // Reuse /api/query for now — wires to the same LLM pipeline that
-        // drifter/voice/listen_now would publish into. Operator says
-        // "hey vivi …" and the LLM cascade handles it.
-        await fetch('/api/query', { method: 'POST', headers: {'Content-Type':'application/json'},
-                                    body: JSON.stringify({ query: '(voice activation requested via cockpit)', intent: 'voice' }) });
+        // Real trigger: POST /api/voice/listen_now publishes
+        // drifter/voice/listen_now, which voice_input.py subscribes to
+        // and treats as a record-one-turn-without-wake-word flag.
+        const r = await fetch('/api/voice/listen_now', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ ts: Date.now()/1000 }),
+        });
+        ok = r.ok;
       } catch(_){}
-      setTimeout(() => { talkActive = false; }, 1500);
+      if (!ok) {
+        // MQTT offline or peer rejected — flash the button red so the
+        // operator knows it didn't take. CSS .crit drives the red border.
+        btn.classList.remove('live');
+        btn.classList.add('crit');
+        setTimeout(() => { btn.classList.remove('crit'); }, 1500);
+      }
+      setTimeout(() => { talkActive = false; btn.classList.remove('live'); }, 1500);
     };
     btn.addEventListener('mousedown', trigger);
     btn.addEventListener('touchstart', trigger, { passive: true });
@@ -3698,7 +3731,7 @@
   loadRfSpec(); loadRfEmer(); loadFlipper(); loadRfaudio();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions();
-  loadOrigin(); loadMode();
+  loadOrigin(); loadMode(); loadDriver();
 
   tickClock();
   setInterval(tickClock, 1000);

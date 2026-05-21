@@ -16,10 +16,12 @@ from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+import yaml
+
 from config import (
     load_settings, save_settings, validate_settings_payload,
     SETTINGS_SCHEMA, SETTINGS_SECTIONS, XTYPE_DTC_LOOKUP, SERVICES,
-    MODES, MODE_STATE_PATH, DEFAULT_MODE,
+    MODES, MODE_STATE_PATH, DEFAULT_MODE, TOPICS,
 )
 from corpus import corpus_search, dtc_lookup
 from ble_map_html import BLE_MAP_HTML
@@ -206,6 +208,12 @@ _FLIPPER_CAPTURE_DIR = Path('/opt/drifter/state/flipper_captures')
 # fix here; we drop it at the same path drifter-gps writes to so
 # feeds.origin() sees it without any wiring change.
 _GPS_STATE_PATH = Path('/opt/drifter/state/gps.json')
+
+# Driver profile — read by Vivi at the top of every turn (see
+# config/driver.yaml). The cockpit's topbar pill and drawer foot
+# read /api/driver to patch the operator name and reg plate at boot
+# instead of carrying a hardcoded "MAZ" label.
+_DRIVER_YAML_PATH = Path('/opt/drifter/driver.yaml')
 
 
 def _is_local_peer(peer: str) -> bool:
@@ -719,6 +727,32 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         info = XTYPE_DTC_LOOKUP.get(code, {})
         self._serve_json({'code': code, **info})
 
+    def _get_driver(self, parsed):
+        """Driver profile for the cockpit topbar/foot.
+
+        Reads /opt/drifter/driver.yaml and returns ONLY a small whitelist
+        of fields (preferred_name, name, registration_plate). Other keys
+        — e.g. home_postcode, address, phone — must never leak into the
+        dashboard surface. Returns 200 with null values on missing/bad
+        file rather than 500-ing the cockpit page-init fetch.
+        """
+        payload = {'preferred_name': None, 'name': None, 'registration_plate': None}
+        try:
+            if _DRIVER_YAML_PATH.exists():
+                doc = yaml.safe_load(_DRIVER_YAML_PATH.read_text(encoding='utf-8'))
+                if isinstance(doc, dict):
+                    pn = doc.get('preferred_name')
+                    nm = doc.get('name')
+                    rp = doc.get('registration_plate')
+                    payload['preferred_name'] = pn if isinstance(pn, str) and pn.strip() else None
+                    payload['name'] = nm if isinstance(nm, str) and nm.strip() else None
+                    payload['registration_plate'] = (
+                        rp if isinstance(rp, str) and rp.strip() else None
+                    )
+        except (OSError, yaml.YAMLError) as e:
+            log.debug("driver.yaml read failed: %s", e)
+        self._serve_json(payload)
+
     def _serve_static(self, path):
         disk_path, content_type, disposition = _STATIC_FILES[path]
         f = Path(disk_path)
@@ -768,7 +802,42 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/gps/manual':
             self._post_gps_manual()
             return
+        if self.path == '/api/voice/listen_now':
+            self._post_voice_listen_now()
+            return
         self.send_error(404)
+
+    def _post_voice_listen_now(self):
+        """Trigger an immediate listen-once cycle in drifter-voicein by
+        publishing to drifter/voice/listen_now (the topic voice_input.py
+        already subscribes to and which drifter-vivi already uses in
+        conversation mode). Body is ignored — an optional {ts} may be
+        supplied but the handler always stamps its own.
+
+        Local-network only (hotspot ACL). 503 when MQTT is offline so the
+        operator UI can flash a failure indicator instead of silently
+        "succeeding".
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'voice: local network only')
+            return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        topic = TOPICS.get('voice_listen_now', 'drifter/voice/listen_now')
+        try:
+            state.mqtt_client.publish(
+                topic,
+                json.dumps({'ts': time.time()}),
+                qos=0,
+                retain=False,
+            )
+        except Exception as e:
+            log.warning("voice listen_now publish failed: %s", e)
+            self.send_error(503, 'publish failed')
+            return
+        self._serve_json({'ok': True})
 
     def _post_gps_manual(self):
         """Accept a browser-geolocation fix from the tethered phone and
@@ -1395,5 +1464,6 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/radar.gif':             DashboardHandler._get_radar_gif,
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
+    '/api/driver':                DashboardHandler._get_driver,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
 }
