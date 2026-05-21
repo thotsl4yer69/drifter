@@ -173,6 +173,15 @@ _BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
 
 _RFAUDIO_ACTIONS = {'start', 'stop', 'scan', 'test_tone', 'list_bands'}
 
+# rf_monitor's on_message() command allowlist. Mirrors the if/elif chain in
+# src/rf_monitor.py so the dashboard surface can't smuggle arbitrary commands
+# onto drifter/rf/command — the bridge there has no further validation.
+_RF_COMMANDS = {
+    'tpms_learn_start', 'tpms_learn_stop',
+    'tpms_auto_assign', 'tpms_assign',
+    'pause_rtl_433', 'resume_rtl_433',
+}
+
 # Phone-as-GPS sink. The tethered phone POSTs its browser-geolocation
 # fix here; we drop it at the same path drifter-gps writes to so
 # feeds.origin() sees it without any wiring change.
@@ -675,6 +684,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/rfaudio/command':
             self._post_rfaudio_command()
             return
+        if self.path == '/api/rf/command':
+            self._post_rf_command()
+            return
         if self.path == '/api/gps/manual':
             self._post_gps_manual()
             return
@@ -838,6 +850,58 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("rfaudio command publish failed: %s", e)
         self._serve_json({'ok': ok, 'published': 'drifter/rfaudio/command'})
+
+    def _post_rf_command(self):
+        """Forward a JSON body to drifter/rf/command via MQTT.
+
+        rf_monitor.on_message() consumes the published payload and routes by
+        the 'command' field. We re-validate the allowlist here so the only
+        thing the WAN-facing surface can publish to that topic is the small
+        set of commands the cockpit's preset buttons emit.
+
+        Body shape:
+          {"command": "tpms_learn_start"}
+          {"command": "tpms_learn_stop"}
+          {"command": "tpms_auto_assign"}
+          {"command": "tpms_assign", "assignments": {"<sensor_id>": "fl", ...}}
+          {"command": "pause_rtl_433"}
+          {"command": "resume_rtl_433"}
+        Returns {"ok": bool, "published": <topic>}."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'rf command: local network only')
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        if not isinstance(body, dict) or 'command' not in body:
+            self.send_error(400, 'command')
+            return
+        cmd = body.get('command')
+        if cmd not in _RF_COMMANDS:
+            self.send_error(400, 'command')
+            return
+        if cmd == 'tpms_assign':
+            assignments = body.get('assignments')
+            if not isinstance(assignments, dict) or not assignments:
+                self.send_error(400, 'assignments')
+                return
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/rf/command',
+                    json.dumps(body),
+                )
+                ok = True
+            except Exception as e:
+                log.warning("rf command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/rf/command'})
 
     def _post_vivi_reset(self):
         """Tell Vivi to drop her conversation history. Publishes

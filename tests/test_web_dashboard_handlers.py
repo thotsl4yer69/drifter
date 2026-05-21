@@ -684,3 +684,142 @@ def test_post_settings_drops_unknown_keys_via_save_settings(monkeypatch, tmp_pat
                            monkeypatch=monkeypatch, tmp_path=tmp_path)
     persisted = (tmp_path / 'settings.json').read_text()
     assert 'totally_unknown_key' not in persisted
+
+
+# ── /api/rf/command (cockpit preset buttons → drifter/rf/command) ─────
+
+def test_post_rf_command_forwards_pause(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"pause_rtl_433"}')
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/rf/command'
+    assert _json.loads(payload) == {'command': 'pause_rtl_433'}
+
+
+def test_post_rf_command_forwards_resume(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"resume_rtl_433"}')
+    handler._post_rf_command()
+    handler.send_error.assert_not_called()
+    state.mqtt_client.publish.assert_called_once()
+
+
+def test_post_rf_command_forwards_tpms_learn_start(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"tpms_learn_start"}')
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    assert _json.loads(payload)['command'] == 'tpms_learn_start'
+
+
+def test_post_rf_command_forwards_tpms_assign_with_assignments(monkeypatch):
+    state.mqtt_client = MagicMock()
+    body = b'{"command":"tpms_assign","assignments":{"123":"fl","456":"fr"}}'
+    handler = _build_post_handler(body)
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    parsed = _json.loads(payload)
+    assert parsed['assignments']['123'] == 'fl'
+
+
+def test_post_rf_command_rejects_tpms_assign_missing_assignments(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"tpms_assign"}')
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'assignments'
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_rf_command_rejects_unknown_command(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"shutdown_everything"}')
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'command'
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_rf_command_rejects_missing_command(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{}')
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'command'
+
+
+def test_post_rf_command_rejects_non_json(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'not-json')
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_post_rf_command_rejects_remote_peer():
+    """Hotspot ACL — anything outside 127.0.0.1 / 10.42.0.0/24 must 403."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"pause_rtl_433"}',
+                                  peer='192.168.1.50')
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_rf_command_allowlist_matches_rf_monitor_handler():
+    """The handler-side allowlist must mirror the rf_monitor.on_message
+    if/elif chain so the cockpit can't fail-open on a real backend
+    command. If somebody adds a command in rf_monitor and forgets here,
+    this test still passes (the bridge still consumes the new command),
+    but the cockpit can't reach it — which is the intended fail-closed
+    posture. The reverse (allowlist has a command rf_monitor ignores)
+    is what we guard here."""
+    expected = {'tpms_learn_start', 'tpms_learn_stop', 'tpms_auto_assign',
+                'tpms_assign', 'pause_rtl_433', 'resume_rtl_433'}
+    assert h._RF_COMMANDS == expected
+
+
+# ── Cockpit HTML invariants (preset-button surface) ────────────────────
+
+def _cockpit_html() -> str:
+    from pathlib import Path
+    candidates = [
+        Path('/opt/drifter/ui/cockpit-preview.html'),
+        Path('ui/cockpit-preview.html'),
+    ]
+    html_path = next((p for p in candidates if p.exists()), None)
+    assert html_path is not None, "cockpit HTML not found in known locations"
+    return html_path.read_text(encoding='utf-8')
+
+
+def test_cockpit_has_no_flipper_free_text_input():
+    """The raw Flipper CLI input has been removed — preset buttons only."""
+    html = _cockpit_html()
+    assert 'rf-cmd-input' not in html, "Free-text Flipper CLI input must be gone"
+    assert 'rf-cmd-send' not in html
+
+
+def test_cockpit_exposes_preset_button_ids():
+    """Each operator surface must register at least its lead button id."""
+    html = _cockpit_html()
+    for marker in ['tpms-learn-start', 'flipper-monitor-start',
+                   'btn-rtl433-toggle', 'btn-rfaudio-scan',
+                   'rfaudio-band-stop', 'data-rfaudio-band']:
+        assert marker in html, f"cockpit missing preset surface: {marker}"
+
+
+def test_cockpit_titles_v3sper_panel():
+    """Operator callsign for the Flipper unit is 'v3sper' — must be surfaced."""
+    html = _cockpit_html()
+    assert 'V3SPER' in html or 'v3sper' in html

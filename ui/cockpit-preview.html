@@ -668,7 +668,73 @@
   .ghost-btn.live .dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--amber); box-shadow: var(--amber-glow);
+    animation: pulseDot 1.4s infinite ease-in-out;
   }
+  @keyframes pulseDot { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+  .ghost-btn.crit {
+    color: var(--red); border-color: rgba(255,107,107,0.45);
+    box-shadow: var(--red-glow);
+  }
+  .ghost-btn.busy {
+    color: var(--fg-dim); border-color: var(--cyan-dim, rgba(80,180,200,0.35));
+    pointer-events: none; opacity: 0.65;
+  }
+  .ghost-btn.busy::after {
+    content: '◌'; margin-left: 6px;
+    animation: spinSym 0.9s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spinSym { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+  .ghost-btn:disabled, .ghost-btn[aria-disabled="true"] {
+    opacity: 0.45; pointer-events: none;
+  }
+  .btn-row {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;
+  }
+  .btn-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0;
+  }
+  .tpms-car {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .tpms-car .corner-cell {
+    border: 1px solid var(--glass-stroke); border-radius: var(--r-sm);
+    padding: 8px 10px; background: rgba(0,0,0,0.25);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .tpms-car .corner-cell.live { border-color: var(--glass-stroke-amber); }
+  .tpms-car .corner-cell.crit { border-color: rgba(255,107,107,0.45); }
+  .tpms-car .pos {
+    font-size: 9.5px; letter-spacing: 0.16em; color: var(--fg-mute);
+    text-transform: uppercase;
+  }
+  .tpms-car .psi { font-size: 18px; color: var(--fg); font-weight: 500; }
+  .tpms-car .psi .unit { font-size: 10px; color: var(--fg-mute); margin-left: 3px; }
+  .tpms-car .temp { font-size: 11px; color: var(--fg-dim); }
+  .tpms-car .micro {
+    background: transparent; border: 1px solid var(--glass-stroke);
+    color: var(--fg-mute); font-size: 9px; letter-spacing: 0.12em;
+    padding: 3px 7px; cursor: pointer; text-transform: uppercase;
+    align-self: flex-start; border-radius: 3px;
+  }
+  .tpms-car .micro:hover { color: var(--amber); border-color: var(--glass-stroke-amber); }
+  .capture-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 8px;
+    padding: 6px 8px; border-bottom: 1px solid var(--glass-stroke);
+    align-items: center;
+  }
+  .capture-row .meta { font-size: 10px; color: var(--fg-dim); font-family: 'JetBrains Mono', monospace; }
+  .capture-row .raw { font-size: 10px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .confirm-row {
+    grid-column: 1 / -1;
+    display: flex; gap: 6px; align-items: center; justify-content: flex-end;
+    padding: 4px 8px 8px; font-size: 10.5px; color: var(--amber);
+  }
+  .rf-ops-strip { padding: 6px 10px 4px; border-top: 1px solid var(--glass-stroke); }
+  .rf-ops-strip .btn-row { margin: 4px 0; }
+  .band-btn { font-size: 10px; padding: 6px 8px; text-align: left; line-height: 1.2; }
+  .band-btn .freq { color: var(--fg-dim); font-size: 9px; font-family: 'JetBrains Mono', monospace; display: block; margin-top: 2px; }
 
   /* ── DRAWER ───────────────────────────────────────────────── */
   .drawer {
@@ -1220,6 +1286,14 @@
               <div class="freq" id="rf-peak">peak —</div>
               <div class="tpms" id="rf-tpms">TPMS · 0/4</div>
             </div>
+            <div class="rf-ops-strip">
+              <div class="section-head" style="margin:0 0 4px"><span>rf · ops</span><span class="tag">drifter/rf/command</span></div>
+              <div class="btn-row">
+                <span class="ghost-btn" id="btn-rtl433-toggle" role="button" tabindex="0" data-state="resume">PAUSE RTL_433</span>
+                <span class="ghost-btn" id="btn-rfaudio-scan" role="button" tabindex="0" data-state="scan">SCAN EMERGENCY</span>
+                <span class="ghost-btn" id="btn-rfaudio-stop" role="button" tabindex="0">RFAUDIO STOP</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1254,7 +1328,7 @@
       <div class="drawer-tab" data-tab="rf">RF <span class="count" data-count="rf">0</span></div>
       <div class="drawer-tab" data-tab="ble">BLE <span class="count" data-count="ble">0</span></div>
       <div class="drawer-tab" data-tab="wardrive">WARDRIVE <span class="count" data-count="wardrive">0</span></div>
-      <div class="drawer-tab" data-tab="flipper">FLIPPER <span class="count" data-count="flipper">—</span></div>
+      <div class="drawer-tab" data-tab="flipper">V3SPER <span class="count" data-count="flipper">—</span></div>
       <div class="drawer-tab" data-tab="adsb">ADS-B <span class="count" data-count="adsb">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
     </div>
@@ -1313,7 +1387,24 @@
     thresholds: {},    // adaptive learned baselines from drifter/thresholds/learned
     viviResp: null, viviStatus: null,
     rfStatus: null,
+    rfaudioStatus: null,
   };
+
+  // Capture IDs in pending-confirm state for inline replay confirm rows.
+  const pendingReplays = new Set();
+
+  // Fallback band list when /api/rfaudio/status hasn't returned yet.
+  // Mirrors src/config.py EMERGENCY_AUDIO_BANDS so the panel is usable
+  // on first paint even before the rfaudio worker publishes a status.
+  const EMERGENCY_BANDS_FALLBACK = [
+    { name: 'UHF-CB-Ch5',      freq_mhz: 476.525, mode: 'nfm' },
+    { name: 'UHF-CB-Ch35',     freq_mhz: 476.750, mode: 'nfm' },
+    { name: 'UHF-CB-Ch9',      freq_mhz: 476.625, mode: 'nfm' },
+    { name: 'Marine-VHF-16',   freq_mhz: 156.800, mode: 'nfm' },
+    { name: 'Airband-Guard',   freq_mhz: 121.500, mode: 'am'  },
+    { name: 'Melbourne-Ctr',   freq_mhz: 124.700, mode: 'am'  },
+    { name: 'CFA-Bendigo',     freq_mhz:  76.225, mode: 'nfm' },
+  ];
 
   // X-Type stock thresholds (mirror config.THRESHOLDS tpms_*)
   const TPMS_PSI_LOW   = 26.0;
@@ -1602,6 +1693,9 @@
     }
     document.getElementById('rf-tile').classList.toggle('live',
       !!(status.rtl_433_active || status.dump1090_active || (sp && sp.ts)));
+
+    // Keep RF ops strip labels in sync with backend state.
+    if (typeof reconcileRfOpsButtons === 'function') reconcileRfOpsButtons();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1687,35 +1781,48 @@
 
     tires(){
       const snap = cache.tpms || {};
+      const status = cache.rfStatus || {};
+      const learning = status.mode === 'tpms_learn';
+      const learnedIds = Array.isArray(status.learned_ids) ? status.learned_ids : [];
       const positions = ['fl','fr','rl','rr'];
       const known = positions.filter(p => snap[p] && snap[p].pressure_psi != null);
-      if (!known.length) {
-        return `<div class="section-head"><span>tires · tpms</span><span class="tag">drifter-rf · auto-learn</span></div>` +
-          emptyState('◉', 'No TPMS sensors paired. Drive briefly to capture first packet — sensors auto-learn.');
-      }
-      const cellFor = pos => {
+      const fresh = known.filter(p => !snap[p].stale).length;
+      const cornerCell = pos => {
         const t = snap[pos] || {};
         const psi = t.pressure_psi;
         let cls = '';
         if (psi != null) {
-          if (psi <= TPMS_PSI_CRIT) cls = 'red';
-          else if (psi <= TPMS_PSI_LOW || psi >= TPMS_PSI_HIGH) cls = 'amber';
+          if (psi <= TPMS_PSI_CRIT) cls = 'crit';
+          else if (psi <= TPMS_PSI_LOW || psi >= TPMS_PSI_HIGH) cls = 'live';
         }
-        if (t.stale) cls += ' stale';
-        const psiTxt = psi == null ? '—' : psi.toFixed(1);
-        const tempTxt = t.temp_c == null ? '—' : `${Math.round(t.temp_c)}°C`;
-        const ageTxt = t.ts ? fmtAge(t.ts) : (t.stale ? 'stale' : '—');
-        return `<div class="tire ${cls}">
-          <div>
-            <div class="tire-pos">${pos.toUpperCase()}</div>
-            <div class="tire-psi">${esc(psiTxt)}<span class="unit">psi</span></div>
-          </div>
-          <div class="tire-meta"><span>${esc(tempTxt)}</span><span>${esc(ageTxt)}</span></div>
+        const paired = psi != null;
+        const psiTxt = paired ? psi.toFixed(1) : '—';
+        const tempTxt = (t.temp_c == null) ? '—' : `${Math.round(t.temp_c)}°C`;
+        const pairBtn = paired ? '' :
+          `<button class="micro" data-tpms-pair="${pos}">PAIR</button>`;
+        return `<div class="corner-cell ${cls}">
+          <div class="pos">${pos.toUpperCase()}</div>
+          <div class="psi">${esc(psiTxt)}<span class="unit">psi</span></div>
+          <div class="temp">${esc(tempTxt)}</div>
+          ${pairBtn}
         </div>`;
       };
-      const fresh = known.filter(p => !snap[p].stale).length;
-      return `<div class="section-head"><span>tires · tpms</span><span class="tag">${fresh}/${known.length} live</span></div>
-        <div class="tpms-grid">${cellFor('fl')}${cellFor('fr')}${cellFor('rl')}${cellFor('rr')}</div>`;
+      const head = `<div class="section-head"><span>tpms · learn</span><span class="tag">${fresh}/${known.length} live${learning ? ' · LEARN' : ''}</span></div>`;
+      const learnBtnLabel = learning ? 'STOP LEARN' : 'TPMS LEARN START';
+      const learnBtnCls = learning ? 'ghost-btn live' : 'ghost-btn';
+      const learnBadge = learning
+        ? `<div style="margin:4px 0 8px; font-size:10.5px; color:var(--amber); letter-spacing:0.1em">LEARNED IDS · ${learnedIds.length}/4</div>`
+        : '';
+      const buttons = `<div class="btn-row">
+        <span class="${learnBtnCls}" id="tpms-learn-start" role="button" tabindex="0" data-learning="${learning ? '1' : '0'}">
+          ${learning ? '<span class="dot"></span>' : ''}${learnBtnLabel}
+        </span>
+        <span class="ghost-btn" id="tpms-auto-assign" role="button" tabindex="0">AUTO-ASSIGN 4</span>
+        <span class="ghost-btn crit" id="tpms-clear-learn" role="button" tabindex="0">CLEAR LEARN</span>
+      </div>`;
+      return head +
+        `<div class="tpms-car">${cornerCell('fl')}${cornerCell('fr')}${cornerCell('rl')}${cornerCell('rr')}</div>` +
+        learnBadge + buttons;
     },
 
     dtcs(){
@@ -1861,25 +1968,59 @@
     flipper(){
       const s = cache.flipperStatus || {};
       const caps = (cache.flipperCaptures && cache.flipperCaptures.captures) || [];
+      const monitoring = s.mode === 'subghz_monitor' || s.subghz_monitor === true;
+      const connected = s.state === 'connected';
       const out = [];
-      out.push(`<div class="section-head"><span>flipper zero</span><span class="tag">${s.state || 'unknown'}${s.firmware ? ' · fw '+s.firmware : ''}</span></div>`);
-      out.push(`<div class="kv"><div class="k">State</div><div class="v ${s.state==='connected' ? 'teal' : 'dim'}">${esc(s.state || 'unknown')}</div></div>`);
-      out.push(`<div class="kv"><div class="k">Firmware</div><div class="v">${esc(s.firmware || '—')}</div></div>`);
-      out.push(`<div class="kv"><div class="k">Mode</div><div class="v">${esc(s.mode || '—')}</div></div>`);
+      out.push(`<div class="section-head"><span>v3sper · Flipper Zero</span><span class="tag">${esc(s.state || 'unknown')}${s.firmware ? ' · fw '+esc(s.firmware) : ''}</span></div>`);
+      out.push(`<div class="kv"><div class="k">Port</div><div class="v">${esc(s.port || '—')}</div></div>`);
+      out.push(`<div class="kv"><div class="k">Monitor</div><div class="v ${monitoring ? 'teal' : 'dim'}">${monitoring ? 'live · 433.92 MHz' : 'idle'}</div></div>`);
       out.push(`<div class="kv"><div class="k">Captures</div><div class="v">${caps.length} stored</div></div>`);
-      if (caps.length) {
-        out.push(`<div class="section-head" style="margin-top:6px"><span>recent captures</span><span class="tag">last ${Math.min(5, caps.length)}</span></div>`);
-        for (const c of caps.slice(0, 5)) {
-          const f = c.frequency || c.freq || '—';
+      const startCls = monitoring ? 'ghost-btn live' : 'ghost-btn';
+      out.push(`<div class="btn-row">
+        <span class="${startCls}" id="flipper-monitor-start" role="button" tabindex="0" aria-disabled="${connected ? 'false' : 'true'}">
+          ${monitoring ? '<span class="dot"></span>' : ''}START MONITOR
+        </span>
+        <span class="ghost-btn crit" id="flipper-monitor-stop" role="button" tabindex="0" aria-disabled="${connected ? 'false' : 'true'}">STOP MONITOR</span>
+      </div>`);
+
+      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · ops</span><span class="tag">recent captures · last ${Math.min(8, caps.length)}</span></div>`);
+      if (!caps.length) {
+        out.push(emptyState('⌁', 'No captures yet. Start monitor to begin recording sub-GHz packets on 433.92 MHz.'));
+      } else {
+        for (const c of caps.slice(0, 8)) {
+          const f = c.frequency || c.freq || (c.freq_hz ? (c.freq_hz/1e6).toFixed(3)+' MHz' : '—');
           const m = c.modulation || c.mod || '';
           const age = c.ts ? fmtAge(c.ts) : '';
-          out.push(`<div class="feed-row">
-            <div class="icon">⌁</div>
-            <div class="name">${esc(f)} ${esc(m)}<span class="sub">${esc((c.data || c.raw || '').slice(0, 24))}</span></div>
-            <div class="ts">${age}</div>
+          const raw = (c.data || c.raw || '').toString();
+          const capId = c.id || c.ts || raw.slice(0,16);
+          const safeId = String(capId).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const isPending = pendingReplays.has(safeId);
+          const ageTxt = age ? `${age} ago` : '';
+          out.push(`<div class="capture-row">
+            <div>
+              <div class="meta">${esc(f)} · ${esc(m || 'raw')} · ${esc(ageTxt)}</div>
+              <div class="raw">${esc(raw.slice(0, 64))}</div>
+            </div>
+            <span class="ghost-btn" data-replay="${esc(safeId)}" role="button" tabindex="0" aria-disabled="true" title="No .sub artifact stored — replay deferred until captures persist to disk">REPLAY</span>
+            ${isPending ? `<div class="confirm-row" data-confirm-row="${esc(safeId)}">Send this signal? <span class="ghost-btn live" data-confirm="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
           </div>`);
         }
       }
+
+      // rfaudio quick-tune presets — wired here per brief
+      const rfa = cache.rfaudioStatus || {};
+      const activeFreq = rfa.freq_mhz;
+      const bands = Array.isArray(rfa.bands) && rfa.bands.length ? rfa.bands : EMERGENCY_BANDS_FALLBACK;
+      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · quick tune</span><span class="tag">${rfa.state || 'idle'}${activeFreq ? ' · '+activeFreq+' MHz' : ''}</span></div>`);
+      const bandBtns = bands.map(b => {
+        const active = activeFreq != null && Math.abs((b.freq_mhz || 0) - activeFreq) < 0.01;
+        const cls = active ? 'ghost-btn live band-btn' : 'ghost-btn band-btn';
+        return `<span class="${cls}" data-rfaudio-band data-freq="${b.freq_mhz}" data-mode="${esc(b.mode || 'nfm')}" role="button" tabindex="0">
+          ${active ? '<span class="dot"></span>' : ''}${esc(b.name)}<span class="freq">${b.freq_mhz} MHz · ${esc(b.mode || 'nfm')}</span>
+        </span>`;
+      }).join('');
+      out.push(`<div class="btn-grid">${bandBtns}</div>`);
+      out.push(`<div class="btn-row"><span class="ghost-btn crit" id="rfaudio-band-stop" role="button" tabindex="0">STOP</span></div>`);
       return out.join('');
     },
 
@@ -2070,6 +2211,12 @@
     const state = (cache.flipperStatus && cache.flipperStatus.state) || '—';
     setCount('flipper', state === 'connected' ? `${caps.length}` : 'off',
              { live: state === 'connected' });
+    if (activeTab === 'flipper') render();
+  }
+  async function loadRfaudio(){
+    cache.rfaudioStatus = await safeFetch('/api/rfaudio/status') || cache.rfaudioStatus;
+    // Reconcile RF tile scan-button state on every status update.
+    reconcileRfOpsButtons();
     if (activeTab === 'flipper') render();
   }
   async function loadBle(){
@@ -2305,6 +2452,19 @@
     if (topic.startsWith('drifter/rf/tpms/')) {
       // Trigger refresh; tpms snapshot endpoint returns aggregated view.
       loadTpms();
+    }
+    if (topic === 'drifter/rfaudio/status') {
+      cache.rfaudioStatus = data;
+      reconcileRfOpsButtons();
+      if (activeTab === 'flipper') render();
+    }
+    if (topic === 'drifter/flipper/status') {
+      cache.flipperStatus = data;
+      if (activeTab === 'flipper') render();
+    }
+    if (topic === 'drifter/flipper/subghz') {
+      // New capture — refresh captures list.
+      loadFlipper();
     }
 
     // ── Vivi ──
@@ -2716,51 +2876,20 @@
         <div class="overlay-close" title="Close (Esc)">×</div>
       </div>
       <div class="overlay-body">
-        <div class="section-head"><span>flipper zero</span><span class="tag" id="rf-flipper-status">checking…</span></div>
-        <div class="chat-input-row" style="margin-bottom:12px; gap:8px">
-          <button class="chat-send" data-flipper="subghz_monitor_start" style="background:var(--cyan)">Start monitor</button>
-          <button class="chat-send" data-flipper="subghz_monitor_stop" style="background:var(--bg-3); color:var(--fg)">Stop</button>
+        <div class="section-head"><span>v3sper · Flipper Zero</span><span class="tag" id="rf-flipper-status">checking…</span></div>
+        <div style="margin-bottom:12px; font-size:11px; color:var(--fg-mute)">
+          Operator controls live in the V3SPER drawer tab — open it for monitor toggles and capture replay.
         </div>
-        <div class="chat-input-row" style="margin-bottom:12px">
-          <input class="chat-input" id="rf-cmd-input" placeholder="raw Flipper CLI command">
-          <button class="chat-send" id="rf-cmd-send">Send</button>
-        </div>
-        <div id="rf-results" style="font-family:'JetBrains Mono',monospace; font-size:11px; max-height:140px; overflow-y:auto; padding:8px; background:rgba(0,0,0,0.25); border-radius:var(--r-sm); margin-bottom:12px">awaiting commands…</div>
         <div class="section-head"><span>recent sub-ghz captures</span><span class="tag" id="rf-captures-count">0</span></div>
         <div id="rf-captures-list"><div class="empty"><span class="gl">⌁</span>No captures yet.</div></div>
         <div class="section-head" style="margin-top:8px"><span>rtl-sdr spectrum</span><span class="tag" id="rf-spectrum-meta">awaiting scan</span></div>
         <div id="rf-spectrum-body"><div class="empty"><span class="gl">~</span>No spectrum scan yet.</div></div>
       </div>`);
-    const results = document.getElementById('rf-results');
-    const status = document.getElementById('rf-flipper-status');
-    const cmdInput = document.getElementById('rf-cmd-input');
-    const cmdSend = document.getElementById('rf-cmd-send');
+    const statusEl = document.getElementById('rf-flipper-status');
     const capList = document.getElementById('rf-captures-list');
     const capCount = document.getElementById('rf-captures-count');
     const specMeta = document.getElementById('rf-spectrum-meta');
     const specBody = document.getElementById('rf-spectrum-body');
-    const newId = () => 'cmd-' + Math.random().toString(36).slice(2,10);
-    function appendResult(text, tone) {
-      const colour = ({ok:'var(--teal)', err:'var(--red)', warn:'var(--amber)', high:'var(--amber)'})[tone] || 'var(--fg-mute)';
-      const ts = new Date().toLocaleTimeString();
-      results.insertAdjacentHTML('beforeend', `<div style="color:${colour}">[${ts}] ${esc(text)}</div>`);
-      results.scrollTop = results.scrollHeight;
-    }
-    async function sendCmd(payload) {
-      try {
-        const r = await fetch('/api/flipper/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-        if (!r.ok) appendResult(`HTTP ${r.status} ${await r.text()}`, 'err');
-        else appendResult(`→ sent: ${payload.command}`, 'ok');
-      } catch(e) { appendResult(`network error: ${e.message}`, 'err'); }
-    }
-    document.querySelectorAll('[data-flipper]').forEach(btn => {
-      btn.addEventListener('click', () => sendCmd({ command: btn.dataset.flipper, id: newId() }));
-    });
-    cmdSend.addEventListener('click', async () => {
-      const cmd = cmdInput.value.trim(); if (!cmd) return;
-      cmdInput.value = ''; await sendCmd({ command: cmd, id: newId() });
-    });
-    cmdInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cmdSend.click(); } });
     async function poll() {
       try {
         const [s,c,sp] = await Promise.all([
@@ -2768,7 +2897,7 @@
           fetch('/api/flipper/captures').then(x => x.ok ? x.json() : {captures:[]}),
           fetch('/api/rf/spectrum').then(x => x.ok ? x.json() : {}),
         ]);
-        status.textContent = `${s.state || 'unknown'}${s.firmware ? ' · fw '+s.firmware : ''}`;
+        statusEl.textContent = `${s.state || 'unknown'}${s.firmware ? ' · fw '+s.firmware : ''}`;
         const caps = c.captures || [];
         capCount.textContent = caps.length;
         if (!caps.length) capList.innerHTML = `<div class="empty"><span class="gl">⌁</span>No captures yet.</div>`;
@@ -2781,7 +2910,7 @@
             <div class="sys-cell"><div class="lbl">Power</div><div class="val">${strongest.power != null ? strongest.power + '<span class="u">dB</span>' : '—'}</div></div></div>`;
         }
       } catch(e){}
-      if (document.getElementById('rf-results')) setTimeout(poll, 3000);
+      if (document.getElementById('rf-captures-list')) setTimeout(poll, 3000);
     }
     poll();
   }
@@ -2811,6 +2940,168 @@
     const mech = document.getElementById('btn-mech');
     if (mech) mech.addEventListener('click', () => openChat('mechanic'));
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Preset operator controls — RF ops / TPMS / v3sper / rfaudio
+  // Every button POSTs a real command and reconciles against the
+  // backend status topic. No synthetic payloads, no free-text input.
+  // ═══════════════════════════════════════════════════════════════
+  const BUSY_TIMEOUT_MS = 1000;
+  function markBusy(el){
+    if (!el) return;
+    el.classList.add('busy');
+    setTimeout(() => el && el.classList.remove('busy'), BUSY_TIMEOUT_MS);
+  }
+  async function postJSON(url, payload){
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+      return { ok: r.ok, status: r.status };
+    } catch(_) { return { ok: false, status: 0 }; }
+  }
+
+  function reconcileRfOpsButtons(){
+    const status = cache.rfStatus || {};
+    const rfa = cache.rfaudioStatus || {};
+    const toggle = document.getElementById('btn-rtl433-toggle');
+    if (toggle) {
+      const active = !!status.rtl_433_active;
+      // 'active' (running) → label PAUSE; 'paused/idle' → label RESUME.
+      toggle.textContent = active ? 'PAUSE RTL_433' : 'RESUME RTL_433';
+      toggle.dataset.state = active ? 'pause' : 'resume';
+      toggle.classList.toggle('live', active);
+    }
+    const scan = document.getElementById('btn-rfaudio-scan');
+    const stop = document.getElementById('btn-rfaudio-stop');
+    if (scan) {
+      const scanning = rfa.state === 'scanning';
+      scan.textContent = scanning ? 'STOP SCAN' : 'SCAN EMERGENCY';
+      scan.dataset.state = scanning ? 'stop' : 'scan';
+      scan.classList.toggle('live', scanning);
+    }
+    if (stop) {
+      const playing = rfa.state === 'playing' || rfa.state === 'scanning';
+      stop.classList.toggle('crit', playing);
+    }
+  }
+
+  // Single delegated click listener — every preset button is data-driven.
+  document.addEventListener('click', async (e) => {
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-replay], [data-confirm], [data-cancel]');
+    if (!t) return;
+
+    // ── RF ops strip ──
+    if (t.id === 'btn-rtl433-toggle') {
+      const cmd = t.dataset.state === 'pause' ? 'pause_rtl_433' : 'resume_rtl_433';
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: cmd });
+      return;
+    }
+    if (t.id === 'btn-rfaudio-scan') {
+      markBusy(t);
+      if (t.dataset.state === 'stop') {
+        await postJSON('/api/rfaudio/command', { action: 'stop' });
+      } else {
+        await postJSON('/api/rfaudio/command', { action: 'scan' });
+      }
+      loadRfaudio();
+      return;
+    }
+    if (t.id === 'btn-rfaudio-stop' || t.id === 'rfaudio-band-stop') {
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', { action: 'stop' });
+      loadRfaudio();
+      return;
+    }
+
+    // ── TPMS learn panel ──
+    if (t.id === 'tpms-learn-start') {
+      const learning = t.dataset.learning === '1';
+      markBusy(t);
+      await postJSON('/api/rf/command', {
+        command: learning ? 'tpms_learn_stop' : 'tpms_learn_start',
+      });
+      return;
+    }
+    if (t.id === 'tpms-auto-assign') {
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_auto_assign' });
+      return;
+    }
+    if (t.id === 'tpms-clear-learn') {
+      // Stops the learn cycle without persisting assignments. Allowlist
+      // doesn't include a 'clear' action — stop is the closest real op.
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_learn_stop' });
+      return;
+    }
+    if (t.dataset.tpmsPair) {
+      // Drops back into learn mode so the next packet from that corner
+      // can be auto-assigned by the operator. Honest single-corner pair
+      // would need a backend command we don't have yet.
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_learn_start' });
+      return;
+    }
+
+    // ── v3sper / Flipper monitor ──
+    if (t.id === 'flipper-monitor-start') {
+      markBusy(t);
+      await postJSON('/api/flipper/command', { command: 'subghz_monitor_start' });
+      setTimeout(loadFlipper, 400);
+      return;
+    }
+    if (t.id === 'flipper-monitor-stop') {
+      markBusy(t);
+      await postJSON('/api/flipper/command', { command: 'subghz_monitor_stop' });
+      setTimeout(loadFlipper, 400);
+      return;
+    }
+    if (t.dataset.replay != null) {
+      // REPLAY is intentionally aria-disabled — captures are decoded text,
+      // not playable .sub artifacts. See "Known incomplete" in handoff.
+      return;
+    }
+    if (t.dataset.confirm) {
+      const id = t.dataset.confirm;
+      pendingReplays.delete(id);
+      markBusy(t);
+      await postJSON('/api/flipper/command', { command: 'confirm', id });
+      if (activeTab === 'flipper') render();
+      return;
+    }
+    if (t.dataset.cancel) {
+      pendingReplays.delete(t.dataset.cancel);
+      if (activeTab === 'flipper') render();
+      return;
+    }
+
+    // ── rfaudio quick-tune presets ──
+    if (t.dataset.rfaudioBand != null) {
+      const freq = parseFloat(t.dataset.freq);
+      const mode = t.dataset.mode || 'nfm';
+      if (!isFinite(freq)) return;
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', {
+        action: 'start', freq_mhz: freq, mode, gain: 40,
+      });
+      loadRfaudio();
+      return;
+    }
+  });
+
+  // Keyboard activation — treat Enter/Space as a click on focused ghost-btns.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const t = document.activeElement;
+    if (!t || !t.classList || !t.classList.contains('ghost-btn')) return;
+    if (t.id === 'btn-talk') return;  // hold-to-talk owns space
+    e.preventDefault();
+    t.click();
+  });
 
   // ═══════════════════════════════════════════════════════════════
   // Init wiring
@@ -2882,7 +3173,7 @@
   loadHealth().then(loadRfStatus);
   loadState();
   loadAlerts(); loadDtcs(); loadTpms(); loadTrip();
-  loadRfSpec(); loadRfEmer(); loadFlipper();
+  loadRfSpec(); loadRfEmer(); loadFlipper(); loadRfaudio();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions();
   loadOrigin(); loadMode();
@@ -2907,6 +3198,7 @@
   setInterval(loadOrigin,     15000);
   setInterval(loadMode,       30000);
   setInterval(loadRfStatus,   15000);
+  setInterval(loadRfaudio,    10000);
 
   // WebSocket: live MQTT topic fanout. The dashboard service streams
   // every drifter/* topic at :8081 as JSON {topic,data,ts}. We use it
