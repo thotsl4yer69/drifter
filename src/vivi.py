@@ -103,6 +103,7 @@ _whisper_lock = threading.Lock()
 _telemetry: dict = {}
 _telemetry_ts: float = 0.0          # wall-clock of last snapshot update
 TELEMETRY_FRESH_SEC = 10.0          # context drops telemetry older than this
+_rf_status: dict = {}               # latest drifter/rf/status payload (retained)
 _recent_alerts: deque = deque(maxlen=3)  # (ts, level, msg) tuples
 ALERT_FRESH_SEC = 300.0             # 5-minute alert window
 # Phase 4.5.4 — BLE detections that landed in the last 5 minutes. One per
@@ -612,6 +613,28 @@ def _build_context(query: str) -> str:
         if drive:
             parts.append(f"Drive state: {drive}")
 
+    # RF pipeline status. drifter/rf/status is retained but event-driven
+    # (published at startup + on TPMS commands), so we trust the retained
+    # payload as the latest known truth rather than gating on freshness.
+    # Age is surfaced so the LLM knows this is a startup snapshot, not a
+    # live reading — meaningful for "scanning right now" phrasing.
+    if _rf_status:
+        rf_lines = [
+            f"RTL-SDR: {'detected' if _rf_status.get('sdr_detected') else 'not detected'}",
+            f"rtl_433 (sub-GHz scan): {'running' if _rf_status.get('rtl433_installed') and _rf_status.get('sdr_detected') else 'idle'}",
+            f"dump1090 (ADS-B): {'running' if _rf_status.get('dump1090_installed') else 'idle'}",
+            f"TPMS sensors configured: {_rf_status.get('tpms_sensors', 0)}",
+        ]
+        try:
+            rf_ts = float(_rf_status.get('ts', 0) or 0)
+        except (TypeError, ValueError):
+            rf_ts = 0
+        if rf_ts:
+            age = int(time.time() - rf_ts)
+            rf_lines.append(f"(status snapshot age: {age}s)")
+        parts.append("RF pipeline (latest known state from drifter-rf):\n"
+                     + '\n'.join(rf_lines))
+
     # Recent alerts (last 3, last 5 min)
     alerts = _format_recent_alerts()
     if alerts:
@@ -1062,6 +1085,14 @@ def on_message(client, userdata, msg) -> None:
                    and 0 < float(a.get('altitude', 0)) < 1500]
             if low:
                 _maybe_unprompted_comment(3, "Low aircraft overhead.")
+    elif topic == TOPICS.get('rf_status'):
+        # drifter-rf publishes a heartbeat (~30s) describing the SDR
+        # pipeline: sdr_detected, rtl433_installed, dump1090_installed,
+        # tpms_sensors. We retain the latest payload so _build_context
+        # can answer "is rtl_433 scanning?" without inventing a value.
+        if isinstance(payload, dict):
+            global _rf_status
+            _rf_status = dict(payload)
 
 
 # ── RF intent dispatch ──────────────────────────────────────────────
@@ -1311,6 +1342,7 @@ def main() -> None:
         # Phase 5.1 — low-altitude-aircraft fallback (no police-
         # callsign DB yet; altitude < 1500ft surfaces choppers).
         (TOPICS.get('rf_adsb', 'drifter/rf/adsb'), 0),
+        (TOPICS.get('rf_status', 'drifter/rf/status'), 0),
     ])
     _mqtt_client.loop_start()
 
