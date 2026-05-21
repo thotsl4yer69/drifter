@@ -617,6 +617,11 @@
     color: var(--cyan); background: rgba(110,231,255,0.06);
     margin-right: 6px; vertical-align: 1px;
   }
+  /* z-score badge — severity at a glance. |z|≥3 red, ≥2 amber, else cyan. */
+  .alert-row .z-badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 5px; border-radius: var(--r-sm); border: 1px solid var(--glass-stroke-cyan); color: var(--cyan); background: rgba(110,231,255,0.06); margin-right: 6px; vertical-align: 1px; }
+  .alert-row .z-badge.amber { color: var(--amber); border-color: var(--glass-stroke-amber); background: rgba(255,174,66,0.08); }
+  .alert-row .z-badge.red { color: var(--red); border-color: rgba(240,72,72,0.55); background: rgba(240,72,72,0.10); }
+  .alert-row .sensor-chip { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 5px; border-radius: var(--r-sm); color: var(--fg); margin-right: 6px; vertical-align: 1px; background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.20)); border: 1px solid var(--glass-stroke); text-shadow: 0 1px 0 rgba(0,0,0,0.55); letter-spacing: 0.05em; }
 
   /* Adaptive-threshold learned-tick — stationary ghost-tick at the
      learned baseline position on each hero gauge bar. Sits behind the
@@ -742,6 +747,22 @@
     border-top: 1px dashed var(--glass-stroke); padding-top: 7px;
     font-size: 10px;
   }
+  /* Spectrum strip — single-row viridis heatmap of latest sweep. */
+  .spectrum-strip { margin: 6px 0 4px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 4px 6px 5px; }
+  .spectrum-strip .ticks { position: relative; height: 10px; font-family: 'JetBrains Mono', monospace; font-size: 8.5px; color: var(--fg-dim); letter-spacing: 0.04em; }
+  .spectrum-strip .ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .spectrum-strip .heat-wrap { position: relative; height: 24px; margin-top: 2px; }
+  .spectrum-strip canvas { width: 100%; height: 100%; display: block; border-radius: 2px; image-rendering: pixelated; }
+  .spectrum-strip .peak-mark { position: absolute; top: -3px; font-size: 9px; color: var(--amber); transform: translateX(-50%); text-shadow: 0 0 4px rgba(255,174,66,0.75); pointer-events: none; }
+  .spectrum-strip .empty { text-align: center; font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-dim); padding: 6px 0 4px; font-family: 'Major Mono Display', monospace; }
+  :root[data-theme="daylight"] .spectrum-strip { background: rgba(255,255,255,0.55); }
+
+  /* ADS-B radar — concentric range plot; augments the closest-5 list. */
+  .adsb-radar-wrap { position: relative; margin: 4px 0 10px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 8px; }
+  .adsb-radar-wrap canvas { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
+  .adsb-radar-wrap .radar-meta { margin-top: 4px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-dim); text-align: center; letter-spacing: 0.08em; }
+  .adsb-popup { position: absolute; pointer-events: none; background: rgba(7,9,13,0.96); color: var(--fg); border: 1px solid var(--glass-stroke-cyan); border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 4px 7px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 5; display: none; }
+  :root[data-theme="daylight"] .adsb-radar-wrap { background: rgba(255,255,255,0.55); }
   .rf-foot .freq {
     font-family: 'JetBrains Mono', monospace;
     color: var(--amber); font-size: 10.5px;
@@ -1606,6 +1627,14 @@
               <div class="rf-mod idle" data-mod="rfaudio">rfaudio <span class="v">—</span></div>
             </div>
             <div class="bands" id="rf-bands"></div>
+            <div class="spectrum-strip" id="spectrum-strip">
+              <div class="ticks" id="spectrum-ticks"></div>
+              <div class="heat-wrap" id="spectrum-heat-wrap">
+                <canvas id="spectrum-canvas" width="320" height="24"></canvas>
+                <div class="peak-mark" id="spectrum-peak-mark" style="display:none">▼</div>
+              </div>
+              <div class="empty" id="spectrum-empty">AWAITING SWEEP — tap FORCE SPECTRUM</div>
+            </div>
             <div class="rf-foot">
               <div class="freq" id="rf-peak">peak —</div>
               <div class="tpms" id="rf-tpms">TPMS · 0/4</div>
@@ -2084,9 +2113,32 @@
                 : 'info';
       const sym = anom ? '∿' : (lvl >= 3 ? '●' : lvl >= 2 ? '▲' : '◆');
       const pill = anom ? '<span class="anomaly-pill">ANOMALY</span>' : '';
+      // Parse "Critical anomaly: <sensor> z=<float>" so we can paint
+      // a colored z-badge + direction arrow + sensor-name chip. See
+      // src/anomaly_monitor.py line ~151 for the producer format.
+      let zBadge = '', sensorChip = '', body = a.message || a.name || 'alert';
+      if (anom) {
+        const msg = String(a.message || '');
+        const zMatch = msg.match(/z=(-?\d+\.?\d*)/);
+        if (zMatch) {
+          const z = parseFloat(zMatch[1]);
+          const absZ = Math.abs(z);
+          const cz = absZ >= 3.0 ? 'red' : absZ >= 2.0 ? 'amber' : '';
+          const arrow = z >= 0 ? '▲' : '▼';
+          zBadge = `<span class="z-badge ${cz}">${arrow} z=${z.toFixed(1)}</span>`;
+        }
+        // "Critical anomaly: <sensor_name> z=..." → chip the sensor.
+        const sensorMatch = msg.match(/Critical anomaly:\s*([A-Za-z0-9_\-./]+)/);
+        if (sensorMatch) {
+          sensorChip = `<span class="sensor-chip">${esc(sensorMatch[1])}</span>`;
+          // Strip the parsed bits from the body so they don't double up.
+          body = msg.replace(/Critical anomaly:\s*[A-Za-z0-9_\-./]+\s*/, '')
+                    .replace(/z=-?\d+\.?\d*/, '').trim() || 'z-score outlier';
+        }
+      }
       rows.push(`<div class="alert-row ${cls}">
         <span class="sym">${sym}</span>
-        <div class="body">${pill}${esc(a.message || a.name || 'alert')}
+        <div class="body">${pill}${sensorChip}${zBadge}${esc(body)}
           ${a.name ? `<div class="ctx">${esc(a.name)}</div>` : ''}
         </div>
         <div class="ts">${a.ts ? fmtAge(a.ts) : ''}</div>
@@ -2179,8 +2231,86 @@
     document.getElementById('rf-tile').classList.toggle('live',
       !!(status.rtl_433_active || status.dump1090_active || (sp && sp.ts)));
 
+    // Spectrum heatmap strip — viridis-style colormap of the most
+    // recent sweep (or partial). Renders the bins array of
+    // drifter/rf/spectrum payloads from rf_monitor.py.
+    renderSpectrumStrip();
+
     // Keep RF ops strip labels in sync with backend state.
     if (typeof reconcileRfOpsButtons === 'function') reconcileRfOpsButtons();
+  }
+
+  // Viridis-ish 4-stop ramp: -100=deep blue, -60=cyan, -30=amber, ≥-10=red.
+  const _SPEC_STOPS = [[-100,30,20,80],[-60,64,196,220],[-30,255,200,60],[-10,240,72,72]];
+  function spectrumColorForDb(db){
+    if (db == null || isNaN(db)) return 'rgba(80,80,80,0.4)';
+    if (db <= _SPEC_STOPS[0][0]) { const s=_SPEC_STOPS[0]; return `rgb(${s[1]},${s[2]},${s[3]})`; }
+    const last = _SPEC_STOPS[_SPEC_STOPS.length-1];
+    if (db >= last[0]) return `rgb(${last[1]},${last[2]},${last[3]})`;
+    for (let i = 0; i < _SPEC_STOPS.length - 1; i++) {
+      const a = _SPEC_STOPS[i], b = _SPEC_STOPS[i+1];
+      if (db >= a[0] && db <= b[0]) {
+        const t = (db - a[0]) / (b[0] - a[0]);
+        return `rgb(${Math.round(a[1]+t*(b[1]-a[1]))},${Math.round(a[2]+t*(b[2]-a[2]))},${Math.round(a[3]+t*(b[3]-a[3]))})`;
+      }
+    }
+    return 'rgb(80,80,80)';
+  }
+  function renderSpectrumStrip(){
+    const sp = cache.rfSpec || {};
+    const bins = Array.isArray(sp.bins) ? sp.bins : null;
+    const canvas = document.getElementById('spectrum-canvas');
+    const empty = document.getElementById('spectrum-empty');
+    const peakMark = document.getElementById('spectrum-peak-mark');
+    const ticksEl = document.getElementById('spectrum-ticks');
+    if (!canvas) return;
+    if (!bins || !bins.length) {
+      if (empty) empty.style.display = '';
+      canvas.style.display = 'none';
+      if (peakMark) peakMark.style.display = 'none';
+      if (ticksEl) ticksEl.innerHTML = '';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    canvas.style.display = '';
+    const lo = bins[0].freq_hz / 1e6;
+    const hi = bins[bins.length - 1].freq_hz / 1e6;
+    const span = Math.max(1e-6, hi - lo);
+    if (ticksEl) {
+      const parts = [];
+      for (const mhz of [100, 450, 900, 1300, 1766]) {
+        if (mhz < lo || mhz > hi) continue;
+        parts.push(`<span style="left:${(((mhz-lo)/span)*100).toFixed(2)}%">${mhz}M</span>`);
+      }
+      if (!parts.length) {
+        parts.push(`<span style="left:0">${Math.round(lo)}M</span>`);
+        parts.push(`<span style="left:100%">${Math.round(hi)}M</span>`);
+      }
+      ticksEl.innerHTML = parts.join('');
+    }
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) {
+      const targetHz = (lo + (x/(w-1))*span) * 1e6;
+      let li = 0, hi_i = bins.length - 1;
+      while (li < hi_i) {
+        const mid = (li + hi_i) >> 1;
+        if (bins[mid].freq_hz < targetHz) li = mid + 1; else hi_i = mid;
+      }
+      let bi = li;
+      if (bi > 0 && Math.abs(bins[bi-1].freq_hz - targetHz) < Math.abs(bins[bi].freq_hz - targetHz)) bi--;
+      const db = bins[bi] && (bins[bi].level_db != null ? bins[bi].level_db : bins[bi].power_db);
+      ctx.fillStyle = spectrumColorForDb(db);
+      ctx.fillRect(x, 0, 1, h);
+    }
+    if (peakMark) {
+      const freq = (sp.strongest_signal || {}).freq;
+      if (freq != null && freq >= lo && freq <= hi) {
+        peakMark.style.left = (((freq-lo)/span)*100).toFixed(2) + '%';
+        peakMark.style.display = '';
+      } else { peakMark.style.display = 'none'; }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2245,6 +2375,123 @@
     { key: 'fuel_lvl',   label: 'Fuel',      id: 'PID 0x2F', unit: '%' },
     { key: 'run_time',   label: 'Run time',  id: 'PID 0x1F', unit: 's' },
   ];
+
+  // ADS-B radar — rings at 1/3/10/30 km. If no GPS fix yet, falls
+  // back to a Melbourne placeholder FOR VISUALIZATION ONLY, never
+  // persisted/republished. Producer: /api/aircraft/recent (drifter-feeds).
+  const ADSB_RADAR_RANGE_KM = 30;
+  const ADSB_RADAR_RINGS = [1, 3, 10, 30];
+  const ADSB_PLACEHOLDER_ORIGIN = { lat: -37.85, lon: 144.96 };
+  const _adsbRadarState = { hits: [] };
+
+  function _adsbAltColor(altFt){
+    if (altFt == null || isNaN(altFt)) return 'rgba(180,180,180,0.85)';
+    if (altFt < 500)   return 'rgba(240, 72, 72, 0.95)';
+    if (altFt < 3000)  return 'rgba(255,174, 66, 0.95)';
+    if (altFt < 10000) return 'rgba( 64,196,220, 0.95)';
+    return 'rgba(245,245,245, 0.95)';
+  }
+  function _adsbBearingKm(oLat, oLon, lat, lon){
+    // Equirectangular — fine for <30 km plot. +y north, +x east.
+    const R = 6371.0, toRad = Math.PI / 180;
+    const meanLat = ((oLat + lat) / 2) * toRad;
+    return { dx: (lon - oLon) * toRad * R * Math.cos(meanLat),
+             dy: (lat - oLat) * toRad * R };
+  }
+  function renderAdsbRadar(){
+    const canvas = document.getElementById('adsb-radar');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 14;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = 'rgba(110,231,255,0.35)';
+    ctx.fillStyle = 'rgba(110,231,255,0.55)';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.lineWidth = 1;
+    for (const km of ADSB_RADAR_RINGS) {
+      const r = (km / ADSB_RADAR_RANGE_KM) * radius;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+      ctx.fillText(km+'km', cx + r + 2, cy - 2);
+    }
+    ctx.fillStyle = 'rgba(245,245,245,0.7)';
+    ctx.font = 'bold 10px JetBrains Mono, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('N', cx, cy - radius - 6);
+    ctx.fillText('S', cx, cy + radius + 6);
+    ctx.fillText('E', cx + radius + 8, cy);
+    ctx.fillText('W', cx - radius - 8, cy);
+    ctx.strokeStyle = 'rgba(110,231,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
+    ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(94,234,212,0.9)';
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+
+    const snap = cache.aircraft || {};
+    const list = Array.isArray(snap.aircraft) ? snap.aircraft : [];
+    const oSnap = snap.origin || {};
+    const oLat = oSnap.lat != null ? oSnap.lat : ADSB_PLACEHOLDER_ORIGIN.lat;
+    const oLon = oSnap.lon != null ? oSnap.lon : ADSB_PLACEHOLDER_ORIGIN.lon;
+    const now = Date.now()/1000;
+    _adsbRadarState.hits = [];
+    for (const a of list) {
+      if (a.lat == null || a.lon == null) continue;
+      const { dx, dy } = _adsbBearingKm(oLat, oLon, a.lat, a.lon);
+      const distKm = Math.hypot(dx, dy);
+      if (distKm > ADSB_RADAR_RANGE_KM) continue;
+      const px = cx + (dx / ADSB_RADAR_RANGE_KM) * radius;
+      const py = cy - (dy / ADSB_RADAR_RANGE_KM) * radius;
+      const alpha = a.ts ? Math.max(0.35, 1 - (now - a.ts)/120) : 1.0;
+      const altFt = typeof a.altitude === 'number' ? a.altitude
+                  : typeof a.alt_baro === 'number' ? a.alt_baro : null;
+      const color = _adsbAltColor(altFt).replace(/,\s*[\d.]+\)$/, `, ${alpha.toFixed(2)})`);
+      const trackDeg = typeof a.track === 'number' ? a.track
+                     : (typeof a.heading === 'number' ? a.heading : 0);
+      ctx.save();
+      ctx.translate(px, py); ctx.rotate(trackDeg * Math.PI / 180);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = 'rgba(7,9,13,0.85)'; ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0,-6); ctx.lineTo(4,5); ctx.lineTo(0,3); ctx.lineTo(-4,5);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      _adsbRadarState.hits.push({ x: px, y: py, ac: a, distKm });
+    }
+    if (!canvas._adsbHandlersBound) {
+      canvas._adsbHandlersBound = true;
+      const popup = document.getElementById('adsb-popup');
+      const findHit = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        let best = null, bestD = 12;
+        for (const hit of _adsbRadarState.hits) {
+          const d = Math.hypot(x - hit.x, y - hit.y);
+          if (d < bestD) { bestD = d; best = hit; }
+        }
+        return best;
+      };
+      const showHit = (e, hit) => {
+        if (!popup || !hit) { if (popup) popup.style.display = 'none'; return; }
+        const wrap = document.getElementById('adsb-radar-wrap');
+        if (!wrap) return;
+        const rect = wrap.getBoundingClientRect();
+        const ac = hit.ac;
+        const flight = ac.flight || ac.callsign || (ac.hex||'').toUpperCase();
+        const altFt = typeof ac.altitude === 'number' ? ac.altitude
+                    : typeof ac.alt_baro === 'number' ? ac.alt_baro : null;
+        popup.textContent = `${flight} · ${ac.type || '—'} · ${altFt != null ? Math.round(altFt)+'ft' : '—'} · ${hit.distKm.toFixed(1)}km`;
+        popup.style.left = (e.clientX - rect.left + 8) + 'px';
+        popup.style.top = (e.clientY - rect.top - 24) + 'px';
+        popup.style.display = '';
+      };
+      canvas.addEventListener('mousemove', e => showHit(e, findHit(e)));
+      canvas.addEventListener('click', e => showHit(e, findHit(e)));
+      canvas.addEventListener('mouseleave', () => { if (popup) popup.style.display = 'none'; });
+    }
+  }
 
   const RENDERERS = {
     sensors(){
@@ -2623,6 +2870,21 @@
       const list = (fresh ? snap.aircraft : null) || [];
       const out = [];
       out.push(`<div class="section-head"><span>aircraft · ads-b</span><span class="tag">${list.length} overhead${snapAge != null ? ' · '+fmtAge(snap.ts) : ''}</span></div>`);
+
+      // Radar plot — concentric 1/3/10/30 km rings, each aircraft as
+      // a track-rotated triangle colored by altitude band. Always
+      // present in the DOM; renderAdsbRadar() paints it after mount.
+      const originSnap = snap.origin || {};
+      const hasGpsOrigin = originSnap.lat != null && originSnap.lon != null;
+      const originLabel = hasGpsOrigin
+        ? `origin ${originSnap.lat.toFixed(3)}, ${originSnap.lon.toFixed(3)}`
+        : 'origin · placeholder (no GPS fix)';
+      out.push(`<div class="adsb-radar-wrap" id="adsb-radar-wrap">
+        <canvas id="adsb-radar" width="320" height="320"></canvas>
+        <div class="adsb-popup" id="adsb-popup"></div>
+        <div class="radar-meta">${esc(originLabel)} · rings 1·3·10·30 km</div>
+      </div>`);
+
       if (!list.length) {
         if (!fresh && snapAge != null) {
           out.push(emptyState('✈', `Snapshot ${Math.round(snapAge/60)}m old. drifter-rf hasn't returned a fresh aircraft list.`));
@@ -2633,9 +2895,10 @@
         const sorted = list.slice().sort((a,b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
         for (const a of sorted.slice(0, 5)) {
           const alt = a.alt_baro === 'ground' ? 'GND'
-                    : (typeof a.alt_baro === 'number' ? Math.round(a.alt_baro/100) + 'FL' : '—');
+                    : (typeof a.alt_baro === 'number' ? Math.round(a.alt_baro/100) + 'FL'
+                    : (typeof a.altitude === 'number' ? Math.round(a.altitude/100) + 'FL' : '—'));
           const dist = a.distance_km != null ? a.distance_km.toFixed(1)+'km' : '—';
-          const flight = a.flight || a.registration || (a.hex||'').toUpperCase();
+          const flight = a.flight || a.callsign || a.registration || (a.hex||'').toUpperCase();
           out.push(`<div class="feed-row">
             <div class="icon">✈</div>
             <div class="name">${esc(flight)}<span class="sub">${esc(a.type || 'unknown')} · ${esc(alt)}</span></div>
@@ -2643,6 +2906,8 @@
           </div>`);
         }
       }
+      // Defer canvas paint until DOM lands.
+      setTimeout(renderAdsbRadar, 0);
       return out.join('');
     },
 
@@ -3126,6 +3391,14 @@
       if (btn) btn.classList.remove('busy');
       forceSpectrumBusyUntil = 0;
       renderRfTile();
+    }
+    // Partial sweeps land while rtl_power is still running — paint
+    // the strip as they arrive so the operator sees live progress.
+    if (topic === 'drifter/rf/spectrum/partial') {
+      if (data && Array.isArray(data.bins) && data.bins.length) {
+        cache.rfSpec = Object.assign({}, cache.rfSpec || {}, data);
+        renderSpectrumStrip();
+      }
     }
     if (topic === 'drifter/rf/emergency') {
       cache.rfEmer = data;
