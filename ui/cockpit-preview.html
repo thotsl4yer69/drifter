@@ -1339,6 +1339,7 @@
     </div>
 
     <div class="map-controls">
+      <div class="map-btn" data-map="locate" title="Use browser location (Wi-Fi/GPS)">⌖</div>
       <div class="map-btn" data-map="satellite" title="Toggle satellite layer">◑</div>
       <div class="map-btn" data-map="recenter"  title="Recenter on origin">⊙</div>
       <div class="map-btn" data-map="fullscreen" title="Toggle fullscreen">⛶</div>
@@ -2200,7 +2201,21 @@
       map.originMarker = L.marker([lat, lon], {
         icon: L.divIcon({ className: '', html: '<div class="marker-origin"></div>',
                           iconSize: [16,16], iconAnchor: [8,8] }),
-      }).addTo(map.instance).bindPopup('<b>DRIFTER</b><br>origin');
+        // Operator can drag the origin to correct a bad/stale fix
+        // (e.g. Wi-Fi geolocation off by 50m). Dragend POSTs the new
+        // position to /api/gps/manual which republishes via MQTT.
+        draggable: true,
+      }).addTo(map.instance).bindPopup('<b>DRIFTER</b><br>origin · drag to adjust');
+      map.originMarker.on('dragend', (e) => {
+        const ll = e.target.getLatLng();
+        fetch('/api/gps/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // accuracy_m=50 — operator placed it on a known street/landmark.
+          // Server-side GPS_MAX_ACCURACY_M is 100; this is comfortably inside.
+          body: JSON.stringify({ lat: ll.lat, lng: ll.lng, accuracy_m: 50 }),
+        }).catch(() => { /* MQTT republish from manual handler picks it up either way */ });
+      });
     } else {
       map.originMarker.setLatLng([lat, lon]);
     }
@@ -2284,6 +2299,41 @@
     if (!el) return;
     if (document.fullscreenElement) document.exitFullscreen();
     else el.requestFullscreen().catch(() => {});
+  }
+  function getBrowserLocation(){
+    if (!navigator.geolocation) {
+      alert('Browser does not support geolocation. Drag the origin marker to set it manually.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        fetch('/api/gps/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: latitude, lng: longitude, accuracy_m: accuracy }),
+        }).then(r => {
+          if (r.ok) {
+            // _setOrigin will fire on the next feeds tick (~15s) and move
+            // the marker. For an instant visual, set it now too.
+            _setOrigin(latitude, longitude);
+            map.instance.setView([latitude, longitude], 14, { animate: true });
+          } else {
+            r.text().then(t => alert('Location rejected by server: ' + t
+              + '\n\nDrag the marker manually instead.'));
+          }
+        }).catch((e) => alert('Network error posting location: ' + e.message));
+      },
+      (err) => {
+        // PERMISSION_DENIED=1, POSITION_UNAVAILABLE=2, TIMEOUT=3
+        const msg = err.code === 1 ? 'Location permission denied. Allow it in Firefox URL bar.'
+                  : err.code === 2 ? 'No Wi-Fi/GPS data — drag the marker manually instead.'
+                  : err.code === 3 ? 'Geolocation timed out — drag the marker manually instead.'
+                  : 'Geolocation failed: ' + err.message;
+        alert(msg);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   }
 
   // ── Overlay (Mechanic / Vivi / Sessions) ─────────────────────────
@@ -2807,6 +2857,7 @@
     document.querySelectorAll('[data-map]').forEach(el => {
       el.addEventListener('click', () => {
         switch (el.dataset.map) {
+          case 'locate':     getBrowserLocation(); break;
           case 'satellite':  toggleSatellite(); break;
           case 'recenter':   recenter(); break;
           case 'fullscreen': toggleFullscreen(); break;
