@@ -1,6 +1,8 @@
 #!/bin/bash
 # MZ1312 DRIFTER — CAN Interface Auto-Setup
-# Detects USB2CANFD and brings up socketcan interface
+# Detects USB2CANFD and brings up socketcan interface.
+# Skips known-not-CAN USB-serial chips (CH340/PL2303) so a mic dongle's
+# embedded CH340 doesn't get slcand'd into a phantom slcan0.
 
 set -o pipefail
 
@@ -19,11 +21,27 @@ if ip link show can0 &>/dev/null; then
     exit 0
 fi
 
+# Helper: is this /dev/ttyUSB* device a generic serial chip we know is not CAN?
+is_known_not_can() {
+    local dev="$1"
+    local vid
+    vid=$(udevadm info --name "$dev" --query=property 2>/dev/null \
+          | awk -F= '/^ID_VENDOR_ID=/{print tolower($2); exit}')
+    case "$vid" in
+        1a86|067b) return 0 ;;  # QinHeng CH340/CH341, Prolific PL2303
+        *)         return 1 ;;
+    esac
+}
+
 # Check for slcan devices (some USB2CANFD variants use serial).
 # nullglob so non-matching patterns expand to nothing (not a literal "*").
 shopt -s nullglob
 for DEV in /dev/ttyACM* /dev/ttyUSB*; do
     if [ -e "$DEV" ]; then
+        if is_known_not_can "$DEV"; then
+            echo "DRIFTER: skipping $DEV (generic USB-serial, not a CAN adapter)"
+            continue
+        fi
         # Try slcand
         slcand -o -s6 -t hw "$DEV" slcan0 2>/dev/null
         sleep 1
