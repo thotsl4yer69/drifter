@@ -12,13 +12,28 @@ import sys
 import time
 import json
 import logging
+import re
 import threading
 import glob
+from pathlib import Path
 
 import serial
 import paho.mqtt.client as mqtt
 
 from config import MQTT_HOST, MQTT_PORT, TOPICS, LOG_DIR, make_mqtt_client
+
+# Local cache for .sub artifacts. Same dir referenced by web_dashboard_handlers
+# so the API can serve them back without a second config knob.
+FLIPPER_CAPTURE_DIR = Path('/opt/drifter/state/flipper_captures')
+
+# Flipper region TX windows. AU stock firmware permits 915–928 MHz TX only;
+# Community firmwares (Xtreme/Unleashed/RogueMaster) vary, but we don't block
+# replay — just surface the warning.
+_FLIPPER_REGION_TX_BANDS = [
+    (300_000_000, 348_000_000),
+    (387_000_000, 464_000_000),
+    (777_000_000, 928_000_000),
+]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +66,181 @@ BLOCKED_PATTERNS = (
     'update', 'dfu', 'storage write /int/', 'storage remove /int/',
     'storage rename /int/',
 )
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  .sub File Builder + Capture Persistence
+# ═══════════════════════════════════════════════════════════════════
+
+# Match a RAW_Data line emitted by Flipper's `subghz rx_raw` CLI. The CLI
+# prints alternating signed microsecond durations separated by spaces.
+_RAW_DATA_RE = re.compile(r'(-?\d+(?:\s+-?\d+)+)')
+
+
+def parse_raw_data_line(text):
+    """Pull the RAW_Data integer list out of a Flipper CLI line.
+
+    Flipper's `subghz rx_raw` decoder dumps lines like:
+        RAW_Data: 244 -732 244 -488 ...
+    or just the bare integer sequence depending on firmware. We accept
+    either shape and return a list of signed ints.
+    """
+    if not text:
+        return None
+    # Direct "RAW_Data:" prefix from Flipper CLI.
+    if 'RAW_Data:' in text:
+        payload = text.split('RAW_Data:', 1)[1].strip()
+    else:
+        payload = text.strip()
+    parts = payload.split()
+    nums = []
+    for p in parts:
+        try:
+            nums.append(int(p))
+        except ValueError:
+            return None
+    if len(nums) < 2:
+        return None
+    return nums
+
+
+def build_sub_file(freq_hz, raw_data, preset='FuriHalSubGhzPresetOok650Async',
+                   max_per_line=512):
+    """Assemble a Flipper SubGhz RAW .sub file body.
+
+    `raw_data` is a flat list of signed ints (alternating us durations).
+    Returns the file text. Lines wrap at `max_per_line` values per the
+    Flipper file-format spec.
+    """
+    header = [
+        'Filetype: Flipper SubGhz RAW File',
+        'Version: 1',
+        f'Frequency: {int(freq_hz)}',
+        f'Preset: {preset}',
+        'Protocol: RAW',
+    ]
+    lines = list(header)
+    for i in range(0, len(raw_data), max_per_line):
+        chunk = raw_data[i:i + max_per_line]
+        lines.append('RAW_Data: ' + ' '.join(str(n) for n in chunk))
+    return '\n'.join(lines) + '\n'
+
+
+def persist_capture(freq_hz, raw_data, ts=None):
+    """Write the .sub file to /opt/drifter/state/flipper_captures/ locally.
+
+    Returns the dict {'id', 'local_sub_path', 'on_flipper_path', 'ts', ...}
+    or None on failure. The Flipper-side copy is best-effort, performed
+    by push_capture_to_flipper().
+    """
+    ts = ts if ts is not None else time.time()
+    capture_id = f'drifter-{int(ts)}'
+    try:
+        FLIPPER_CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.warning(f"Could not create capture dir: {e}")
+        return None
+
+    body = build_sub_file(freq_hz, raw_data)
+    local_path = FLIPPER_CAPTURE_DIR / f'{capture_id}.sub'
+    try:
+        local_path.write_text(body)
+    except OSError as e:
+        log.warning(f"Could not persist .sub: {e}")
+        return None
+
+    return {
+        'id': capture_id,
+        'local_sub_path': str(local_path),
+        'on_flipper_path': f'/ext/subghz/{capture_id}.sub',
+        'freq_hz': int(freq_hz),
+        'raw_data_count': len(raw_data),
+        'ts': ts,
+    }
+
+
+def push_capture_to_flipper(flipper, capture_meta):
+    """Best-effort copy the .sub to the Flipper SD card via storage write CLI.
+
+    Returns True on success, False otherwise. The local cache is the
+    source of truth — Flipper-side push is for in-the-field replay.
+    """
+    if not flipper.connected:
+        return False
+    local = Path(capture_meta['local_sub_path'])
+    if not local.exists():
+        return False
+    on_flipper = capture_meta['on_flipper_path']
+    body = local.read_text()
+    # The Flipper `storage write` CLI consumes lines until an EOF marker
+    # or a fixed line count. The format that works on stock fw is:
+    #   storage write <path>\n<body>\n  (newline-terminated, no marker)
+    # followed by a short pause and then a Ctrl-C interrupt.
+    try:
+        success, response = flipper.send_command(
+            f'storage write {on_flipper}\n{body}')
+        if success and 'error' not in response.lower():
+            log.info(f"Pushed capture to flipper: {on_flipper}")
+            return True
+        log.warning(f"Flipper storage write returned: {response[:120]}")
+        return False
+    except Exception as e:
+        log.warning(f"push_capture_to_flipper failed: {e}")
+        return False
+
+
+def is_tx_region_locked(freq_hz):
+    """Return a warning string if `freq_hz` falls outside stock-fw TX bands.
+
+    Empty string means TX is permitted on stock AU firmware.
+    """
+    f = int(freq_hz)
+    for low, high in _FLIPPER_REGION_TX_BANDS:
+        if low <= f <= high:
+            return ''
+    return (f'Frequency {f/1e6:.3f} MHz is outside stock Flipper TX bands '
+            f'(300–348 / 387–464 / 777–928 MHz). Community firmware may '
+            f'still transmit; stock AU firmware will refuse.')
+
+
+def list_persisted_captures():
+    """Enumerate .sub files in FLIPPER_CAPTURE_DIR newest first.
+
+    Returns a list of dicts: {id, local_sub_path, on_flipper_path, freq_hz, ts}.
+    Used by /api/flipper/captures to augment the live ring buffer with
+    persisted artifacts.
+    """
+    out = []
+    if not FLIPPER_CAPTURE_DIR.exists():
+        return out
+    try:
+        for p in FLIPPER_CAPTURE_DIR.glob('drifter-*.sub'):
+            try:
+                ts = float(p.stem.split('-', 1)[1])
+            except (ValueError, IndexError):
+                ts = p.stat().st_mtime
+            # Parse Frequency: header without slurping the whole RAW block.
+            freq_hz = None
+            try:
+                for line in p.read_text().splitlines():
+                    if line.startswith('Frequency:'):
+                        freq_hz = int(line.split(':', 1)[1].strip())
+                        break
+                    if line.startswith('RAW_Data:'):
+                        break
+            except OSError:
+                continue
+            out.append({
+                'id': p.stem,
+                'local_sub_path': str(p),
+                'on_flipper_path': f'/ext/subghz/{p.name}',
+                'freq_hz': freq_hz,
+                'ts': ts,
+            })
+    except OSError as e:
+        log.warning(f"capture listing error: {e}")
+    out.sort(key=lambda c: c.get('ts') or 0, reverse=True)
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -266,6 +456,23 @@ def run_subghz_monitor(flipper, mqtt_client, stop_event):
                         'freq_hz': 433920000,
                         'ts': time.time(),
                     }
+
+                    # If this line carries a RAW_Data sequence, assemble a
+                    # .sub artifact locally and (best-effort) push to the
+                    # Flipper SD card so replay has something to fire.
+                    raw_data = parse_raw_data_line(text)
+                    if raw_data:
+                        meta = persist_capture(
+                            capture['freq_hz'], raw_data, ts=capture['ts'])
+                        if meta:
+                            capture.update(meta)
+                            # Best-effort SD push happens asynchronously to
+                            # avoid blocking the monitor read loop.
+                            threading.Thread(
+                                target=push_capture_to_flipper,
+                                args=(flipper, meta), daemon=True,
+                            ).start()
+
                     mqtt_client.publish(
                         TOPICS['flipper_subghz'], json.dumps(capture)
                     )
@@ -321,6 +528,11 @@ def handle_message(flipper, mqtt_client):
             return
         if command == 'subghz_monitor_stop':
             _stop_subghz_monitor()
+            return
+
+        # ── Sub-GHz replay (operator-confirmed in the cockpit) ──
+        if command == 'subghz_replay':
+            _do_subghz_replay(flipper, mqtt_client, data)
             return
 
         # ── HIGH-risk confirmation ──
@@ -439,6 +651,72 @@ def _start_subghz_monitor(flipper, mqtt_client):
         'response': 'Sub-GHz monitor started on 433.92 MHz',
         'ts': time.time(),
     }))
+
+
+def _do_subghz_replay(flipper, mqtt_client, data):
+    """Replay a persisted .sub via `subghz tx_from_file`.
+
+    Body: {"command":"subghz_replay", "capture_id":"drifter-1700000000"}.
+    Pushes the local artifact onto the SD card if missing there, then
+    calls `subghz tx_from_file /ext/subghz/<file> 1 0` (1 repeat,
+    device 0). Region-lock awareness is informational — we never block.
+    """
+    capture_id = (data.get('capture_id') or '').strip()
+    if not capture_id:
+        mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+            'command': 'subghz_replay',
+            'success': False,
+            'response': 'subghz_replay requires capture_id',
+            'ts': time.time(),
+        }))
+        return
+
+    # Locate the local artifact by id.
+    local_path = FLIPPER_CAPTURE_DIR / f'{capture_id}.sub'
+    if not local_path.exists():
+        mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+            'command': 'subghz_replay',
+            'capture_id': capture_id,
+            'success': False,
+            'response': f'capture not found: {local_path}',
+            'ts': time.time(),
+        }))
+        return
+
+    # Parse frequency for the region-lock warning.
+    freq_hz = None
+    try:
+        for line in local_path.read_text().splitlines():
+            if line.startswith('Frequency:'):
+                freq_hz = int(line.split(':', 1)[1].strip())
+                break
+    except (OSError, ValueError):
+        pass
+    warning = is_tx_region_locked(freq_hz) if freq_hz else ''
+
+    on_flipper = f'/ext/subghz/{capture_id}.sub'
+    pushed = push_capture_to_flipper(flipper, {
+        'local_sub_path': str(local_path),
+        'on_flipper_path': on_flipper,
+    })
+
+    # tx_from_file <path> <repeats> <device> — device 0 = internal radio.
+    success, response = flipper.send_command(
+        f'subghz tx_from_file {on_flipper} 1 0')
+
+    payload = {
+        'command': 'subghz_replay',
+        'capture_id': capture_id,
+        'risk': 'MEDIUM',
+        'on_flipper_path': on_flipper,
+        'pushed_to_flipper': pushed,
+        'success': success,
+        'response': response,
+        'ts': time.time(),
+    }
+    if warning:
+        payload['warning'] = warning
+    mqtt_client.publish(TOPICS['flipper_result'], json.dumps(payload))
 
 
 def _stop_subghz_monitor():

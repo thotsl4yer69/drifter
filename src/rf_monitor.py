@@ -44,6 +44,14 @@ running = True
 _rtl_control: dict = {'pause': None, 'resume': None,
                       'held_external': False, 'scan_proc': None}
 
+# Cooperative scheduler interrupt + dongle lock.
+# `_interrupt` wakes the main loop so a force command can yield the dongle.
+# `_dongle_lock` serializes ad-hoc rtl_power sweeps against the scheduler.
+# `_force_pending` signals the main loop to skip its remaining sleep slice.
+_interrupt = threading.Event()
+_dongle_lock = threading.Lock()
+TPMS_HARVEST_PROGRESS_INTERVAL = 5.0
+
 
 def _kill_active_scan() -> None:
     proc = _rtl_control.get('scan_proc')
@@ -51,6 +59,18 @@ def _kill_active_scan() -> None:
         return
     if proc.poll() is not None:
         return
+    # SIGINT first — rtl_power/rtl_433 flush and close the USB handle
+    # cleanly on SIGINT. SIGKILL leaves the kernel gs_usb stack wedged
+    # with "device busy" until rmmod/replug.
+    try:
+        proc.send_signal(signal.SIGINT)
+        try:
+            proc.communicate(timeout=3)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    except Exception:
+        pass
     try:
         proc.terminate()
         proc.wait(timeout=2)
@@ -178,6 +198,95 @@ class TPMSState:
 
 
 tpms = TPMSState()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  TPMS Per-Sensor Harvest + Per-Corner Assignment
+# ═══════════════════════════════════════════════════════════════════
+
+TPMS_ASSIGNMENTS_PATH = Path('/opt/drifter/state/tpms_assignments.json')
+
+
+class TPMSHarvest:
+    """Collect raw TPMS hits (deduped by sensor ID) for the corner-pair wizard."""
+
+    def __init__(self):
+        self.active = False
+        self.start_ts = 0.0
+        # {sensor_id: {samples: int, last_pressure_psi, last_temp_c,
+        #              last_rssi, last_ts, first_ts}}
+        self.sensors = {}
+
+    def start(self):
+        self.active = True
+        self.start_ts = time.time()
+        self.sensors = {}
+        log.info("TPMS HARVEST started — collecting all TPMS hits")
+
+    def stop(self):
+        self.active = False
+        log.info(f"TPMS HARVEST stopped — {len(self.sensors)} unique sensor IDs")
+
+    def record(self, sensor_id, pressure_psi, temp_c, rssi):
+        if not self.active:
+            return
+        sid = str(sensor_id)
+        now = time.time()
+        entry = self.sensors.get(sid)
+        if entry is None:
+            entry = {
+                'samples': 0,
+                'first_ts': now,
+                'last_pressure_psi': None,
+                'last_temp_c': None,
+                'last_rssi': None,
+                'last_ts': now,
+            }
+            self.sensors[sid] = entry
+        entry['samples'] += 1
+        entry['last_pressure_psi'] = (round(pressure_psi, 1)
+                                       if pressure_psi is not None else None)
+        entry['last_temp_c'] = (round(temp_c, 1)
+                                 if temp_c is not None else None)
+        entry['last_rssi'] = rssi
+        entry['last_ts'] = now
+
+    def snapshot(self):
+        return {
+            'active': self.active,
+            'start_ts': self.start_ts,
+            'ids_seen': sorted(self.sensors.keys()),
+            'samples_per_id': {sid: e['samples']
+                               for sid, e in self.sensors.items()},
+            'sensors': {sid: dict(e) for sid, e in self.sensors.items()},
+            'ts': time.time(),
+        }
+
+
+tpms_harvest = TPMSHarvest()
+
+
+def load_tpms_assignments():
+    """Read /opt/drifter/state/tpms_assignments.json. Returns dict or {}."""
+    try:
+        if TPMS_ASSIGNMENTS_PATH.exists():
+            return json.loads(TPMS_ASSIGNMENTS_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning(f"TPMS assignments read failed: {e}")
+    return {}
+
+
+def save_tpms_assignments(data):
+    """Atomic-write the per-corner assignment file."""
+    try:
+        TPMS_ASSIGNMENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TPMS_ASSIGNMENTS_PATH.with_suffix('.json.tmp')
+        tmp.write_text(json.dumps(data, indent=2))
+        tmp.replace(TPMS_ASSIGNMENTS_PATH)
+        return True
+    except OSError as e:
+        log.warning(f"TPMS assignments save failed: {e}")
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -336,6 +445,10 @@ def process_tpms(data, mqtt_client):
 
     if temp_c is None:
         temp_c = 0.0  # Some sensors don't report temperature
+
+    # Harvest hits (deduped by ID, with RSSI) for the corner-pair wizard.
+    rssi = data.get('rssi', data.get('snr'))
+    tpms_harvest.record(sensor_id, pressure_psi, temp_c, rssi)
 
     reading = tpms.update(sensor_id, pressure_psi, temp_c)
     if reading is None:
@@ -651,6 +764,152 @@ def run_adsb_scan(mqtt_client):
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Force Spectrum Scan
+# ═══════════════════════════════════════════════════════════════════
+
+def _force_spectrum(client, params):
+    """Interrupt the scheduler and run an out-of-band rtl_power sweep.
+
+    Acquires _dongle_lock, kills any active scan, runs a full sweep,
+    publishes the result to drifter/rf/spectrum, and releases the lock.
+    """
+    log.info("force spectrum sweep — yielding dongle to ad-hoc sweep")
+    # Wake the scheduler so it stops sleeping and gives up its dongle slot.
+    _interrupt.set()
+
+    if not _dongle_lock.acquire(timeout=5.0):
+        log.warning("force_spectrum: could not acquire dongle lock in 5s")
+        client.publish(TOPICS['rf_error'] if 'rf_error' in TOPICS else
+                       'drifter/rf/error', json.dumps({
+            'command': 'force_spectrum',
+            'error': 'dongle locked — try again',
+            'ts': time.time(),
+        }))
+        return
+
+    proc = None
+    try:
+        # Make the scheduler-side rtl_433 release the SDR cleanly.
+        _kill_active_scan()
+        pause_fn = _rtl_control.get('pause')
+        if callable(pause_fn):
+            try:
+                pause_fn()
+            except Exception as e:
+                log.debug(f"force_spectrum pause hook error: {e}")
+
+        cmd = [
+            'rtl_power',
+            '-f', '24M:1766M:1M',
+            '-i', '2',
+            '-g', '40',
+            '-1',
+        ]
+        log.info(f"force_spectrum: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1,
+        )
+        _rtl_control['scan_proc'] = proc
+
+        stdout_lines = []
+        # Stream stdout line-by-line. Each line is a CSV bin row from
+        # rtl_power; partial publishes let the UI show progress.
+        try:
+            for line in proc.stdout:
+                if line is None:
+                    break
+                line = line.rstrip('\n')
+                if not line:
+                    continue
+                stdout_lines.append(line)
+                try:
+                    client.publish('drifter/rf/spectrum/partial', line)
+                except Exception:
+                    pass
+            proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            log.warning("force_spectrum: rtl_power timed out — killing")
+            try:
+                proc.send_signal(signal.SIGINT)
+                proc.communicate(timeout=3)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+
+        # Parse the assembled stdout into the same shape run_spectrum_scan
+        # publishes, so dashboard subscribers see one canonical schema.
+        bands = {}
+        strongest = {'freq': 0, 'power': -999}
+        for line in stdout_lines:
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split(',')
+            if len(parts) < 7:
+                continue
+            try:
+                freq_low = float(parts[2])
+                freq_step = float(parts[4])
+                db_values = [float(x.strip()) for x in parts[6:] if x.strip()]
+                for i, db in enumerate(db_values):
+                    freq_mhz = (freq_low + i * freq_step) / 1e6
+                    band_name = classify_band(freq_mhz)
+                    if band_name:
+                        if (band_name not in bands
+                                or db > bands[band_name]['peak_db']):
+                            bands[band_name] = {
+                                'freq_mhz': round(freq_mhz, 2),
+                                'peak_db': round(db, 1),
+                            }
+                    if db > strongest['power']:
+                        strongest = {'freq': round(freq_mhz, 2),
+                                     'power': round(db, 1)}
+            except (ValueError, IndexError):
+                continue
+
+        scan_result = {
+            'bands': bands,
+            'strongest_signal': strongest,
+            'scan_range_mhz': '24-1766',
+            'forced': True,
+            'ts': time.time(),
+        }
+        client.publish(TOPICS['rf_spectrum'], json.dumps(scan_result))
+        log.info(
+            "force_spectrum done — strongest %.2f MHz @ %.1f dB",
+            strongest['freq'], strongest['power'],
+        )
+
+    except FileNotFoundError:
+        log.warning("force_spectrum: rtl_power not installed")
+        client.publish('drifter/rf/error', json.dumps({
+            'command': 'force_spectrum',
+            'error': 'rtl_power not installed',
+            'ts': time.time(),
+        }))
+    except Exception as e:
+        log.error(f"force_spectrum error: {e}")
+        client.publish('drifter/rf/error', json.dumps({
+            'command': 'force_spectrum',
+            'error': str(e),
+            'ts': time.time(),
+        }))
+    finally:
+        _rtl_control['scan_proc'] = None
+        # Re-arm the scheduler — clear the interrupt so the loop sleeps again.
+        _interrupt.clear()
+        _dongle_lock.release()
+        resume_fn = _rtl_control.get('resume')
+        if callable(resume_fn) and not _rtl_control.get('held_external'):
+            try:
+                resume_fn()
+            except Exception as e:
+                log.debug(f"force_spectrum resume hook error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  MQTT Command Handler
 # ═══════════════════════════════════════════════════════════════════
 
@@ -726,6 +985,75 @@ def on_message(client, userdata, msg):
             if callable(fn):
                 fn()
                 log.info("rtl_433 resumed via MQTT")
+
+        elif command == 'force_spectrum':
+            # Run in its own thread so the MQTT network thread (paho callback)
+            # returns immediately — the sweep takes 60–90s.
+            threading.Thread(
+                target=_force_spectrum, args=(client, data),
+                daemon=True, name='force-spectrum',
+            ).start()
+
+        elif command == 'tpms_harvest_start':
+            tpms_harvest.start()
+            client.publish(TOPICS['rf_status'], json.dumps({
+                'mode': 'tpms_harvest',
+                'message': 'TPMS harvest active — collecting all hits',
+                'ts': time.time(),
+            }))
+
+        elif command == 'tpms_harvest_stop':
+            tpms_harvest.stop()
+            final = tpms_harvest.snapshot()
+            client.publish('drifter/rf/tpms/harvest', json.dumps(final))
+            client.publish(TOPICS['rf_status'], json.dumps({
+                'mode': 'normal',
+                'message': f'TPMS harvest stopped. {len(final["ids_seen"])} IDs.',
+                'ts': time.time(),
+            }))
+
+        elif command == 'tpms_assign_corner':
+            sid = str(data.get('sensor_id', '')).strip()
+            corner = str(data.get('corner', '')).lower().strip()
+            corner_alias = {'fl': 'fl', 'fr': 'fr', 'rl': 'rl', 'rr': 'rr'}
+            mapped = corner_alias.get(corner)
+            if not sid or not mapped:
+                client.publish(TOPICS['rf_status'], json.dumps({
+                    'mode': 'error',
+                    'message': 'tpms_assign_corner needs sensor_id and corner FL|FR|RL|RR',
+                    'ts': time.time(),
+                }))
+            else:
+                assignments = load_tpms_assignments()
+                # Remove any previous corner this sensor occupied.
+                for k, v in list(assignments.items()):
+                    if v == sid:
+                        del assignments[k]
+                assignments[mapped.upper()] = sid
+                save_tpms_assignments(assignments)
+                # Keep the runtime sensor_map in sync so live readings
+                # land on the right position immediately.
+                for k, v in list(tpms.sensor_map.items()):
+                    if v == mapped:
+                        del tpms.sensor_map[k]
+                tpms.sensor_map[sid] = mapped
+                tpms.save_sensors()
+                client.publish(TOPICS['rf_status'], json.dumps({
+                    'mode': 'normal',
+                    'message': f'Assigned {sid} -> {mapped.upper()}',
+                    'assignments': assignments,
+                    'ts': time.time(),
+                }))
+
+        elif command == 'tpms_clear_assignments':
+            save_tpms_assignments({})
+            tpms.sensor_map = {}
+            tpms.save_sensors()
+            client.publish(TOPICS['rf_status'], json.dumps({
+                'mode': 'normal',
+                'message': 'TPMS assignments cleared',
+                'ts': time.time(),
+            }))
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         log.warning(f"Bad RF command: {e}")
@@ -863,6 +1191,16 @@ def main():
     last_tpms_snapshot = 0
     last_adsb = 0
     last_sdr_rescan = time.time()
+    last_harvest_progress = 0.0
+
+    # Boot-time: hydrate the runtime sensor_map from the on-disk per-corner
+    # assignments so a fresh service restart still surfaces paired wheels.
+    boot_assignments = load_tpms_assignments()
+    if boot_assignments:
+        # Reverse {FL: sid} → {sid: fl}. Mirrors sensor_map convention.
+        for corner, sid in boot_assignments.items():
+            tpms.sensor_map[str(sid)] = corner.lower()
+        log.info(f"Restored {len(boot_assignments)} TPMS corner assignments")
 
     log.info("RF Monitor is LIVE")
     if tpms.sensor_map:
@@ -943,7 +1281,19 @@ def main():
                     resume_rtl_433()
             last_adsb = now
 
-        time.sleep(1)
+        # TPMS harvest progress publish — every 5s while harvest is active.
+        if tpms_harvest.active and (
+                now - last_harvest_progress >= TPMS_HARVEST_PROGRESS_INTERVAL):
+            mqtt_client.publish('drifter/rf/tpms/harvest',
+                                 json.dumps(tpms_harvest.snapshot()))
+            last_harvest_progress = now
+
+        # Interruptible sleep so force_spectrum can yield the dongle quickly.
+        # _interrupt is set by force_spectrum (and any future ad-hoc command);
+        # if wait returns True we yield immediately so the lock can be taken.
+        if _interrupt.wait(timeout=1):
+            # Don't clear here — the force_spectrum finally-block owns the reset.
+            pass
 
     # ── Cleanup ──
     log.info("Shutting down RF Monitor...")

@@ -180,7 +180,27 @@ _RF_COMMANDS = {
     'tpms_learn_start', 'tpms_learn_stop',
     'tpms_auto_assign', 'tpms_assign',
     'pause_rtl_433', 'resume_rtl_433',
+    'force_spectrum',
+    'tpms_harvest_start', 'tpms_harvest_stop',
+    'tpms_assign_corner', 'tpms_clear_assignments',
 }
+
+# flipper_bridge's on_message() command allowlist. Same fail-closed posture
+# as _RF_COMMANDS — only commands the cockpit surface emits.
+_FLIPPER_COMMANDS = {
+    'subghz_monitor_start', 'subghz_monitor_stop',
+    'confirm', 'subghz_replay',
+}
+
+# Per-corner TPMS assignment file (written by rf_monitor.tpms_assign_corner).
+# GET /api/tpms/assignments reads this verbatim so the cockpit shows the
+# persisted pairing without depending on a live MQTT round-trip.
+_TPMS_ASSIGNMENTS_PATH = Path('/opt/drifter/state/tpms_assignments.json')
+
+# Local flipper .sub artifact cache, mirroring flipper_bridge.FLIPPER_CAPTURE_DIR.
+# /api/flipper/captures merges these into each ring-buffer row so the cockpit
+# can present a real REPLAY button.
+_FLIPPER_CAPTURE_DIR = Path('/opt/drifter/state/flipper_captures')
 
 # Phone-as-GPS sink. The tethered phone POSTs its browser-geolocation
 # fix here; we drop it at the same path drifter-gps writes to so
@@ -318,8 +338,66 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         Each entry is whatever flipper_bridge.run_subghz_monitor
         published: frequency, modulation, raw frame text, ts.
+
+        Augmentation: every row gets `local_sub_path`/`on_flipper_path`
+        if a matching .sub artifact exists on disk. The cockpit uses these
+        fields to enable the REPLAY button (no path → no replay).
         """
-        self._serve_json({'captures': list(reversed(state.recent_flipper_captures))})
+        # Live ring buffer rows.
+        live = [dict(c) for c in reversed(state.recent_flipper_captures)]
+        # Persisted artifacts keyed by id — merge into matching live rows
+        # and surface the rest as standalone history entries.
+        persisted_by_id = {}
+        persisted_extras = []
+        try:
+            from flipper_bridge import list_persisted_captures
+            for art in list_persisted_captures():
+                persisted_by_id[art['id']] = art
+        except Exception as e:
+            log.debug(f"persisted-captures lookup failed: {e}")
+
+        seen_ids = set()
+        for row in live:
+            row_id = row.get('id')
+            if row_id and row_id in persisted_by_id:
+                art = persisted_by_id[row_id]
+                row['local_sub_path'] = art.get('local_sub_path')
+                row['on_flipper_path'] = art.get('on_flipper_path')
+                seen_ids.add(row_id)
+        # Any persisted .sub not present in the live ring shows up as a
+        # standalone history row (after a restart the ring is empty but
+        # the captures on disk persist).
+        for art_id, art in persisted_by_id.items():
+            if art_id in seen_ids:
+                continue
+            persisted_extras.append({
+                'id': art_id,
+                'freq_hz': art.get('freq_hz'),
+                'frequency': (f"{art['freq_hz']/1e6:.3f} MHz"
+                              if art.get('freq_hz') else None),
+                'ts': art.get('ts'),
+                'local_sub_path': art.get('local_sub_path'),
+                'on_flipper_path': art.get('on_flipper_path'),
+            })
+        captures = live + persisted_extras
+        captures.sort(key=lambda c: c.get('ts') or 0, reverse=True)
+        self._serve_json({'captures': captures})
+
+    def _get_tpms_assignments(self, parsed):
+        """Read /opt/drifter/state/tpms_assignments.json verbatim.
+
+        Returns the persisted {FL|FR|RL|RR: sensor_id} mapping the
+        rf_monitor.tpms_assign_corner handler writes. Empty object before
+        any sensor has been paired.
+        """
+        if not _TPMS_ASSIGNMENTS_PATH.exists():
+            self._serve_json({})
+            return
+        try:
+            self._serve_json(json.loads(
+                _TPMS_ASSIGNMENTS_PATH.read_text()))
+        except (OSError, json.JSONDecodeError):
+            self._serve_json({})
 
     def _get_flipper_results(self, parsed):
         """Recent command outcomes from the Flipper bridge — needed to
@@ -801,6 +879,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict) or not body.get('command'):
             self.send_error(400, 'body requires a non-empty "command" string')
             return
+        cmd = body.get('command')
+        # Bare CLI commands (e.g. "hw info") still pass through to the bridge
+        # — only structured workflow commands are allowlisted. The bridge's
+        # risk classifier is the second gate.
+        if (' ' not in cmd) and (cmd not in _FLIPPER_COMMANDS):
+            self.send_error(400, 'command')
+            return
+        if cmd == 'subghz_replay':
+            capture_id = body.get('capture_id')
+            if not isinstance(capture_id, str) or not capture_id.strip():
+                self.send_error(400, 'capture_id')
+                return
         ok = False
         if state.mqtt_client is not None:
             try:
@@ -890,6 +980,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             assignments = body.get('assignments')
             if not isinstance(assignments, dict) or not assignments:
                 self.send_error(400, 'assignments')
+                return
+        if cmd == 'tpms_assign_corner':
+            sid = body.get('sensor_id')
+            corner = (body.get('corner') or '').upper()
+            if not isinstance(sid, str) or not sid.strip():
+                self.send_error(400, 'sensor_id')
+                return
+            if corner not in {'FL', 'FR', 'RL', 'RR'}:
+                self.send_error(400, 'corner')
                 return
         ok = False
         if state.mqtt_client is not None:
@@ -1281,6 +1380,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/rf/emergency':          DashboardHandler._get_rf_emergency,
     '/api/flipper/status':        DashboardHandler._get_flipper_status,
     '/api/flipper/captures':      DashboardHandler._get_flipper_captures,
+    '/api/tpms/assignments':      DashboardHandler._get_tpms_assignments,
     '/api/flipper/results':       DashboardHandler._get_flipper_results,
     '/api/report':                DashboardHandler._get_report,
     '/api/reports':               DashboardHandler._get_reports,

@@ -1292,6 +1292,7 @@
                 <span class="ghost-btn" id="btn-rtl433-toggle" role="button" tabindex="0" data-state="resume">PAUSE RTL_433</span>
                 <span class="ghost-btn" id="btn-rfaudio-scan" role="button" tabindex="0" data-state="scan">SCAN EMERGENCY</span>
                 <span class="ghost-btn" id="btn-rfaudio-stop" role="button" tabindex="0">RFAUDIO STOP</span>
+                <span class="ghost-btn" id="btn-force-spectrum" role="button" tabindex="0" title="Out-of-band rtl_power sweep, ~90s">FORCE SPECTRUM SCAN</span>
               </div>
             </div>
           </div>
@@ -1392,6 +1393,15 @@
 
   // Capture IDs in pending-confirm state for inline replay confirm rows.
   const pendingReplays = new Set();
+  // Set to the unix-ms when FORCE SPECTRUM SCAN was last clicked. The button
+  // stays in .busy until either the next drifter/rf/spectrum frame lands via
+  // WS or this deadline expires (rtl_power sweeps usually finish in 60–90s).
+  let forceSpectrumBusyUntil = 0;
+  // Persisted per-corner TPMS assignments (FL/FR/RL/RR -> sensor_id). Hydrated
+  // by loadTpmsAssignments(); used in the drawer panel render.
+  let tpmsAssignments = {};
+  // Latest TPMS harvest progress payload (from drifter/rf/tpms/harvest).
+  let tpmsHarvest = null;
 
   // Fallback band list when /api/rfaudio/status hasn't returned yet.
   // Mirrors src/config.py EMERGENCY_AUDIO_BANDS so the panel is usable
@@ -1813,16 +1823,53 @@
       const learnBadge = learning
         ? `<div style="margin:4px 0 8px; font-size:10.5px; color:var(--amber); letter-spacing:0.1em">LEARNED IDS · ${learnedIds.length}/4</div>`
         : '';
+      const harvestActive = !!(tpmsHarvest && tpmsHarvest.active);
+      const harvestBtnLabel = harvestActive ? 'STOP HARVEST' : 'HARVEST';
+      const harvestBtnCls = harvestActive ? 'ghost-btn live' : 'ghost-btn';
       const buttons = `<div class="btn-row">
         <span class="${learnBtnCls}" id="tpms-learn-start" role="button" tabindex="0" data-learning="${learning ? '1' : '0'}">
           ${learning ? '<span class="dot"></span>' : ''}${learnBtnLabel}
         </span>
         <span class="ghost-btn" id="tpms-auto-assign" role="button" tabindex="0">AUTO-ASSIGN 4</span>
+        <span class="${harvestBtnCls}" id="tpms-harvest" role="button" tabindex="0" data-active="${harvestActive ? '1' : '0'}">
+          ${harvestActive ? '<span class="dot"></span>' : ''}${harvestBtnLabel}
+        </span>
         <span class="ghost-btn crit" id="tpms-clear-learn" role="button" tabindex="0">CLEAR LEARN</span>
+        <span class="ghost-btn crit" id="tpms-clear-assignments" role="button" tabindex="0" title="Wipe per-corner assignment file">CLEAR ASSIGNMENTS</span>
       </div>`;
+
+      // Per-sensor harvest table: shows each sensor ID seen since
+      // HARVEST start, last pressure/temp/RSSI, plus a corner-assignment
+      // dropdown that POSTs tpms_assign_corner on change.
+      let harvestPanel = '';
+      const sensors = (tpmsHarvest && tpmsHarvest.sensors) || {};
+      const ids = Object.keys(sensors);
+      const assignedById = {};
+      for (const [corner, sid] of Object.entries(tpmsAssignments || {})) {
+        assignedById[String(sid)] = corner;
+      }
+      if (harvestActive || ids.length) {
+        const rows = ids.length ? ids.map(sid => {
+          const s = sensors[sid] || {};
+          const pressTxt = s.last_pressure_psi != null ? `${s.last_pressure_psi.toFixed(1)} psi` : '—';
+          const tempTxt = s.last_temp_c != null ? `${Math.round(s.last_temp_c)}°C` : '—';
+          const rssiTxt = s.last_rssi != null ? `${s.last_rssi} dB` : '—';
+          const cur = assignedById[String(sid)] || '';
+          const opt = c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c || '— unassigned —')}</option>`;
+          return `<div class="feed-row" style="gap:8px">
+            <div class="icon">◎</div>
+            <div class="name">${esc(sid)}<span class="sub">${esc(pressTxt)} · ${esc(tempTxt)} · ${esc(rssiTxt)} · ${s.samples || 0} samples</span></div>
+            <select class="ghost-btn" data-tpms-assign="${esc(sid)}" style="background:transparent; color:var(--fg); border:1px solid var(--glass-stroke); padding:4px 6px">
+              ${opt('')}${opt('FL')}${opt('FR')}${opt('RL')}${opt('RR')}
+            </select>
+          </div>`;
+        }).join('') : `<div class="empty"><span class="gl">◎</span>Harvest active — waiting for TPMS hits…</div>`;
+        harvestPanel = `<div class="section-head" style="margin-top:8px"><span>tpms · harvest</span><span class="tag">${ids.length} sensor${ids.length === 1 ? '' : 's'}${harvestActive ? ' · LIVE' : ''}</span></div>${rows}`;
+      }
+
       return head +
         `<div class="tpms-car">${cornerCell('fl')}${cornerCell('fr')}${cornerCell('rl')}${cornerCell('rr')}</div>` +
-        learnBadge + buttons;
+        learnBadge + buttons + harvestPanel;
     },
 
     dtcs(){
@@ -1992,17 +2039,23 @@
           const m = c.modulation || c.mod || '';
           const age = c.ts ? fmtAge(c.ts) : '';
           const raw = (c.data || c.raw || '').toString();
+          // Prefer the capture's persisted id (drifter-<ts>) so REPLAY can
+          // address it. Falls back to a synthetic id for legacy live rows.
           const capId = c.id || c.ts || raw.slice(0,16);
           const safeId = String(capId).replace(/[^a-zA-Z0-9_-]/g, '_');
           const isPending = pendingReplays.has(safeId);
           const ageTxt = age ? `${age} ago` : '';
+          const hasArtifact = !!(c.local_sub_path || c.on_flipper_path);
+          const replayAttrs = hasArtifact
+            ? `data-replay="${esc(safeId)}" role="button" tabindex="0"`
+            : `data-replay="${esc(safeId)}" role="button" tabindex="0" aria-disabled="true" title="No .sub artifact stored — RAW_Data lines required"`;
           out.push(`<div class="capture-row">
             <div>
               <div class="meta">${esc(f)} · ${esc(m || 'raw')} · ${esc(ageTxt)}</div>
               <div class="raw">${esc(raw.slice(0, 64))}</div>
             </div>
-            <span class="ghost-btn" data-replay="${esc(safeId)}" role="button" tabindex="0" aria-disabled="true" title="No .sub artifact stored — replay deferred until captures persist to disk">REPLAY</span>
-            ${isPending ? `<div class="confirm-row" data-confirm-row="${esc(safeId)}">Send this signal? <span class="ghost-btn live" data-confirm="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
+            <span class="ghost-btn" ${replayAttrs}>REPLAY</span>
+            ${isPending ? `<div class="confirm-row" data-confirm-row="${esc(safeId)}">Replay this capture? <span class="ghost-btn live" data-confirm-replay="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
           </div>`);
         }
       }
@@ -2184,6 +2237,15 @@
     setCount('tires', `${known}/4`, { live: known > 0 });
     renderRfTile();
     if (activeTab === 'tires') render();
+  }
+  async function loadTpmsAssignments(){
+    // Hydrate persisted per-corner assignments (rf_monitor writes them
+    // to /opt/drifter/state/tpms_assignments.json on each tpms_assign_corner).
+    const data = await safeFetch('/api/tpms/assignments');
+    if (data && typeof data === 'object') {
+      tpmsAssignments = data;
+      if (activeTab === 'tires') render();
+    }
   }
   async function loadTrip(){
     cache.trip = await safeFetch('/api/trip/recent') || cache.trip;
@@ -2443,11 +2505,19 @@
     }
     if (topic === 'drifter/rf/spectrum') {
       cache.rfSpec = data;
+      // Force-spectrum sweep finished — clear the operator-visible busy state.
+      const btn = document.getElementById('btn-force-spectrum');
+      if (btn) btn.classList.remove('busy');
+      forceSpectrumBusyUntil = 0;
       renderRfTile();
     }
     if (topic === 'drifter/rf/emergency') {
       cache.rfEmer = data;
       renderRfTile();
+    }
+    if (topic === 'drifter/rf/tpms/harvest') {
+      tpmsHarvest = data;
+      if (activeTab === 'tpms' || activeTab === 'sensors') render();
     }
     if (topic.startsWith('drifter/rf/tpms/')) {
       // Trigger refresh; tpms snapshot endpoint returns aggregated view.
@@ -2990,10 +3060,17 @@
 
   // Single delegated click listener — every preset button is data-driven.
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-replay], [data-confirm], [data-cancel]');
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel]');
     if (!t) return;
 
     // ── RF ops strip ──
+    if (t.id === 'btn-force-spectrum') {
+      t.classList.add('busy');
+      // Up to 90s; reconcileFromSpectrum() (WS handler) clears earlier.
+      forceSpectrumBusyUntil = Date.now() + 90_000;
+      await postJSON('/api/rf/command', { command: 'force_spectrum' });
+      return;
+    }
     if (t.id === 'btn-rtl433-toggle') {
       const cmd = t.dataset.state === 'pause' ? 'pause_rtl_433' : 'resume_rtl_433';
       markBusy(t);
@@ -3038,6 +3115,26 @@
       await postJSON('/api/rf/command', { command: 'tpms_learn_stop' });
       return;
     }
+    if (t.id === 'tpms-harvest') {
+      const active = t.dataset.active === '1';
+      markBusy(t);
+      await postJSON('/api/rf/command', {
+        command: active ? 'tpms_harvest_stop' : 'tpms_harvest_start',
+      });
+      // Soft-toggle the local flag so the next render shows the new state
+      // even before the next progress payload lands.
+      if (!tpmsHarvest) tpmsHarvest = { sensors: {}, ids_seen: [] };
+      tpmsHarvest.active = !active;
+      if (activeTab === 'tires' || activeTab === 'tpms') render();
+      return;
+    }
+    if (t.id === 'tpms-clear-assignments') {
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_clear_assignments' });
+      tpmsAssignments = {};
+      if (activeTab === 'tires' || activeTab === 'tpms') render();
+      return;
+    }
     if (t.dataset.tpmsPair) {
       // Drops back into learn mode so the next packet from that corner
       // can be auto-assigned by the operator. Honest single-corner pair
@@ -3061,8 +3158,22 @@
       return;
     }
     if (t.dataset.replay != null) {
-      // REPLAY is intentionally aria-disabled — captures are decoded text,
-      // not playable .sub artifacts. See "Known incomplete" in handoff.
+      // REPLAY shows the inline confirm row. Skip if the artifact button
+      // is aria-disabled (no .sub on disk yet — old text-only captures).
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingReplays.add(t.dataset.replay);
+      if (activeTab === 'flipper') render();
+      return;
+    }
+    if (t.dataset.confirmReplay) {
+      // Persisted .sub replay path — POST /api/flipper/command subghz_replay.
+      const captureId = t.dataset.confirmReplay;
+      pendingReplays.delete(captureId);
+      markBusy(t);
+      await postJSON('/api/flipper/command', {
+        command: 'subghz_replay', capture_id: captureId,
+      });
+      if (activeTab === 'flipper') render();
       return;
     }
     if (t.dataset.confirm) {
@@ -3091,6 +3202,31 @@
       loadRfaudio();
       return;
     }
+  });
+
+  // TPMS per-corner dropdown — POSTs tpms_assign_corner on each change.
+  document.addEventListener('change', async (e) => {
+    const sel = e.target.closest('[data-tpms-assign]');
+    if (!sel) return;
+    const sid = sel.dataset.tpmsAssign;
+    const corner = sel.value;
+    if (!sid) return;
+    if (!corner) {
+      // Empty option means "unassign" — we currently route through
+      // clear_assignments + reassign-the-others. The cockpit UX deferral
+      // is acceptable for owner-only use; selecting another corner
+      // immediately moves the sensor.
+      return;
+    }
+    await postJSON('/api/rf/command', {
+      command: 'tpms_assign_corner', sensor_id: sid, corner,
+    });
+    // Optimistic local update so the UI reflects the change immediately.
+    for (const [c, v] of Object.entries(tpmsAssignments)) {
+      if (String(v) === String(sid)) delete tpmsAssignments[c];
+    }
+    tpmsAssignments[corner] = sid;
+    setTimeout(loadTpmsAssignments, 600);
   });
 
   // Keyboard activation — treat Enter/Space as a click on focused ghost-btns.
@@ -3172,7 +3308,7 @@
   // Initial fetches
   loadHealth().then(loadRfStatus);
   loadState();
-  loadAlerts(); loadDtcs(); loadTpms(); loadTrip();
+  loadAlerts(); loadDtcs(); loadTpms(); loadTpmsAssignments(); loadTrip();
   loadRfSpec(); loadRfEmer(); loadFlipper(); loadRfaudio();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions();
@@ -3185,6 +3321,7 @@
   setInterval(loadAlerts,     10000);
   setInterval(loadDtcs,       30000);
   setInterval(loadTpms,       10000);
+  setInterval(loadTpmsAssignments, 30000);
   setInterval(loadTrip,       10000);
   setInterval(loadRfSpec,     20000);
   setInterval(loadRfEmer,     20000);

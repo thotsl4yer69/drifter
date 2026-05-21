@@ -786,8 +786,178 @@ def test_rf_command_allowlist_matches_rf_monitor_handler():
     posture. The reverse (allowlist has a command rf_monitor ignores)
     is what we guard here."""
     expected = {'tpms_learn_start', 'tpms_learn_stop', 'tpms_auto_assign',
-                'tpms_assign', 'pause_rtl_433', 'resume_rtl_433'}
+                'tpms_assign', 'pause_rtl_433', 'resume_rtl_433',
+                'force_spectrum',
+                'tpms_harvest_start', 'tpms_harvest_stop',
+                'tpms_assign_corner', 'tpms_clear_assignments'}
     assert h._RF_COMMANDS == expected
+
+
+# ── /api/rf/command — new commands ────────────────────────────────────
+
+def test_post_rf_command_forwards_force_spectrum(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"force_spectrum"}')
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    assert _json.loads(payload)['command'] == 'force_spectrum'
+
+
+def test_post_rf_command_forwards_tpms_harvest_start(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"tpms_harvest_start"}')
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+
+
+def test_post_rf_command_forwards_tpms_assign_corner(monkeypatch):
+    state.mqtt_client = MagicMock()
+    body = b'{"command":"tpms_assign_corner","sensor_id":"deadbeef","corner":"FL"}'
+    handler = _build_post_handler(body)
+    handler._post_rf_command()
+    state.mqtt_client.publish.assert_called_once()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    parsed = _json.loads(payload)
+    assert parsed['sensor_id'] == 'deadbeef'
+    assert parsed['corner'] == 'FL'
+
+
+def test_post_rf_command_rejects_tpms_assign_corner_bad_corner(monkeypatch):
+    state.mqtt_client = MagicMock()
+    body = b'{"command":"tpms_assign_corner","sensor_id":"a","corner":"XY"}'
+    handler = _build_post_handler(body)
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'corner'
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_rf_command_rejects_tpms_assign_corner_missing_sensor_id(monkeypatch):
+    state.mqtt_client = MagicMock()
+    body = b'{"command":"tpms_assign_corner","corner":"FL"}'
+    handler = _build_post_handler(body)
+    handler._post_rf_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'sensor_id'
+
+
+# ── /api/tpms/assignments ─────────────────────────────────────────────
+
+def test_get_tpms_assignments_route_registered():
+    assert '/api/tpms/assignments' in h.DashboardHandler._EXACT_GET_ROUTES
+
+
+def test_get_tpms_assignments_returns_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(h, '_TPMS_ASSIGNMENTS_PATH',
+                         tmp_path / 'tpms_assignments.json')
+    (tmp_path / 'tpms_assignments.json').write_text(
+        _json.dumps({'FL': 'deadbeef'}))
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_tpms_assignments(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload == {'FL': 'deadbeef'}
+
+
+def test_get_tpms_assignments_empty_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(h, '_TPMS_ASSIGNMENTS_PATH',
+                         tmp_path / 'missing.json')
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_tpms_assignments(handler, None)
+    assert handler._serve_json.call_args[0][0] == {}
+
+
+# ── /api/flipper/command — subghz_replay ──────────────────────────────
+
+def test_post_flipper_command_subghz_replay_forwarded(monkeypatch):
+    state.mqtt_client = MagicMock()
+    body = b'{"command":"subghz_replay","capture_id":"drifter-42"}'
+    handler = _build_post_handler(body)
+    handler._post_flipper_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/flipper/command'
+    parsed = _json.loads(payload)
+    assert parsed['command'] == 'subghz_replay'
+    assert parsed['capture_id'] == 'drifter-42'
+
+
+def test_post_flipper_command_subghz_replay_requires_capture_id(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"subghz_replay"}')
+    handler._post_flipper_command()
+    handler.send_error.assert_called_once()
+    code, field = handler.send_error.call_args[0]
+    assert code == 400
+    assert field == 'capture_id'
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_flipper_command_passes_through_cli_strings(monkeypatch):
+    """Bare CLI commands (e.g. 'hw info') still pass through; only structured
+    workflow commands are rejected when not in the allowlist."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"hw info"}')
+    handler._post_flipper_command()
+    state.mqtt_client.publish.assert_called_once()
+
+
+def test_post_flipper_command_rejects_unknown_workflow_command(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"reformat_everything"}')
+    handler._post_flipper_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+# ── /api/flipper/captures augmentation ────────────────────────────────
+
+def test_get_flipper_captures_merges_persisted_sub_paths(tmp_path, monkeypatch):
+    """Live ring rows with a matching .sub on disk get local_sub_path added."""
+    import flipper_bridge
+    monkeypatch.setattr(flipper_bridge, 'FLIPPER_CAPTURE_DIR', tmp_path)
+    body = flipper_bridge.build_sub_file(433920000, [244, -732])
+    (tmp_path / 'drifter-1700.sub').write_text(body)
+    state.recent_flipper_captures.clear()
+    state.recent_flipper_captures.append({
+        'id': 'drifter-1700', 'raw': '244 -732', 'freq_hz': 433920000,
+        'ts': 1700,
+    })
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_flipper_captures(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    rows = payload['captures']
+    assert any('local_sub_path' in r and r['id'] == 'drifter-1700' for r in rows)
+
+
+# ── Cockpit HTML — new operator surfaces ──────────────────────────────
+
+def test_cockpit_has_force_spectrum_button():
+    html = _cockpit_html()
+    assert 'FORCE SPECTRUM' in html
+    assert 'btn-force-spectrum' in html
+
+
+def test_cockpit_has_harvest_button():
+    html = _cockpit_html()
+    assert 'HARVEST' in html
+    assert 'tpms-harvest' in html
+
+
+def test_cockpit_has_replay_confirm_row():
+    html = _cockpit_html()
+    # The new inline confirm uses data-confirm-replay; the legacy
+    # aria-disabled REPLAY hint must be gone.
+    assert 'data-confirm-replay' in html
+    assert 'REPLAY' in html
 
 
 # ── Cockpit HTML invariants (preset-button surface) ────────────────────
