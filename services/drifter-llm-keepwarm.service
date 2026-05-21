@@ -1,0 +1,21 @@
+[Unit]
+Description=MZ1312 DRIFTER LLM keep-warm — ping Ollama so cockpit chat stays fast
+After=ollama.service
+Wants=ollama.service
+
+[Service]
+Type=oneshot
+# Pings Ollama with a one-token prompt + keep_alive=10m. This refreshes
+# the model's idle timer so a driver pressing Mech/Vivi mid-drive gets
+# a warm response (~10-30s) instead of a cold-load (~30-60s). The
+# request budget is tiny — one token in, one token out — and harmless
+# if Ollama is unreachable (curl exits non-zero, oneshot tolerates it).
+ExecStart=/usr/bin/curl -fsS -m 90 -o /dev/null \
+    -d '{"model":"qwen2.5:3b","prompt":".","stream":false,"keep_alive":"10m","options":{"num_predict":1}}' \
+    http://127.0.0.1:11434/api/generate
+# Don't fail the unit if Ollama is briefly unreachable during boot.
+# 7 = couldn't connect (Ollama not yet up); 28 = timeout (cold-load
+# slow on Pi 5 — keep_alive still registers server-side even if our
+# read times out); 56 = recv failure.
+SuccessExitStatus=0 7 28 56
+TimeoutStartSec=120s

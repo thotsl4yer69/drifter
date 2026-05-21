@@ -432,10 +432,18 @@ elif command -v nanomq &>/dev/null; then
     cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq.conf
 fi
 
-# Deploy all service files
+# Deploy all service + timer files
 for svc in ${REPO_DIR}/services/*.service; do
     cp "$svc" /etc/systemd/system/
 done
+# Timer units must be copied too (otherwise enable below fails with
+# "Unit not found"). nullglob so the glob expands to nothing if no .timer
+# files exist, instead of looping over the literal '*.timer' string.
+shopt -s nullglob
+for tmr in ${REPO_DIR}/services/*.timer; do
+    cp "$tmr" /etc/systemd/system/
+done
+shopt -u nullglob
 
 # Sudoers drop-ins — narrow NOPASSWD entries for the dashboards.
 # visudo -cf validates each file before activating; a bad sudoers file would
@@ -473,6 +481,16 @@ for svc in $SERVICES; do
     systemctl enable "$svc" 2>/dev/null
     ok "Enabled: $svc"
 done
+
+# Enable any drifter-*.timer units we shipped. Timer enables go via
+# timers.target, so they need separate `systemctl enable` calls.
+shopt -s nullglob
+for tmr_file in ${REPO_DIR}/services/drifter-*.timer; do
+    tmr_name="$(basename "$tmr_file")"
+    systemctl enable "$tmr_name" 2>/dev/null
+    ok "Enabled: $tmr_name"
+done
+shopt -u nullglob
 
 # ── 11. RTL-SDR Blacklist ──
 step 11 "Configuring RTL-SDR"
