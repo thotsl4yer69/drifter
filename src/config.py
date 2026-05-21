@@ -67,6 +67,134 @@ SETTINGS_DEFAULTS = {
     'setup_complete': False,
 }
 
+# Operator-facing settings schema. Drives the cockpit Settings overlay
+# render and the POST /api/settings validation. Fields are listed in
+# display order; section determines grouping in the UI.
+#
+# Internal state flags (setup_complete, plus any future onboarding-only
+# fields) are intentionally absent — they remain settable via the
+# onboarding flow through save_settings (which only checks against
+# SETTINGS_DEFAULTS), but they are not surfaced as operator-toggleable
+# controls.
+SETTINGS_SCHEMA = [
+    # ── Thresholds ───────────────────────────────────────────────
+    {'key': 'coolant_amber', 'label': 'Coolant amber (°C)',
+     'description': 'Warn level for coolant temperature.',
+     'type': 'int', 'section': 'thresholds', 'min': 60, 'max': 130},
+    {'key': 'coolant_red', 'label': 'Coolant red (°C)',
+     'description': 'Critical coolant temperature — triggers voice + alert.',
+     'type': 'int', 'section': 'thresholds', 'min': 60, 'max': 140},
+    {'key': 'voltage_undercharge', 'label': 'Voltage undercharge (V)',
+     'description': 'Alternator output below this is flagged as weak.',
+     'type': 'float', 'section': 'thresholds', 'min': 11.0, 'max': 14.5},
+    {'key': 'voltage_critical', 'label': 'Voltage critical (V)',
+     'description': 'Battery is dropping — critical alert level.',
+     'type': 'float', 'section': 'thresholds', 'min': 10.0, 'max': 13.0},
+    {'key': 'stft_lean_idle', 'label': 'STFT lean idle (%)',
+     'description': 'Short-term fuel trim at idle that flags a lean condition.',
+     'type': 'float', 'section': 'thresholds', 'min': 0.0, 'max': 30.0},
+    {'key': 'ltft_lean_warn', 'label': 'LTFT lean warn (%)',
+     'description': 'Long-term fuel trim warn threshold.',
+     'type': 'float', 'section': 'thresholds', 'min': 0.0, 'max': 30.0},
+    {'key': 'ltft_lean_crit', 'label': 'LTFT lean critical (%)',
+     'description': 'Long-term fuel trim critical threshold.',
+     'type': 'float', 'section': 'thresholds', 'min': 0.0, 'max': 50.0},
+    # ── Voice ────────────────────────────────────────────────────
+    {'key': 'voice_cooldown', 'label': 'Voice cooldown (s)',
+     'description': 'Minimum gap between spoken alerts of the same kind.',
+     'type': 'int', 'section': 'voice', 'min': 0, 'max': 600},
+    {'key': 'tts_engine', 'label': 'TTS engine',
+     'description': 'Piper is higher quality; espeak is the lightweight fallback.',
+     'type': 'enum', 'section': 'voice', 'enum_options': ['piper', 'espeak']},
+    {'key': 'voice_min_level', 'label': 'Voice alert minimum level',
+     'description': '0 = chatty, 1 = info, 2 = warn, 3 = critical only.',
+     'type': 'int', 'section': 'voice', 'min': 0, 'max': 3},
+    # ── Display ──────────────────────────────────────────────────
+    {'key': 'temp_unit', 'label': 'Temperature unit',
+     'description': 'Used in cockpit gauges and Vivi spoken responses.',
+     'type': 'enum', 'section': 'display', 'enum_options': ['C', 'F']},
+    {'key': 'pressure_unit', 'label': 'Pressure unit',
+     'description': 'TPMS, boost, and oil pressure display unit.',
+     'type': 'enum', 'section': 'display', 'enum_options': ['PSI', 'kPa', 'bar']},
+    # ── LLM ──────────────────────────────────────────────────────
+    {'key': 'llm_model', 'label': 'LLM model override',
+     'description': 'Ollama tag, e.g. qwen2.5:1.5b. Empty = use the config default.',
+     'type': 'str', 'section': 'llm'},
+    {'key': 'llm_max_tokens', 'label': 'LLM max response tokens',
+     'description': 'Upper bound on generated tokens per reply.',
+     'type': 'int', 'section': 'llm', 'min': 1, 'max': 8192},
+    {'key': 'llm_tools_enabled', 'label': 'LLM tool use',
+     'description': 'Allow the LLM to call structured tools (DTC lookup, calc).',
+     'type': 'bool', 'section': 'llm'},
+    # ── Data ─────────────────────────────────────────────────────
+    {'key': 'data_retention_days', 'label': 'Data retention (days)',
+     'description': 'How long the SQLite telemetry archive is kept before pruning.',
+     'type': 'int', 'section': 'data', 'min': 1, 'max': 3650},
+]
+
+# Display order + human label for the schema sections. Anything not
+# listed here falls into an "other" bucket if added later.
+SETTINGS_SECTIONS = [
+    {'key': 'thresholds', 'label': 'Alert thresholds'},
+    {'key': 'voice',      'label': 'Voice'},
+    {'key': 'display',    'label': 'Display'},
+    {'key': 'llm',        'label': 'LLM'},
+    {'key': 'data',       'label': 'Data'},
+]
+
+
+def validate_settings_payload(payload):
+    """Validate a /api/settings POST body against SETTINGS_SCHEMA.
+
+    Returns (cleaned, error). On success, cleaned is the payload dict
+    (unchanged — save_settings will still drop unknown keys via the
+    SETTINGS_DEFAULTS allowlist). On failure, cleaned is None and error
+    is a short string suitable for an HTTP 400 body, naming the field.
+
+    Keys not in SETTINGS_SCHEMA are passed through without schema
+    validation — they're either internal-state flags (setup_complete)
+    legitimately set by the onboarding flow, or unknown keys that
+    save_settings will silently drop. The schema only constrains the
+    operator-visible fields it explicitly describes.
+    """
+    if not isinstance(payload, dict):
+        return None, 'body must be a JSON object'
+    schema_by_key = {entry['key']: entry for entry in SETTINGS_SCHEMA}
+    for k, v in payload.items():
+        entry = schema_by_key.get(k)
+        if entry is None:
+            continue
+        t = entry['type']
+        if t == 'bool':
+            if not isinstance(v, bool):
+                return None, f"{k}: expected true or false"
+        elif t == 'enum':
+            if v not in entry['enum_options']:
+                opts = ', '.join(entry['enum_options'])
+                return None, f"{k}: must be one of {opts}"
+        elif t == 'int':
+            # bool is a subclass of int in Python — reject it explicitly
+            # so a stray True doesn't sneak through as 1.
+            if isinstance(v, bool) or not isinstance(v, int):
+                return None, f"{k}: expected an integer"
+            lo, hi = entry.get('min'), entry.get('max')
+            if lo is not None and v < lo:
+                return None, f"{k}: must be >= {lo}"
+            if hi is not None and v > hi:
+                return None, f"{k}: must be <= {hi}"
+        elif t == 'float':
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                return None, f"{k}: expected a number"
+            lo, hi = entry.get('min'), entry.get('max')
+            if lo is not None and v < lo:
+                return None, f"{k}: must be >= {lo}"
+            if hi is not None and v > hi:
+                return None, f"{k}: must be <= {hi}"
+        elif t == 'str':
+            if not isinstance(v, str):
+                return None, f"{k}: expected a string"
+    return payload, None
+
 
 def load_settings() -> dict:
     """Load user settings from settings.json, merging with defaults."""

@@ -17,7 +17,8 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from config import (
-    load_settings, save_settings, XTYPE_DTC_LOOKUP, SERVICES,
+    load_settings, save_settings, validate_settings_payload,
+    SETTINGS_SCHEMA, SETTINGS_SECTIONS, XTYPE_DTC_LOOKUP, SERVICES,
     MODES, MODE_STATE_PATH, DEFAULT_MODE,
 )
 from corpus import corpus_search, dtc_lookup
@@ -258,6 +259,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except OSError as e:
             self.send_error(500, f'preview read error: {e}')
     def _get_settings(self, parsed):          self._serve_json(load_settings())
+
+    def _get_settings_schema(self, parsed):
+        """Operator-facing settings schema. Drives the cockpit overlay
+        render. Excludes internal-state flags (e.g. setup_complete) so
+        they don't appear as user-toggleable controls. The full key set
+        — including those flags — remains on GET /api/settings for the
+        onboarding flow."""
+        self._serve_json({
+            'sections': SETTINGS_SECTIONS,
+            'fields': SETTINGS_SCHEMA,
+        })
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_rfaudio_status(self, parsed):    self._serve_json(state.latest_state.get('rfaudio_status', {}))
@@ -1012,8 +1024,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         body = self._read_json_body()
         if body is None:
             return
+        cleaned, err = validate_settings_payload(body)
+        if err is not None:
+            self.send_error(400, err)
+            return
         try:
-            ok = save_settings(body)
+            ok = save_settings(cleaned)
             self._serve_json({'ok': ok})
         except Exception as e:
             log.warning("Settings save error: %s", e)
@@ -1187,6 +1203,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/settings':                  DashboardHandler._redirect_to_root,
     '/healthz':                   DashboardHandler._get_healthz,
     '/api/settings':              DashboardHandler._get_settings,
+    '/api/settings/schema':       DashboardHandler._get_settings_schema,
     '/api/state':                 DashboardHandler._get_state,
     '/api/hardware':              DashboardHandler._get_hardware,
     '/api/rfaudio/status':        DashboardHandler._get_rfaudio_status,

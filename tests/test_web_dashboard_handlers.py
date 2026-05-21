@@ -575,3 +575,112 @@ def test_post_gps_manual_threshold_boundary(monkeypatch, tmp_path):
         {'lat': 0.0, 'lng': 0.0, 'accuracy_m': h.GPS_MAX_ACCURACY_M + 0.1},
         tmp_path=tmp_path, monkeypatch=monkeypatch)
     fail_h.send_error.assert_called_once()
+
+
+# ── Settings schema + cockpit overlay ────────────────────────────────
+
+def test_settings_schema_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/settings/schema' in routes
+    assert routes['/api/settings/schema'] is h.DashboardHandler._get_settings_schema
+
+
+def test_settings_schema_handler_emits_schema_payload():
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_settings_schema(handler, None)
+    handler._serve_json.assert_called_once()
+    payload = handler._serve_json.call_args[0][0]
+    assert 'fields' in payload and 'sections' in payload
+    keys = {f['key'] for f in payload['fields']}
+    assert 'setup_complete' not in keys, \
+        "setup_complete must not appear in the operator-facing schema"
+    # Sanity: known operator fields are present.
+    for k in ('tts_engine', 'temp_unit', 'pressure_unit',
+              'voice_min_level', 'llm_max_tokens', 'data_retention_days'):
+        assert k in keys, f"schema missing operator field {k}"
+
+
+def test_cockpit_html_does_not_render_setup_complete():
+    """The served cockpit must not surface setup_complete as a
+    user-toggleable control. Test reads the deployed-or-source HTML
+    directly so a regression in the template is caught here."""
+    from pathlib import Path
+    candidates = [
+        Path('/opt/drifter/ui/cockpit-preview.html'),
+        Path('ui/cockpit-preview.html'),
+    ]
+    html_path = next((p for p in candidates if p.exists()), None)
+    assert html_path is not None, "cockpit HTML not found in known locations"
+    html = html_path.read_text(encoding='utf-8')
+    assert 'setup_complete' not in html, \
+        f"'setup_complete' must not appear in cockpit HTML ({html_path})"
+    assert 'data-key="setup_complete"' not in html
+
+
+def _settings_post_handler(body_dict, monkeypatch, tmp_path):
+    """Build a DashboardHandler stub that runs _post_settings on the
+    supplied body dict. Returns the stub so the test can inspect
+    send_error / _serve_json calls."""
+    import json as _json
+    import config as cfg
+    monkeypatch.setattr(cfg, 'SETTINGS_FILE', tmp_path / 'settings.json')
+
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    raw = _json.dumps(body_dict).encode()
+
+    class _Stream:
+        def __init__(self, data): self.data = data
+        def read(self, n): return self.data[:n]
+
+    handler.rfile = _Stream(raw)
+    handler.headers = {'Content-Length': str(len(raw))}
+    handler.send_error = MagicMock()
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._post_settings(handler)
+    return handler
+
+
+def test_post_settings_rejects_invalid_enum(monkeypatch, tmp_path):
+    handler = _settings_post_handler({'temp_unit': 'K'},
+                                     monkeypatch=monkeypatch, tmp_path=tmp_path)
+    handler.send_error.assert_called_once()
+    code, msg = handler.send_error.call_args[0]
+    assert code == 400
+    assert 'temp_unit' in msg
+
+
+def test_post_settings_rejects_out_of_range_int(monkeypatch, tmp_path):
+    handler = _settings_post_handler({'voice_min_level': 99},
+                                     monkeypatch=monkeypatch, tmp_path=tmp_path)
+    handler.send_error.assert_called_once()
+    code, _ = handler.send_error.call_args[0]
+    assert code == 400
+
+
+def test_post_settings_accepts_valid_payload(monkeypatch, tmp_path):
+    handler = _settings_post_handler({'temp_unit': 'F', 'voice_min_level': 1},
+                                     monkeypatch=monkeypatch, tmp_path=tmp_path)
+    handler.send_error.assert_not_called()
+    handler._serve_json.assert_called_once()
+    body = handler._serve_json.call_args[0][0]
+    assert body.get('ok') is True
+
+
+def test_post_settings_passes_through_setup_complete(monkeypatch, tmp_path):
+    # Onboarding flow must still be able to set this even though it's
+    # excluded from the schema.
+    handler = _settings_post_handler({'setup_complete': True},
+                                     monkeypatch=monkeypatch, tmp_path=tmp_path)
+    handler.send_error.assert_not_called()
+    handler._serve_json.assert_called_once()
+
+
+def test_post_settings_drops_unknown_keys_via_save_settings(monkeypatch, tmp_path):
+    # Unknown key passes the schema validator (it doesn't know about
+    # it) but save_settings drops it via the SETTINGS_DEFAULTS allowlist.
+    import config as cfg
+    _settings_post_handler({'totally_unknown_key': 42},
+                           monkeypatch=monkeypatch, tmp_path=tmp_path)
+    persisted = (tmp_path / 'settings.json').read_text()
+    assert 'totally_unknown_key' not in persisted
