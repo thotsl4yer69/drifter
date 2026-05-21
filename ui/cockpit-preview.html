@@ -88,6 +88,54 @@
   }
   :root[data-theme="daylight"] body::before { opacity: 0.15; mix-blend-mode: multiply; }
   :root[data-theme="daylight"] body::after { opacity: 0.15; }
+  /* Daylight legibility pass — every tile new since the night build was
+     reviewed against a white-ish surface. Stronger borders, darker accent
+     ink, and beefier contrast on small text. Edit values here only. */
+  :root[data-theme="daylight"] {
+    --fg: #0f172a; --fg-mute: #334155; --fg-dim: #475569; --fg-deep: #64748b;
+  }
+  :root[data-theme="daylight"] .tile,
+  :root[data-theme="daylight"] .pill,
+  :root[data-theme="daylight"] .ghost-btn {
+    background: rgba(255,255,255,0.88);
+    border-color: rgba(0,0,0,0.16);
+    color: #1e293b;
+  }
+  :root[data-theme="daylight"] .ghost-btn .kbd { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.18); color: #334155; }
+  :root[data-theme="daylight"] .ghost-btn.live { color: #b45309; border-color: rgba(217,119,6,0.65); background: rgba(255,237,213,0.85); }
+  :root[data-theme="daylight"] .ghost-btn.crit { color: #b91c1c; border-color: rgba(220,38,38,0.65); }
+  :root[data-theme="daylight"] .vitals-popover { background: rgba(255,255,255,0.97); border-color: rgba(0,0,0,0.14); color: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+  :root[data-theme="daylight"] .summary-chip { background: rgba(255,255,255,0.75); border-color: rgba(0,0,0,0.14); color: #1e293b; }
+  :root[data-theme="daylight"] .summary-chip b { color: #b45309; }
+  :root[data-theme="daylight"] .summary-chip.red b { color: #b91c1c; }
+  :root[data-theme="daylight"] .summary-chip.cyan b { color: #0369a1; }
+  :root[data-theme="daylight"] .alert-row { background: rgba(255,255,255,0.7); border-color: rgba(0,0,0,0.12); color: #0f172a; }
+  :root[data-theme="daylight"] .alert-row.anomaly-row { border-left-color: #0369a1; }
+  :root[data-theme="daylight"] .alert-row.anomaly-row .sym { color: #0369a1; }
+  :root[data-theme="daylight"] .alert-row .anomaly-pill { color: #0369a1; border-color: rgba(2,132,199,0.55); background: rgba(186,230,253,0.6); }
+  :root[data-theme="daylight"] .alerts-empty { color: #475569; }
+  :root[data-theme="daylight"] .threshold-pill { background: rgba(255,255,255,0.7); border-color: rgba(0,0,0,0.16); color: #334155; }
+  :root[data-theme="daylight"] .threshold-pill.learned { color: #047857; border-color: rgba(5,150,105,0.55); background: rgba(209,250,229,0.7); }
+  :root[data-theme="daylight"] .gauge .bar .learned-tick { background: rgba(2,132,199,0.85); }
+  :root[data-theme="daylight"] .gauge .bar .range-band { background: rgba(217,119,6,0.18); border-color: rgba(217,119,6,0.4); }
+  :root[data-theme="daylight"] .confirm-row { background: rgba(254,243,199,0.85); border-color: rgba(217,119,6,0.5); color: #1e293b; }
+  :root[data-theme="daylight"] .confirm-row.high-risk-confirm { background: rgba(254,226,226,0.9); border-color: rgba(220,38,38,0.55); }
+  :root[data-theme="daylight"] .confirm-row .tx-badge { color: #b45309; }
+  :root[data-theme="daylight"] .confirm-row .high-risk-badge { color: #b91c1c; }
+  :root[data-theme="daylight"] .confirm-row .high-risk-cmd { color: #1e293b; }
+  :root[data-theme="daylight"] .pill.vitals.amber { color: #b45309; }
+  :root[data-theme="daylight"] .pill.vitals.red { color: #b91c1c; }
+  :root[data-theme="daylight"] .vitals-popover .stale,
+  :root[data-theme="daylight"] .vitals-popover .stale-list { color: #b45309; }
+  :root[data-theme="daylight"] .vivi-strip .listening { color: #475569; }
+  :root[data-theme="daylight"] .vivi-strip .listening b { color: #047857; }
+  :root[data-theme="daylight"] .vivi-strip .msg { color: #0f172a; }
+  :root[data-theme="daylight"] .vivi-strip .msg b { color: #b45309; }
+  :root[data-theme="daylight"] .rf-mod { background: rgba(255,255,255,0.75); border-color: rgba(0,0,0,0.14); color: #334155; }
+  :root[data-theme="daylight"] .rf-mod.on { color: #b45309; border-color: rgba(217,119,6,0.55); }
+  :root[data-theme="daylight"] .alerts-summary, :root[data-theme="daylight"] .section-head { color: #334155; }
+  :root[data-theme="daylight"] .drawer-tab { color: #475569; }
+  :root[data-theme="daylight"] .drawer-tab.active { color: #b45309; background: linear-gradient(180deg, rgba(217,119,6,0.14), rgba(217,119,6,0.02)); }
 
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
@@ -722,6 +770,34 @@
   .vivi-portrait::after {
     content:''; position:absolute; inset:7px; border-radius:50%;
     border: 1px solid rgba(94,234,212,0.45);
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  /* Voice-state driven portrait pulse — varies by drifter/voice/status.
+     idle: no anim; listening: faster pulse + brighter ring;
+     processing: amber tint mixed in + slow pulse. */
+  @keyframes viviPortraitPulse {
+    0%, 100% { box-shadow: 0 0 18px rgba(94,234,212,0.45), inset 0 0 10px rgba(0,0,0,0.45); }
+    50%      { box-shadow: 0 0 26px rgba(94,234,212,0.78), inset 0 0 10px rgba(0,0,0,0.45); }
+  }
+  @keyframes viviPortraitPulseAmber {
+    0%, 100% { box-shadow: 0 0 20px rgba(255,174,66,0.40), inset 0 0 10px rgba(0,0,0,0.45); }
+    50%      { box-shadow: 0 0 28px rgba(255,174,66,0.62), inset 0 0 10px rgba(0,0,0,0.45); }
+  }
+  .vivi-portrait[data-voice="listening"] {
+    animation: viviPortraitPulse 1.0s ease-in-out infinite;
+  }
+  .vivi-portrait[data-voice="listening"]::after {
+    border-color: rgba(94,234,212,0.85);
+    box-shadow: 0 0 8px rgba(94,234,212,0.55);
+  }
+  .vivi-portrait[data-voice="processing"] {
+    background:
+      radial-gradient(circle at 32% 28%, var(--teal), rgba(255,174,66,0.20) 55%, transparent 78%),
+      radial-gradient(circle at 60% 70%, rgba(255,174,66,0.45), transparent 60%);
+    animation: viviPortraitPulseAmber 1.8s ease-in-out infinite;
+  }
+  .vivi-portrait[data-voice="processing"]::after {
+    border-color: rgba(255,174,66,0.7);
   }
   .vivi-strip .conv { min-width: 0; }
   .vivi-strip .label-row {
@@ -761,6 +837,17 @@
     border: 1px solid var(--glass-stroke); border-radius: 3px;
   }
   .ghost-btn.live { color: var(--amber); border-color: var(--glass-stroke-amber); }
+  /* Conversation mode pill — off=ghost outline, on=amber-live w/ ON suffix. */
+  .ghost-btn.conv-toggle.on {
+    color: var(--amber); border-color: var(--glass-stroke-amber);
+    background: rgba(255,174,66,0.10);
+    box-shadow: inset 0 0 10px rgba(255,174,66,0.12);
+  }
+  .ghost-btn.conv-toggle.on::after {
+    content: '·ON'; margin-left: 6px;
+    font-size: 9.5px; color: var(--amber);
+    letter-spacing: 0.12em;
+  }
   .ghost-btn.live .dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--amber); box-shadow: var(--amber-glow);
@@ -1222,6 +1309,110 @@
     .gauge .val { font-size: 44px; }
     :root { --drawer-w: 320px; }
   }
+
+  /* ── Mobile / 10" portrait fallback ───────────────────────────── */
+  /* Floating DATA button — only present at ≤900px, opens the drawer
+     as a slide-up sheet. Built here so we don't have to duplicate
+     markup; toggles .shell.sheet-open from JS. */
+  .data-fab {
+    display: none;
+    position: fixed; right: 14px; bottom: 76px; z-index: 60;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(7,9,13,0.92);
+    border: 1px solid var(--glass-stroke-amber);
+    color: var(--amber); font-family: 'Major Mono Display', monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    box-shadow: var(--amber-glow);
+    align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  :root[data-theme="daylight"] .data-fab { background: rgba(255,255,255,0.95); color: #b45309; border-color: rgba(217,119,6,0.6); }
+
+  @media (max-width: 900px) {
+    .shell {
+      grid-template-rows: 40px 1fr 60px;
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "top"
+        "main"
+        "rail";
+    }
+    .top { padding: 0 8px; gap: 6px; }
+    .top .reg, .top .pill.driver { display: none; }
+    .brand .sub { display: none; }
+    .brand .badge { width: 26px; height: 26px; font-size: 13px; }
+    .brand .mark { font-size: 11px; }
+    .pill { font-size: 9px; padding: 3px 7px; }
+    .top .rail-vivi {
+      display: inline-grid; place-items: center;
+      width: 30px; height: 30px; margin-left: auto;
+    }
+    .rail {
+      grid-area: rail;
+      flex-direction: row; height: 60px; width: 100%;
+      border-right: none; border-top: 1px solid var(--glass-stroke);
+      padding: 0 6px; gap: 2px;
+      justify-content: space-around; align-items: center;
+    }
+    .rail::after { display: none; }
+    .rail-btn { width: auto; padding: 6px 8px; flex: 1; min-width: 0; }
+    .rail-btn.active::before {
+      top: auto; bottom: 0; left: 10%; right: 10%; width: auto; height: 2px;
+    }
+    .rail-vivi { display: none; }
+    .rail-spacer { display: none; }
+    .main { grid-area: main; }
+    .drawer {
+      grid-area: unset;
+      position: fixed; left: 0; right: 0; bottom: 60px;
+      height: 70vh; max-height: 70vh;
+      border-left: none; border-top: 1px solid var(--glass-stroke-amber);
+      transform: translateY(100%); transition: transform 260ms cubic-bezier(.4,0,.2,1);
+      z-index: 55;
+      grid-template-rows: 44px 1fr 30px;
+    }
+    .shell.sheet-open .drawer { transform: translateY(0); }
+    .shell.drawer-collapsed .drawer { display: grid; }
+    .data-fab { display: inline-flex; }
+    .shell.sheet-open .data-fab { background: rgba(255,174,66,0.18); }
+    .row-hero { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .row-split { grid-template-columns: 1fr; gap: 8px; }
+    .gauge .val { font-size: 40px; }
+    .vivi-strip { grid-template-columns: 40px 1fr; padding: 8px 10px; row-gap: 6px; }
+    .vivi-portrait { width: 36px; height: 36px; }
+    .vivi-actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; justify-content: stretch; }
+    .vivi-actions .ghost-btn { flex: 1 1 auto; justify-content: center; }
+  }
+
+  @media (max-width: 640px) {
+    .top { padding: 0 6px; }
+    .top .pill.vitals { font-size: 8.5px; padding: 2px 5px; }
+    .row-hero { gap: 6px; }
+    .gauge { padding: 8px; }
+    .gauge .val { font-size: 30px; }
+    .gauge .ladder { font-size: 8px; }
+    /* Phone — alerts + RF as a swipe-tab strip. JS adds .tab-strip /
+       .tab-active classes; CSS hides whichever isn't active. */
+    .row-split { display: block; position: relative; }
+    .row-split .tile { display: none; }
+    .row-split .tile.tab-active { display: flex; flex-direction: column; }
+    .row-split::before {
+      content:''; display: block; position: sticky; top: 0;
+      height: 0; /* tab buttons injected by JS via .row-split-tabs */
+    }
+    .row-split-tabs {
+      display: flex; gap: 4px; padding: 4px 0; margin-bottom: 4px;
+    }
+    .row-split-tab {
+      flex: 1; text-align: center; font-size: 10px; padding: 4px 6px;
+      border: 1px solid var(--glass-stroke); border-radius: var(--r-sm);
+      color: var(--fg-dim); background: rgba(0,0,0,0.25);
+      letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer;
+    }
+    .row-split-tab.active { color: var(--amber); border-color: var(--glass-stroke-amber); }
+    :root[data-theme="daylight"] .row-split-tab { background: rgba(255,255,255,0.75); color: #475569; border-color: rgba(0,0,0,0.14); }
+    :root[data-theme="daylight"] .row-split-tab.active { color: #b45309; border-color: rgba(217,119,6,0.55); }
+  }
 </style>
 </head>
 <body>
@@ -1446,11 +1637,15 @@
         <div class="vivi-actions">
           <span class="ghost-btn live" id="btn-talk"><span class="dot"></span>HOLD TO TALK <span class="kbd">SPC</span></span>
           <span class="ghost-btn" id="btn-mech">ASK MECHANIC <span class="kbd">M</span></span>
+          <span class="ghost-btn conv-toggle" id="btn-conv" role="button" tabindex="0" title="Conversation mode — Vivi keeps listening after each reply">CONV</span>
         </div>
       </div>
 
     </div>
   </main>
+
+  <!-- ── DATA FAB (≤900px only; opens drawer as slide-up sheet) ── -->
+  <button class="data-fab" id="data-fab" type="button" aria-label="Open data drawer">DATA</button>
 
   <!-- ── DRAWER ───────────────────────────────────────────── -->
   <aside class="drawer">
@@ -1520,7 +1715,7 @@
     state: null, healthz: null, feeds: null, mode: null,
     sensors: {},       // accumulated live values keyed by sensor name
     thresholds: {},    // adaptive learned baselines from drifter/thresholds/learned
-    viviResp: null, viviStatus: null,
+    viviResp: null, viviStatus: null, voiceStatus: null,
     rfStatus: null,
     rfaudioStatus: null,
     systemWatchdog: null,   // drifter/system/watchdog (cpu/mem/temp/disk/uptime/mqtt_stale)
@@ -1994,20 +2189,37 @@
   function renderViviStrip(){
     const r = cache.viviResp;
     const s = cache.viviStatus || {};
+    const v = cache.voiceStatus || {};
     const listening = document.getElementById('vivi-listening');
     const msgEl = document.getElementById('vivi-msg');
+    const portrait = document.querySelector('#vivi-strip .vivi-portrait');
+    // Map drifter/voice/status state to portrait pulse + tail text.
+    // voice_input.py publishes {state: "idle"|"listening"|"processing", ts}.
+    let voiceState = (v.state || '').toLowerCase();
+    let tail;
+    if (voiceState === 'listening') tail = 'listening for wake';
+    else if (voiceState === 'processing') tail = s.speaking ? 'speaking' : 'transcribing…';
+    else if (s.processing) { voiceState = 'processing'; tail = 'thinking…'; }
+    else if (s.speaking)    { tail = 'speaking'; }
+    else                    { voiceState = voiceState || 'idle'; tail = 'idle'; }
+    if (portrait) portrait.setAttribute('data-voice', voiceState);
     if (listening) {
       const link = s.backend || s.model || s.provider || '—';
-      const state = s.listening ? 'listening for wake'
-                  : s.speaking ? 'speaking'
-                  : s.processing ? 'thinking'
-                  : 'idle';
-      listening.innerHTML = `link <b>${esc(link)}</b> · ${esc(state)}`;
+      listening.innerHTML = `link <b>${esc(link)}</b> · ${esc(tail)}`;
     }
     if (msgEl && r) {
       const text = r.text || r.response || r.message || '';
       if (text) msgEl.textContent = text;
     }
+  }
+  // Conversation-mode pill state — reflects /api/state.vivi_conversation_mode
+  // and gets flipped optimistically on click, then reconciled on next poll.
+  function renderConvToggle(){
+    const btn = document.getElementById('btn-conv');
+    if (!btn) return;
+    const cm = (cache.state && cache.state.vivi_conversation_mode) || {};
+    const on = !!cm.enabled;
+    btn.classList.toggle('on', on);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2558,6 +2770,8 @@
       }
       if (activeTab === 'sensors' || activeTab === 'weather') render();
     }
+    // Reflect retained vivi_conversation_mode in the CONV pill on every poll.
+    renderConvToggle();
   }
 
   async function loadAlerts(){
@@ -2943,6 +3157,20 @@
     if (topic === 'drifter/vivi/response') {
       cache.viviResp = data;
       renderViviStrip();
+    }
+    if (topic === 'drifter/voice/status') {
+      // voice_input.py publishes {state, ts}. Drives the portrait pulse.
+      cache.voiceStatus = data;
+      renderViviStrip();
+      return;
+    }
+    if (topic === 'drifter/vivi/conversation_mode') {
+      // Retained from POST /api/vivi/conversation_mode. Keep cache.state
+      // in sync so the toggle pill renders the live value.
+      if (!cache.state) cache.state = {};
+      cache.state.vivi_conversation_mode = data;
+      renderConvToggle();
+      return;
     }
     if (topic === 'drifter/vivi/status') {
       cache.viviStatus = data;
@@ -3477,6 +3705,30 @@
     const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel]');
     if (!t) return;
 
+    // ── CONV (conversation mode) — toggle vivi's "keep listening" flag ──
+    if (t.id === 'btn-conv') {
+      const cm = (cache.state && cache.state.vivi_conversation_mode) || {};
+      const next = !cm.enabled;
+      // Optimistic flip — WS retain message reconciles within ~1s anyway.
+      if (!cache.state) cache.state = {};
+      cache.state.vivi_conversation_mode = { enabled: next, ts: Date.now()/1000 };
+      renderConvToggle();
+      markBusy(t);
+      const r = await postJSON('/api/vivi/conversation_mode', { enabled: next });
+      if (!r.ok) {
+        // Roll back on publish failure so the pill doesn't lie.
+        cache.state.vivi_conversation_mode = cm;
+        renderConvToggle();
+        t.classList.add('crit');
+        setTimeout(() => t.classList.remove('crit'), 1500);
+      }
+      return;
+    }
+    // ── DATA FAB — slide-up sheet on ≤900px viewports ──
+    if (t.id === 'data-fab') {
+      document.getElementById('shell').classList.toggle('sheet-open');
+      return;
+    }
     // ── RF ops strip ──
     if (t.id === 'btn-force-spectrum') {
       t.classList.add('busy');
