@@ -201,6 +201,28 @@
   .pill.idle { color: var(--fg-dim); }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
 
+  /* System vitals strip — CPU / MEM / TEMP pills in the top bar. */
+  .pill.vitals { font-family: 'JetBrains Mono', monospace; cursor: default; position: relative; }
+  .pill.vitals.amber { color: var(--amber); border-color: var(--glass-stroke-amber); }
+  .pill.vitals.red { color: var(--red); border-color: rgba(255,107,107,0.45); box-shadow: var(--red-glow); }
+  .vitals-popover {
+    position: absolute; top: 100%; right: 0; margin-top: 6px;
+    min-width: 220px; padding: 10px 12px;
+    background: rgba(7,9,13,0.96); border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-sm); z-index: 50;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    color: var(--fg); letter-spacing: 0.04em; text-transform: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    display: none; pointer-events: none;
+  }
+  .pill.vitals:hover .vitals-popover,
+  .pill.vitals.popover-open .vitals-popover { display: block; }
+  .vitals-popover .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .vitals-popover .row .k { color: var(--fg-dim); }
+  .vitals-popover .row .v { color: var(--fg); }
+  .vitals-popover .stale { color: var(--amber); }
+  .vitals-popover .stale-list { font-size: 9.5px; color: var(--amber); margin-top: 4px; word-break: break-all; }
+
   /* ── LEFT RAIL ────────────────────────────────────────────── */
   .rail {
     grid-area: rail;
@@ -536,6 +558,80 @@
     text-align: center; color: var(--fg-dim); font-size: 11px;
     padding: 14px; letter-spacing: 0.04em;
   }
+  /* Anomaly differentiation — z-score outliers from drifter-anomaly via
+     drifter/alert/message (message starts with "Critical anomaly:"). */
+  .alert-row.anomaly-row { border-left-color: var(--cyan); }
+  .alert-row.anomaly-row .sym { color: var(--cyan); }
+  .alert-row .anomaly-pill {
+    display: inline-block;
+    font-size: 9px; letter-spacing: 0.18em; padding: 1px 5px;
+    border-radius: var(--r-sm); border: 1px solid var(--glass-stroke-cyan);
+    color: var(--cyan); background: rgba(110,231,255,0.06);
+    margin-right: 6px; vertical-align: 1px;
+  }
+
+  /* Adaptive-threshold learned-tick — stationary ghost-tick at the
+     learned baseline position on each hero gauge bar. Sits behind the
+     live needle and does NOT move with the value. */
+  .gauge .bar .learned-tick {
+    position: absolute; top: -3px; width: 1px; height: 10px;
+    background: var(--cyan); opacity: 0.55;
+    box-shadow: 0 0 4px rgba(110,231,255,0.6);
+    pointer-events: auto; cursor: help;
+  }
+  .gauge .bar .learned-tick::after {
+    content: attr(data-delta);
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(7,9,13,0.96); color: var(--cyan);
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    padding: 2px 5px; border: 1px solid var(--glass-stroke-cyan); border-radius: 3px;
+    white-space: nowrap; opacity: 0; transition: opacity 120ms;
+    pointer-events: none;
+  }
+  .gauge .bar .learned-tick:hover::after { opacity: 1; }
+
+  /* Telemetry-window 30s range band — semi-transparent amber band
+     spanning [min,max] of the rolling window. Sits behind needle. */
+  .gauge .bar .range-band {
+    position: absolute; top: 0; height: 4px;
+    background: rgba(255,174,66,0.18);
+    border-left: 1px dashed rgba(255,174,66,0.45);
+    border-right: 1px dashed rgba(255,174,66,0.45);
+    pointer-events: none; border-radius: 1px;
+  }
+
+  /* Weather drawer tab — BOM warnings + radar thumb. */
+  .weather-warning {
+    padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;
+    background: rgba(0,0,0,0.32); border-left: 2px solid var(--cyan);
+    font-size: 11.5px; color: var(--fg);
+  }
+  .weather-warning.severe { border-left-color: var(--red);
+    background: linear-gradient(90deg, rgba(255,107,107,0.12), rgba(0,0,0,0.32) 60%); }
+  .weather-warning.warn { border-left-color: var(--amber);
+    background: linear-gradient(90deg, rgba(255,174,66,0.10), rgba(0,0,0,0.32) 60%); }
+  .weather-warning .title { font-weight: 500; color: var(--fg); }
+  .weather-warning.severe .title { color: var(--red); }
+  .weather-warning.warn .title { color: var(--amber); }
+  .weather-warning .summary {
+    font-size: 10.5px; color: var(--fg-mute); margin-top: 4px;
+    line-height: 1.35;
+  }
+  .weather-warning .meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: var(--fg-dim); margin-top: 4px; letter-spacing: 0.04em;
+  }
+  .weather-warning a { color: var(--cyan); text-decoration: none; }
+  .weather-warning a:hover { text-decoration: underline; }
+  .weather-radar {
+    margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.32);
+    border: 1px solid var(--glass-stroke); border-radius: 6px;
+  }
+  .weather-radar img { width: 100%; height: auto; border-radius: 4px; display: block; }
+  .weather-radar .cap {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: var(--fg-dim); margin-top: 6px; letter-spacing: 0.08em;
+  }
 
   /* ── RF Intelligence panel ────────────────────────────────── */
   .rf-intel {
@@ -731,6 +827,36 @@
     display: flex; gap: 6px; align-items: center; justify-content: flex-end;
     padding: 4px 8px 8px; font-size: 10.5px; color: var(--amber);
   }
+  /* Replay = legitimate SubGHz TX flow; cyan-tinted to read as "ops" not "danger". */
+  .confirm-row.subghz-confirm {
+    border-left: 2px solid var(--cyan);
+    background: linear-gradient(90deg, rgba(110,231,255,0.10), rgba(0,0,0,0.0) 60%);
+    color: var(--cyan);
+  }
+  .confirm-row .tx-badge {
+    font-size: 9px; letter-spacing: 0.18em; padding: 2px 6px;
+    border-radius: var(--r-sm); border: 1px solid var(--glass-stroke-cyan);
+    color: var(--cyan); background: rgba(110,231,255,0.06); margin-right: auto;
+  }
+  /* High-risk (legacy raw command) flow — red-tinted, distinctly more alarming. */
+  .confirm-row.high-risk-confirm {
+    border-left: 2px solid var(--red);
+    background: linear-gradient(90deg, rgba(255,107,107,0.18), rgba(0,0,0,0.0) 60%);
+    color: var(--red);
+  }
+  .confirm-row .high-risk-badge {
+    font-size: 9px; letter-spacing: 0.18em; padding: 2px 6px;
+    border-radius: var(--r-sm); border: 1px solid rgba(255,107,107,0.45);
+    color: var(--red); background: rgba(255,107,107,0.10); margin-right: auto;
+    text-transform: uppercase;
+  }
+  .confirm-row .high-risk-cmd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--fg); padding: 1px 4px; border-radius: 3px;
+    background: rgba(0,0,0,0.45);
+  }
+  /* Mark the legacy data-confirm path so a future review can prune it cleanly. */
+  .legacy-rf-cmd-dead-code { /* intentionally empty — selector is the signal */ }
   .rf-ops-strip { padding: 6px 10px 4px; border-top: 1px solid var(--glass-stroke); }
   .rf-ops-strip .btn-row { margin: 4px 0; }
   .band-btn { font-size: 10px; padding: 6px 8px; text-align: left; line-height: 1.2; }
@@ -1118,6 +1244,12 @@
     <span class="pill" id="pill-gps"><span class="dot" style="background:var(--fg-deep);box-shadow:none"></span>GPS · <span class="mono v">—</span></span>
     <span class="pill idle" id="pill-health"><span class="dot"></span>HEALTHZ · <span class="v">—</span></span>
     <span class="pill" id="pill-mode"><span class="dot"></span>MODE · <span class="v">—</span></span>
+    <span class="pill vitals" id="vitals-cpu" tabindex="0" role="button" aria-haspopup="true">CPU <span class="v">—</span>
+      <span class="vitals-popover" id="vitals-popover-cpu"></span></span>
+    <span class="pill vitals" id="vitals-mem" tabindex="0" role="button" aria-haspopup="true">MEM <span class="v">—</span>
+      <span class="vitals-popover" id="vitals-popover-mem"></span></span>
+    <span class="pill vitals" id="vitals-temp" tabindex="0" role="button" aria-haspopup="true">TEMP <span class="v">—</span>
+      <span class="vitals-popover" id="vitals-popover-temp"></span></span>
     <span class="reg"><span class="mono" id="clock">--:--:--</span> · S/N <b>0042</b></span>
   </header>
 
@@ -1259,6 +1391,7 @@
           <div class="alerts-summary" id="alerts-summary">
             <div class="summary-chip"><b id="al-active">0</b>active</div>
             <div class="summary-chip red"><b id="al-crit">0</b>critical</div>
+            <div class="summary-chip cyan"><b id="al-anomaly">0</b>anomaly</div>
             <div class="summary-chip"><b id="al-dtcs">0</b>stored DTCs</div>
             <div class="summary-chip cyan"><b id="al-last">—</b>last clear</div>
           </div>
@@ -1329,6 +1462,7 @@
       <div class="drawer-tab" data-tab="rf">RF <span class="count" data-count="rf">0</span></div>
       <div class="drawer-tab" data-tab="ble">BLE <span class="count" data-count="ble">0</span></div>
       <div class="drawer-tab" data-tab="wardrive">WARDRIVE <span class="count" data-count="wardrive">0</span></div>
+      <div class="drawer-tab" data-tab="weather">WEATHER <span class="count" data-count="weather">0</span></div>
       <div class="drawer-tab" data-tab="flipper">V3SPER <span class="count" data-count="flipper">—</span></div>
       <div class="drawer-tab" data-tab="adsb">ADS-B <span class="count" data-count="adsb">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
@@ -1389,6 +1523,9 @@
     viviResp: null, viviStatus: null,
     rfStatus: null,
     rfaudioStatus: null,
+    systemWatchdog: null,   // drifter/system/watchdog (cpu/mem/temp/disk/uptime/mqtt_stale)
+    telemetryWindow: null,  // drifter/telemetry/window (30s rolling min/max/mean)
+    feedsBom: null,         // drifter/feeds/bom/warnings (BOM warnings list)
   };
 
   // Capture IDs in pending-confirm state for inline replay confirm rows.
@@ -1424,7 +1561,7 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
 
   // ── Active tab ─────────────────────────────────────────────────
-  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','flipper','adsb','sessions'];
+  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','sessions'];
   const _urlTab = new URLSearchParams(location.search).get('tab');
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
@@ -1469,6 +1606,139 @@
   const SPARK_LEN = 60;
   const gaugeBuf = { coolant: [], voltage: [], rpm: [], speed: [] };
   const gaugeLastTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
+
+  // Map of learned-baseline key -> gauge name (drifter/thresholds/learned schema).
+  const LEARNED_TO_GAUGE = {
+    rpm_baseline:     'rpm',
+    coolant_baseline: 'coolant',
+    voltage_baseline: 'voltage',
+    // speed has no learned baseline — skip per task spec.
+  };
+  // Map of telemetry_window metric key -> gauge name.
+  const WINDOW_TO_GAUGE = {
+    rpm: 'rpm', coolant: 'coolant', voltage: 'voltage', speed: 'speed',
+  };
+
+  function renderLearnedTicks(){
+    // Stationary cyan ghost-ticks at the learned baseline position. They
+    // represent "what the system thinks normal is right now" and don't
+    // move with the live needle. Re-rendered when thresholds change.
+    const baselines = (cache.thresholds && cache.thresholds.baselines) || cache.thresholds || {};
+    for (const [bKey, gName] of Object.entries(LEARNED_TO_GAUGE)) {
+      const cfg = GAUGES[gName];
+      if (!cfg) continue;
+      const tile = document.getElementById(cfg.id);
+      if (!tile) continue;
+      const bar = tile.querySelector('.bar');
+      if (!bar) continue;
+      bar.querySelectorAll('.learned-tick').forEach(t => t.remove());
+      const baseline = baselines[bKey];
+      if (typeof baseline !== 'number' || !isFinite(baseline)) continue;
+      const pct = clamp01((baseline - cfg.min) / (cfg.max - cfg.min)) * 100;
+      const tick = document.createElement('div');
+      tick.className = 'learned-tick';
+      tick.style.left = pct + '%';
+      // Tooltip text — delta vs current needle (best effort).
+      const lastVal = gaugeBuf[gName] && gaugeBuf[gName].length
+        ? gaugeBuf[gName][gaugeBuf[gName].length - 1] : null;
+      const deltaTxt = (typeof lastVal === 'number')
+        ? `Δ ${(lastVal - baseline >= 0 ? '+' : '')}${(lastVal - baseline).toFixed(2)} · learned ${baseline.toFixed(2)}`
+        : `learned ${baseline.toFixed(2)}`;
+      tick.setAttribute('data-delta', deltaTxt);
+      tick.title = deltaTxt;
+      const needle = bar.querySelector('.needle');
+      bar.insertBefore(tick, needle);
+    }
+  }
+
+  function renderRangeBands(){
+    // Semi-transparent amber band spanning [min,max] of the rolling
+    // 30s telemetry window. Drawn behind the live needle.
+    const tw = cache.telemetryWindow || {};
+    const metrics = tw.metrics || {};
+    for (const [mKey, gName] of Object.entries(WINDOW_TO_GAUGE)) {
+      const cfg = GAUGES[gName];
+      if (!cfg) continue;
+      const tile = document.getElementById(cfg.id);
+      if (!tile) continue;
+      const bar = tile.querySelector('.bar');
+      if (!bar) continue;
+      bar.querySelectorAll('.range-band').forEach(b => b.remove());
+      const m = metrics[mKey];
+      if (!m || typeof m.min !== 'number' || typeof m.max !== 'number') continue;
+      if (!isFinite(m.min) || !isFinite(m.max) || m.max < m.min) continue;
+      const lo = clamp01((m.min - cfg.min) / (cfg.max - cfg.min)) * 100;
+      const hi = clamp01((m.max - cfg.min) / (cfg.max - cfg.min)) * 100;
+      if (hi <= lo) continue;
+      const band = document.createElement('div');
+      band.className = 'range-band';
+      band.style.left = lo + '%';
+      band.style.width = Math.max(1.5, hi - lo) + '%';
+      band.title = `30s window · ${m.min.toFixed(2)} – ${m.max.toFixed(2)}`;
+      // Insert at the start of bar so needle + learned-tick stay on top.
+      bar.insertBefore(band, bar.firstChild);
+    }
+  }
+
+  // ── System vitals (top-bar pills) ──────────────────────────────
+  function renderVitals(){
+    const wd = cache.systemWatchdog || {};
+    const sys = wd.system || {};
+    const setPill = (id, label, value, unit, thresholdAmber, thresholdRed) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const v = el.querySelector('.v');
+      if (typeof value !== 'number' || !isFinite(value)) {
+        if (v) v.textContent = '—';
+        el.classList.remove('amber','red');
+        return;
+      }
+      if (v) v.textContent = (unit === '°' ? Math.round(value) + '°' : Math.round(value) + '%');
+      el.classList.remove('amber','red');
+      if (value >= thresholdRed) el.classList.add('red');
+      else if (value >= thresholdAmber) el.classList.add('amber');
+    };
+    setPill('vitals-cpu',  'CPU',  sys.cpu_percent,    '%', 60, 80);
+    setPill('vitals-mem',  'MEM',  sys.memory_percent, '%', 70, 85);
+    setPill('vitals-temp', 'TEMP', sys.cpu_temp,       '°', 70, 80);
+
+    // Popover content — uptime, disk %, disk free GB, mqtt_stale topics.
+    const upSec = sys.uptime_seconds || 0;
+    const d = Math.floor(upSec / 86400);
+    const h = Math.floor((upSec % 86400) / 3600);
+    const mm = Math.floor((upSec % 3600) / 60);
+    const upTxt = d > 0 ? `${d}d ${h}h ${mm}m` : `${h}h ${mm}m`;
+    const diskPctTxt = typeof sys.disk_percent === 'number' ? sys.disk_percent.toFixed(1) + '%' : '—';
+    const diskFreeTxt = typeof sys.disk_free_gb === 'number' ? sys.disk_free_gb.toFixed(1) + ' GB' : '—';
+    const diskUsedTxt = typeof sys.disk_used_gb === 'number' ? sys.disk_used_gb.toFixed(1) + ' GB' : '—';
+    const stale = Array.isArray(wd.mqtt_stale) ? wd.mqtt_stale : [];
+    const staleBlock = stale.length
+      ? `<div class="stale-list">stale: ${esc(stale.slice(0, 5).join(', '))}${stale.length > 5 ? ' (+'+(stale.length-5)+')' : ''}</div>`
+      : '';
+    const popHtml = (extra) => `
+      <div class="row"><span class="k">uptime</span><span class="v">${esc(upTxt)}</span></div>
+      <div class="row"><span class="k">disk used</span><span class="v">${esc(diskPctTxt)} · ${esc(diskUsedTxt)}</span></div>
+      <div class="row"><span class="k">disk free</span><span class="v">${esc(diskFreeTxt)}</span></div>
+      <div class="row"><span class="k">mqtt stale</span><span class="v ${stale.length ? 'stale' : ''}">${stale.length}</span></div>
+      ${staleBlock}
+      ${extra || ''}`;
+    const popCpu  = document.getElementById('vitals-popover-cpu');
+    const popMem  = document.getElementById('vitals-popover-mem');
+    const popTemp = document.getElementById('vitals-popover-temp');
+    if (popCpu)  popCpu.innerHTML  = popHtml(`<div class="row"><span class="k">cpu</span><span class="v">${typeof sys.cpu_percent === 'number' ? sys.cpu_percent.toFixed(1) + '%' : '—'}</span></div>`);
+    if (popMem)  popMem.innerHTML  = popHtml(`<div class="row"><span class="k">mem</span><span class="v">${typeof sys.memory_percent === 'number' ? sys.memory_percent.toFixed(1) + '%' : '—'}</span></div>`);
+    if (popTemp) popTemp.innerHTML = popHtml(`<div class="row"><span class="k">cpu temp</span><span class="v">${typeof sys.cpu_temp === 'number' ? sys.cpu_temp.toFixed(1) + '°C' : '—'}</span></div>`);
+  }
+
+  // ── Anomaly classification — drifter/alert/message rows whose body
+  // starts with "Critical anomaly:" are stat-detected outliers and
+  // render with a cyan ANOMALY pill instead of the generic threshold style.
+  function isAnomaly(a){
+    if (!a) return false;
+    if (a.anomaly === true) return true;
+    const msg = String(a.message || '');
+    return msg.startsWith('Critical anomaly:');
+  }
 
   function setGaugePegs(){
     // Render reference ghost-pegs at the configured thresholds (once on boot).
@@ -1573,8 +1843,11 @@
                   : Array.isArray(dtcSnap) ? dtcSnap : [];
     const active = alertsRing.length;
     const crit = alertsRing.filter(a => (a.level||0) >= 3).length;
+    const anomalies = alertsRing.filter(isAnomaly).length;
     document.getElementById('al-active').textContent = active;
     document.getElementById('al-crit').textContent = crit;
+    const anomEl = document.getElementById('al-anomaly');
+    if (anomEl) anomEl.textContent = anomalies;
     document.getElementById('al-dtcs').textContent = dtcList.length;
     const lastClear = alertsRing.length === 0 ? new Date()
       .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : '—';
@@ -1604,14 +1877,21 @@
         <div class="ts">DTC</div>
       </div>`);
     }
-    // Alerts
+    // Alerts — anomaly rows (z-score outliers from drifter-anomaly) get a
+    // distinct cyan-bordered treatment + ANOMALY pill so the operator can
+    // tell them apart from hardcoded-threshold operator alerts.
     for (const a of alertsRing.slice(0, ALERT_RING_MAX - rows.length)) {
       const lvl = a.level || 0;
-      const cls = lvl >= 3 ? 'crit' : lvl >= 2 ? 'warn' : 'info';
-      const sym = cls === 'crit' ? '●' : cls === 'warn' ? '▲' : '◆';
+      const anom = isAnomaly(a);
+      const cls = anom ? 'anomaly-row info'
+                : lvl >= 3 ? 'crit'
+                : lvl >= 2 ? 'warn'
+                : 'info';
+      const sym = anom ? '∿' : (lvl >= 3 ? '●' : lvl >= 2 ? '▲' : '◆');
+      const pill = anom ? '<span class="anomaly-pill">ANOMALY</span>' : '';
       rows.push(`<div class="alert-row ${cls}">
         <span class="sym">${sym}</span>
-        <div class="body">${esc(a.message || a.name || 'alert')}
+        <div class="body">${pill}${esc(a.message || a.name || 'alert')}
           ${a.name ? `<div class="ctx">${esc(a.name)}</div>` : ''}
         </div>
         <div class="ts">${a.ts ? fmtAge(a.ts) : ''}</div>
@@ -2012,6 +2292,52 @@
       return out.join('');
     },
 
+    weather(){
+      // BOM warnings from drifter-feeds + radar thumbnail proxied at /api/radar.gif.
+      const feed = cache.feedsBom || {};
+      const items = Array.isArray(feed.items) ? feed.items : [];
+      const tsTxt = feed.ts ? fmtAge(feed.ts) : '—';
+      const head = `<div class="section-head"><span>BOM · weather</span><span class="tag">drifter-feeds · ${items.length} active · −${esc(tsTxt)}</span></div>`;
+      const classify = (title) => {
+        const t = (title || '').toLowerCase();
+        if (/(severe|critical|major|extreme|danger|emergency)/.test(t)) return 'severe';
+        if (/(frost|wind|road|fire|heat|flood|storm|surf|sheep|gale)/.test(t)) return 'warn';
+        return 'info';
+      };
+      const fmtItem = (it) => {
+        const cls = classify(it.title || '');
+        const link = it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">open ↗</a>` : '';
+        const summary = it.summary ? `<div class="summary">${esc(String(it.summary).slice(0, 320))}</div>` : '';
+        const meta = `<div class="meta">${esc(it.updated || '')}${link ? ' · ' : ''}${link}</div>`;
+        return `<div class="weather-warning ${cls}">
+          <div class="title">${esc(it.title || 'BOM warning')}</div>
+          ${summary}
+          ${meta}
+        </div>`;
+      };
+      const out = [head];
+      if (!items.length) {
+        out.push(emptyState('☂', 'No active BOM warnings for the configured zones. drifter-feeds will publish on the next poll.'));
+      } else {
+        out.push(fmtItem(items[0]));
+        const rest = items.slice(1, 5);
+        if (rest.length) {
+          out.push(`<div class="section-head" style="margin-top:8px"><span>recent · last 5</span><span class="tag">${rest.length + 1} total in ring</span></div>`);
+          for (const it of rest) out.push(fmtItem(it));
+        }
+      }
+      // BOM radar thumbnail — proxied locally by the dashboard at /api/radar.gif.
+      // Cache-buster appended so the <img> reloads on each render; an interval
+      // refresh hook below kicks the activeTab back through render() every 5 min.
+      const bust = Math.floor(Date.now() / 60000);
+      out.push(`<div class="weather-radar">
+        <img src="/api/radar.gif?t=${bust}" alt="BOM radar" loading="lazy"
+             onerror="this.style.display='none'; this.nextElementSibling.textContent='radar · unavailable';">
+        <div class="cap">radar · refresh 5min · /api/radar.gif</div>
+      </div>`);
+      return out.join('');
+    },
+
     flipper(){
       const s = cache.flipperStatus || {};
       const caps = (cache.flipperCaptures && cache.flipperCaptures.captures) || [];
@@ -2055,7 +2381,7 @@
               <div class="raw">${esc(raw.slice(0, 64))}</div>
             </div>
             <span class="ghost-btn" ${replayAttrs}>REPLAY</span>
-            ${isPending ? `<div class="confirm-row" data-confirm-row="${esc(safeId)}">Replay this capture? <span class="ghost-btn live" data-confirm-replay="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
+            ${isPending ? `<div class="confirm-row subghz-confirm" data-confirm-row="${esc(safeId)}"><span class="tx-badge">SUBGHZ TX</span>Replay this capture? <span class="ghost-btn live" data-confirm-replay="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
           </div>`);
         }
       }
@@ -2206,7 +2532,31 @@
         }
         if (v != null) cache.sensors[k] = v;
       }
-      if (activeTab === 'sensors') render();
+      // Seed new dashboard signals from /api/state on first paint.
+      if (cache.state.system_watchdog && typeof cache.state.system_watchdog === 'object') {
+        cache.systemWatchdog = cache.state.system_watchdog;
+        renderVitals();
+      }
+      if (cache.state.telemetry_window && typeof cache.state.telemetry_window === 'object') {
+        cache.telemetryWindow = cache.state.telemetry_window;
+        renderRangeBands();
+      }
+      if (cache.state.thresholds_learned && typeof cache.state.thresholds_learned === 'object') {
+        const tl = cache.state.thresholds_learned;
+        if (tl.baselines && typeof tl.baselines === 'object') {
+          cache.thresholds.baselines = tl.baselines;
+          for (const [k, v] of Object.entries(tl.baselines)) {
+            if (typeof v === 'number') cache.thresholds[k] = v;
+          }
+        }
+        renderLearnedTicks();
+      }
+      if (cache.state.feeds_bom_warnings && typeof cache.state.feeds_bom_warnings === 'object') {
+        cache.feedsBom = cache.state.feeds_bom_warnings;
+        const cnt = (Array.isArray(cache.feedsBom.items) ? cache.feedsBom.items.length : cache.feedsBom.count) || 0;
+        setCount('weather', cnt, { live: cnt > 0 });
+      }
+      if (activeTab === 'sensors' || activeTab === 'weather') render();
     }
   }
 
@@ -2493,7 +2843,38 @@
           if (typeof v === 'number') cache.thresholds[k] = v;
           else if (v && typeof v.value === 'number') cache.thresholds[k] = v.value;
         }
+        // Persist the full baselines object so renderLearnedTicks can read it.
+        if (data.baselines && typeof data.baselines === 'object') {
+          cache.thresholds.baselines = data.baselines;
+        }
+        renderLearnedTicks();
         if (activeTab === 'sensors') scheduleSensorsRender();
+      }
+    }
+
+    // ── System watchdog (CPU/MEM/TEMP/disk/uptime + mqtt_stale) ──
+    if (topic === 'drifter/system/watchdog') {
+      if (data && typeof data === 'object') {
+        cache.systemWatchdog = data;
+        renderVitals();
+      }
+    }
+
+    // ── Telemetry rolling window (drifter-batcher 30s min/max/mean) ──
+    if (topic === 'drifter/telemetry/window') {
+      if (data && typeof data === 'object') {
+        cache.telemetryWindow = data;
+        renderRangeBands();
+      }
+    }
+
+    // ── BOM weather feed (drifter-feeds) ──
+    if (topic === 'drifter/feeds/bom/warnings') {
+      if (data && typeof data === 'object') {
+        cache.feedsBom = data;
+        const cnt = (Array.isArray(data.items) ? data.items.length : data.count) || 0;
+        setCount('weather', cnt, { live: cnt > 0 });
+        if (activeTab === 'weather') render();
       }
     }
 
@@ -3177,6 +3558,11 @@
       return;
     }
     if (t.dataset.confirm) {
+      // legacy-rf-cmd-dead-code: this path was reachable from the old
+      // free-text raw-command input rows, which have been removed from
+      // the UI. Kept here (would render with .high-risk-confirm +
+      // .high-risk-badge if any future renderer reintroduced it) so a
+      // future review can prune it alongside .legacy-rf-cmd-dead-code.
       const id = t.dataset.confirm;
       pendingReplays.delete(id);
       markBusy(t);
