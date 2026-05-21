@@ -842,6 +842,80 @@
   }
   .vivi-strip .msg b { color: var(--amber); font-weight: 500; }
   .vivi-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+  /* ── TRIP HERO STRIP (A2) ─────────────────────────────────── */
+  .trip-hero {
+    height: 38px; min-height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 12px;
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-pill);
+    background: rgba(0,0,0,0.28);
+    font-family: 'Major Mono Display', monospace;
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--fg-mute);
+  }
+  .trip-hero[data-empty="1"] .trip-hero-empty { display: inline; opacity: 0.55; }
+  .trip-hero[data-empty="0"] .trip-hero-empty { display: none; }
+  .trip-hero-slots {
+    display: flex; gap: 14px; align-items: center; flex-wrap: nowrap;
+    overflow: hidden; white-space: nowrap;
+  }
+  .trip-hero-slot { display: inline-flex; gap: 5px; align-items: baseline; }
+  .trip-hero-slot b { color: var(--amber); font-weight: 500; font-size: 12px; }
+  .trip-hero-slot span { color: var(--fg-dim); font-size: 9.5px; }
+  .shell.map-mode .trip-hero { display: none; }
+  :root[data-theme="daylight"] .trip-hero {
+    background: rgba(255,255,255,0.7);
+    border-color: rgba(0,0,0,0.14);
+    color: #475569;
+  }
+  :root[data-theme="daylight"] .trip-hero-slot b { color: #b45309; }
+  :root[data-theme="daylight"] .trip-hero-slot span { color: #475569; }
+
+  /* ── VIVI HISTORY CHIP ROW (A4) ───────────────────────────── */
+  .vivi-history {
+    height: 28px; min-height: 28px;
+    display: flex; gap: 6px; align-items: center;
+    overflow-x: auto; overflow-y: hidden;
+    padding: 0 2px;
+    scrollbar-width: none;
+  }
+  .vivi-history::-webkit-scrollbar { display: none; }
+  .vivi-history[hidden] { display: none; }
+  .vivi-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 22px; padding: 0 8px;
+    border: 1px solid var(--glass-stroke);
+    border-radius: var(--r-pill);
+    background: rgba(0,0,0,0.30);
+    font-size: 10.5px; color: var(--fg-mute);
+    white-space: nowrap; max-width: 360px;
+    cursor: default;
+  }
+  .vivi-chip .vc-tag {
+    font-family: 'Major Mono Display', monospace;
+    font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .vivi-chip.q .vc-tag { color: var(--teal); }
+  .vivi-chip.a .vc-tag { color: var(--amber); }
+  .vivi-chip .vc-text {
+    overflow: hidden; text-overflow: ellipsis;
+    max-width: 280px; display: inline-block;
+  }
+  .vivi-chip .vc-replay {
+    cursor: pointer; color: var(--fg-dim); padding: 0 2px;
+    font-size: 12px; line-height: 1;
+  }
+  .vivi-chip .vc-replay:hover { color: var(--amber); }
+  :root[data-theme="daylight"] .vivi-chip {
+    background: rgba(255,255,255,0.75);
+    border-color: rgba(0,0,0,0.14);
+    color: #1f2937;
+  }
+  :root[data-theme="daylight"] .vivi-chip.q .vc-tag { color: #047857; }
+  :root[data-theme="daylight"] .vivi-chip.a .vc-tag { color: #b45309; }
   .ghost-btn {
     border: 1px solid var(--glass-stroke); background: rgba(0,0,0,0.25);
     color: var(--fg-mute); font-size: 10.5px; padding: 5px 11px;
@@ -1433,6 +1507,32 @@
     .row-split-tab.active { color: var(--amber); border-color: var(--glass-stroke-amber); }
     :root[data-theme="daylight"] .row-split-tab { background: rgba(255,255,255,0.75); color: #475569; border-color: rgba(0,0,0,0.14); }
     :root[data-theme="daylight"] .row-split-tab.active { color: #b45309; border-color: rgba(217,119,6,0.55); }
+
+    /* A1: indicator dots under the tab strip + slide-in animation on swap */
+    .row-split-dots {
+      display: flex; gap: 8px; justify-content: center;
+      padding: 2px 0 6px;
+    }
+    .row-split-dots .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      border: 1px solid var(--fg-dim); background: transparent;
+      cursor: pointer; transition: background 160ms, border-color 160ms;
+    }
+    .row-split-dots .dot.active {
+      background: var(--amber); border-color: var(--amber);
+    }
+    :root[data-theme="daylight"] .row-split-dots .dot { border-color: #94a3b8; }
+    :root[data-theme="daylight"] .row-split-dots .dot.active { background: #b45309; border-color: #b45309; }
+    @keyframes rowSplitSlideFromRight {
+      from { transform: translateX(18%); opacity: 0.0; }
+      to   { transform: translateX(0);   opacity: 1; }
+    }
+    @keyframes rowSplitSlideFromLeft {
+      from { transform: translateX(-18%); opacity: 0.0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    .row-split .tile.tab-active.slide-from-right { animation: rowSplitSlideFromRight 180ms ease-out; }
+    .row-split .tile.tab-active.slide-from-left  { animation: rowSplitSlideFromLeft  180ms ease-out; }
   }
 </style>
 </head>
@@ -1651,6 +1751,21 @@
           </div>
         </div>
       </div>
+
+      <!-- TRIP HERO STRIP (A2) — bound to /api/state.trip_stats + drifter/trip/stats -->
+      <div class="trip-hero" id="trip-hero" data-empty="1">
+        <span class="trip-hero-empty" id="trip-hero-empty">trip · awaiting drive</span>
+        <div class="trip-hero-slots" id="trip-hero-slots" hidden>
+          <div class="trip-hero-slot"><b id="th-dist">—</b><span>km</span></div>
+          <div class="trip-hero-slot"><b id="th-fuel">—</b><span>L</span></div>
+          <div class="trip-hero-slot"><b id="th-cost">—</b><span>cost</span></div>
+          <div class="trip-hero-slot"><b id="th-avg">—</b><span>L/100</span></div>
+          <div class="trip-hero-slot"><b id="th-dur">—</b><span>dur</span></div>
+        </div>
+      </div>
+
+      <!-- VIVI HISTORY CHIP ROW (A4) -->
+      <div class="vivi-history" id="vivi-history" hidden></div>
 
       <!-- VIVI STRIP -->
       <div class="tile vivi-strip" id="vivi-strip">
@@ -2291,18 +2406,43 @@
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
+    // Per-pixel-column min/max/mean aggregation. Top row = peak (max),
+    // bottom row = noise floor (mean), so narrow spikes stay visible.
+    // TODO: when drifter/rf/spectrum/summary lands ({level_db_min,
+    // level_db_max, level_db_mean} per bin), consume that directly.
+    const halfH = Math.max(1, Math.floor(h / 2));
+    const lastIdx = bins.length - 1;
+    const hzPerBin = span * 1e6 / Math.max(1, lastIdx);
+    const totalHz = span * 1e6;
+    const hzPerPx = totalHz / w;
     for (let x = 0; x < w; x++) {
-      const targetHz = (lo + (x/(w-1))*span) * 1e6;
-      let li = 0, hi_i = bins.length - 1;
-      while (li < hi_i) {
-        const mid = (li + hi_i) >> 1;
-        if (bins[mid].freq_hz < targetHz) li = mid + 1; else hi_i = mid;
+      const startHz = (lo * 1e6) + x * hzPerPx;
+      const endHz = startHz + hzPerPx;
+      // Map [startHz, endHz] → [startIdx, endIdx] inclusive
+      let startIdx = Math.floor((startHz - bins[0].freq_hz) / Math.max(1, hzPerBin));
+      let endIdx = Math.floor((endHz - bins[0].freq_hz) / Math.max(1, hzPerBin));
+      if (startIdx < 0) startIdx = 0;
+      if (endIdx > lastIdx) endIdx = lastIdx;
+      if (endIdx < startIdx) endIdx = startIdx;
+      let maxDb = -Infinity, sumDb = 0, count = 0;
+      for (let i = startIdx; i <= endIdx; i++) {
+        const b = bins[i];
+        if (!b) continue;
+        const d = (b.level_db != null ? b.level_db : b.power_db);
+        if (d == null || !isFinite(d)) continue;
+        if (d > maxDb) maxDb = d;
+        sumDb += d; count++;
       }
-      let bi = li;
-      if (bi > 0 && Math.abs(bins[bi-1].freq_hz - targetHz) < Math.abs(bins[bi].freq_hz - targetHz)) bi--;
-      const db = bins[bi] && (bins[bi].level_db != null ? bins[bi].level_db : bins[bi].power_db);
-      ctx.fillStyle = spectrumColorForDb(db);
-      ctx.fillRect(x, 0, 1, h);
+      if (count === 0) {
+        ctx.fillStyle = spectrumColorForDb(undefined);
+        ctx.fillRect(x, 0, 1, h);
+        continue;
+      }
+      const meanDb = sumDb / count;
+      ctx.fillStyle = spectrumColorForDb(maxDb);
+      ctx.fillRect(x, 0, 1, halfH);
+      ctx.fillStyle = spectrumColorForDb(meanDb);
+      ctx.fillRect(x, halfH, 1, h - halfH);
     }
     if (peakMark) {
       const freq = (sp.strongest_signal || {}).freq;
@@ -2350,6 +2490,87 @@
     const cm = (cache.state && cache.state.vivi_conversation_mode) || {};
     const on = !!cm.enabled;
     btn.classList.toggle('on', on);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Trip hero strip (A2)
+  // ═══════════════════════════════════════════════════════════════
+  function renderTripHero(){
+    const root = document.getElementById('trip-hero');
+    if (!root) return;
+    const slots = document.getElementById('trip-hero-slots');
+    const stState = (cache.state && cache.state.trip_stats) || null;
+    const t = cache.trip || {};
+    const s = stState || t.stats || (t.distance_km != null ? t : null);
+    const hasAny = s && (s.distance_km != null || s.fuel_l != null || s.duration_s != null);
+    if (!hasAny) {
+      root.setAttribute('data-empty', '1');
+      if (slots) slots.hidden = true;
+      return;
+    }
+    root.setAttribute('data-empty', '0');
+    if (slots) slots.hidden = false;
+    const fmt = (v, d) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
+    const fmtCost = () => {
+      if (s.cost_gbp != null) return '£' + s.cost_gbp.toFixed(2);
+      if (s.cost != null) return '$' + s.cost.toFixed(2);
+      return '—';
+    };
+    const fmtDur = (sec) => {
+      if (!sec || !isFinite(sec)) return '—';
+      const h = (sec/3600)|0, m = ((sec%3600)/60)|0;
+      return h > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${m}m`;
+    };
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('th-dist', fmt(s.distance_km, 1));
+    set('th-fuel', fmt(s.fuel_l, 2));
+    set('th-cost', fmtCost());
+    set('th-avg',  fmt(s.avg_l_per_100km, 1));
+    set('th-dur',  fmtDur(s.duration_s));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Vivi history chip row (A4) — ring of last 6 entries (3 Q/A pairs)
+  // ═══════════════════════════════════════════════════════════════
+  const viviHistory = []; // {kind: 'Q'|'A', text: string, ts: number}
+  function pushViviHistory(kind, text){
+    if (!text || typeof text !== 'string') return;
+    const clean = text.trim();
+    if (!clean) return;
+    viviHistory.push({ kind, text: clean, ts: Date.now() });
+    while (viviHistory.length > 6) viviHistory.shift();
+    renderViviHistory();
+  }
+  function renderViviHistory(){
+    const root = document.getElementById('vivi-history');
+    if (!root) return;
+    if (!viviHistory.length) { root.hidden = true; root.innerHTML = ''; return; }
+    root.hidden = false;
+    // Show last 3 chips (most recent first)
+    const items = viviHistory.slice(-3).reverse();
+    root.innerHTML = items.map((it, idx) => {
+      const txt = it.text.length > 80 ? it.text.slice(0, 79) + '…' : it.text;
+      const cls = it.kind === 'Q' ? 'q' : 'a';
+      return `<div class="vivi-chip ${cls}" data-idx="${idx}">`
+        + `<span class="vc-tag">${it.kind}</span>`
+        + `<span class="vc-text">${esc(txt)}</span>`
+        + `<span class="vc-replay" title="Replay in Mechanic chat">↻</span>`
+        + `</div>`;
+    }).join('');
+    root.querySelectorAll('.vivi-chip').forEach((chip) => {
+      const replay = chip.querySelector('.vc-replay');
+      if (!replay) return;
+      replay.addEventListener('click', () => {
+        const text = chip.querySelector('.vc-text');
+        const q = text ? text.textContent : '';
+        // Open the Mechanic chat overlay with prefilled query
+        openChat('mechanic');
+        setTimeout(() => {
+          const input = document.getElementById('chat-input');
+          if (input && q) { input.value = q; input.focus(); }
+        }, 120);
+      });
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -3081,6 +3302,7 @@
     const s = (cache.trip && (cache.trip.stats || cache.trip)) || {};
     const has = s.distance_km != null || s.fuel_l != null;
     setCount('trip', has ? 'live' : '—', { live: has });
+    renderTripHero();
     if (activeTab === 'trip') render();
   }
   async function loadRfSpec(){
@@ -3430,6 +3652,13 @@
     if (topic === 'drifter/vivi/response') {
       cache.viviResp = data;
       renderViviStrip();
+      // Track Q + A pair in the history ring (A4)
+      if (data && typeof data === 'object') {
+        const q = data.query || data.prompt || data.question;
+        const a = data.text || data.response || data.message;
+        if (q) pushViviHistory('Q', String(q));
+        if (a) pushViviHistory('A', String(a));
+      }
     }
     if (topic === 'drifter/voice/status') {
       // voice_input.py publishes {state, ts}. Drives the portrait pulse.
@@ -3467,6 +3696,7 @@
       cache.trip = cache.trip || { stats: {} };
       cache.trip.stats = cache.trip.stats || {};
       Object.assign(cache.trip.stats, data || {});
+      renderTripHero();
       if (activeTab === 'trip') render();
     }
   }
@@ -4242,6 +4472,25 @@
     if (tiles.length < 2) return;
     const labels = ['ALERTS', 'RF INTEL'];
     let strip = split.querySelector('.row-split-tabs');
+    let dots = split.querySelector('.row-split-dots');
+    let activeIdx = 0;
+    const setActive = (i, dir) => {
+      if (i < 0 || i >= tiles.length) return;
+      activeIdx = i;
+      tiles.forEach((t, j) => {
+        t.classList.remove('slide-from-left', 'slide-from-right');
+        t.classList.toggle('tab-active', j === i);
+        if (j === i && dir) {
+          // re-trigger animation
+          void t.offsetWidth;
+          t.classList.add(dir === 'right' ? 'slide-from-right' : 'slide-from-left');
+        }
+      });
+      if (strip) strip.querySelectorAll('.row-split-tab').forEach((el, j) =>
+        el.classList.toggle('active', j === i));
+      if (dots) dots.querySelectorAll('.dot').forEach((el, j) =>
+        el.classList.toggle('active', j === i));
+    };
     const apply = () => {
       const narrow = window.matchMedia('(max-width: 640px)').matches;
       if (narrow) {
@@ -4253,18 +4502,76 @@
             b.className = 'row-split-tab' + (i === 0 ? ' active' : '');
             b.textContent = labels[i] || `TAB ${i+1}`;
             b.addEventListener('click', () => {
-              tiles.forEach((t, j) => t.classList.toggle('tab-active', j === i));
-              strip.querySelectorAll('.row-split-tab').forEach((el, j) =>
-                el.classList.toggle('active', j === i));
+              const dir = i > activeIdx ? 'right' : (i < activeIdx ? 'left' : null);
+              setActive(i, dir);
             });
             strip.appendChild(b);
           });
           split.insertBefore(strip, tiles[0]);
         }
-        tiles.forEach((t, j) => t.classList.toggle('tab-active', j === 0));
-      } else if (strip) {
-        strip.remove(); strip = null;
-        tiles.forEach(t => t.classList.remove('tab-active'));
+        if (!dots) {
+          dots = document.createElement('div');
+          dots.className = 'row-split-dots indicator-dots';
+          tiles.forEach((_, i) => {
+            const d = document.createElement('span');
+            d.className = 'dot' + (i === 0 ? ' active' : '');
+            d.setAttribute('role', 'button');
+            d.setAttribute('tabindex', '0');
+            d.setAttribute('aria-label', `Show ${labels[i] || 'tab ' + (i+1)}`);
+            const activate = () => {
+              const dir = i > activeIdx ? 'right' : (i < activeIdx ? 'left' : null);
+              setActive(i, dir);
+            };
+            d.addEventListener('click', activate);
+            // Match the parent tile swipe handling — touchstart/touchend on
+            // dots also activates without firing through to swipe detection.
+            let _ds = 0, _dsT = 0;
+            d.addEventListener('touchstart', (e) => {
+              _ds = (e.touches[0] || {}).clientX || 0; _dsT = Date.now();
+            }, { passive: true });
+            d.addEventListener('touchend', (e) => {
+              const t = (e.changedTouches && e.changedTouches[0]) || null;
+              if (!t) return;
+              if (Math.abs(t.clientX - _ds) < 10 && (Date.now() - _dsT) < 400) activate();
+            }, { passive: true });
+            dots.appendChild(d);
+          });
+          split.insertBefore(dots, strip.nextSibling);
+        }
+        tiles.forEach((t, j) => t.classList.toggle('tab-active', j === activeIdx));
+        // Bind swipe gestures on each tile
+        tiles.forEach((tile) => {
+          if (tile._swipeBound) return;
+          tile._swipeBound = true;
+          let sx = 0, sy = 0, st = 0, bail = false;
+          tile.addEventListener('touchstart', (e) => {
+            if (!window.matchMedia('(max-width: 640px)').matches) { bail = true; return; }
+            const tgt = e.target;
+            // Bail if touch started in an input, textarea, or scrollable area
+            if (tgt && tgt.closest && (
+                tgt.closest('input, textarea, [contenteditable="true"]') ||
+                tgt.closest('.drawer-body, .alerts-body, .chat-stream, .overlay-body'))) {
+              bail = true; return;
+            }
+            bail = false;
+            const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+          }, { passive: true });
+          tile.addEventListener('touchend', (e) => {
+            if (bail) return;
+            const t = (e.changedTouches && e.changedTouches[0]) || null;
+            if (!t) return;
+            const dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - st;
+            if (dt > 300) return;
+            if (Math.abs(dx) < 50) return;
+            if (Math.abs(dy) > Math.abs(dx)) return; // vertical wins → not a swipe
+            if (dx < 0 && activeIdx < tiles.length - 1) setActive(activeIdx + 1, 'right');
+            else if (dx > 0 && activeIdx > 0) setActive(activeIdx - 1, 'left');
+          }, { passive: true });
+        });
+      } else {
+        if (strip) { strip.remove(); strip = null; }
+        if (dots) { dots.remove(); dots = null; }
+        tiles.forEach(t => t.classList.remove('tab-active', 'slide-from-left', 'slide-from-right'));
       }
     };
     apply();
@@ -4278,6 +4585,8 @@
   initMapControls();
   bindTalk();
   bindRowSplitTabs();
+  renderTripHero();
+  renderViviHistory();
   setTab(activeTab);
 
   if (typeof L !== 'undefined') _initMap();
