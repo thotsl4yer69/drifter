@@ -3958,12 +3958,53 @@
     document.getElementById('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  // Phone-portrait swipe-tabs for the Alerts/RF row. CSS hides both
+  // .row-split children by default at ≤640px; this wires a small tab
+  // strip that toggles .tab-active on one tile at a time. Above 640px
+  // the strip is removed and both tiles render side-by-side as usual.
+  function bindRowSplitTabs(){
+    const split = document.querySelector('.row-split');
+    if (!split) return;
+    const tiles = split.querySelectorAll(':scope > .tile');
+    if (tiles.length < 2) return;
+    const labels = ['ALERTS', 'RF INTEL'];
+    let strip = split.querySelector('.row-split-tabs');
+    const apply = () => {
+      const narrow = window.matchMedia('(max-width: 640px)').matches;
+      if (narrow) {
+        if (!strip) {
+          strip = document.createElement('div');
+          strip.className = 'row-split-tabs';
+          tiles.forEach((_, i) => {
+            const b = document.createElement('div');
+            b.className = 'row-split-tab' + (i === 0 ? ' active' : '');
+            b.textContent = labels[i] || `TAB ${i+1}`;
+            b.addEventListener('click', () => {
+              tiles.forEach((t, j) => t.classList.toggle('tab-active', j === i));
+              strip.querySelectorAll('.row-split-tab').forEach((el, j) =>
+                el.classList.toggle('active', j === i));
+            });
+            strip.appendChild(b);
+          });
+          split.insertBefore(strip, tiles[0]);
+        }
+        tiles.forEach((t, j) => t.classList.toggle('tab-active', j === 0));
+      } else if (strip) {
+        strip.remove(); strip = null;
+        tiles.forEach(t => t.classList.remove('tab-active'));
+      }
+    };
+    apply();
+    window.addEventListener('resize', apply);
+  }
+
   // Boot
   setGaugePegs();
   initRail();
   initTabs();
   initMapControls();
   bindTalk();
+  bindRowSplitTabs();
   setTab(activeTab);
 
   if (typeof L !== 'undefined') _initMap();
