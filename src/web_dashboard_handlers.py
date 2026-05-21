@@ -185,7 +185,64 @@ _RF_COMMANDS = {
     'force_spectrum',
     'tpms_harvest_start', 'tpms_harvest_stop',
     'tpms_assign_corner', 'tpms_clear_assignments',
+    'tpms_delta_capture',
 }
+
+# Mechanic chat ring buffer — process-local, last N {ts, role, content} turns
+# prepended to the LLM prompt so the model has conversation context.
+# Capped at MECHANIC_HISTORY_TURNS (5 user + 5 assistant) and trimmed
+# until the joined char-count fits in MECHANIC_HISTORY_CHAR_BUDGET, which
+# approximates the 2000-token ceiling at ~4 chars/token.
+MECHANIC_HISTORY_TURNS = 10
+MECHANIC_HISTORY_CHAR_BUDGET = 8000
+
+from collections import deque as _deque
+import threading as _threading
+_mechanic_history: _deque = _deque(maxlen=MECHANIC_HISTORY_TURNS)
+_mechanic_history_lock = _threading.Lock()
+
+
+def _mechanic_history_append(role: str, content: str) -> None:
+    """Append a turn to the ring buffer and trim to char budget."""
+    if not isinstance(content, str) or not content.strip():
+        return
+    with _mechanic_history_lock:
+        _mechanic_history.append({
+            'ts': time.time(),
+            'role': role,
+            'content': content.strip(),
+        })
+        # Trim oldest turns while the budget is exceeded. Char-count
+        # is the proxy for token-count (≈ 4 chars/token).
+        total = sum(len(t.get('content') or '') for t in _mechanic_history)
+        while total > MECHANIC_HISTORY_CHAR_BUDGET and len(_mechanic_history) > 1:
+            dropped = _mechanic_history.popleft()
+            total -= len(dropped.get('content') or '')
+
+
+def _mechanic_history_reset() -> None:
+    with _mechanic_history_lock:
+        _mechanic_history.clear()
+
+
+def _mechanic_history_snapshot() -> list:
+    with _mechanic_history_lock:
+        return list(_mechanic_history)
+
+
+def _mechanic_history_block() -> str:
+    """Render the ring as a CONVERSATION HISTORY context block."""
+    turns = _mechanic_history_snapshot()
+    if not turns:
+        return ''
+    lines = []
+    for t in turns:
+        role = (t.get('role') or '').upper()
+        content = (t.get('content') or '').strip()
+        if not content:
+            continue
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
 
 # flipper_bridge's on_message() command allowlist. Same fail-closed posture
 # as _RF_COMMANDS — only commands the cockpit surface emits.
@@ -327,6 +384,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_rf_spectrum(self, parsed):
         """Latest spectrum sweep from drifter-rf (RTL-SDR)."""
         self._serve_json(state.latest_state.get('rf_spectrum', {}))
+
+    def _get_rf_spectrum_summary(self, parsed):
+        """Downsampled spectrum (≤256 bins) for the cockpit WS surface."""
+        self._serve_json(state.latest_state.get('rf_spectrum_summary', {}))
+
+    def _get_mechanic_history(self, parsed):
+        """Return the current Mechanic chat ring buffer.
+
+        Shape: {"turns": [{ts, role, content}, ...], "max_turns": N}.
+        Always 200 — an empty ring is a legitimate state.
+        """
+        self._serve_json({
+            'turns': _mechanic_history_snapshot(),
+            'max_turns': MECHANIC_HISTORY_TURNS,
+        })
 
     def _get_rf_adsb(self, parsed):
         """Latest RTL-SDR ADS-B scan (separate from /api/aircraft/recent
@@ -1074,7 +1146,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _post_vivi_reset(self):
         """Tell Vivi to drop her conversation history. Publishes
         drifter/vivi/control={"action":"reset"} which Vivi's MQTT
-        subscriber consumes and clears _history + mints a new session id."""
+        subscriber consumes and clears _history + mints a new session id.
+
+        Also clears the Mechanic chat ring buffer so /api/mechanic/history
+        returns [] after a reset — the cockpit treats the two surfaces
+        as the same conversation from the operator's perspective.
+        """
         ok = False
         if state.mqtt_client is not None:
             try:
@@ -1085,6 +1162,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 ok = True
             except Exception as e:
                 log.warning("vivi reset publish failed: %s", e)
+        _mechanic_history_reset()
         self._serve_json({'ok': ok})
 
     def _post_vivi_conversation_mode(self):
@@ -1166,10 +1244,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not query:
                 self.send_error(400, 'Missing query')
                 return
+            # Record the user turn BEFORE building the prompt so the
+            # history block in the next /api/mechanic/history GET is
+            # already up-to-date.
+            _mechanic_history_append('user', query)
             prompt = self._build_query_context(query)
             import llm_client
             result = llm_client.query_chat(prompt)
             text = result['text']
+            _mechanic_history_append('assistant', text)
             # Phase 5.3 grounding validator — second line of defence
             # after the prompt-side NO DATA tags. Catches the case where
             # the model still reads a static-spec range out of the KB
@@ -1202,6 +1285,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if not query:
                 self.send_error(400, 'Missing query')
                 return
+            # Record the user turn before generating; the assistant turn
+            # is recorded after the stream completes (see done block).
+            _mechanic_history_append('user', query)
             prompt = self._build_query_context(query)
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
@@ -1222,6 +1308,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 # client can overwrite the rendered tokens with the
                 # canonical no-reading reply.
                 if chunk.get('done'):
+                    # Persist the full streamed text into the Mechanic
+                    # ring buffer so the next /api/mechanic/history GET
+                    # reflects the just-completed turn.
+                    try:
+                        _mechanic_history_append('assistant',
+                                                 ''.join(buffered))
+                    except Exception as e:
+                        log.debug("history append (stream) failed: %s", e)
                     try:
                         from vivi_grounding import (
                             validate, no_data_from_state)
@@ -1378,6 +1472,16 @@ def build_query_context(query: str) -> str:
             telem_lines.append(f"Active alert: {alert_msg}")
 
     context_parts = []
+    # Conversation history — the last few user/assistant turns from this
+    # session so follow-up questions resolve correctly ("what about the
+    # second one?") without re-stating context every turn.
+    history_block = _mechanic_history_block()
+    if history_block:
+        context_parts.append(
+            "CONVERSATION HISTORY (most recent turns; use to resolve "
+            "pronouns and follow-ups, not as a source of telemetry):\n"
+            + history_block
+        )
     # Telemetry is always emitted with explicit NO DATA markers — the
     # model must see absent sensors rather than have to infer their
     # absence from a vague "car may be off" line.
@@ -1445,6 +1549,8 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/trip/recent':           DashboardHandler._get_recent_trip,
     '/api/dtcs/recent':           DashboardHandler._get_recent_dtcs,
     '/api/rf/spectrum':           DashboardHandler._get_rf_spectrum,
+    '/api/rf/spectrum/summary':   DashboardHandler._get_rf_spectrum_summary,
+    '/api/mechanic/history':      DashboardHandler._get_mechanic_history,
     '/api/rf/adsb':               DashboardHandler._get_rf_adsb,
     '/api/rf/emergency':          DashboardHandler._get_rf_emergency,
     '/api/flipper/status':        DashboardHandler._get_flipper_status,

@@ -789,7 +789,8 @@ def test_rf_command_allowlist_matches_rf_monitor_handler():
                 'tpms_assign', 'pause_rtl_433', 'resume_rtl_433',
                 'force_spectrum',
                 'tpms_harvest_start', 'tpms_harvest_stop',
-                'tpms_assign_corner', 'tpms_clear_assignments'}
+                'tpms_assign_corner', 'tpms_clear_assignments',
+                'tpms_delta_capture'}
     assert h._RF_COMMANDS == expected
 
 
@@ -1088,3 +1089,108 @@ def test_get_driver_returns_nulls_when_missing(monkeypatch, tmp_path):
     body = captured['payload']
     assert body == {'preferred_name': None, 'name': None,
                     'registration_plate': None}
+
+
+# ── Mechanic chat history ring (Task B3) ──────────────────────────────
+
+@pytest.fixture(autouse=False)
+def _reset_mech_history():
+    h._mechanic_history_reset()
+    yield
+    h._mechanic_history_reset()
+
+
+def test_mechanic_history_appends_user_and_assistant_turns(_reset_mech_history):
+    h._mechanic_history_append('user', 'why is coolant high')
+    h._mechanic_history_append('assistant', 'reading is 95C')
+    turns = h._mechanic_history_snapshot()
+    assert len(turns) == 2
+    assert turns[0]['role'] == 'user'
+    assert turns[0]['content'] == 'why is coolant high'
+    assert turns[1]['role'] == 'assistant'
+
+
+def test_mechanic_history_grows_on_consecutive_calls(_reset_mech_history):
+    """Append N times, length should grow up to ring max."""
+    for i in range(3):
+        h._mechanic_history_append('user', f'q{i}')
+        h._mechanic_history_append('assistant', f'a{i}')
+    turns = h._mechanic_history_snapshot()
+    assert len(turns) == 6
+
+
+def test_mechanic_history_bounded_by_max_turns(_reset_mech_history):
+    """More than MECHANIC_HISTORY_TURNS appends → ring drops oldest."""
+    for i in range(20):
+        h._mechanic_history_append('user', f'short{i}')
+    turns = h._mechanic_history_snapshot()
+    assert len(turns) == h.MECHANIC_HISTORY_TURNS
+    # Newest preserved, oldest dropped.
+    assert turns[-1]['content'] == 'short19'
+    assert all('short0' != t['content'] for t in turns)
+
+
+def test_mechanic_history_char_budget_trims_long_turns(_reset_mech_history):
+    """A turn that exceeds the char budget triggers a trim of older turns."""
+    h._mechanic_history_append('user', 'tiny')
+    # A single 9000-char message pushes total over the 8000 budget.
+    big = 'x' * 9000
+    h._mechanic_history_append('assistant', big)
+    turns = h._mechanic_history_snapshot()
+    # The 'tiny' turn should have been evicted; only the big turn remains.
+    assert len(turns) == 1
+    assert turns[0]['content'] == big
+
+
+def test_mechanic_history_reset_clears_ring(_reset_mech_history):
+    h._mechanic_history_append('user', 'one')
+    h._mechanic_history_append('assistant', 'two')
+    assert len(h._mechanic_history_snapshot()) == 2
+    h._mechanic_history_reset()
+    assert h._mechanic_history_snapshot() == []
+
+
+def test_mechanic_history_endpoint_returns_empty_on_fresh_start(
+        _reset_mech_history):
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    captured: dict = {}
+    handler._serve_json = lambda payload: captured.update({'payload': payload})
+    handler._get_mechanic_history(None)
+    body = captured['payload']
+    assert body['turns'] == []
+    assert body['max_turns'] == h.MECHANIC_HISTORY_TURNS
+
+
+def test_mechanic_history_endpoint_reflects_appended_turns(
+        _reset_mech_history):
+    h._mechanic_history_append('user', 'q')
+    h._mechanic_history_append('assistant', 'a')
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    captured: dict = {}
+    handler._serve_json = lambda payload: captured.update({'payload': payload})
+    handler._get_mechanic_history(None)
+    body = captured['payload']
+    assert len(body['turns']) == 2
+    assert body['turns'][0]['role'] == 'user'
+
+
+def test_build_query_context_includes_history_block(monkeypatch,
+                                                    _reset_mech_history):
+    """When the ring has turns, the prompt must show a CONVERSATION HISTORY block."""
+    state.latest_state.clear()
+    h._mechanic_history_append('user', 'why is coolant high')
+    h._mechanic_history_append('assistant', 'engine running warm')
+    prompt = h.build_query_context('and what next?')
+    assert 'CONVERSATION HISTORY' in prompt
+    assert 'why is coolant high' in prompt
+    assert 'engine running warm' in prompt
+
+
+def test_mechanic_history_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/mechanic/history' in routes
+    assert '/api/rf/spectrum/summary' in routes
+
+
+def test_rf_commands_allowlist_includes_tpms_delta_capture():
+    assert 'tpms_delta_capture' in h._RF_COMMANDS

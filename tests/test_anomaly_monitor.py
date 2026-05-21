@@ -153,6 +153,59 @@ def test_non_dict_payload_is_ignored():
     monitor._on_message(None, None, FakeMsg())
 
 
+# ── Alert cooldown / dedupe (Task B4) ─────────────────────────────────
+
+def test_alert_cooldown_suppresses_second_alert_within_window():
+    """Two critical alerts in 5s → second is suppressed."""
+    monitor = AnomalyMonitor()
+    pub1, _ = monitor._should_publish_alert('stft_b1', 2.5, now=1000.0)
+    assert pub1 is True
+    pub2, summary2 = monitor._should_publish_alert('stft_b1', 2.5, now=1005.0)
+    assert pub2 is False
+    assert summary2 is None
+    assert monitor._alert_state['stft_b1']['suppression_count'] == 1
+
+
+def test_alert_escalation_bypasses_cooldown():
+    """A z-score jump of ≥0.5 must pass through even mid-cooldown."""
+    monitor = AnomalyMonitor()
+    monitor._should_publish_alert('stft_b1', 1.5, now=1000.0)
+    # +1.0 escalation, well over ALERT_ESCALATION_DELTA (0.5).
+    pub, _ = monitor._should_publish_alert('stft_b1', 2.5, now=1010.0)
+    assert pub is True
+    assert monitor._alert_state['stft_b1']['suppression_count'] == 0
+
+
+def test_alert_summary_fires_after_cooldown_if_still_anomalous():
+    """When cooldown expires and the sensor is still firing → digest."""
+    from anomaly_monitor import ALERT_COOLDOWN_SEC
+    monitor = AnomalyMonitor()
+    monitor._should_publish_alert('stft_b1', 2.2, now=1000.0)
+    # Two more hits during cooldown — suppression_count climbs.
+    monitor._should_publish_alert('stft_b1', 2.25, now=1015.0)
+    monitor._should_publish_alert('stft_b1', 2.3, now=1030.0)
+    assert monitor._alert_state['stft_b1']['suppression_count'] == 2
+    # Cooldown expires while still anomalous → summary emitted, not a
+    # fresh alert.
+    pub, summary = monitor._should_publish_alert(
+        'stft_b1', 2.3, now=1000.0 + ALERT_COOLDOWN_SEC + 1)
+    assert pub is False
+    assert summary is not None
+    assert summary['suppression_count'] == 2
+    assert summary['still_anomalous'] is True
+    # Counter resets after the digest fires.
+    assert monitor._alert_state['stft_b1']['suppression_count'] == 0
+
+
+def test_alert_cooldown_independent_per_sensor():
+    """Cooldown on stft_b1 must NOT block ltft_b1."""
+    monitor = AnomalyMonitor()
+    pub_a, _ = monitor._should_publish_alert('stft_b1', 2.5, now=1000.0)
+    pub_b, _ = monitor._should_publish_alert('ltft_b1', 2.5, now=1001.0)
+    assert pub_a is True
+    assert pub_b is True
+
+
 def test_sensor_window_floor_prevents_zero_std_zscore_storm():
     """A constant-value sensor at 0 must not produce huge z-scores on noise.
 

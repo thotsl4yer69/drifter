@@ -266,6 +266,123 @@ class TPMSHarvest:
 tpms_harvest = TPMSHarvest()
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  TPMS Delta Capture (corner-pair wizard)
+# ═══════════════════════════════════════════════════════════════════
+
+# Pressure delta (kPa) above which a sensor's drop from baseline is
+# treated as a candidate match for the corner under test. 5 kPa matches
+# the existing "deflate threshold" used in the operator workflow.
+TPMS_DELTA_THRESHOLD_KPA = 5.0
+TPMS_DELTA_WINDOW_S = 30
+TPMS_DELTA_PROGRESS_INTERVAL = 2.0
+
+
+class TPMSDeltaCapture:
+    """Bounded window that flags TPMS sensors whose pressure drops below baseline.
+
+    Used by the cockpit wizard: the operator presses "Start FL", then
+    physically deflates the front-left tire. While this window is open
+    we listen for every TPMS hit and rank sensors by negative delta from
+    the operator-supplied baseline_kpa. The candidate with the largest
+    negative delta is the best match — but we never auto-assign;
+    tpms_assign_corner remains the confirm step.
+    """
+
+    def __init__(self):
+        self.active = False
+        self.corner = ''          # 'FL'|'FR'|'RL'|'RR'
+        self.baseline_kpa = 0.0
+        self.start_ts = 0.0
+        # {sensor_id: {current_kpa, delta_kpa, rssi, samples, last_ts}}
+        self.candidates = {}
+
+    def start(self, corner: str, baseline_kpa: float):
+        self.active = True
+        self.corner = corner
+        self.baseline_kpa = float(baseline_kpa)
+        self.start_ts = time.time()
+        self.candidates = {}
+        log.info(
+            "TPMS DELTA CAPTURE started — corner=%s baseline=%.1fkPa",
+            corner, baseline_kpa,
+        )
+
+    def stop(self):
+        self.active = False
+        log.info(
+            "TPMS DELTA CAPTURE stopped — %d candidate(s)",
+            len(self.candidates),
+        )
+
+    def record(self, sensor_id, pressure_psi, rssi):
+        """Feed a TPMS hit into the window. pressure_psi may be None."""
+        if not self.active or pressure_psi is None:
+            return
+        # Convert PSI → kPa to match baseline units the operator entered.
+        current_kpa = float(pressure_psi) / 0.145038
+        delta_kpa = current_kpa - self.baseline_kpa
+        sid = str(sensor_id)
+        now = time.time()
+        entry = self.candidates.get(sid)
+        if entry is None:
+            entry = {
+                'sensor_id': sid,
+                'current_kpa': round(current_kpa, 1),
+                'delta_kpa': round(delta_kpa, 1),
+                'rssi': rssi,
+                'samples': 0,
+                'last_ts': now,
+            }
+            self.candidates[sid] = entry
+        entry['current_kpa'] = round(current_kpa, 1)
+        entry['delta_kpa'] = round(delta_kpa, 1)
+        entry['rssi'] = rssi
+        entry['samples'] += 1
+        entry['last_ts'] = now
+
+    def elapsed_s(self) -> int:
+        if not self.active:
+            return 0
+        return int(time.time() - self.start_ts)
+
+    def remaining_s(self) -> int:
+        if not self.active:
+            return 0
+        return max(0, TPMS_DELTA_WINDOW_S - self.elapsed_s())
+
+    def is_expired(self) -> bool:
+        return self.active and self.elapsed_s() >= TPMS_DELTA_WINDOW_S
+
+    def best_match(self):
+        """Sensor with the largest negative delta past the threshold, else None."""
+        flagged = [c for c in self.candidates.values()
+                   if c['delta_kpa'] <= -TPMS_DELTA_THRESHOLD_KPA]
+        if not flagged:
+            return None
+        return min(flagged, key=lambda c: c['delta_kpa'])
+
+    def snapshot(self) -> dict:
+        # Stable sort: most-negative delta first so the cockpit can render
+        # candidates ranked without re-sorting on every progress publish.
+        ranked = sorted(
+            (dict(c) for c in self.candidates.values()),
+            key=lambda c: c['delta_kpa'],
+        )
+        return {
+            'active': self.active,
+            'corner': self.corner,
+            'baseline_kpa': round(self.baseline_kpa, 1),
+            'elapsed_s': self.elapsed_s(),
+            'remaining_s': self.remaining_s(),
+            'candidates': ranked,
+            'ts': time.time(),
+        }
+
+
+tpms_delta = TPMSDeltaCapture()
+
+
 def load_tpms_assignments():
     """Read /opt/drifter/state/tpms_assignments.json. Returns dict or {}."""
     try:
@@ -449,6 +566,9 @@ def process_tpms(data, mqtt_client):
     # Harvest hits (deduped by ID, with RSSI) for the corner-pair wizard.
     rssi = data.get('rssi', data.get('snr'))
     tpms_harvest.record(sensor_id, pressure_psi, temp_c, rssi)
+    # Delta-capture wizard (cockpit-driven). Feed every hit; the window
+    # filter lives inside TPMSDeltaCapture.record so we don't gate twice.
+    tpms_delta.record(sensor_id, pressure_psi, rssi)
 
     reading = tpms.update(sensor_id, pressure_psi, temp_c)
     if reading is None:
@@ -504,8 +624,9 @@ def run_spectrum_scan(mqtt_client):
         # Parse CSV output into frequency → power map
         bands = {}
         strongest = {'freq': 0, 'power': -999}
+        stdout_lines = result.stdout.strip().split('\n')
 
-        for line in result.stdout.strip().split('\n'):
+        for line in stdout_lines:
             if not line or line.startswith('#'):
                 continue
             parts = line.split(',')
@@ -529,10 +650,11 @@ def run_spectrum_scan(mqtt_client):
             except (ValueError, IndexError):
                 continue
 
+        scan_range_mhz = f'{SPECTRUM_FREQ_START}-{SPECTRUM_FREQ_END}'
         scan_result = {
             'bands': bands,
             'strongest_signal': strongest,
-            'scan_range_mhz': f'{SPECTRUM_FREQ_START}-{SPECTRUM_FREQ_END}',
+            'scan_range_mhz': scan_range_mhz,
             'ts': time.time(),
         }
 
@@ -540,6 +662,9 @@ def run_spectrum_scan(mqtt_client):
         # schedule. A retained scan can imply current activity at bands
         # that have since gone quiet.
         mqtt_client.publish(TOPICS['rf_spectrum'], json.dumps(scan_result))
+        # Downsampled summary on a separate topic — what the cockpit WS
+        # subscribes to. 1742 raw bins → ≤256 grouped bins per push.
+        _publish_spectrum_summary(mqtt_client, stdout_lines, scan_range_mhz)
         log.info(f"Spectrum scan complete — strongest signal at "
                  f"{strongest['freq']} MHz ({strongest['power']} dB)")
 
@@ -549,6 +674,106 @@ def run_spectrum_scan(mqtt_client):
         log.warning("Spectrum scan timed out")
     except Exception as e:
         log.error(f"Spectrum scan error: {e}")
+
+
+# Maximum bins published on drifter/rf/spectrum/summary. The full sweep
+# (24M–1766M @ 1M step → 1742 bins) was being shipped to every WS client
+# on every refresh — a 30× saving with negligible visual loss.
+SPECTRUM_SUMMARY_MAX_BINS = 256
+
+
+def downsample_spectrum(bins, max_bins: int = SPECTRUM_SUMMARY_MAX_BINS):
+    """Reduce a [{freq_hz, db}] series to at most max_bins groups.
+
+    Each output bin reports {freq_hz, level_db_min, level_db_max,
+    level_db_mean} for its underlying range. The freq_hz of the output
+    bin is the freq_hz of its first input bin (group start), so the
+    cockpit can axis-label without round-trip metadata.
+
+    Input shape: list of dicts with 'freq_hz' (number) and 'db' (number).
+    Bins with a non-finite db are skipped — they would NaN-poison the mean.
+    """
+    if not bins:
+        return []
+    clean = [b for b in bins
+             if isinstance(b, dict)
+             and b.get('db') is not None
+             and isinstance(b.get('freq_hz'), (int, float))]
+    n = len(clean)
+    if n == 0:
+        return []
+    if n <= max_bins:
+        # Already small enough — emit one group per input bin.
+        out = []
+        for b in clean:
+            db = float(b['db'])
+            out.append({
+                'freq_hz': float(b['freq_hz']),
+                'level_db_min': round(db, 1),
+                'level_db_max': round(db, 1),
+                'level_db_mean': round(db, 1),
+            })
+        return out
+    # Use ceiling division so we never produce MORE than max_bins groups.
+    group = (n + max_bins - 1) // max_bins
+    out = []
+    for i in range(0, n, group):
+        chunk = clean[i:i + group]
+        dbs = [float(b['db']) for b in chunk]
+        out.append({
+            'freq_hz': float(chunk[0]['freq_hz']),
+            'level_db_min': round(min(dbs), 1),
+            'level_db_max': round(max(dbs), 1),
+            'level_db_mean': round(sum(dbs) / len(dbs), 1),
+        })
+    return out
+
+
+def _build_spectrum_bins(stdout_lines):
+    """Parse rtl_power CSV stdout into a flat [{freq_hz, db}] series."""
+    bins = []
+    for line in stdout_lines:
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split(',')
+        if len(parts) < 7:
+            continue
+        try:
+            freq_low = float(parts[2])
+            freq_step = float(parts[4])
+            db_values = [float(x.strip()) for x in parts[6:] if x.strip()]
+        except (ValueError, IndexError):
+            continue
+        for i, db in enumerate(db_values):
+            bins.append({'freq_hz': freq_low + i * freq_step, 'db': db})
+    return bins
+
+
+# Latest spectrum summary — cached so /api/rf/spectrum/summary can serve
+# without round-tripping MQTT. Updated by both run_spectrum_scan and
+# _force_spectrum when they publish a new sweep.
+_latest_spectrum_summary: dict = {}
+
+
+def _publish_spectrum_summary(client, stdout_lines, scan_range_mhz, forced=False):
+    """Build + publish the downsampled summary alongside the full sweep."""
+    try:
+        bins = _build_spectrum_bins(stdout_lines)
+        summary_bins = downsample_spectrum(bins)
+        summary = {
+            'bins': summary_bins,
+            'bin_count': len(summary_bins),
+            'source_bin_count': len(bins),
+            'scan_range_mhz': scan_range_mhz,
+            'forced': forced,
+            'ts': time.time(),
+        }
+        client.publish('drifter/rf/spectrum/summary', json.dumps(summary))
+        # Update the module-level cache for the REST handler.
+        _latest_spectrum_summary.clear()
+        _latest_spectrum_summary.update(summary)
+    except Exception as e:
+        log.warning(f"spectrum summary publish failed: {e}")
 
 
 def classify_band(freq_mhz):
@@ -877,6 +1102,8 @@ def _force_spectrum(client, params):
             'ts': time.time(),
         }
         client.publish(TOPICS['rf_spectrum'], json.dumps(scan_result))
+        # Same downsampled summary the periodic sweep publishes.
+        _publish_spectrum_summary(client, stdout_lines, '24-1766', forced=True)
         log.info(
             "force_spectrum done — strongest %.2f MHz @ %.1f dB",
             strongest['freq'], strongest['power'],
@@ -1045,6 +1272,39 @@ def on_message(client, userdata, msg):
                     'ts': time.time(),
                 }))
 
+        elif command == 'tpms_delta_capture':
+            # Cockpit wizard step: operator deflates the named corner
+            # by 5+ kPa within a 30s window. We listen for TPMS hits
+            # and rank sensors by negative delta from baseline_kpa.
+            # Final summary publishes at window close; no auto-assign.
+            corner = str(data.get('corner', '')).upper().strip()
+            try:
+                baseline_kpa = float(data.get('baseline_kpa'))
+            except (TypeError, ValueError):
+                baseline_kpa = None
+            if (corner not in {'FL', 'FR', 'RL', 'RR'}
+                    or baseline_kpa is None
+                    or not (50.0 <= baseline_kpa <= 500.0)):
+                client.publish(TOPICS['rf_status'], json.dumps({
+                    'mode': 'error',
+                    'message': ('tpms_delta_capture needs corner FL|FR|RL|RR '
+                                'and baseline_kpa in [50, 500]'),
+                    'ts': time.time(),
+                }))
+            else:
+                tpms_delta.start(corner, baseline_kpa)
+                # Immediate progress publish so the cockpit can confirm
+                # the window opened without waiting on the 2s tick.
+                client.publish('drifter/rf/tpms/delta',
+                               json.dumps(tpms_delta.snapshot()))
+                client.publish(TOPICS['rf_status'], json.dumps({
+                    'mode': 'tpms_delta',
+                    'message': (f'Delta capture {corner} '
+                                f'baseline={baseline_kpa:.1f}kPa — '
+                                f'{TPMS_DELTA_WINDOW_S}s window open'),
+                    'ts': time.time(),
+                }))
+
         elif command == 'tpms_clear_assignments':
             save_tpms_assignments({})
             tpms.sensor_map = {}
@@ -1192,6 +1452,7 @@ def main():
     last_adsb = 0
     last_sdr_rescan = time.time()
     last_harvest_progress = 0.0
+    last_delta_progress = 0.0
 
     # Boot-time: hydrate the runtime sensor_map from the on-disk per-corner
     # assignments so a fresh service restart still surfaces paired wheels.
@@ -1287,6 +1548,25 @@ def main():
             mqtt_client.publish('drifter/rf/tpms/harvest',
                                  json.dumps(tpms_harvest.snapshot()))
             last_harvest_progress = now
+
+        # TPMS delta-capture wizard — progress every 2s, final summary
+        # when the 30s window expires. The summary flags the best-match
+        # sensor (largest negative delta past 5 kPa) for the cockpit
+        # to surface as a confirm prompt; tpms_assign_corner remains
+        # the authoritative writer.
+        if tpms_delta.active:
+            if now - last_delta_progress >= TPMS_DELTA_PROGRESS_INTERVAL:
+                mqtt_client.publish('drifter/rf/tpms/delta',
+                                    json.dumps(tpms_delta.snapshot()))
+                last_delta_progress = now
+            if tpms_delta.is_expired():
+                snap = tpms_delta.snapshot()
+                best = tpms_delta.best_match()
+                snap['final'] = True
+                snap['active'] = False
+                snap['best_match'] = best
+                tpms_delta.stop()
+                mqtt_client.publish('drifter/rf/tpms/delta', json.dumps(snap))
 
         # Interruptible sleep so force_spectrum can yield the dongle quickly.
         # _interrupt is set by force_spectrum (and any future ad-hoc command);

@@ -165,3 +165,145 @@ def test_load_tpms_assignments_handles_missing_file(tmp_path, monkeypatch):
     monkeypatch.setattr(rf_monitor, 'TPMS_ASSIGNMENTS_PATH',
                          tmp_path / 'missing.json')
     assert rf_monitor.load_tpms_assignments() == {}
+
+
+# ── Spectrum downsample (Task B1) ─────────────────────────────────────
+
+def test_downsample_spectrum_1024_to_256_groups_of_4():
+    """1024 input bins → 256 output groups of 4 with correct min/max/mean."""
+    bins = [{'freq_hz': float(i), 'db': float(i)} for i in range(1024)]
+    out = rf_monitor.downsample_spectrum(bins, max_bins=256)
+    assert len(out) == 256
+    # First group: indices 0..3 → min=0, max=3, mean=1.5
+    assert out[0]['level_db_min'] == 0.0
+    assert out[0]['level_db_max'] == 3.0
+    assert out[0]['level_db_mean'] == 1.5
+    assert out[0]['freq_hz'] == 0.0
+    # Last group: indices 1020..1023 → min=1020, max=1023, mean=1021.5
+    assert out[-1]['level_db_min'] == 1020.0
+    assert out[-1]['level_db_max'] == 1023.0
+    assert out[-1]['level_db_mean'] == 1021.5
+    assert out[-1]['freq_hz'] == 1020.0
+
+
+def test_downsample_spectrum_caps_at_max_bins():
+    """1742 input (real-world full sweep) → never exceeds 256."""
+    bins = [{'freq_hz': float(i), 'db': -50.0} for i in range(1742)]
+    out = rf_monitor.downsample_spectrum(bins, max_bins=256)
+    assert 1 <= len(out) <= 256
+
+
+def test_downsample_spectrum_small_input_passthrough():
+    """Input ≤ max_bins → one output bin per input bin."""
+    bins = [{'freq_hz': float(i), 'db': float(i)} for i in range(10)]
+    out = rf_monitor.downsample_spectrum(bins, max_bins=256)
+    assert len(out) == 10
+    for i, o in enumerate(out):
+        assert o['level_db_min'] == o['level_db_max'] == float(i)
+
+
+def test_downsample_spectrum_empty_input():
+    assert rf_monitor.downsample_spectrum([]) == []
+
+
+# ── TPMS delta capture (Task B2) ──────────────────────────────────────
+
+def test_tpms_delta_capture_flags_sensor_with_negative_delta():
+    """A sensor reading 5+ kPa below baseline must surface as a candidate."""
+    rf_monitor.tpms_delta.start('FL', baseline_kpa=220.0)
+    try:
+        # 220 kPa baseline. 210 kPa → -10 kPa delta → flagged.
+        # 210 kPa = 210 * 0.145038 ≈ 30.46 PSI
+        rf_monitor.tpms_delta.record('sensor_FL', 30.46, -55)
+        # 219 kPa → -1 kPa delta → below threshold, still tracked as candidate
+        rf_monitor.tpms_delta.record('sensor_other', 31.76, -60)
+        best = rf_monitor.tpms_delta.best_match()
+        assert best is not None
+        assert best['sensor_id'] == 'sensor_FL'
+        assert best['delta_kpa'] <= -rf_monitor.TPMS_DELTA_THRESHOLD_KPA
+    finally:
+        rf_monitor.tpms_delta.stop()
+        rf_monitor.tpms_delta.candidates = {}
+
+
+def test_tpms_delta_capture_no_match_when_no_sensor_below_threshold():
+    """Every candidate stayed within ±5 kPa → best_match is None."""
+    rf_monitor.tpms_delta.start('FR', baseline_kpa=220.0)
+    try:
+        # 218 kPa → -2 kPa delta (within tolerance)
+        rf_monitor.tpms_delta.record('sensor_a', 218 * 0.145038, -50)
+        assert rf_monitor.tpms_delta.best_match() is None
+    finally:
+        rf_monitor.tpms_delta.stop()
+        rf_monitor.tpms_delta.candidates = {}
+
+
+def test_tpms_delta_capture_snapshot_shape():
+    rf_monitor.tpms_delta.start('RL', baseline_kpa=200.0)
+    try:
+        rf_monitor.tpms_delta.record('abc', 25.0, -65)
+        snap = rf_monitor.tpms_delta.snapshot()
+        assert snap['active'] is True
+        assert snap['corner'] == 'RL'
+        assert snap['baseline_kpa'] == 200.0
+        assert isinstance(snap['candidates'], list)
+        assert snap['candidates'][0]['sensor_id'] == 'abc'
+        # Most-negative delta first (descending by absolute negative).
+        assert snap['candidates'] == sorted(
+            snap['candidates'], key=lambda c: c['delta_kpa'])
+    finally:
+        rf_monitor.tpms_delta.stop()
+        rf_monitor.tpms_delta.candidates = {}
+
+
+def test_tpms_delta_capture_command_starts_window(monkeypatch):
+    """MQTT command with valid corner + baseline opens the window."""
+    client = MagicMock()
+    rf_monitor.tpms_delta.active = False
+    rf_monitor.tpms_delta.candidates = {}
+    rf_monitor.on_message(client, None, _msg(
+        'tpms_delta_capture', corner='FL', baseline_kpa=220.0))
+    try:
+        assert rf_monitor.tpms_delta.active is True
+        assert rf_monitor.tpms_delta.corner == 'FL'
+        assert rf_monitor.tpms_delta.baseline_kpa == 220.0
+        # An immediate progress publish lets the cockpit confirm.
+        topics = [c.args[0] for c in client.publish.call_args_list]
+        assert 'drifter/rf/tpms/delta' in topics
+    finally:
+        rf_monitor.tpms_delta.stop()
+        rf_monitor.tpms_delta.candidates = {}
+
+
+def test_tpms_delta_capture_command_rejects_bad_corner():
+    client = MagicMock()
+    rf_monitor.tpms_delta.active = False
+    rf_monitor.on_message(client, None, _msg(
+        'tpms_delta_capture', corner='XX', baseline_kpa=220.0))
+    assert rf_monitor.tpms_delta.active is False
+
+
+def test_tpms_delta_capture_command_rejects_missing_baseline():
+    client = MagicMock()
+    rf_monitor.tpms_delta.active = False
+    rf_monitor.on_message(client, None, _msg(
+        'tpms_delta_capture', corner='FL'))
+    assert rf_monitor.tpms_delta.active is False
+
+
+def test_tpms_delta_capture_ignores_record_when_inactive():
+    rf_monitor.tpms_delta.active = False
+    rf_monitor.tpms_delta.candidates = {}
+    rf_monitor.tpms_delta.record('abc', 25.0, -60)
+    assert rf_monitor.tpms_delta.candidates == {}
+
+
+def test_tpms_delta_capture_handles_none_pressure():
+    """A TPMS hit with no pressure field must not crash the recorder."""
+    rf_monitor.tpms_delta.start('FL', baseline_kpa=220.0)
+    try:
+        rf_monitor.tpms_delta.record('abc', None, -60)
+        assert rf_monitor.tpms_delta.candidates == {}
+    finally:
+        rf_monitor.tpms_delta.stop()
+        rf_monitor.tpms_delta.candidates = {}

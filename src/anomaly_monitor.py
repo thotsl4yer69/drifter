@@ -80,6 +80,15 @@ class SensorWindow:
         return {'z_score': round(z, 2), 'severity': severity, 'mean': round(mean, 2)}
 
 
+# Per-sensor cooldown window: once a sensor fires, suppress further
+# alerts for ALERT_COOLDOWN_SEC unless the z-score escalates by
+# ALERT_ESCALATION_DELTA (passthrough), or the cooldown expires while
+# the sensor is still anomalous (we then emit a "still anomalous"
+# summary tagged with the suppression count).
+ALERT_COOLDOWN_SEC = 60.0
+ALERT_ESCALATION_DELTA = 0.5
+
+
 class AnomalyMonitor:
     """Main anomaly monitor — subscribes to MQTT and logs events."""
 
@@ -91,10 +100,61 @@ class AnomalyMonitor:
         self.current_speed: float = 0.0
         self.current_snapshot: dict = {}
         self.running = True
+        # Per-sensor alert dedupe state. Keeps alert_engine from drowning
+        # the bus when an STFT trim sits 2.5σ off for ten minutes.
+        # {sensor_name: {'last_alert_ts': float, 'last_z': float,
+        #                'suppression_count': int}}
+        self._alert_state: dict = {}
 
         db.init_db()
         self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
+
+    def _should_publish_alert(self, sensor_name: str, z_score: float,
+                              now: Optional[float] = None):
+        """Return (publish: bool, summary: Optional[dict]).
+
+        - publish=True if this is a fresh alert or an escalation.
+        - summary is set when the cooldown expired while the sensor was
+          still firing — the caller emits it as a "still anomalous"
+          digest with the running suppression count.
+        """
+        if now is None:
+            now = time.time()
+        state = self._alert_state.get(sensor_name)
+        if state is None:
+            self._alert_state[sensor_name] = {
+                'last_alert_ts': now,
+                'last_z': z_score,
+                'suppression_count': 0,
+            }
+            return True, None
+        elapsed = now - state['last_alert_ts']
+        # Escalation passthrough: a notable jump in severity must NOT
+        # be hidden by the cooldown — that's what the operator needs
+        # to see.
+        if z_score - state['last_z'] >= ALERT_ESCALATION_DELTA:
+            state['last_alert_ts'] = now
+            state['last_z'] = z_score
+            state['suppression_count'] = 0
+            return True, None
+        if elapsed < ALERT_COOLDOWN_SEC:
+            state['suppression_count'] += 1
+            return False, None
+        # Cooldown expired AND the sensor is still anomalous. Emit a
+        # rollup so the operator knows it never went away.
+        summary = {
+            'sensor': sensor_name,
+            'z_score': round(z_score, 2),
+            'suppression_count': state['suppression_count'],
+            'cooldown_sec': ALERT_COOLDOWN_SEC,
+            'still_anomalous': True,
+            'ts': now,
+        }
+        state['last_alert_ts'] = now
+        state['last_z'] = z_score
+        state['suppression_count'] = 0
+        return False, summary
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -139,18 +199,42 @@ class AnomalyMonitor:
                 for e in events:
                     db.insert_anomaly_event(e)
                     if e['severity'] == 'critical':
-                        # Match the schema used by alert_engine so downstream
-                        # consumers (realdash_bridge, voice_alerts, dashboard)
-                        # do not KeyError on missing fields.
-                        from config import LEVEL_AMBER, LEVEL_NAMES
-                        self.client.publish(
-                            TOPICS.get('alert_message', 'drifter/alert/message'),
-                            json.dumps({
-                                'level': LEVEL_AMBER,
-                                'name': LEVEL_NAMES[LEVEL_AMBER],
-                                'message': f"Critical anomaly: {sensor_name} z={e['z_score']:.1f}",
-                                'ts': time.time(),
-                            }))
+                        # Per-sensor cooldown so a sustained anomaly doesn't
+                        # firehose drifter/alert/message. Escalations
+                        # (Δz ≥ 0.5) bypass; cooldown-expired-but-still-firing
+                        # produces a digest with the suppression count.
+                        publish, summary = self._should_publish_alert(
+                            sensor_name, e['z_score'])
+                        if publish:
+                            # Match the schema used by alert_engine so
+                            # downstream consumers (realdash_bridge,
+                            # voice_alerts, dashboard) do not KeyError
+                            # on missing fields.
+                            from config import LEVEL_AMBER, LEVEL_NAMES
+                            self.client.publish(
+                                TOPICS.get('alert_message', 'drifter/alert/message'),
+                                json.dumps({
+                                    'level': LEVEL_AMBER,
+                                    'name': LEVEL_NAMES[LEVEL_AMBER],
+                                    'message': f"Critical anomaly: {sensor_name} z={e['z_score']:.1f}",
+                                    'ts': time.time(),
+                                }))
+                        elif summary is not None:
+                            from config import LEVEL_AMBER, LEVEL_NAMES
+                            self.client.publish(
+                                TOPICS.get('alert_message', 'drifter/alert/message'),
+                                json.dumps({
+                                    'level': LEVEL_AMBER,
+                                    'name': LEVEL_NAMES[LEVEL_AMBER],
+                                    'message': (
+                                        f"Still anomalous: {sensor_name} "
+                                        f"z={summary['z_score']:.1f} "
+                                        f"(suppressed {summary['suppression_count']}x "
+                                        f"in {int(ALERT_COOLDOWN_SEC)}s)"),
+                                    'suppression_count': summary['suppression_count'],
+                                    'still_anomalous': True,
+                                    'ts': summary['ts'],
+                                }))
 
             # RPM: update window + check instability
             if sensor_name == 'rpm':
