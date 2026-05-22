@@ -121,6 +121,24 @@ def _get_model():
     return _model
 
 
+def warmup() -> bool:
+    """Force the embedding model into memory.
+
+    Called from drifter-dashboard at boot (in a daemon thread) so the
+    first /api/query doesn't pay a 30+s cold load on Pi 5 ARM64. The
+    transformer + tokenizer cache lives on disk already; this just
+    deserialises them into the process. Safe to call repeatedly —
+    _get_model is idempotent. Returns True on success, False on any
+    failure (which leaves _model unset so the next real call retries).
+    """
+    try:
+        _get_model()
+        return True
+    except Exception as e:
+        log.warning(f"corpus.warmup failed: {e}")
+        return False
+
+
 def _embed(text: str) -> bytes:
     """Encode text to a packed float32 byte string for sqlite BLOB storage."""
     vec = _get_model().encode(text, normalize_embeddings=True)

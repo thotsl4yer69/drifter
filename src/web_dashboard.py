@@ -379,6 +379,23 @@ def main() -> None:
     except Exception as e:
         log.warning("airspace poller failed to start: %s", e)
 
+    # ── Embedding model warmup ──
+    # corpus_search() is called from build_query_context on every
+    # /api/query, and the first call cold-loads sentence-transformers
+    # all-MiniLM-L6-v2 (~80MB on disk, ~30s deserialise on Pi 5 ARM64).
+    # That was blowing past curl's 35s default and breaking the
+    # Mechanic chat. Loading the model in a daemon thread at boot
+    # makes the first real query land warm. Failure is non-fatal —
+    # corpus_search still works, just pays the cold cost lazily.
+    def _warm_corpus():
+        try:
+            from corpus import warmup
+            warmup()
+        except Exception as e:
+            log.warning("corpus warmup thread errored: %s", e)
+    threading.Thread(target=_warm_corpus, daemon=True,
+                     name='corpus-warmup').start()
+
     # ── HTTP + HTTPS Server Threads ──
     # HTTP keeps the /healthz fleet contract on 8080. HTTPS on 8443 is
     # what makes navigator.geolocation work on the tethered phone.

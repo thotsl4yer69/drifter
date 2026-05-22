@@ -841,7 +841,7 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # ── LLM Backend (Ollama — local, offline) ──
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # 1.5b fabricates static-spec ranges as live readings; 3b follows the no-invention rule.
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")  # Pi 5 ran qwen2.5:3b at 165% CPU with 60+s stalls. 1.5b responds in ~10s warm. The prompt-side NO DATA tags + vivi_grounding.validate() post-hoc check together catch the fabrication class 3b was originally chosen to prevent.
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 
 # ── Voice Input (STT) ──
