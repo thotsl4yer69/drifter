@@ -776,6 +776,83 @@
     background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
   .signal-intel-row .conf-bar > span { display: block; height: 100%;
     background: linear-gradient(90deg, var(--teal), var(--amber) 60%, var(--red)); }
+  /* ── NOVEL SIGNAL badge (TASK 4) — drifter/rf/novel hits ── */
+  .signal-intel-row.novel { border: 1px solid rgba(255,174,66,0.7);
+    background: rgba(255,174,66,0.04); border-radius: var(--r-sm);
+    padding: 4px 6px; margin: 3px 0;
+    animation: novelPulse 1.6s ease-in-out infinite; }
+  @keyframes novelPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,174,66,0.55); border-color: rgba(255,174,66,0.7); }
+    50%     { box-shadow: 0 0 10px 2px rgba(255,174,66,0.15); border-color: rgba(255,174,66,1); }
+  }
+  .signal-intel-row .novel-badge {
+    font-family: 'Major Mono Display', monospace; font-size: 9px;
+    padding: 1px 5px; border: 1px solid var(--amber); border-radius: 3px;
+    color: var(--amber); letter-spacing: 0.15em; margin-right: 4px;
+    text-transform: uppercase;
+  }
+  /* ── REPLAY MODE — thick cyan border around .shell while replaying ── */
+  .shell.replay-mode {
+    box-shadow: inset 0 0 0 3px var(--teal), 0 0 30px rgba(64,196,220,0.25);
+  }
+  .replay-badge {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 9000; padding: 6px 14px;
+    border: 1px solid var(--teal); border-radius: 999px;
+    background: rgba(0,0,0,0.75); color: var(--teal);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    box-shadow: 0 0 18px rgba(64,196,220,0.45);
+    display: none;
+  }
+  .shell.replay-mode + .replay-badge,
+  .replay-badge.live { display: inline-block; }
+  /* ── WIFI AUDIT + PLAYBACK + HEALTH drawer styles ── */
+  .audit-chips, .playback-chips, .health-chips {
+    display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px;
+  }
+  .audit-chip, .playback-chip, .health-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 3px 8px; border-radius: 3px;
+    border: 1px solid var(--glass-stroke); color: var(--fg-mute);
+    letter-spacing: 0.06em;
+  }
+  .audit-chip.amber, .playback-chip.amber, .health-chip.amber { color: var(--amber); border-color: rgba(255,174,66,0.5); }
+  .audit-chip.cyan,  .playback-chip.cyan,  .health-chip.cyan  { color: var(--teal);  border-color: rgba(64,196,220,0.5); }
+  .audit-chip.red,   .playback-chip.red,   .health-chip.red   { color: var(--red);   border-color: rgba(231,76,60,0.5); }
+  .audit-row, .playback-row, .health-row {
+    display: grid; gap: 6px; padding: 5px 4px;
+    border-top: 1px dashed var(--glass-stroke);
+    font-size: 11px;
+  }
+  .audit-row { grid-template-columns: 1fr auto auto auto; align-items: center; }
+  .audit-row .ssid { font-family: 'JetBrains Mono', monospace; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .audit-row .bssid { font-family: 'JetBrains Mono', monospace; color: var(--fg-mute); font-size: 10px; }
+  .audit-row .type-chip { font-size: 9.5px; padding: 1px 5px; border-radius: 3px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .audit-row .type-chip.handshake { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+  .audit-row .type-chip.pmkid     { color: var(--teal);  border: 1px solid rgba(64,196,220,0.5); }
+  .audit-row .age { font-family: 'JetBrains Mono', monospace; color: var(--fg-dim); font-size: 10px; }
+  .playback-row { grid-template-columns: 1fr auto auto auto; align-items: center; }
+  .playback-row .ses-id { font-family: 'JetBrains Mono', monospace; color: var(--fg); font-size: 11px; }
+  .playback-row .ses-meta { font-family: 'JetBrains Mono', monospace; color: var(--fg-dim); font-size: 9.5px; }
+  .playback-row select.replay-speed {
+    background: rgba(0,0,0,0.45); border: 1px solid var(--glass-stroke);
+    color: var(--fg); font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 2px 4px; border-radius: 3px;
+  }
+  .playback-controls { display: flex; gap: 6px; margin-top: 8px; }
+  .health-row { grid-template-columns: auto 1fr auto; align-items: center; cursor: pointer; }
+  .health-row:hover { background: rgba(255,255,255,0.02); }
+  .health-row .h-glyph { font-family: 'Major Mono Display', monospace; color: var(--amber); width: 18px; text-align: center; }
+  .health-row .h-name { font-family: 'JetBrains Mono', monospace; color: var(--fg); font-size: 11px; }
+  .health-row .h-meta { font-family: 'JetBrains Mono', monospace; color: var(--fg-mute); font-size: 10px; }
+  .health-row .h-status { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.08em; }
+  .health-row .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
+  .health-row .h-status.warn { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+  .health-row .h-status.bad { color: var(--red); border: 1px solid rgba(231,76,60,0.5); }
+  .health-popover { padding: 6px 8px; border-top: 1px dashed var(--glass-stroke);
+    background: rgba(0,0,0,0.25); font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--fg-mute); white-space: pre-wrap; }
   /* Spectrum strip — single-row viridis heatmap of latest sweep. */
   .spectrum-strip { margin: 6px 0 4px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 4px 6px 5px; }
   .spectrum-strip .ticks { position: relative; height: 10px; font-family: 'JetBrains Mono', monospace; font-size: 8.5px; color: var(--fg-dim); letter-spacing: 0.04em; }
@@ -1827,6 +1904,9 @@
   <!-- ── DATA FAB (≤900px only; opens drawer as slide-up sheet) ── -->
   <button class="data-fab" id="data-fab" type="button" aria-label="Open data drawer">DATA</button>
 
+  <!-- ── REPLAY badge (TASK 2 PLAYBACK) — visible only when replay-mode active ── -->
+  <div class="replay-badge" id="replay-badge" aria-live="polite"></div>
+
   <!-- ── DRAWER ───────────────────────────────────────────── -->
   <aside class="drawer">
     <div class="drawer-tabs" id="drawer-tabs">
@@ -1843,6 +1923,9 @@
       <div class="drawer-tab" data-tab="candisc">CAN DISCOVERY <span class="count" data-count="candisc">—</span></div>
       <div class="drawer-tab" data-tab="airspace">AIRSPACE <span class="count" data-count="airspace">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
+      <div class="drawer-tab" data-tab="playback">PLAYBACK <span class="count" data-count="playback">0</span></div>
+      <div class="drawer-tab" data-tab="audit">AUDIT <span class="count" data-count="audit">0</span></div>
+      <div class="drawer-tab" data-tab="health">HEALTH <span class="count" data-count="health">—</span></div>
     </div>
 
     <div class="drawer-body" id="drawer-body">
@@ -1908,6 +1991,10 @@
     canDiscovery: null,     // /api/can/discovery ring (CaringCaribou parses)
     canCaptures: null,      // /api/can/captures (SavvyCAN-compatible CSVs)
     airspace: null,         // /api/airspace/aircraft (tar1090 enriched feed)
+    // Expansion wave 2
+    wifiAudit: null,        // drifter/wifi/audit (handshakes/PMKIDs)
+    signalIntelRows: [],    // last N classifications (with novel flag) for the RF tile
+    replay: { active: false, session_id: null, speed: 1.0, paused: false },
   };
 
   // Per-aircraft short trail history for the enriched radar overlay
@@ -1949,7 +2036,7 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
 
   // ── Active tab ─────────────────────────────────────────────────
-  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions'];
+  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions','playback','audit','health'];
   const _urlTab = new URLSearchParams(location.search).get('tab');
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
@@ -3391,6 +3478,154 @@
       }
       return out.join('');
     },
+
+    // ─── PLAYBACK tab (TASK 2) — replays past sessions via session_recorder ───
+    playback(){
+      const list = Array.isArray(cache.sessions) ? cache.sessions : [];
+      const r = cache.replay || {};
+      const out = [];
+      out.push(`<div class="section-head"><span>playback · sessions</span><span class="tag">drifter/replay/#</span></div>`);
+      if (r.active) {
+        out.push(`<div class="playback-chips">
+          <span class="playback-chip cyan">REPLAYING ${esc(r.session_id || '—')}</span>
+          <span class="playback-chip">${(r.speed || 1).toFixed(1)}x</span>
+          ${r.paused ? '<span class="playback-chip amber">PAUSED</span>' : '<span class="playback-chip cyan">LIVE</span>'}
+        </div>`);
+        out.push(`<div class="playback-controls">
+          ${r.paused
+            ? '<span class="ghost-btn" data-replay-ctl="resume" role="button" tabindex="0">RESUME</span>'
+            : '<span class="ghost-btn" data-replay-ctl="pause" role="button" tabindex="0">PAUSE</span>'}
+          <span class="ghost-btn crit" data-replay-ctl="stop" role="button" tabindex="0">STOP</span>
+        </div>`);
+      }
+      if (!list.length) {
+        out.push(emptyState('▶', 'No completed sessions to replay yet.'));
+      } else {
+        for (const s of list) {
+          const startTs = s.start_ts || s.started_at || s.ts;
+          const endTs = s.end_ts || s.ended_at;
+          const durS = (startTs && endTs) ? Math.round(endTs - startTs) : (s.duration_s || 0);
+          const durTxt = durS ? (durS >= 60 ? Math.round(durS/60)+'m' : durS+'s') : '—';
+          const id = s.id || s.session_id || s.uuid || '—';
+          const summary = s.summary || {};
+          const alerts = s.alert_count != null ? s.alert_count : (summary.alerts || 0);
+          const dtcs   = s.dtc_count   != null ? s.dtc_count   : (summary.dtcs   || 0);
+          const anoms  = s.anomaly_count != null ? s.anomaly_count : (summary.anomalies || 0);
+          out.push(`<div class="playback-row">
+            <div>
+              <div class="ses-id">${esc(id)}</div>
+              <div class="ses-meta">${startTs ? fmtAge(startTs)+' ago' : 'unknown'} · ${esc(durTxt)} · ${alerts}A · ${dtcs}D · ${anoms}N</div>
+            </div>
+            <select class="replay-speed" data-replay-speed-for="${esc(id)}">
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="5">5x</option>
+              <option value="10">10x</option>
+            </select>
+            <span class="ghost-btn" data-replay-start="${esc(id)}" role="button" tabindex="0">REPLAY</span>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // ─── AUDIT tab (TASK 1) — bettercap PMKID/handshake counters + recent ───
+    audit(){
+      const a = cache.wifiAudit || {};
+      const out = [];
+      out.push(`<div class="section-head"><span>wi-fi audit</span><span class="tag">drifter/wifi/audit</span></div>`);
+      const driveHs   = a.this_drive_handshakes != null ? a.this_drive_handshakes : 0;
+      const drivePmk  = a.this_drive_pmkids     != null ? a.this_drive_pmkids     : 0;
+      const totalHs   = a.handshakes_total      != null ? a.handshakes_total      : 0;
+      const totalPmk  = a.pmkids_total          != null ? a.pmkids_total          : 0;
+      out.push(`<div class="audit-chips">
+        <span class="audit-chip amber">${driveHs} handshakes · this drive</span>
+        <span class="audit-chip cyan">${drivePmk} pmkids · this drive</span>
+        <span class="audit-chip">${totalHs} hs · ${totalPmk} pmkid · all-time</span>
+      </div>`);
+      const targets = Array.isArray(a.recent_targets) ? a.recent_targets.slice(0, 5) : [];
+      out.push(`<div class="section-head" style="margin-top:8px"><span>recent targets</span><span class="tag">last ${targets.length}</span></div>`);
+      if (!targets.length) {
+        out.push(emptyState('∿', 'ALLOWLIST EMPTY OR AUDIT IDLE — edit /opt/drifter/etc/audit_targets.yaml'));
+      } else {
+        for (const t of targets) {
+          const typ = (t.type || '').toLowerCase();
+          const chipCls = typ === 'pmkid' ? 'pmkid' : 'handshake';
+          out.push(`<div class="audit-row">
+            <div class="ssid">${esc(t.ssid || '(hidden)')}</div>
+            <div class="bssid">${esc(t.bssid || '—')}</div>
+            <div class="type-chip ${chipCls}">${esc(typ || 'capture')}</div>
+            <div class="age">${t.ts ? fmtAge(t.ts)+' ago' : '—'}</div>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // ─── HEALTH tab (TASK 3) — composed from /healthz + /api/state ───
+    health(){
+      const hz = cache.healthz || {};
+      const st = cache.state || {};
+      const sw = st.system_watchdog || {};
+      const sys = sw.system || {};
+      const out = [];
+      out.push(`<div class="section-head"><span>hardware health</span><span class="tag">composed · /healthz + /api/state</span></div>`);
+      // Top chip row
+      const overall = sw.overall || hz.status || '—';
+      const chipCls = overall === 'ok' || overall === 'online' ? 'cyan' : (overall === 'degraded' ? 'red' : 'amber');
+      out.push(`<div class="health-chips">
+        <span class="health-chip ${chipCls}">overall · ${esc(overall)}</span>
+        <span class="health-chip">cpu ${sys.cpu_percent != null ? sys.cpu_percent.toFixed(0)+'%' : '—'}</span>
+        <span class="health-chip">mem ${sys.memory_percent != null ? sys.memory_percent.toFixed(0)+'%' : '—'}</span>
+        <span class="health-chip">temp ${sys.cpu_temp != null ? sys.cpu_temp.toFixed(1)+'°C' : '—'}</span>
+      </div>`);
+      // Health rows — assemble from existing sources only (no /api/health/full).
+      const rows = [];
+      // USB tree row — pulled from /api/state.hw_* probes.
+      const sdr   = st.hw_rtl_sdr   || {};
+      const mic   = st.hw_microphone || {};
+      const bt    = st.hw_bluetooth || {};
+      const sdrOn = sdr.detected || sdr.present;
+      const usbCount = (sdrOn ? 1 : 0) + (mic.detected ? 1 : 0) + (bt.detected ? 1 : 0);
+      rows.push({ glyph: '⌁', name: 'usb tree', meta: `${usbCount} known devices · rtl-sdr ${sdrOn ? 'on' : 'off'} · mic ${mic.detected ? 'on' : 'off'} · bt ${bt.detected ? 'on' : 'off'}`, status: usbCount ? 'ok' : 'warn', detail: JSON.stringify({rtl_sdr: sdr, microphone: mic, bluetooth: bt}, null, 2) });
+      // RTL-SDR row
+      const rfStatus = cache.rfStatus || st.rf_status || {};
+      rows.push({ glyph: '∿', name: 'rtl-sdr', meta: `${rfStatus.state || 'idle'} · gain ${sdr.gain != null ? sdr.gain : 'auto'} · sr ${sdr.sample_rate || '2.4M'} · f ${sdr.frequency_mhz != null ? sdr.frequency_mhz.toFixed(2)+' MHz' : '—'}`, status: rfStatus.state === 'online' ? 'ok' : 'warn', detail: JSON.stringify(rfStatus, null, 2) });
+      // Flipper row
+      const fh = cache.flipperHardware || st.flipper_hardware || {};
+      const fs = cache.flipperStatus   || st.flipper_status   || {};
+      rows.push({ glyph: '⌬', name: 'flipper', meta: `fw ${esc(fs.firmware || fh.firmware || '—')} · batt ${fh.battery_percent != null ? fh.battery_percent+'%' : '—'} · module ${esc(fh.module || 'none')}`, status: fs.state === 'connected' ? 'ok' : 'warn', detail: JSON.stringify({status: fs, hardware: fh}, null, 2) });
+      // CAN row
+      const candisc = cache.canDiscovery || st.can_discovery_status || {};
+      rows.push({ glyph: '◈', name: 'can bus', meta: `${esc(candisc.state || 'unknown')} · ${candisc.bitrate || '500k'} · err ${candisc.error_count != null ? candisc.error_count : 0} · last ${candisc.last_frame_ts ? fmtAge(candisc.last_frame_ts)+' ago' : '—'}`, status: candisc.state === 'active' ? 'ok' : 'warn', detail: JSON.stringify(candisc, null, 2) });
+      // GPS row — pull from state if present
+      const gps = st.gps || st.gps_fix || {};
+      const gpsFix = gps.fix || gps.mode || (gps.lat != null ? '3d' : 'none');
+      rows.push({ glyph: '✚', name: 'gps', meta: `fix ${esc(gpsFix)} · sats ${gps.sats != null ? gps.sats : '—'} · hdop ${gps.hdop != null ? gps.hdop : '—'}`, status: (gps.lat != null) ? 'ok' : 'warn', detail: JSON.stringify(gps, null, 2) });
+      // Pi row
+      const dskPct = sys.disk_percent;
+      const piStatus = (sys.cpu_temp != null && sys.cpu_temp > 78) ? 'bad' : (sys.cpu_percent != null && sys.cpu_percent > 90 ? 'warn' : 'ok');
+      rows.push({ glyph: '▣', name: 'pi 5', meta: `temp ${sys.cpu_temp != null ? sys.cpu_temp.toFixed(1)+'°C' : '—'} · cpu ${sys.cpu_percent != null ? sys.cpu_percent.toFixed(0)+'%' : '—'} · mem ${sys.memory_percent != null ? sys.memory_percent.toFixed(0)+'%' : '—'} · disk ${dskPct != null ? dskPct.toFixed(0)+'%' : '—'} · up ${sys.uptime_seconds ? Math.round(sys.uptime_seconds/3600)+'h' : '—'}`, status: piStatus, detail: JSON.stringify(sys, null, 2) });
+      // Mqtt stale issues
+      const stale = Array.isArray(sw.mqtt_stale) ? sw.mqtt_stale : [];
+      if (stale.length) {
+        rows.push({ glyph: '!', name: 'mqtt stale topics', meta: `${stale.length} topic(s) silent`, status: 'warn', detail: stale.join('\n') });
+      }
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        out.push(`<div class="health-row" data-health-row="${i}" role="button" tabindex="0">
+          <div class="h-glyph">${r.glyph}</div>
+          <div>
+            <div class="h-name">${esc(r.name)}</div>
+            <div class="h-meta">${esc(r.meta)}</div>
+          </div>
+          <div class="h-status ${r.status}">${esc(r.status)}</div>
+        </div>
+        <div class="health-popover" id="health-pop-${i}" hidden>${esc(r.detail)}</div>`);
+      }
+      return out.join('');
+    },
   };
 
   function render(){
@@ -3488,7 +3723,17 @@
         const cnt = (Array.isArray(cache.feedsBom.items) ? cache.feedsBom.items.length : cache.feedsBom.count) || 0;
         setCount('weather', cnt, { live: cnt > 0 });
       }
-      if (activeTab === 'sensors' || activeTab === 'weather') render();
+      // TASK 1 — backfill wifi_audit summary from /api/state if the recorder publishes it there.
+      if (cache.state.wifi_audit && typeof cache.state.wifi_audit === 'object') {
+        cache.wifiAudit = cache.state.wifi_audit;
+        const a = cache.wifiAudit;
+        const drive = (a.this_drive_handshakes || 0) + (a.this_drive_pmkids || 0);
+        setCount('audit', drive, { live: drive > 0 });
+      }
+      // TASK 3 — surface overall health badge on the HEALTH drawer tab.
+      const sw = cache.state.system_watchdog || {};
+      if (sw.overall) setCount('health', sw.overall === 'ok' ? 'ok' : (sw.overall === 'degraded' ? '!' : '~'), { live: sw.overall === 'ok' });
+      if (activeTab === 'sensors' || activeTab === 'weather' || activeTab === 'audit' || activeTab === 'health') render();
     }
     // Reflect retained vivi_conversation_mode in the CONV pill on every poll.
     renderConvToggle();
@@ -3551,6 +3796,15 @@
     renderRfTile();
     if (activeTab === 'rf') render();
   }
+  // TASK 4 — seed signal-intel rows from the persisted classification ring.
+  async function loadRfClassification(){
+    const j = await safeFetch('/api/rf/classification');
+    if (!j) return;
+    const list = Array.isArray(j.classifications) ? j.classifications : (Array.isArray(j) ? j : []);
+    if (!list.length) { renderSignalIntel(); return; }
+    cache.signalIntelRows = list.slice(0, 8).map(r => Object.assign({ novel: !!r.novel }, r));
+    renderSignalIntel();
+  }
   async function loadFlipper(){
     cache.flipperStatus = await safeFetch('/api/flipper/status') || cache.flipperStatus;
     cache.flipperCaptures = await safeFetch('/api/flipper/captures') || cache.flipperCaptures;
@@ -3605,6 +3859,7 @@
     cache.sessions = await safeFetch('/api/sessions') || cache.sessions;
     const list = Array.isArray(cache.sessions) ? cache.sessions : [];
     setCount('sessions', list.length);
+    setCount('playback', list.length, { live: cache.replay && cache.replay.active });
     if (activeTab === 'sessions') render();
   }
   async function loadHealth(){
@@ -3733,9 +3988,19 @@
   function onWsMessage(ev){
     let msg;
     try { msg = JSON.parse(ev.data); } catch(e) { return; }
-    const topic = msg.topic;
+    let topic = msg.topic;
     const data = msg.data;
     if (!topic) return;
+
+    // ── PLAYBACK remap (TASK 2) — while in replay-mode, treat drifter/replay/<orig>
+    // as the live source so every downstream handler keeps working unmodified.
+    if (topic.startsWith('drifter/replay/')) {
+      if (cache.replay && cache.replay.active) {
+        topic = 'drifter/' + topic.slice('drifter/replay/'.length);
+      } else {
+        return; // ignore replay frames when not in replay mode
+      }
+    }
 
     // ── Gauges from engine topics ──
     if (topic === 'drifter/engine/coolant') {
@@ -3937,6 +4202,100 @@
       Object.assign(cache.trip.stats, data || {});
       renderTripHero();
       if (activeTab === 'trip') render();
+    }
+
+    // ── WI-FI AUDIT (TASK 1) — drifter/wifi/audit summary frame ──
+    if (topic === 'drifter/wifi/audit') {
+      cache.wifiAudit = data || cache.wifiAudit;
+      const c = cache.wifiAudit || {};
+      const driveHs = (c.this_drive_handshakes || 0) + (c.this_drive_pmkids || 0);
+      setCount('audit', driveHs, { live: driveHs > 0 });
+      if (activeTab === 'audit') render();
+    }
+
+    // ── RF classification + novel-signal badge (TASK 4) ──
+    // drifter/rf/classification : standard URH-NG match
+    // drifter/rf/novel          : same shape + flagged novel + baseline_location_hash
+    if (topic === 'drifter/rf/classification' || topic === 'drifter/rf/novel') {
+      const isNovel = topic === 'drifter/rf/novel';
+      const row = Object.assign({ novel: isNovel }, data || {});
+      cache.signalIntelRows = cache.signalIntelRows || [];
+      cache.signalIntelRows.unshift(row);
+      if (cache.signalIntelRows.length > 8) cache.signalIntelRows.length = 8;
+      renderSignalIntel();
+    }
+
+    // ── SESSION REPLAY status (TASK 2) — pushed by session_recorder ──
+    if (topic === 'drifter/session/replay/status') {
+      const d = data || {};
+      cache.replay = cache.replay || { active: false };
+      if (d.state === 'started' || d.state === 'replaying' || d.state === 'paused') {
+        cache.replay.active = true;
+        cache.replay.session_id = d.session_id || cache.replay.session_id;
+        cache.replay.speed = d.speed != null ? d.speed : (cache.replay.speed || 1);
+        cache.replay.paused = d.state === 'paused';
+        applyReplayMode();
+      } else if (d.state === 'stopped' || d.state === 'ended') {
+        cache.replay = { active: false, session_id: null, speed: 1, paused: false };
+        applyReplayMode();
+      }
+      if (activeTab === 'playback') render();
+    }
+  }
+
+  // ── SIGNAL INTEL renderer (TASK 4) — paints #signal-intel-body in the RF tile ──
+  function renderSignalIntel(){
+    const body = document.getElementById('signal-intel-body');
+    if (!body) return;
+    const rows = (cache.signalIntelRows || []).slice(0, 5);
+    if (!rows.length) {
+      body.innerHTML = '<div class="signal-intel-empty">AWAITING UNKNOWN SIGNAL</div>';
+      const wrap = document.getElementById('signal-intel');
+      if (wrap) wrap.setAttribute('data-empty', '1');
+      return;
+    }
+    const wrap = document.getElementById('signal-intel');
+    if (wrap) wrap.removeAttribute('data-empty');
+    const html = rows.map(r => {
+      const f = r.frequency_mhz != null
+        ? Number(r.frequency_mhz).toFixed(3)+'M'
+        : (r.frequency || r.freq || '—');
+      const mod = (r.modulation || r.mod || 'UNKNOWN').toString().toUpperCase();
+      const proto = r.protocol_guess || r.protocol || r.family || '—';
+      const conf = r.confidence != null ? Math.max(0, Math.min(1, r.confidence)) : 0;
+      const rssi = r.rssi != null ? `${r.rssi.toFixed(0)} dBm` : '';
+      const novel = r.novel
+        ? `<span class="novel-badge" title="Not seen in baseline for this location">NOVEL</span>`
+        : '';
+      const cls = r.novel ? 'signal-intel-row novel' : 'signal-intel-row';
+      const tip = r.novel
+        ? ` title="NOVEL SIGNAL · not seen in baseline for this location${r.baseline_location_hash ? ' ('+esc(r.baseline_location_hash)+')' : ''}"`
+        : '';
+      return `<div class="${cls}"${tip}>
+        ${novel}<span class="freq">${esc(f)}</span>
+        <span class="mod-chip mod-${esc(mod)}">${esc(mod)}</span>
+        <span class="protocol">${esc(proto)}${rssi ? ' · '+esc(rssi) : ''}</span>
+        <span class="conf-bar"><span style="width:${(conf*100).toFixed(0)}%"></span></span>
+      </div>`;
+    }).join('');
+    body.innerHTML = html;
+  }
+
+  // ── Replay-mode CSS toggle + badge text (TASK 2) ──
+  function applyReplayMode(){
+    const shell = document.getElementById('shell');
+    const badge = document.getElementById('replay-badge');
+    const r = cache.replay || {};
+    if (!shell || !badge) return;
+    if (r.active) {
+      shell.classList.add('replay-mode');
+      badge.classList.add('live');
+      const sid = (r.session_id || '').toString().slice(0, 12);
+      badge.textContent = `REPLAY ${(r.speed || 1).toFixed(1)}x · session ${sid}${r.paused ? ' · PAUSED' : ''}`;
+    } else {
+      shell.classList.remove('replay-mode');
+      badge.classList.remove('live');
+      badge.textContent = '';
     }
   }
 
@@ -4860,7 +5219,7 @@
   loadHealth().then(loadRfStatus);
   loadState();
   loadAlerts(); loadDtcs(); loadTpms(); loadTpmsAssignments(); loadTrip();
-  loadRfSpec(); loadRfEmer(); loadFlipper(); loadRfaudio();
+  loadRfSpec(); loadRfEmer(); loadRfClassification(); loadFlipper(); loadRfaudio();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions();
   loadOrigin(); loadMode(); loadDriver();
@@ -4887,6 +5246,54 @@
   setInterval(loadMode,       30000);
   setInterval(loadRfStatus,   15000);
   setInterval(loadRfaudio,    10000);
+  setInterval(loadRfClassification, 30000);
+
+  // ── PLAYBACK + HEALTH click handlers (TASK 2 + TASK 3) ──
+  // Delegate from the drawer body so re-renders don't strand listeners.
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!(t instanceof Element)) return;
+    // REPLAY start
+    const startBtn = t.closest('[data-replay-start]');
+    if (startBtn) {
+      const sid = startBtn.getAttribute('data-replay-start');
+      const sel = document.querySelector(`select[data-replay-speed-for="${CSS.escape(sid)}"]`);
+      const speed = sel ? parseFloat(sel.value) || 1 : 1;
+      postJSON('/api/session/replay', { session_id: sid, speed }).catch(() => {});
+      // Optimistic UI — flip into replay-mode; the WS status will confirm.
+      cache.replay = { active: true, session_id: sid, speed, paused: false };
+      applyReplayMode();
+      if (activeTab === 'playback') render();
+      return;
+    }
+    // PAUSE/RESUME/STOP
+    const ctl = t.closest('[data-replay-ctl]');
+    if (ctl) {
+      const action = ctl.getAttribute('data-replay-ctl');
+      const url = action === 'pause' ? '/api/session/pause'
+                : action === 'resume' ? '/api/session/resume'
+                : '/api/session/stop_replay';
+      postJSON(url, {}).catch(() => {});
+      if (action === 'stop') {
+        cache.replay = { active: false, session_id: null, speed: 1, paused: false };
+        applyReplayMode();
+      } else if (action === 'pause') {
+        cache.replay.paused = true; applyReplayMode();
+      } else if (action === 'resume') {
+        cache.replay.paused = false; applyReplayMode();
+      }
+      if (activeTab === 'playback') render();
+      return;
+    }
+    // HEALTH row toggle popover
+    const hrow = t.closest('[data-health-row]');
+    if (hrow) {
+      const idx = hrow.getAttribute('data-health-row');
+      const pop = document.getElementById('health-pop-' + idx);
+      if (pop) pop.hidden = !pop.hidden;
+      return;
+    }
+  });
 
   // WebSocket: live MQTT topic fanout. The dashboard service streams
   // every drifter/* topic at :8081 as JSON {topic,data,ts}. We use it
