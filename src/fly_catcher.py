@@ -54,10 +54,13 @@ running = True
 
 
 def _find_model_file(model_dir: Path) -> Optional[Path]:
-    """Locate the Fly Catcher model file — supports .pkl/.pt/.h5/.joblib."""
+    """Locate the Fly Catcher model file. .tflite first because that's the
+    Pi-deployable form (loaded via ai-edge-litert, no full TF runtime).
+    Other formats kept for completeness — operator may stage a raw h5 here
+    before running the convert step."""
     if not model_dir.exists():
         return None
-    for ext in ('*.pkl', '*.joblib', '*.pt', '*.h5'):
+    for ext in ('*.tflite', '*.pkl', '*.joblib', '*.pt', '*.h5'):
         hits = sorted(model_dir.rglob(ext))
         if hits:
             return hits[0]
@@ -78,6 +81,10 @@ class FlyCatcher:
         self.model: Any = None
         self.model_path: Optional[Path] = None
         self.available = False
+        # tflite-specific state — used when path.suffix == '.tflite'
+        self._tflite_input_idx: Optional[int] = None
+        self._tflite_output_idx: Optional[int] = None
+        self._tflite_input_shape: Optional[tuple] = None
         self._load()
 
     def _load(self) -> None:
@@ -87,7 +94,19 @@ class FlyCatcher:
                         "rows will pass through unannotated", self.model_dir)
             return
         try:
-            if path.suffix in ('.pkl', '.joblib'):
+            if path.suffix == '.tflite':
+                # LiteRT (the successor to standalone tflite-runtime) is
+                # the only ML dep we want resident on the Pi. The .h5 →
+                # .tflite conversion runs once via tools/convert_fly_catcher_to_tflite.py
+                from ai_edge_litert.interpreter import Interpreter  # type: ignore
+                self.model = Interpreter(model_path=str(path))
+                self.model.allocate_tensors()
+                input_details = self.model.get_input_details()[0]
+                output_details = self.model.get_output_details()[0]
+                self._tflite_input_idx = input_details['index']
+                self._tflite_output_idx = output_details['index']
+                self._tflite_input_shape = tuple(input_details['shape'])
+            elif path.suffix in ('.pkl', '.joblib'):
                 import joblib  # type: ignore
                 self.model = joblib.load(path)
             elif path.suffix == '.pt':
@@ -96,6 +115,9 @@ class FlyCatcher:
                 if hasattr(self.model, 'eval'):
                     self.model.eval()
             elif path.suffix == '.h5':
+                # Direct .h5 load needs full TensorFlow, which we
+                # deliberately don't ship. Prefer the .tflite path —
+                # convert once, drop the .tflite next to the .h5.
                 from tensorflow import keras  # type: ignore
                 self.model = keras.models.load_model(str(path))
             self.model_path = path
@@ -137,14 +159,42 @@ class FlyCatcher:
                 'suspect': False,
                 'unavailable': True,
             }
-        features = [self.featurize(aircraft)]
+        features = self.featurize(aircraft)
         try:
-            if hasattr(self.model, 'predict_proba'):
-                proba = self.model.predict_proba(features)[0]
+            if self._tflite_input_idx is not None:
+                # LiteRT path. Reshape the feature vector to whatever
+                # input shape the model expects. The convert step locks
+                # this shape in at .tflite-creation time.
+                import numpy as np  # type: ignore
+                arr = np.asarray(features, dtype=np.float32)
+                shape = self._tflite_input_shape or (1, len(features))
+                # Pad / truncate to fit the expected element count.
+                target_n = 1
+                for d in shape:
+                    target_n *= max(int(d), 1)
+                if arr.size < target_n:
+                    arr = np.concatenate(
+                        [arr, np.zeros(target_n - arr.size, dtype=np.float32)])
+                elif arr.size > target_n:
+                    arr = arr[:target_n]
+                arr = arr.reshape(shape)
+                self.model.set_tensor(self._tflite_input_idx, arr)
+                self.model.invoke()
+                out = self.model.get_tensor(self._tflite_output_idx)
+                # Output is typically (1, 1) sigmoid or (1, 2) softmax.
+                flat = out.flatten()
+                if flat.size == 1:
+                    genuine = float(flat[0])
+                else:
+                    # softmax: last class == genuine
+                    genuine = float(flat[-1])
+                genuine = max(0.0, min(1.0, genuine))
+            elif hasattr(self.model, 'predict_proba'):
+                proba = self.model.predict_proba([features])[0]
                 # binary classifier: assume class 1 == genuine
                 genuine = float(proba[-1])
             elif hasattr(self.model, 'predict'):
-                pred = self.model.predict(features)
+                pred = self.model.predict([features])
                 genuine = float(pred[0])
                 # Clamp to [0,1] if the model returned a raw score.
                 genuine = max(0.0, min(1.0, genuine))
