@@ -130,26 +130,36 @@ class FlyCatcher:
 
     @staticmethod
     def featurize(aircraft: dict) -> list[float]:
-        """Pull a fixed feature vector out of an enriched ADS-B record.
+        """Pull the exact 10-feature vector Fly Catcher's CNN was trained on.
 
-        Conservative defaults — Fly Catcher's exact feature spec is
-        defined by the upstream model; we hand it the standard ADS-B
-        fields and let the model wrapper reshape as needed.
+        Order locked in by the upstream training notebook
+        (CNN_Spoofing_Detector.ipynb preprocess_data):
+            alt_baro, gs, track, baro_rate, lat, lon,
+            seen_pos, messages, seen, rssi
+
+        alt_baro == "ground" is mapped to 0.0 (matches handle_alt_baro
+        upstream). Fields missing from the aircraft record default to 0
+        the same way the training code does.
         """
         def num(*keys, default=0.0) -> float:
             for k in keys:
                 v = aircraft.get(k)
+                if isinstance(v, str) and v.lower() == 'ground':
+                    return 0.0
                 if isinstance(v, (int, float)) and not math.isnan(float(v)):
                     return float(v)
             return float(default)
         return [
-            num('alt', 'alt_baro', 'altitude'),
-            num('speed', 'gs', 'ground_speed'),
+            num('alt_baro', 'alt', 'altitude'),
+            num('gs', 'speed', 'ground_speed'),
             num('track', 'true_track'),
+            num('baro_rate', 'vert_rate'),
             num('lat'),
             num('lon'),
-            num('vert_rate', 'baro_rate'),
-            num('signal', 'rssi'),
+            num('seen_pos'),
+            num('messages'),
+            num('seen'),
+            num('rssi', 'signal'),
         ]
 
     def classify(self, aircraft: dict) -> dict:
@@ -181,13 +191,18 @@ class FlyCatcher:
                 self.model.set_tensor(self._tflite_input_idx, arr)
                 self.model.invoke()
                 out = self.model.get_tensor(self._tflite_output_idx)
-                # Output is typically (1, 1) sigmoid or (1, 2) softmax.
+                # Fly Catcher upstream is a single-sigmoid binary classifier
+                # trained with label=1 if aircraft['is_spoofed'] else 0. The
+                # raw output is therefore P(spoofed); flip to genuine_prob
+                # for the rest of the pipeline. softmax variant kept for
+                # future-proofing in case the model architecture changes.
                 flat = out.flatten()
                 if flat.size == 1:
-                    genuine = float(flat[0])
+                    spoofed = float(flat[0])
+                    genuine = 1.0 - spoofed
                 else:
-                    # softmax: last class == genuine
-                    genuine = float(flat[-1])
+                    # softmax: first class assumed genuine, last assumed spoofed
+                    genuine = float(flat[0])
                 genuine = max(0.0, min(1.0, genuine))
             elif hasattr(self.model, 'predict_proba'):
                 proba = self.model.predict_proba([features])[0]
