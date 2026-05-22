@@ -1907,6 +1907,14 @@
   <!-- ── REPLAY badge (TASK 2 PLAYBACK) — visible only when replay-mode active ── -->
   <div class="replay-badge" id="replay-badge" aria-live="polite"></div>
 
+  <!-- ── PERF overlay (US-2) — hidden by default, shown with ?perf=1 — -->
+  <div id="perf-overlay" style="display:none;position:fixed;bottom:8px;right:8px;
+       z-index:9999;padding:4px 8px;background:rgba(0,0,0,0.75);
+       color:#7dd3fc;font-family:'JetBrains Mono',monospace;font-size:10px;
+       border:1px solid rgba(125,211,252,0.4);border-radius:4px;pointer-events:none">
+    parse — · paint — · ws —/s · frame —ms
+  </div>
+
   <!-- ── DRAWER ───────────────────────────────────────────── -->
   <aside class="drawer">
     <div class="drawer-tabs" id="drawer-tabs">
@@ -2473,14 +2481,21 @@
       tpmsEl.classList.toggle('live', tpmsKnown > 0);
     }
 
-    // Tile meta
+    // Tile meta — surfaces an explicit empty state when no SDR has ever
+    // produced data. Operator-facing: "PLUG IN RTL-SDR" beats a silent
+    // "RTL-SDR · 24M–1766M" header that looks live.
     const meta = document.getElementById('rf-tile-meta');
+    const sdrEver = !!(status.rtl_433_active || status.dump1090_active ||
+                       status.rfaudio_active || (sp && sp.ts));
     if (meta) {
-      const age = sp.ts ? `· −${fmtAge(sp.ts)}` : '';
-      meta.textContent = `RTL-SDR · 24M–1766M ${age}`;
+      if (!sdrEver) {
+        meta.textContent = 'PLUG IN RTL-SDR — no signal until dongle present';
+      } else {
+        const age = sp.ts ? `· −${fmtAge(sp.ts)}` : '';
+        meta.textContent = `RTL-SDR · 24M–1766M ${age}`;
+      }
     }
-    document.getElementById('rf-tile').classList.toggle('live',
-      !!(status.rtl_433_active || status.dump1090_active || (sp && sp.ts)));
+    document.getElementById('rf-tile').classList.toggle('live', sdrEver);
 
     // Spectrum heatmap strip — viridis-style colormap of the most
     // recent sweep (or partial). Renders the bins array of
@@ -3219,15 +3234,25 @@
         }
       }
 
+      // ── ADD-ON gate ──
+      // RF UX rebuild · v3sper: when neither wifi nor subghz add-on is
+      // present, show a single explicit "NO ADD-ON DETECTED" panel
+      // instead of two stacks of dim disabled buttons.
+      const wifiOn = moduleId === 'wifi';
+      const subOn  = moduleId === 'subghz';
+      if (!wifiOn && !subOn) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · add-on</span><span class="tag">module: none</span></div>`);
+        out.push(emptyState('⌬', 'NO ADD-ON DETECTED — plug in the Wi-Fi (ESP32 Marauder) or sub-GHz (CC1101) board'));
+        // rfaudio quick-tune still works without a Flipper add-on, so
+        // fall through to the quick-tune section below by jumping past
+        // both panel blocks.
+      } else if (wifiOn) {
       // ── Wi-Fi panel (ESP32 Marauder add-on) — TASK 2.2 ──
       // Buttons surface only the PASSIVE commands. DEAUTH/BEACON SPAM/
       // EVIL TWIN are firmware-supported but deliberately NOT wired here
       // per the operator's revised spec.
-      const wifiOn = moduleId === 'wifi';
-      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · wifi</span><span class="tag">${wifiOn ? 'module attached' : '(module not attached)'}</span></div>`);
-      if (!wifiOn) {
-        out.push(`<div class="muted dim" style="opacity:.5;padding:4px 0">WIFI SCAN AP · WIFI SCAN STA · BLE SCAN · PACKET MONITOR · PROBE REQUEST CAPTURE · PWNAGOTCHI MODE (passive)</div>`);
-      } else {
+      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · wifi</span><span class="tag">module attached</span></div>`);
+      {
         const wifiBtn = (id, label, cap, extra='') => {
           const enabled = capSet.has(cap);
           const cls = enabled ? 'ghost-btn' : 'ghost-btn';
@@ -3249,12 +3274,9 @@
         </div>`);
       }
 
-      // ── Sub-GHz panel (CC1101 add-on) — TASK 2.3 ──
-      const subOn = moduleId === 'subghz';
-      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · subghz</span><span class="tag">${subOn ? 'module attached' : '(module not attached)'}</span></div>`);
-      if (!subOn) {
-        out.push(`<div class="muted dim" style="opacity:.5;padding:4px 0">FREQ ANALYZER · RAW CAPTURE · READ PROTOCOL · REPLAY</div>`);
-      } else {
+      } else if (subOn) {
+        // ── Sub-GHz panel (CC1101 add-on) — TASK 2.3 ──
+        out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · subghz</span><span class="tag">module attached</span></div>`);
         const subBtn = (id, label, cap, extra='') => {
           const enabled = capSet.has(cap);
           const aria = enabled ? 'false' : 'true';
@@ -3367,23 +3389,38 @@
       const out = [];
       out.push(`<div class="section-head"><span>can · discovery</span><span class="tag">caringcaribou · drifter/can/command</span></div>`);
 
-      // Preset command buttons.
+      // RF UX rebuild · CAN: if can0 absent, show explicit empty state
+      // instead of letting the operator press buttons that will time out.
+      const canIfaceUp = cache.canIfaceUp;
+      if (canIfaceUp === false) {
+        out.push(emptyState('⏚', 'NO CAN INTERFACE — connect OBD-II dongle'));
+        return out.join('');
+      }
+
+      // Preset command buttons with operator-facing tooltips.
       const ecuSelect = ecuOpts.length
-        ? `<select class="ghost-btn" id="candisc-ecu-select" style="background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px 6px">
+        ? `<select class="ghost-btn" id="candisc-ecu-select" style="background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px 6px" title="ECU IDs harvested from prior DISCOVER ECUs runs">
              ${ecuOpts.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
            </select>`
         : `<span class="ghost-btn" aria-disabled="true" title="Run DISCOVER ECUs first">NO ECU YET</span>`;
       out.push(`<div class="btn-row">
-        <span class="ghost-btn live" id="candisc-discover" role="button" tabindex="0">DISCOVER ECUs</span>
-        <span class="ghost-btn" id="candisc-list-services" role="button" tabindex="0">LIST SERVICES</span>
+        <span class="ghost-btn live" id="candisc-discover" role="button" tabindex="0" title="UDS scan: probes every CAN ID for an ECU response">DISCOVER ECUs</span>
+        <span class="ghost-btn" id="candisc-list-services" role="button" tabindex="0" title="Enumerate UDS services on the selected ECU">LIST SERVICES</span>
         ${ecuSelect}
-        <span class="ghost-btn" id="candisc-dump-dids" role="button" tabindex="0">DUMP IDENTIFIERS</span>
+        <span class="ghost-btn" id="candisc-dump-dids" role="button" tabindex="0" title="Read every DID the ECU exposes">DUMP IDENTIFIERS</span>
       </div>`);
+      // FUZZ range — preset dropdowns (no free-text command inputs).
+      const fuzzStartOpts = ['0x700','0x500','0x100','0x000'];
+      const fuzzEndOpts   = ['0x7FF','0x7E0','0x5FF','0x1FF'];
       out.push(`<div class="btn-row" style="margin-top:4px">
-        <span class="candisc-fuzz-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-dim)">FUZZ RANGE</span>
-        <input id="candisc-fuzz-start" type="text" value="0x700" style="width:80px;background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
-        <input id="candisc-fuzz-end"   type="text" value="0x7FF" style="width:80px;background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
-        <span class="ghost-btn crit" id="candisc-fuzz-range" role="button" tabindex="0">FUZZ ID RANGE</span>
+        <span class="candisc-fuzz-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-dim)" title="Brute-force a range of CAN IDs and log replies">FUZZ RANGE</span>
+        <select id="candisc-fuzz-start" class="ghost-btn" style="background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:10px" title="Lower CAN ID bound for fuzz">
+          ${fuzzStartOpts.map(v => `<option value="${v}">${v}</option>`).join('')}
+        </select>
+        <select id="candisc-fuzz-end" class="ghost-btn" style="background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:10px" title="Upper CAN ID bound for fuzz">
+          ${fuzzEndOpts.map(v => `<option value="${v}">${v}</option>`).join('')}
+        </select>
+        <span class="ghost-btn crit" id="candisc-fuzz-range" role="button" tabindex="0" title="Brute-force a range of CAN IDs and log replies">FUZZ ID RANGE</span>
       </div>`);
 
       // Results table — sortable by header click (lightweight, no library).
@@ -3436,20 +3473,27 @@
 
     airspace(){
       // AIRSPACE drawer (Agent A · TASK 1.3) — tar1090 iframe + meta.
+      // RF UX rebuild: probe :8504 once per drawer mount; if unreachable,
+      // show "tar1090 NOT INSTALLED" empty state instead of a broken iframe.
       const snap = cache.airspace || {};
       const aircraft = Array.isArray(snap.aircraft) ? snap.aircraft : [];
       const ageTxt = snap.ts ? fmtAge(snap.ts) + ' ago' : 'awaiting';
       const out = [];
       out.push(`<div class="section-head"><span>airspace · tar1090</span><span class="tag">${aircraft.length} tracked · ${esc(ageTxt)}</span></div>`);
+      const tar1090Up = cache.tar1090Up;
+      if (tar1090Up === false) {
+        out.push(emptyState('✈', 'tar1090 NOT INSTALLED — see docs/COMMUNITY_TOOLS_STATUS.md'));
+        return out.join('');
+      }
       out.push(`<div class="btn-row" style="margin-bottom:6px">
         <a class="ghost-btn" href="http://${location.hostname}:8504/" target="_blank" rel="noopener">OPEN FULL SCREEN</a>
       </div>`);
       out.push(`<iframe id="tar1090-frame" src="http://${location.hostname}:8504/"
         sandbox="allow-scripts allow-same-origin allow-popups"
-        style="width:100%; height:520px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
-        loading="lazy"
-        onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"></iframe>`);
-      out.push(`<div style="display:none; padding:12px; text-align:center; color:var(--fg-dim); font-family:'Major Mono Display',monospace">tar1090 · unavailable on :8504</div>`);
+        style="width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
+        loading="lazy"></iframe>`);
+      // Defer the probe — if it fails, flip the cache flag and re-render.
+      setTimeout(probeTar1090, 0);
       return out.join('');
     },
 
@@ -3986,6 +4030,7 @@
   }
 
   function onWsMessage(ev){
+    perf.wsMsgs++;
     let msg;
     try { msg = JSON.parse(ev.data); } catch(e) { return; }
     let topic = msg.topic;
@@ -4101,10 +4146,13 @@
     }
 
     // ── RF status / spectrum / emergency ──
+    // rAF-batched: high-rate spectrum/emergency frames used to call
+    // renderRfTile() synchronously per message. Now they flag the tile
+    // dirty and the scheduler coalesces multiple ticks into one paint.
     if (topic === 'drifter/rf/status') {
       cache.rfStatus = (cache.rfStatus || {});
       Object.assign(cache.rfStatus, data || {});
-      renderRfTile();
+      scheduleRender('rfTile');
     }
     if (topic === 'drifter/rf/spectrum') {
       cache.rfSpec = data;
@@ -4112,19 +4160,20 @@
       const btn = document.getElementById('btn-force-spectrum');
       if (btn) btn.classList.remove('busy');
       forceSpectrumBusyUntil = 0;
-      renderRfTile();
+      scheduleRender('rfTile');
     }
     // Partial sweeps land while rtl_power is still running — paint
     // the strip as they arrive so the operator sees live progress.
+    // Skip when the RF tile isn't visible (cockpit may be on a different surface).
     if (topic === 'drifter/rf/spectrum/partial') {
       if (data && Array.isArray(data.bins) && data.bins.length) {
         cache.rfSpec = Object.assign({}, cache.rfSpec || {}, data);
-        renderSpectrumStrip();
+        if (!document.hidden) scheduleRender('rfTile');
       }
     }
     if (topic === 'drifter/rf/emergency') {
       cache.rfEmer = data;
-      renderRfTile();
+      scheduleRender('rfTile');
     }
     if (topic === 'drifter/rf/tpms/harvest') {
       tpmsHarvest = data;
@@ -4243,6 +4292,32 @@
     }
   }
 
+  // RF UX rebuild · client-side protocol_guess → human name map.
+  // URH/URH-NG returns lowercase tokens or numeric IDs; render the
+  // operator-facing brand name when we know it, otherwise fall back
+  // to the raw token.
+  const PROTO_NAME_MAP = {
+    came: 'Came', nice: 'Nice', linear: 'Linear', princeton: 'Princeton',
+    pt2262: 'Princeton (PT2262)', pt2264: 'Princeton (PT2264)',
+    holtek: 'Holtek', ev1527: 'EV1527', schrader: 'Schrader (TPMS)',
+    'schrader-tpms': 'Schrader (TPMS)', tpms: 'TPMS',
+    keeloq: 'KeeLoq', faac: 'FAAC SLH', somfy: 'Somfy', somfy_rts: 'Somfy RTS',
+    chamberlain: 'Chamberlain', liftmaster: 'LiftMaster',
+    genie: 'Genie Intellicode', stanley: 'Stanley',
+    hormann: 'Hörmann', clemsa: 'Clemsa', cardin: 'Cardin',
+    star: 'Star', dooya: 'Dooya', power: 'Power Smart',
+    ook: 'OOK (raw)', ask: 'ASK (raw)', fsk: 'FSK (raw)',
+  };
+  function prettyProto(raw){
+    if (raw == null || raw === '—') return '—';
+    const key = String(raw).toLowerCase().trim();
+    if (PROTO_NAME_MAP[key]) return PROTO_NAME_MAP[key];
+    // Stripped variant (no dashes/underscores).
+    const stripped = key.replace(/[^a-z0-9]/g, '');
+    if (PROTO_NAME_MAP[stripped]) return PROTO_NAME_MAP[stripped];
+    return String(raw);
+  }
+
   // ── SIGNAL INTEL renderer (TASK 4) — paints #signal-intel-body in the RF tile ──
   function renderSignalIntel(){
     const body = document.getElementById('signal-intel-body');
@@ -4261,8 +4336,10 @@
         ? Number(r.frequency_mhz).toFixed(3)+'M'
         : (r.frequency || r.freq || '—');
       const mod = (r.modulation || r.mod || 'UNKNOWN').toString().toUpperCase();
-      const proto = r.protocol_guess || r.protocol || r.family || '—';
+      const protoRaw = r.protocol_guess || r.protocol || r.family || '—';
+      const proto = prettyProto(protoRaw);
       const conf = r.confidence != null ? Math.max(0, Math.min(1, r.confidence)) : 0;
+      const confPct = (conf*100).toFixed(0);
       const rssi = r.rssi != null ? `${r.rssi.toFixed(0)} dBm` : '';
       const novel = r.novel
         ? `<span class="novel-badge" title="Not seen in baseline for this location">NOVEL</span>`
@@ -4275,7 +4352,8 @@
         ${novel}<span class="freq">${esc(f)}</span>
         <span class="mod-chip mod-${esc(mod)}">${esc(mod)}</span>
         <span class="protocol">${esc(proto)}${rssi ? ' · '+esc(rssi) : ''}</span>
-        <span class="conf-bar"><span style="width:${(conf*100).toFixed(0)}%"></span></span>
+        <span class="conf-bar" title="${confPct}% confidence"><span style="width:${confPct}%"></span></span>
+        <span class="conf-pct" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-dim);margin-left:4px">${confPct}%</span>
       </div>`;
     }).join('');
     body.innerHTML = html;
@@ -4315,6 +4393,98 @@
     if (sensorsRenderScheduled) return;
     sensorsRenderScheduled = true;
     requestAnimationFrame(() => { sensorsRenderScheduled = false; render(); });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // PERF — rAF-batched drawer renderer + WS msg-rate instrumentation
+  // ═══════════════════════════════════════════════════════════════
+  // Every WS topic used to call render() directly. On a Pi 5 chromium
+  // with 7+ msgs/s, that's a layout/paint storm. We collect dirty flags
+  // here and flush at most once per animation frame (~60Hz cap, often
+  // throttled by the browser when the tab is hidden).
+  const dirty = { drawer: false, rfTile: false, viviStrip: false, signalIntel: false };
+  let renderRafScheduled = false;
+  function scheduleRender(which){
+    if (which) dirty[which] = true;
+    if (renderRafScheduled) return;
+    renderRafScheduled = true;
+    requestAnimationFrame(() => {
+      renderRafScheduled = false;
+      if (document.hidden) {
+        // Tab is hidden: drop the frame; flags stay set for next visible frame.
+        return;
+      }
+      if (dirty.drawer)       { dirty.drawer = false;       render(); }
+      if (dirty.rfTile)       { dirty.rfTile = false;       renderRfTile(); }
+      if (dirty.viviStrip)    { dirty.viviStrip = false;    renderViviStrip(); }
+      if (dirty.signalIntel)  { dirty.signalIntel = false;  renderSignalIntel(); }
+      perf.lastFrameMs = (performance.now() - perf._frameStart) | 0;
+    });
+  }
+
+  // Perf overlay (?perf=1 to display) — tracks parse/paint timestamps
+  // and a rolling WS msg/s estimate. Hidden by default so the operator
+  // doesn't see it during normal drives.
+  const perf = {
+    parseMs: 0, firstPaintMs: 0,
+    wsMsgs: 0, wsWindowStart: performance.now(),
+    wsMsgsPerSec: 0, lastFrameMs: 0,
+    _frameStart: performance.now(),
+  };
+  function tickPerfOverlay(){
+    const el = document.getElementById('perf-overlay');
+    if (!el) return;
+    const now = performance.now();
+    const win = (now - perf.wsWindowStart) / 1000;
+    if (win >= 1) {
+      perf.wsMsgsPerSec = perf.wsMsgs / win;
+      perf.wsMsgs = 0;
+      perf.wsWindowStart = now;
+    }
+    el.textContent =
+      `parse ${perf.parseMs|0}ms · paint ${perf.firstPaintMs|0}ms · ` +
+      `ws ${perf.wsMsgsPerSec.toFixed(1)}/s · frame ${perf.lastFrameMs}ms`;
+  }
+
+  // tar1090 probe — fires once per AIRSPACE drawer mount. Uses an Image
+  // beacon trick to avoid CORS errors that fetch() would log on the
+  // console; if /favicon.ico loads, the server is up. On failure we set
+  // cache.tar1090Up=false and re-render so the empty state appears.
+  let _tar1090Probed = false;
+  function probeTar1090(){
+    if (_tar1090Probed) {
+      if (cache.tar1090Up === false && activeTab === 'airspace') render();
+      return;
+    }
+    _tar1090Probed = true;
+    const img = new Image();
+    let settled = false;
+    const done = (up) => {
+      if (settled) return; settled = true;
+      cache.tar1090Up = up;
+      if (activeTab === 'airspace') render();
+    };
+    img.onload  = () => done(true);
+    img.onerror = () => done(false);
+    img.src = `http://${location.hostname}:8504/favicon.ico?t=${Date.now()}`;
+    setTimeout(() => done(false), 2500);
+  }
+
+  // can0 presence probe — hits /api/state for can_iface field; if
+  // backend reports the interface as absent or fetch fails, we render
+  // the "NO CAN INTERFACE" empty state on the candisc tab.
+  function probeCanIface(){
+    // Optimistic: if /api/state has a non-null can_iface or we've ever
+    // seen a CAN discovery, treat it as up. Conservative: only set false
+    // when /api/state explicitly says so.
+    const st = cache.state || {};
+    const iface = st.can_iface || st.can0 || null;
+    if (iface && (iface.state === 'up' || iface.up === true || iface === 'up')) {
+      cache.canIfaceUp = true;
+    } else if (iface && (iface.state === 'down' || iface.up === false)) {
+      cache.canIfaceUp = false;
+    }
+    // else: leave undefined → renderer treats as "unknown, show buttons"
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5194,7 +5364,25 @@
     window.addEventListener('resize', apply);
   }
 
-  // Boot
+  // Boot — capture parse-end timestamp before any rendering work.
+  // Subtracting performance.timing.navigationStart gives us a
+  // single-script "how long did inline JS take to parse + execute?"
+  // number, which is the metric chromium on Pi 5 actually struggles with.
+  try {
+    const t = performance.timing || {};
+    if (t.domContentLoadedEventStart && t.navigationStart) {
+      perf.parseMs = t.domContentLoadedEventStart - t.navigationStart;
+    } else {
+      perf.parseMs = performance.now() | 0;
+    }
+  } catch (_) { perf.parseMs = performance.now() | 0; }
+
+  // ?perf=1 — surface the perf overlay element.
+  if (new URLSearchParams(location.search).get('perf') === '1') {
+    const pov = document.getElementById('perf-overlay');
+    if (pov) pov.style.display = '';
+  }
+
   setGaugePegs();
   initRail();
   initTabs();
@@ -5204,6 +5392,11 @@
   renderTripHero();
   renderViviHistory();
   setTab(activeTab);
+
+  // First-paint marker — record once the browser has actually rendered.
+  requestAnimationFrame(() => {
+    perf.firstPaintMs = performance.now() | 0;
+  });
 
   if (typeof L !== 'undefined') _initMap();
   else window.addEventListener('load', () => _initMap());
@@ -5226,27 +5419,28 @@
 
   tickClock();
   setInterval(tickClock, 1000);
-  setInterval(loadHealth,     15000);
-  setInterval(loadState,      8000);
-  setInterval(loadAlerts,     10000);
-  setInterval(loadDtcs,       30000);
-  setInterval(loadTpms,       10000);
-  setInterval(loadTpmsAssignments, 30000);
-  setInterval(loadTrip,       10000);
-  setInterval(loadRfSpec,     20000);
-  setInterval(loadRfEmer,     20000);
-  setInterval(loadFlipper,    15000);
-  setInterval(loadBle,        15000);
-  setInterval(loadPersistent, 60000);
-  setInterval(loadWardrive,   30000);
-  setInterval(loadAircraft,   20000);
-  setInterval(loadAdsb,       30000);
-  setInterval(loadSessions,   60000);
-  setInterval(loadOrigin,     15000);
-  setInterval(loadMode,       30000);
-  setInterval(loadRfStatus,   15000);
-  setInterval(loadRfaudio,    10000);
-  setInterval(loadRfClassification, 30000);
+  // Audited pollers (US-2): the previous 22 setInterval pollers caused
+  // primary UI sluggishness on Pi 5 chromium. Replaced with ONE 30s
+  // refresh tick that fires the long-tail HTTP loaders sequentially.
+  // High-frequency state arrives via WS; this is just backfill.
+  let _slowTick = 0;
+  setInterval(() => {
+    _slowTick++;
+    loadHealth();
+    loadState();
+    // Rotate the long-tail backfills across ticks so we don't
+    // hammer /api on the same second every 30s.
+    const slowLoaders = [
+      loadAlerts, loadDtcs, loadTpms, loadTpmsAssignments, loadTrip,
+      loadRfSpec, loadRfEmer, loadFlipper, loadBle, loadPersistent,
+      loadWardrive, loadAircraft, loadAdsb, loadSessions, loadOrigin,
+      loadMode, loadRfStatus, loadRfaudio, loadRfClassification,
+    ];
+    const fn = slowLoaders[_slowTick % slowLoaders.length];
+    if (fn) fn();
+    tickPerfOverlay();
+    probeCanIface();
+  }, 30000);
 
   // ── PLAYBACK + HEALTH click handlers (TASK 2 + TASK 3) ──
   // Delegate from the drawer body so re-renders don't strand listeners.
@@ -5299,7 +5493,13 @@
   // every drifter/* topic at :8081 as JSON {topic,data,ts}. We use it
   // for high-rate gauges + alerts/vivi/rf pushes; HTTP polling above
   // remains the source of truth for tabs that have batch endpoints.
-  connectWs();
+  // US-2: defer the socket open until DOMContentLoaded so the initial
+  // parse + paint isn't competing with a backlog of WS messages.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', connectWs, { once: true });
+  } else {
+    connectWs();
+  }
 </script>
 </body>
 </html>
