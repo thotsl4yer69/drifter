@@ -247,6 +247,14 @@
   .pill.crit { color: var(--red); border-color: rgba(255,107,107,0.45); box-shadow: var(--red-glow); }
   .pill.driver { color: var(--cyan); border-color: var(--glass-stroke-cyan); }
   .pill.idle { color: var(--fg-dim); }
+  /* Interactive pills (mode toggle, etc.) — visible affordance + state during the round-trip. */
+  .pill.clickable { transition: color 120ms, border-color 120ms, box-shadow 120ms; }
+  .pill.clickable:hover { color: var(--amber); border-color: var(--glass-stroke-amber); box-shadow: 0 0 12px rgba(255,174,66,0.18); }
+  .pill.clickable:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+  .pill.clickable .caret { color: var(--fg-dim); margin-left: 2px; font-size: 9px; transition: color 120ms; }
+  .pill.clickable:hover .caret { color: var(--amber); }
+  .pill.busy { color: var(--cyan); border-color: var(--glass-stroke-cyan); box-shadow: 0 0 14px rgba(125,211,252,0.22); }
+  .pill.busy .dot { animation: pulse 0.8s ease-in-out infinite; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
 
   /* System vitals strip — CPU / MEM / TEMP pills in the top bar. */
@@ -1789,7 +1797,9 @@
     <span class="pill driver" id="pill-driver"><span class="dot"></span>OPERATOR · MAZ</span>
     <span class="pill" id="pill-gps"><span class="dot" style="background:var(--fg-deep);box-shadow:none"></span>GPS · <span class="mono v">—</span></span>
     <span class="pill idle" id="pill-health"><span class="dot"></span>HEALTHZ · <span class="v">—</span></span>
-    <span class="pill" id="pill-mode"><span class="dot"></span>MODE · <span class="v">—</span></span>
+    <span class="pill clickable" id="pill-mode" role="button" tabindex="0"
+          title="Tap to cycle mode: drive → foot → both"
+          style="cursor:pointer; user-select:none"><span class="dot"></span>MODE · <span class="v">—</span> <span class="caret">▾</span></span>
     <span class="pill vitals" id="vitals-cpu" tabindex="0" role="button" aria-haspopup="true">CPU <span class="v">—</span>
       <span class="vitals-popover" id="vitals-popover-cpu"></span></span>
     <span class="pill vitals" id="vitals-mem" tabindex="0" role="button" aria-haspopup="true">MEM <span class="v">—</span>
@@ -4056,7 +4066,48 @@
   async function loadMode(){
     const j = await safeFetch('/api/mode');
     if (j && j.mode) cache.mode = j.mode;
+    if (j && Array.isArray(j.choices)) cache.modeChoices = j.choices;
     updateTopPills();
+  }
+  async function setMode(target){
+    // Optimistic flip — surface the requested state immediately so the
+    // operator's tap is acknowledged before the systemd unit settles.
+    const pill = document.getElementById('pill-mode');
+    const prev = cache.mode;
+    cache.mode = target;
+    updateTopPills();
+    if (pill) { pill.classList.add('busy'); pill.classList.remove('live'); }
+    try {
+      const r = await fetch(`/api/mode/${target}`, { method: 'POST' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    } catch (e) {
+      // Rollback on failure so the pill matches reality.
+      cache.mode = prev;
+      updateTopPills();
+      if (pill) { pill.classList.remove('busy'); }
+      console.warn('mode switch failed:', e);
+      return;
+    }
+    // Reconcile against the backend after the systemd unit settles —
+    // the switch runs via `systemd-run drifter-mode-switch.service` and
+    // takes ~2-4s to flip MODE_STATE_PATH on disk.
+    setTimeout(() => { if (pill) pill.classList.remove('busy'); loadMode(); }, 4500);
+  }
+  function bindModeToggle(){
+    const pill = document.getElementById('pill-mode');
+    if (!pill) return;
+    const cycle = () => {
+      const order = (cache.modeChoices && cache.modeChoices.length)
+        ? cache.modeChoices
+        : ['drive', 'foot', 'both'];
+      const cur = cache.mode || order[0];
+      const next = order[(order.indexOf(cur) + 1) % order.length];
+      setMode(next);
+    };
+    pill.addEventListener('click', cycle);
+    pill.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cycle(); }
+    });
   }
   async function loadDriver(){
     // /api/driver returns {preferred_name, name, registration_plate} —
@@ -5675,6 +5726,7 @@
   initMapControls();
   bindTalk();
   bindRowSplitTabs();
+  bindModeToggle();
   renderTripHero();
   renderViviHistory();
   setTab(activeTab);
