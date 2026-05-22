@@ -122,15 +122,9 @@ def _get_model():
 
 
 def warmup() -> bool:
-    """Force the embedding model into memory.
-
-    Called from drifter-dashboard at boot (in a daemon thread) so the
-    first /api/query doesn't pay a 30+s cold load on Pi 5 ARM64. The
-    transformer + tokenizer cache lives on disk already; this just
-    deserialises them into the process. Safe to call repeatedly —
-    _get_model is idempotent. Returns True on success, False on any
-    failure (which leaves _model unset so the next real call retries).
-    """
+    """Force the embedding model into memory. Returns False on failure
+    so the daemon caller doesn't crash; the next real corpus_search()
+    retries via _get_model()."""
     try:
         _get_model()
         return True

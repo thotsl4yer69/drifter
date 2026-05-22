@@ -4414,6 +4414,7 @@
         // Tab is hidden: drop the frame; flags stay set for next visible frame.
         return;
       }
+      perf._frameStart = performance.now();
       if (dirty.drawer)       { dirty.drawer = false;       render(); }
       if (dirty.rfTile)       { dirty.rfTile = false;       renderRfTile(); }
       if (dirty.viviStrip)    { dirty.viviStrip = false;    renderViviStrip(); }
