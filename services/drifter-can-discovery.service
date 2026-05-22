@@ -1,0 +1,30 @@
+[Unit]
+Description=MZ1312 DRIFTER CAN Discovery — CaringCaribou MQTT bridge
+After=nanomq.service mosquitto.service drifter-canbridge.service
+Wants=nanomq.service mosquitto.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/can_discovery.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/drifter
+
+# Sandboxing — cc subprocess needs network access (SocketCAN) but no
+# privileged FS writes outside /opt/drifter/state.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

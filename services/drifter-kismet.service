@@ -1,0 +1,31 @@
+[Unit]
+Description=MZ1312 DRIFTER Kismet headless Wi-Fi/BLE recon
+After=network-online.target nanomq.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kismet --no-ncurses-wrapper -t drifter-kismet --silent
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Kismet needs CAP_NET_ADMIN/RAW for monitor-mode capture.
+# Running as root is the documented Kali install posture; the bridge
+# stays unprivileged.
+User=root
+
+NoNewPrivileges=false
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

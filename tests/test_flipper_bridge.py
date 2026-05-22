@@ -132,3 +132,193 @@ def test_subghz_replay_missing_capture_id_returns_error():
     payload = json.loads(mqtt.publish.call_args_list[-1].args[1])
     assert payload['success'] is False
     assert 'capture_id' in payload['response']
+
+
+# ── Hardware probe / add-on detection ─────────────────────────────────
+
+def test_probe_hardware_returns_none_when_flipper_offline():
+    flipper = MagicMock()
+    flipper.connected = False
+    hw = fb.probe_hardware(flipper)
+    assert hw['module'] == 'none'
+    assert hw['capabilities'] == []
+    assert 'offline' in hw['detail'].lower()
+
+
+def test_probe_hardware_detects_marauder_via_banner():
+    flipper = MagicMock()
+    flipper.connected = True
+    flipper.send_command = MagicMock(return_value=(True, 'ESP32-Marauder v1.2.3'))
+    hw = fb.probe_hardware(flipper)
+    assert hw['module'] == 'wifi'
+    assert 'scan_ap' in hw['capabilities']
+    assert 'pwnagotchi_passive' in hw['capabilities']
+
+
+def test_probe_hardware_detects_cc1101():
+    flipper = MagicMock()
+    flipper.connected = True
+    # First i2c probe returns nothing useful; second subghz probe matches.
+    flipper.send_command = MagicMock(side_effect=[
+        (True, 'i2c: no devices found'),
+        (True, 'CC1101 chipid 0x14 partnum 0x00'),
+    ])
+    hw = fb.probe_hardware(flipper)
+    assert hw['module'] == 'subghz'
+    assert 'freq_analyzer' in hw['capabilities']
+    assert 'replay' in hw['capabilities']
+
+
+def test_probe_hardware_returns_none_when_no_signature():
+    flipper = MagicMock()
+    flipper.connected = True
+    flipper.send_command = MagicMock(return_value=(True, 'unrelated reply'))
+    hw = fb.probe_hardware(flipper)
+    assert hw['module'] == 'none'
+    assert hw['capabilities'] == []
+
+
+def test_module_capabilities_listed_for_every_module():
+    # Per TASK 2.1 the capability list shape is fixed. Guard the contract.
+    assert set(fb.MODULE_CAPABILITIES['wifi']) >= {
+        'scan_ap', 'scan_sta', 'ble_scan', 'packet_monitor',
+        'probe_capture', 'pwnagotchi_passive'}
+    assert set(fb.MODULE_CAPABILITIES['subghz']) >= {
+        'freq_analyzer', 'raw_capture', 'read_protocol', 'replay'}
+    assert fb.MODULE_CAPABILITIES['none'] == []
+
+
+def test_looks_like_marauder_matches_known_banners():
+    assert fb._looks_like_marauder('ESP32-Marauder')
+    assert fb._looks_like_marauder('Marauder v2')
+    assert not fb._looks_like_marauder('')
+    assert not fb._looks_like_marauder('random reply')
+
+
+def test_looks_like_cc1101_matches_subghz_info():
+    assert fb._looks_like_cc1101('Radio: CC1101')
+    assert fb._looks_like_cc1101('chipid: 0x14, partnum 0x00')
+    assert not fb._looks_like_cc1101('no radio')
+
+
+def test_publish_hardware_publishes_retained():
+    mqtt = MagicMock()
+    fb.publish_hardware(mqtt, {'module': 'none', 'capabilities': []})
+    args, kwargs = mqtt.publish.call_args
+    assert args[0] == 'drifter/flipper/hardware'
+    assert kwargs.get('retain') is True
+
+
+def test_get_hardware_state_returns_defensive_copy():
+    fb.hardware_state.update({'module': 'wifi', 'capabilities': ['scan_ap']})
+    snapshot = fb.get_hardware_state()
+    snapshot['module'] = 'mutated'
+    assert fb.hardware_state['module'] == 'wifi'
+
+
+def test_audit_allowlist_present_false_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(fb, '_AUDIT_TARGETS_PATH', tmp_path / 'absent.yaml')
+    assert fb._audit_allowlist_present() is False
+
+
+def test_audit_allowlist_present_true_with_entries(tmp_path, monkeypatch):
+    path = tmp_path / 'audit_targets.yaml'
+    path.write_text('networks:\n  - ssid: HOME_NET\n')
+    monkeypatch.setattr(fb, '_AUDIT_TARGETS_PATH', path)
+    assert fb._audit_allowlist_present() is True
+
+
+def test_audit_allowlist_present_false_when_empty(tmp_path, monkeypatch):
+    path = tmp_path / 'audit_targets.yaml'
+    path.write_text('networks: []\n')
+    monkeypatch.setattr(fb, '_AUDIT_TARGETS_PATH', path)
+    assert fb._audit_allowlist_present() is False
+
+
+# ── Wi-Fi passive command dispatch ────────────────────────────────────
+
+def test_do_wifi_command_blocks_when_module_not_attached(monkeypatch):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'none')
+    flipper = MagicMock()
+    mqtt = MagicMock()
+    fb._do_wifi_command(flipper, mqtt, 'wifi_scan_ap', {})
+    payload = json.loads(mqtt.publish.call_args_list[-1].args[1])
+    assert payload['success'] is False
+    assert 'wifi module not attached' in payload['response']
+
+
+def test_do_wifi_command_publishes_on_per_topic_when_attached(monkeypatch, tmp_path):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'wifi')
+    # Marauder is attached → CLI passes through to flipper.send_command.
+    flipper = MagicMock()
+    flipper.send_command = MagicMock(return_value=(True, 'AP1\nAP2'))
+    mqtt = MagicMock()
+    fb._do_wifi_command(flipper, mqtt, 'wifi_scan_ap', {})
+    topics = [c.args[0] for c in mqtt.publish.call_args_list]
+    assert 'drifter/flipper/wifi/aps' in topics
+
+
+def test_do_wifi_pwnagotchi_blocked_when_allowlist_empty(monkeypatch, tmp_path):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'wifi')
+    monkeypatch.setattr(fb, '_AUDIT_TARGETS_PATH', tmp_path / 'absent.yaml')
+    flipper = MagicMock()
+    mqtt = MagicMock()
+    fb._do_wifi_command(flipper, mqtt, 'pwnagotchi_passive', {})
+    payload = json.loads(mqtt.publish.call_args_list[-1].args[1])
+    assert payload['success'] is False
+    assert 'allowlist' in payload['response'].lower()
+
+
+# ── Sub-GHz preset dispatch ──────────────────────────────────────────
+
+def test_do_subghz_preset_blocks_when_module_not_attached(monkeypatch):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'none')
+    flipper = MagicMock()
+    mqtt = MagicMock()
+    fb._do_subghz_preset(flipper, mqtt, 'freq_analyzer', {})
+    payload = json.loads(mqtt.publish.call_args_list[-1].args[1])
+    assert payload['success'] is False
+    assert 'subghz module not attached' in payload['response']
+
+
+def test_do_subghz_preset_freq_analyzer_invokes_cli(monkeypatch):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'subghz')
+    flipper = MagicMock()
+    flipper.send_command = MagicMock(return_value=(True, 'sweep done'))
+    mqtt = MagicMock()
+    fb._do_subghz_preset(flipper, mqtt, 'freq_analyzer', {})
+    flipper.send_command.assert_called_with('subghz_freq_analyzer')
+    topics = [c.args[0] for c in mqtt.publish.call_args_list]
+    assert 'drifter/flipper/subghz/sweep' in topics
+
+
+def test_do_subghz_preset_raw_capture_enqueues_classification(monkeypatch, tmp_path):
+    monkeypatch.setattr(fb, 'FLIPPER_CAPTURE_DIR', tmp_path)
+    monkeypatch.setitem(fb.hardware_state, 'module', 'subghz')
+    flipper = MagicMock()
+    flipper.send_command = MagicMock(
+        return_value=(True, 'RAW_Data: 244 -732 244 -488'))
+    mqtt = MagicMock()
+    fb._do_subghz_preset(flipper, mqtt, 'raw_capture', {'freq_mhz': 433.92})
+    topics = [c.args[0] for c in mqtt.publish.call_args_list]
+    # Both the per-topic capture publish AND the URH-NG classification
+    # enqueue should land on the bus.
+    assert 'drifter/rf/classification' in topics
+
+
+def test_do_subghz_preset_read_protocol_requires_capture_id(monkeypatch):
+    monkeypatch.setitem(fb.hardware_state, 'module', 'subghz')
+    flipper = MagicMock()
+    mqtt = MagicMock()
+    fb._do_subghz_preset(flipper, mqtt, 'read_protocol', {})
+    payload = json.loads(mqtt.publish.call_args_list[-1].args[1])
+    assert payload['success'] is False
+    assert 'capture_id' in payload['response']
+
+
+def test_wifi_passive_commands_omit_active_attacks():
+    # TASK 2.2 contract: passive only. DEAUTH/BEACON/EVIL must NOT be
+    # surfaced via the cockpit command set.
+    keys = set(fb.WIFI_PASSIVE_COMMANDS.keys())
+    for forbidden in ('deauth', 'beacon_spam', 'evil_twin'):
+        assert forbidden not in keys

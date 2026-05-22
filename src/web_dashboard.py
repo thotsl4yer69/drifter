@@ -368,6 +368,17 @@ def main() -> None:
         ["drifter/alert/message", "drifter/audio/wav"],
     )
 
+    # ── Background pollers ──
+    # tar1090 airspace fetcher republishes aircraft.json onto MQTT every
+    # 10s so the cockpit's enriched radar surface sees fresh data without
+    # the iframe needing to be open. Idempotent — start_airspace_poller
+    # is a no-op if already running.
+    try:
+        from web_dashboard_handlers import start_airspace_poller
+        start_airspace_poller()
+    except Exception as e:
+        log.warning("airspace poller failed to start: %s", e)
+
     # ── HTTP + HTTPS Server Threads ──
     # HTTP keeps the /healthz fleet contract on 8080. HTTPS on 8443 is
     # what makes navigator.geolocation work on the tethered phone.

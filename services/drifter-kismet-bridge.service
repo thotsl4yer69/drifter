@@ -1,0 +1,29 @@
+[Unit]
+Description=MZ1312 DRIFTER Kismet REST → MQTT bridge
+After=nanomq.service drifter-kismet.service
+Wants=nanomq.service drifter-kismet.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/kismet_bridge.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+# Auth lives in EnvironmentFile so credentials never sit in the repo.
+EnvironmentFile=-/etc/drifter/kismet.env
+
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

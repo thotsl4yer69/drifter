@@ -114,6 +114,30 @@ def on_message(client, userdata, msg) -> None:
         if topic == 'drifter/flipper/subghz' and isinstance(data, dict):
             recent_flipper_captures.append(data)
 
+        # URH classification ring (Agent A — Signal Intel sub-tile).
+        if topic == 'drifter/rf/classification' and isinstance(data, dict):
+            try:
+                from web_dashboard_handlers import _record_rf_classification
+                _record_rf_classification(data)
+            except Exception as e:
+                log.debug("rf classification record failed: %s", e)
+
+        # CaringCaribou discovery ring (Agent A — CAN DISCOVERY drawer).
+        if topic == 'drifter/can/discovery' and isinstance(data, dict):
+            try:
+                from web_dashboard_handlers import _record_can_discovery
+                _record_can_discovery(data)
+            except Exception as e:
+                log.debug("can discovery record failed: %s", e)
+
+        # Airspace cache refresh (Agent A — AIRSPACE drawer + radar overlay).
+        if topic == 'drifter/airspace/aircraft' and isinstance(data, dict):
+            try:
+                from web_dashboard_handlers import _update_airspace_cache
+                _update_airspace_cache(data)
+            except Exception as e:
+                log.debug("airspace cache refresh failed: %s", e)
+
         # Capture flipper_result so the cockpit can show command outcomes
         # (success/fail responses, HIGH-risk confirmation prompts).
         if topic == 'drifter/flipper/result' and isinstance(data, dict):

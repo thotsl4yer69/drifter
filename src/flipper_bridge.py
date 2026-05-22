@@ -50,6 +50,28 @@ SERIAL_TIMEOUT = 2.0
 PROMPT = '>:'
 DETECT_RETRY_INTERVAL = 10
 
+# ── Add-on hardware probe ──
+# Flipper GPIO peripherals — detected by sending module-specific CLI commands
+# and matching identifier strings in the response. Detection runs at startup
+# and every HARDWARE_PROBE_INTERVAL seconds. Bench truth: with no add-on
+# attached, every probe returns no signature → module="none".
+HARDWARE_PROBE_INTERVAL = 30
+
+# Per-module capability lists surfaced by /api/flipper/hardware. The cockpit
+# uses these to dim panels for absent modules.
+MODULE_CAPABILITIES = {
+    'wifi':   ['scan_ap', 'scan_sta', 'ble_scan', 'packet_monitor',
+               'probe_capture', 'pwnagotchi_passive'],
+    'subghz': ['freq_analyzer', 'raw_capture', 'read_protocol', 'replay'],
+    'can':    ['obd_scan', 'can_dump'],
+    'nrf24':  ['mousejack_scan'],
+    'none':   [],
+}
+
+# Allowlist for audit targets file (Agent B owns it). We read it best-effort
+# to gate the pwnagotchi passive button.
+_AUDIT_TARGETS_PATH = Path('/opt/drifter/etc/audit_targets.yaml')
+
 # ── Risk Classification ──
 # Commands are classified by risk level before execution.
 LOW_RISK_PREFIXES = (
@@ -535,6 +557,16 @@ def handle_message(flipper, mqtt_client):
             _do_subghz_replay(flipper, mqtt_client, data)
             return
 
+        # ── Wi-Fi passive workflows (ESP32 Marauder add-on) ──
+        if command in WIFI_PASSIVE_COMMANDS:
+            _do_wifi_command(flipper, mqtt_client, command, data)
+            return
+
+        # ── Sub-GHz preset workflows (CC1101 add-on) ──
+        if command in SUBGHZ_PRESET_COMMANDS:
+            _do_subghz_preset(flipper, mqtt_client, command, data)
+            return
+
         # ── HIGH-risk confirmation ──
         if command == 'confirm' and command_id:
             _execute_confirmed(flipper, mqtt_client, command_id)
@@ -730,6 +762,277 @@ def _stop_subghz_monitor():
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Hardware Add-on Detection
+# ═══════════════════════════════════════════════════════════════════
+
+# Last probe result, exposed to /api/flipper/hardware. Kept module-local so
+# the dashboard handler can import it without forcing an MQTT round-trip.
+hardware_state = {
+    'ts': 0.0,
+    'module': 'none',
+    'capabilities': [],
+    'detail': '',
+}
+
+
+def _looks_like_marauder(text):
+    """Return True if `text` carries an ESP32 Marauder identifier.
+
+    Marauder firmwares respond to a number of CLI handshakes — both the
+    Flipper-side "i2c" sniff and Marauder's own version banner contain the
+    word 'marauder'. We match both shapes case-insensitively.
+    """
+    if not text:
+        return False
+    lo = text.lower()
+    return ('marauder' in lo) or ('esp32-marauder' in lo)
+
+
+def _looks_like_cc1101(text):
+    """Return True if `subghz info` output identifies a CC1101 radio."""
+    if not text:
+        return False
+    lo = text.lower()
+    return ('cc1101' in lo) or ('chipid' in lo and '0x' in lo)
+
+
+def probe_hardware(flipper):
+    """Probe the Flipper's add-on GPIO/SPI bus for a known peripheral.
+
+    Returns a dict {ts, module, capabilities, detail}. The serial bridge
+    is the only transport — we send each module's identifier command and
+    inspect the response. If the Flipper itself is offline we return the
+    module='none' shape so the dashboard still has a payload to render.
+    """
+    now = time.time()
+    if not flipper.connected:
+        return {
+            'ts': now,
+            'module': 'none',
+            'capabilities': [],
+            'detail': 'flipper offline',
+        }
+
+    # ── ESP32 Marauder (Wi-Fi/BLE add-on) ──
+    # The board sits on the Flipper's UART pins; once Marauder is flashed
+    # it answers a plain newline with its banner. The i2c command is the
+    # secondary probe (some firmwares only reply to that). We accept
+    # either signature.
+    ok, resp = flipper.send_command('i2c')
+    if ok and _looks_like_marauder(resp):
+        return {
+            'ts': now,
+            'module': 'wifi',
+            'capabilities': list(MODULE_CAPABILITIES['wifi']),
+            'detail': 'esp32 marauder',
+        }
+
+    # ── CC1101 sub-GHz ──
+    ok, resp = flipper.send_command('subghz info')
+    if ok and _looks_like_cc1101(resp):
+        return {
+            'ts': now,
+            'module': 'subghz',
+            'capabilities': list(MODULE_CAPABILITIES['subghz']),
+            'detail': 'cc1101',
+        }
+
+    # MCP2515 SPI / nRF24 SPI probes are not exposed by stock Flipper CLI.
+    # We surface them as 'unknown' rather than fabricating a result.
+    # No peripheral matched → 'none'. This is an honest bench answer.
+    return {
+        'ts': now,
+        'module': 'none',
+        'capabilities': [],
+        'detail': 'no add-on detected',
+    }
+
+
+def publish_hardware(mqtt_client, state):
+    """Publish the latest detection to drifter/flipper/hardware (RETAINED)."""
+    try:
+        mqtt_client.publish(
+            'drifter/flipper/hardware',
+            json.dumps(state),
+            retain=True,
+        )
+    except Exception as e:
+        log.debug(f"hardware publish failed: {e}")
+
+
+def get_hardware_state():
+    """Accessor for the dashboard handler. Returns a defensive copy."""
+    return dict(hardware_state)
+
+
+def _audit_allowlist_present():
+    """Best-effort check: does Agent B's audit_targets.yaml have entries?
+
+    Used only to gate the pwnagotchi-passive command. Empty/missing file
+    returns False — the cockpit then disables the button with the
+    "ALLOWLIST EMPTY" label.
+    """
+    if not _AUDIT_TARGETS_PATH.exists():
+        return False
+    try:
+        import yaml  # local import — keeps test envs without pyyaml happy
+        doc = yaml.safe_load(_AUDIT_TARGETS_PATH.read_text(encoding='utf-8'))
+    except Exception:
+        return False
+    if not doc:
+        return False
+    # Accept either {networks: [...]} or a bare list of targets.
+    if isinstance(doc, dict):
+        for key in ('networks', 'targets', 'ssids', 'allowlist'):
+            v = doc.get(key)
+            if isinstance(v, list) and v:
+                return True
+        return False
+    if isinstance(doc, list):
+        return bool(doc)
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Add-on workflow commands (Wi-Fi / Sub-GHz)
+# ═══════════════════════════════════════════════════════════════════
+
+# Map cockpit workflow tokens to (cli_command, mqtt_result_topic). Each
+# token corresponds to a button in the v3sper drawer. We only surface
+# passive Wi-Fi commands here — DEAUTH/BEACON/EVIL are firmware-supported
+# but deliberately NOT wired into the cockpit per the operator's spec.
+WIFI_PASSIVE_COMMANDS = {
+    'wifi_scan_ap':       ('scanap',     'drifter/flipper/wifi/aps'),
+    'wifi_scan_sta':      ('scansta',    'drifter/flipper/wifi/stations'),
+    'ble_scan':           ('blescan',    'drifter/flipper/wifi/ble'),
+    'packet_monitor':     ('sniffraw',   'drifter/flipper/wifi/pcaps'),
+    'probe_capture':      ('probescan',  'drifter/flipper/wifi/probes'),
+    'pwnagotchi_passive': ('evilpwn',    'drifter/flipper/wifi/handshakes'),
+}
+
+SUBGHZ_PRESET_COMMANDS = {
+    'freq_analyzer':  ('subghz_freq_analyzer', 'drifter/flipper/subghz/sweep'),
+    'raw_capture':    ('subghz_raw_capture',   'drifter/flipper/subghz/captures'),
+    'read_protocol':  ('subghz_read_protocol', 'drifter/flipper/subghz/protocol'),
+}
+
+
+def _do_wifi_command(flipper, mqtt_client, token, data):
+    """Dispatch a passive Wi-Fi Marauder command via the serial CLI.
+
+    `token` is one of WIFI_PASSIVE_COMMANDS. Returns nothing — publishes
+    the response on the per-command topic AND on drifter/flipper/result
+    so the cockpit's existing result-ring picks it up.
+    """
+    cli, result_topic = WIFI_PASSIVE_COMMANDS[token]
+
+    # Pwnagotchi passive is gated on Agent B's allowlist.
+    if token == 'pwnagotchi_passive' and not _audit_allowlist_present():
+        mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+            'command': token,
+            'success': False,
+            'response': 'audit_targets.yaml allowlist empty',
+            'ts': time.time(),
+        }))
+        return
+
+    if hardware_state.get('module') != 'wifi':
+        mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+            'command': token,
+            'success': False,
+            'response': 'wifi module not attached',
+            'ts': time.time(),
+        }))
+        return
+
+    success, response = flipper.send_command(cli)
+    payload = {
+        'command': token,
+        'cli': cli,
+        'success': success,
+        'response': response,
+        'ts': time.time(),
+    }
+    mqtt_client.publish(TOPICS['flipper_result'], json.dumps(payload))
+    mqtt_client.publish(result_topic, json.dumps(payload))
+
+
+def _do_subghz_preset(flipper, mqtt_client, token, data):
+    """Dispatch a sub-GHz preset command (analyzer/raw_capture/read_protocol).
+
+    raw_capture honours an optional `freq_mhz` from the body (defaults to
+    433.92) and persists the resulting .sub via the existing
+    persist_capture() helper. The capture is also enqueued for URH-NG
+    classification on drifter/rf/classification so Agent A's pipeline
+    can attach a protocol-family label.
+    """
+    if hardware_state.get('module') != 'subghz':
+        mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+            'command': token,
+            'success': False,
+            'response': 'subghz module not attached',
+            'ts': time.time(),
+        }))
+        return
+
+    _cli, result_topic = SUBGHZ_PRESET_COMMANDS[token]
+
+    if token == 'freq_analyzer':
+        success, response = flipper.send_command('subghz_freq_analyzer')
+    elif token == 'raw_capture':
+        try:
+            freq_mhz = float(data.get('freq_mhz', 433.92))
+        except (TypeError, ValueError):
+            freq_mhz = 433.92
+        freq_hz = int(freq_mhz * 1_000_000)
+        success, response = flipper.send_command(
+            f'subghz rx_raw {freq_hz}')
+        # Best-effort persistence + classification enqueue.
+        nums = parse_raw_data_line(response) if success else None
+        if nums:
+            meta = persist_capture(freq_hz, nums)
+            if meta:
+                response = (response or '') + f"\n[persisted={meta['id']}]"
+                # Enqueue for URH-NG (Agent A). Use the existing
+                # drifter/rf/classification topic — pipeline owner reads it.
+                try:
+                    mqtt_client.publish(
+                        'drifter/rf/classification',
+                        json.dumps({
+                            'capture_id': meta['id'],
+                            'local_sub_path': meta['local_sub_path'],
+                            'freq_hz': freq_hz,
+                            'source': 'flipper_subghz_raw',
+                            'ts': time.time(),
+                        }),
+                    )
+                except Exception as e:
+                    log.debug(f"classification enqueue failed: {e}")
+    elif token == 'read_protocol':
+        capture_id = (data.get('capture_id') or '').strip()
+        if not capture_id:
+            mqtt_client.publish(TOPICS['flipper_result'], json.dumps({
+                'command': token,
+                'success': False,
+                'response': 'read_protocol requires capture_id',
+                'ts': time.time(),
+            }))
+            return
+        on_flipper = f'/ext/subghz/{capture_id}.sub'
+        success, response = flipper.send_command(
+            f'subghz decode_raw {on_flipper}')
+
+    payload = {
+        'command': token,
+        'success': success,
+        'response': response,
+        'ts': time.time(),
+    }
+    mqtt_client.publish(TOPICS['flipper_result'], json.dumps(payload))
+    mqtt_client.publish(result_topic, json.dumps(payload))
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  Status Publisher
 # ═══════════════════════════════════════════════════════════════════
 
@@ -781,6 +1084,14 @@ def main():
     mqtt_client.subscribe(TOPICS['flipper_command'])
     mqtt_client.loop_start()
 
+    # Publish an initial hardware-detection payload BEFORE the Flipper-detect
+    # loop. Without this the dashboard sees no /api/flipper/hardware data
+    # when the Flipper is unplugged — the retained MQTT topic stays empty
+    # forever. The honest answer in that case is module='none'.
+    initial_hw = probe_hardware(flipper)
+    hardware_state.update(initial_hw)
+    publish_hardware(mqtt_client, initial_hw)
+
     # ── Detect Flipper Zero ──
     while not flipper.connected and running:
         if flipper.detect():
@@ -802,6 +1113,15 @@ def main():
     # ── Periodic battery/status check ──
     last_status = 0
     STATUS_INTERVAL = 60
+    last_hw_probe = 0
+
+    # Initial hardware probe — publishes the bench-honest result even when
+    # no Flipper is attached. The retained topic means a late dashboard
+    # subscriber still sees the latest detection without a 30s wait.
+    initial_hw = probe_hardware(flipper)
+    hardware_state.update(initial_hw)
+    publish_hardware(mqtt_client, initial_hw)
+    last_hw_probe = time.time()
 
     log.info("Flipper Zero Bridge is LIVE")
 
@@ -851,6 +1171,17 @@ def main():
         ]
         for k in stale_ids:
             del pending_confirms[k]
+
+        # Periodic hardware re-probe so hot-plugging an add-on shows up
+        # in the cockpit without restarting the service.
+        if now - last_hw_probe >= HARDWARE_PROBE_INTERVAL:
+            hw = probe_hardware(flipper)
+            if hw.get('module') != hardware_state.get('module'):
+                log.info(f"Flipper add-on changed: "
+                         f"{hardware_state.get('module')} → {hw.get('module')}")
+            hardware_state.update(hw)
+            publish_hardware(mqtt_client, hw)
+            last_hw_probe = now
 
         time.sleep(1)
 

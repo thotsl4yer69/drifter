@@ -108,6 +108,13 @@ def _healthz_payload() -> tuple[dict, int]:
         'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
         'drifter-voicein', 'drifter-flipper', 'drifter-bleconv',
         'drifter-gps',
+        # Community-tool services pending external installs / allowlist
+        # config. They go inactive cleanly until their dependency is met
+        # (urh/caringcaribou/kismet/bettercap/fly catcher model) rather
+        # than failing the healthz contract.
+        'drifter-can-discovery', 'drifter-fly-catcher',
+        'drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
+        'drifter-rf-baseline', 'drifter-session-recorder',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]
@@ -246,10 +253,141 @@ def _mechanic_history_block() -> str:
 
 # flipper_bridge's on_message() command allowlist. Same fail-closed posture
 # as _RF_COMMANDS — only commands the cockpit surface emits.
+#
+# Add-on aware workflows: WIFI_PASSIVE_COMMANDS (Marauder) and
+# SUBGHZ_PRESET_COMMANDS (CC1101) are appended below the base set. DEAUTH/
+# BEACON SPAM/EVIL TWIN are deliberately omitted — the firmware can do them
+# but the cockpit must not surface them per the operator's revised spec.
 _FLIPPER_COMMANDS = {
     'subghz_monitor_start', 'subghz_monitor_stop',
     'confirm', 'subghz_replay',
+    # Wi-Fi passive (TASK 2.2)
+    'wifi_scan_ap', 'wifi_scan_sta', 'ble_scan',
+    'packet_monitor', 'probe_capture', 'pwnagotchi_passive',
+    # Sub-GHz preset (TASK 2.3)
+    'freq_analyzer', 'raw_capture', 'read_protocol',
 }
+
+# can_discovery's on_message() command allowlist. Cockpit's CAN DISCOVERY
+# drawer is the only intended emitter; can_discovery.py has its own
+# allowlist check as the second gate.
+_CAN_COMMANDS = {
+    'discover_ecus', 'list_services', 'dump_dids', 'fuzz_range',
+}
+
+# CSV capture directory shared with can_discovery.py. /api/can/captures
+# lists files here and /api/can/captures/<name> serves them back.
+_CAN_CAPTURE_DIR = Path('/opt/drifter/state/can_captures')
+
+# Process-local ring buffer of the last N URH classifications published on
+# drifter/rf/classification. The cockpit's "Signal Intel" sub-tile polls
+# /api/rf/classification and renders the last 5; bound so a noisy band
+# can't pin memory.
+_RF_CLASSIFICATION_RING_MAX = 50
+_rf_classifications: list = []
+_rf_classifications_lock = _threading.Lock()
+
+
+def _record_rf_classification(payload: dict) -> None:
+    """Push a classifier payload (newest first) onto the ring."""
+    if not isinstance(payload, dict):
+        return
+    with _rf_classifications_lock:
+        _rf_classifications.insert(0, payload)
+        del _rf_classifications[_RF_CLASSIFICATION_RING_MAX:]
+
+
+def _snapshot_rf_classifications(limit: int = 50) -> list:
+    with _rf_classifications_lock:
+        return list(_rf_classifications[:max(0, int(limit))])
+
+
+# Same ring for CaringCaribou discovery responses (drifter/can/discovery).
+_CAN_DISCOVERY_RING_MAX = 25
+_can_discoveries: list = []
+_can_discoveries_lock = _threading.Lock()
+
+
+def _record_can_discovery(payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    with _can_discoveries_lock:
+        _can_discoveries.insert(0, payload)
+        del _can_discoveries[_CAN_DISCOVERY_RING_MAX:]
+
+
+def _snapshot_can_discoveries(limit: int = 25) -> list:
+    with _can_discoveries_lock:
+        return list(_can_discoveries[:max(0, int(limit))])
+
+
+# Airspace enrichment cache — populated by the background fetcher that
+# polls tar1090's aircraft.json every 10s. /api/airspace/aircraft returns
+# whatever the last poll captured (or {} when tar1090 hasn't answered).
+_AIRSPACE_CACHE: dict = {'ts': 0.0, 'payload': {}}
+_AIRSPACE_CACHE_LOCK = _threading.Lock()
+_AIRSPACE_TAR1090_URL = 'http://localhost:8504/data/aircraft.json'
+_AIRSPACE_POLL_INTERVAL_S = 10.0
+_AIRSPACE_EMERGENCY_SQUAWKS = {'7500', '7600', '7700'}
+
+
+def _update_airspace_cache(payload: dict) -> None:
+    with _AIRSPACE_CACHE_LOCK:
+        _AIRSPACE_CACHE['ts'] = time.time()
+        _AIRSPACE_CACHE['payload'] = payload or {}
+
+
+def _snapshot_airspace() -> dict:
+    with _AIRSPACE_CACHE_LOCK:
+        return {
+            'ts': _AIRSPACE_CACHE['ts'],
+            'aircraft': (_AIRSPACE_CACHE['payload'] or {}).get('aircraft', []),
+            'source': 'tar1090',
+            'raw': _AIRSPACE_CACHE['payload'],
+        }
+
+
+def _airspace_poller() -> None:
+    """Background loop — fetch tar1090's aircraft.json, refresh the cache,
+    and republish to drifter/airspace/aircraft so the WS fan-out picks it up."""
+    import urllib.request
+    import urllib.error
+    while True:
+        payload = None
+        try:
+            with urllib.request.urlopen(_AIRSPACE_TAR1090_URL, timeout=4) as resp:
+                payload = json.loads(resp.read())
+        except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+            payload = None
+        except Exception as e:
+            log.debug("airspace poll failed: %s", e)
+            payload = None
+        if payload is not None:
+            _update_airspace_cache(payload)
+            if state.mqtt_client is not None:
+                try:
+                    state.mqtt_client.publish(
+                        'drifter/airspace/aircraft',
+                        json.dumps({'ts': time.time(),
+                                    'aircraft': payload.get('aircraft', [])}),
+                    )
+                except Exception as e:
+                    log.debug("airspace publish failed: %s", e)
+        time.sleep(_AIRSPACE_POLL_INTERVAL_S)
+
+
+_AIRSPACE_THREAD_STARTED = {'v': False}
+
+
+def start_airspace_poller() -> None:
+    """Idempotent kick-off. Called once from web_dashboard.main()."""
+    if _AIRSPACE_THREAD_STARTED['v']:
+        return
+    _AIRSPACE_THREAD_STARTED['v'] = True
+    t = _threading.Thread(target=_airspace_poller, daemon=True,
+                          name='airspace-poller')
+    t.start()
+
 
 # Per-corner TPMS assignment file (written by rf_monitor.tpms_assign_corner).
 # GET /api/tpms/assignments reads this verbatim so the cockpit shows the
@@ -303,6 +441,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         # Prefix routes for endpoints that carry a parameter in the path.
         if parsed.path.startswith('/api/mechanic/dtc/'):
             self._serve_dtc_lookup(parsed)
+            return
+        if parsed.path.startswith('/api/can/captures/'):
+            self._serve_can_capture_file(parsed.path[len('/api/can/captures/'):])
             return
         # Static files served straight from disk.
         if parsed.path in _STATIC_FILES:
@@ -405,6 +546,102 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         which is the feeds.py ADSB.lol path)."""
         self._serve_json(state.latest_state.get('rf_adsb', {}))
 
+    def _get_rf_classification(self, parsed):
+        """Most recent N URH-NG classifier results (newest first).
+
+        Drives the cockpit's "Signal Intel" sub-tile inside the RF panel.
+        Empty list when no unknown signal has been classified yet — the
+        cockpit renders "AWAITING UNKNOWN SIGNAL" in that state.
+
+        Query: ?limit=<int> (default 50, capped at the ring size).
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'rf classification: local network only')
+            return
+        try:
+            qs = parse_qs(parsed.query or '')
+            limit = int(qs.get('limit', [50])[0])
+        except (ValueError, TypeError):
+            limit = 50
+        self._serve_json({
+            'classifications': _snapshot_rf_classifications(limit),
+            'ring_max': _RF_CLASSIFICATION_RING_MAX,
+        })
+
+    def _get_can_discovery(self, parsed):
+        """Most recent CaringCaribou discovery responses (newest first)."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'can discovery: local network only')
+            return
+        self._serve_json({
+            'discoveries': _snapshot_can_discoveries(),
+            'ring_max': _CAN_DISCOVERY_RING_MAX,
+        })
+
+    def _get_can_captures(self, parsed):
+        """List SavvyCAN-compatible CSV captures from
+        /opt/drifter/state/can_captures/. Each entry: {name, size, ts}."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'can captures: local network only')
+            return
+        entries = []
+        try:
+            if _CAN_CAPTURE_DIR.exists():
+                for p in sorted(_CAN_CAPTURE_DIR.glob('*.csv'),
+                                key=lambda x: x.stat().st_mtime, reverse=True):
+                    try:
+                        st = p.stat()
+                        entries.append({
+                            'name': p.name,
+                            'size': st.st_size,
+                            'ts': st.st_mtime,
+                        })
+                    except OSError:
+                        continue
+        except OSError as e:
+            log.debug("can_captures listing failed: %s", e)
+        self._serve_json({'captures': entries})
+
+    def _serve_can_capture_file(self, name: str):
+        """Serve one CSV from the can_captures dir. Path-traversal-safe."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'can capture: local network only')
+            return
+        # Strict allowlist: only the basename, must match <digits>.csv.
+        if not re.match(r'^\d{1,20}\.csv$', name or ''):
+            self.send_error(400, 'invalid capture name')
+            return
+        path = _CAN_CAPTURE_DIR / name
+        if not path.exists() or not path.is_file():
+            self.send_error(404)
+            return
+        try:
+            data = path.read_bytes()
+        except OSError:
+            self.send_error(500)
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/csv')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Content-Disposition',
+                         f'attachment; filename="{name}"')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _get_airspace_aircraft(self, parsed):
+        """Enriched tar1090 aircraft snapshot. Falls through cleanly to {}
+        when tar1090 is offline — the cockpit then falls back to
+        /api/aircraft/recent."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'airspace: local network only')
+            return
+        self._serve_json(_snapshot_airspace())
+
     def _get_rf_emergency(self, parsed):
         """Latest emergency-band activity scan."""
         self._serve_json(state.latest_state.get('rf_emergency', {}))
@@ -412,6 +649,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_flipper_status(self, parsed):
         """Flipper Zero connection + firmware status."""
         self._serve_json(state.latest_state.get('flipper_status', {}))
+
+    def _get_flipper_hardware(self, parsed):
+        """Latest add-on hardware detection from flipper_bridge.
+
+        Source of truth is flipper_bridge.hardware_state, populated by the
+        periodic probe_hardware() call. We also fall back to the retained
+        drifter/flipper/hardware MQTT payload via state.latest_state so a
+        dashboard reload survives a bridge restart.
+        """
+        payload = None
+        try:
+            from flipper_bridge import get_hardware_state
+            payload = get_hardware_state()
+        except Exception as e:
+            log.debug(f"flipper hardware import failed: {e}")
+        if not payload or not payload.get('ts'):
+            payload = state.latest_state.get('flipper_hardware') or {
+                'ts': 0.0, 'module': 'none', 'capabilities': [],
+            }
+        self._serve_json(payload)
 
     def _get_flipper_captures(self, parsed):
         """Recent sub-GHz captures from the Flipper monitor, newest first.
@@ -871,6 +1128,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path == '/api/rf/command':
             self._post_rf_command()
             return
+        if self.path == '/api/can/command':
+            self._post_can_command()
+            return
         if self.path == '/api/gps/manual':
             self._post_gps_manual()
             return
@@ -1142,6 +1402,76 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("rf command publish failed: %s", e)
         self._serve_json({'ok': ok, 'published': 'drifter/rf/command'})
+
+    def _post_can_command(self):
+        """Forward a JSON body to drifter/can/command via MQTT.
+
+        can_discovery.py consumes the published payload and routes by the
+        'command' field. Same fail-closed allowlist + JSON validation
+        pattern as _post_rf_command — the dashboard surface can only
+        publish the small set the cockpit drawer emits.
+
+        Body shape:
+          {"command": "discover_ecus"}
+          {"command": "list_services", "ecu_id": 2016}    # 0x7E0
+          {"command": "dump_dids",     "ecu_id": 2016}
+          {"command": "fuzz_range", "id_start": 1792, "id_end": 2047}
+        Returns {"ok": bool, "published": <topic>}.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'can command: local network only')
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            body = json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return
+        if not isinstance(body, dict) or 'command' not in body:
+            self.send_error(400, 'command')
+            return
+        cmd = body.get('command')
+        if cmd not in _CAN_COMMANDS:
+            self.send_error(400, 'command')
+            return
+        # Per-command shape checks. We accept integer IDs as either an int
+        # or a hex/decimal string; can_discovery.py normalises further.
+        def _int_ok(v):
+            if isinstance(v, int):
+                return True
+            if isinstance(v, str) and v.strip():
+                try:
+                    int(v, 0)
+                    return True
+                except ValueError:
+                    try:
+                        int(v, 16)
+                        return True
+                    except ValueError:
+                        return False
+            return False
+        if cmd in ('list_services', 'dump_dids'):
+            if not _int_ok(body.get('ecu_id')):
+                self.send_error(400, 'ecu_id')
+                return
+        if cmd == 'fuzz_range':
+            if not _int_ok(body.get('id_start')) or not _int_ok(body.get('id_end')):
+                self.send_error(400, 'id_start/id_end')
+                return
+        ok = False
+        if state.mqtt_client is not None:
+            try:
+                state.mqtt_client.publish(
+                    'drifter/can/command',
+                    json.dumps(body),
+                )
+                ok = True
+            except Exception as e:
+                log.warning("can command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/can/command'})
 
     def _post_vivi_reset(self):
         """Tell Vivi to drop her conversation history. Publishes
@@ -1554,6 +1884,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/rf/adsb':               DashboardHandler._get_rf_adsb,
     '/api/rf/emergency':          DashboardHandler._get_rf_emergency,
     '/api/flipper/status':        DashboardHandler._get_flipper_status,
+    '/api/flipper/hardware':      DashboardHandler._get_flipper_hardware,
     '/api/flipper/captures':      DashboardHandler._get_flipper_captures,
     '/api/tpms/assignments':      DashboardHandler._get_tpms_assignments,
     '/api/flipper/results':       DashboardHandler._get_flipper_results,
@@ -1571,5 +1902,10 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/map/ble':                   DashboardHandler._get_ble_map,
     '/api/mode':                  DashboardHandler._get_mode,
     '/api/driver':                DashboardHandler._get_driver,
+    # RF / CAN / Airspace expansion (Agent A)
+    '/api/rf/classification':     DashboardHandler._get_rf_classification,
+    '/api/can/discovery':         DashboardHandler._get_can_discovery,
+    '/api/can/captures':          DashboardHandler._get_can_captures,
+    '/api/airspace/aircraft':     DashboardHandler._get_airspace_aircraft,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
 }

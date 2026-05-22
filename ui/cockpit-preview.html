@@ -747,6 +747,35 @@
     border-top: 1px dashed var(--glass-stroke); padding-top: 7px;
     font-size: 10px;
   }
+  /* ── SIGNAL INTEL sub-tile (URH-NG classifier, Agent A · TASK 1.1) ── */
+  .rf-subtile#signal-intel { margin: 6px 0 4px; padding: 6px 8px;
+    border: 1px solid var(--glass-stroke); border-radius: var(--r-sm);
+    background: rgba(0,0,0,0.25); }
+  .rf-subtile#signal-intel .signal-intel-empty {
+    text-align: center; font-size: 9.5px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--fg-dim); padding: 6px 0;
+    font-family: 'Major Mono Display', monospace;
+  }
+  .signal-intel-row { display: grid; grid-template-columns: auto auto 1fr auto;
+    gap: 8px; align-items: center; padding: 3px 0; font-size: 10.5px;
+    border-top: 1px dashed var(--glass-stroke); }
+  .signal-intel-row:first-child { border-top: 0; }
+  .signal-intel-row .freq { font-family: 'JetBrains Mono', monospace;
+    color: var(--amber); }
+  .signal-intel-row .mod-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    padding: 1px 6px; border: 1px solid var(--glass-stroke-cyan);
+    border-radius: 3px; color: var(--teal);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .signal-intel-row .mod-chip.mod-UNKNOWN { color: var(--fg-dim); border-color: var(--glass-stroke); }
+  .signal-intel-row .protocol { font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-mute); font-size: 10px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .signal-intel-row .conf-bar { width: 56px; height: 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
+  .signal-intel-row .conf-bar > span { display: block; height: 100%;
+    background: linear-gradient(90deg, var(--teal), var(--amber) 60%, var(--red)); }
   /* Spectrum strip — single-row viridis heatmap of latest sweep. */
   .spectrum-strip { margin: 6px 0 4px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 4px 6px 5px; }
   .spectrum-strip .ticks { position: relative; height: 10px; font-family: 'JetBrains Mono', monospace; font-size: 8.5px; color: var(--fg-dim); letter-spacing: 0.04em; }
@@ -1735,6 +1764,13 @@
               </div>
               <div class="empty" id="spectrum-empty">AWAITING SWEEP — tap FORCE SPECTRUM</div>
             </div>
+            <!-- SIGNAL INTEL — URH-NG classifier output (Agent A · TASK 1.1) -->
+            <div id="signal-intel" class="rf-subtile" data-empty="1">
+              <div class="section-head" style="margin:0 0 4px"><span>signal · intel</span><span class="tag">drifter/rf/classification</span></div>
+              <div id="signal-intel-body">
+                <div class="signal-intel-empty">AWAITING UNKNOWN SIGNAL</div>
+              </div>
+            </div>
             <div class="rf-foot">
               <div class="freq" id="rf-peak">peak —</div>
               <div class="tpms" id="rf-tpms">TPMS · 0/4</div>
@@ -1804,6 +1840,8 @@
       <div class="drawer-tab" data-tab="weather">WEATHER <span class="count" data-count="weather">0</span></div>
       <div class="drawer-tab" data-tab="flipper">V3SPER <span class="count" data-count="flipper">—</span></div>
       <div class="drawer-tab" data-tab="adsb">ADS-B <span class="count" data-count="adsb">0</span></div>
+      <div class="drawer-tab" data-tab="candisc">CAN DISCOVERY <span class="count" data-count="candisc">—</span></div>
+      <div class="drawer-tab" data-tab="airspace">AIRSPACE <span class="count" data-count="airspace">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
     </div>
 
@@ -1854,7 +1892,7 @@
   const cache = {
     ble: null, persistent: null, aircraft: null, alerts: null, hardware: null,
     tpms: null, dtcs: null, wardrive: null, rfSpec: null, rfEmer: null,
-    flipperStatus: null, flipperCaptures: null,
+    flipperStatus: null, flipperCaptures: null, flipperHardware: null,
     trip: null, sessions: null, adsb: null,
     state: null, healthz: null, feeds: null, mode: null,
     sensors: {},       // accumulated live values keyed by sensor name
@@ -1865,7 +1903,18 @@
     systemWatchdog: null,   // drifter/system/watchdog (cpu/mem/temp/disk/uptime/mqtt_stale)
     telemetryWindow: null,  // drifter/telemetry/window (30s rolling min/max/mean)
     feedsBom: null,         // drifter/feeds/bom/warnings (BOM warnings list)
+    // Agent A — RF/CAN/Airspace expansion
+    signalIntel: null,      // /api/rf/classification ring (URH-NG output)
+    canDiscovery: null,     // /api/can/discovery ring (CaringCaribou parses)
+    canCaptures: null,      // /api/can/captures (SavvyCAN-compatible CSVs)
+    airspace: null,         // /api/airspace/aircraft (tar1090 enriched feed)
   };
+
+  // Per-aircraft short trail history for the enriched radar overlay
+  // (Agent A · TASK 1.3). Keyed by ICAO hex, value = list of {lat, lon, ts}.
+  // Capped at 10 positions per aircraft so memory stays bounded under a busy sky.
+  const AIRCRAFT_TRAIL_MAX = 10;
+  const aircraftTrails = {};
 
   // Capture IDs in pending-confirm state for inline replay confirm rows.
   const pendingReplays = new Set();
@@ -1900,7 +1949,7 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
 
   // ── Active tab ─────────────────────────────────────────────────
-  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','sessions'];
+  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions'];
   const _urlTab = new URLSearchParams(location.search).get('tab');
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
@@ -3021,10 +3070,17 @@
     flipper(){
       const s = cache.flipperStatus || {};
       const caps = (cache.flipperCaptures && cache.flipperCaptures.captures) || [];
+      const hw = cache.flipperHardware || { module: 'none', capabilities: [] };
+      const moduleId = (hw.module || 'none').toLowerCase();
+      const capSet = new Set(hw.capabilities || []);
       const monitoring = s.mode === 'subghz_monitor' || s.subghz_monitor === true;
       const connected = s.state === 'connected';
       const out = [];
-      out.push(`<div class="section-head"><span>v3sper · Flipper Zero</span><span class="tag">${esc(s.state || 'unknown')}${s.firmware ? ' · fw '+esc(s.firmware) : ''}</span></div>`);
+      // MODULE pill — surfaces the add-on detected on the Flipper GPIO bus.
+      // Per TASK 2.1 this drives the panel render below: only panels
+      // matching detected capabilities are interactive.
+      const moduleLabel = `MODULE: ${moduleId.toUpperCase()}`;
+      out.push(`<div class="section-head"><span>v3sper · Flipper Zero</span><span class="tag">${esc(moduleLabel)} · ${esc(s.state || 'unknown')}${s.firmware ? ' · fw '+esc(s.firmware) : ''}</span></div>`);
       out.push(`<div class="kv"><div class="k">Port</div><div class="v">${esc(s.port || '—')}</div></div>`);
       out.push(`<div class="kv"><div class="k">Monitor</div><div class="v ${monitoring ? 'teal' : 'dim'}">${monitoring ? 'live · 433.92 MHz' : 'idle'}</div></div>`);
       out.push(`<div class="kv"><div class="k">Captures</div><div class="v">${caps.length} stored</div></div>`);
@@ -3055,15 +3111,83 @@
           const replayAttrs = hasArtifact
             ? `data-replay="${esc(safeId)}" role="button" tabindex="0"`
             : `data-replay="${esc(safeId)}" role="button" tabindex="0" aria-disabled="true" title="No .sub artifact stored — RAW_Data lines required"`;
+          // Origin metadata surfaced on the confirm row (TASK 2.3 REPLAY):
+          // when captured, GPS fix, URH-NG classification (if any).
+          const capturedAt = c.ts ? new Date(c.ts*1000).toISOString().replace('T',' ').slice(0,19)+'Z' : 'unknown time';
+          const gpsTxt = (c.lat != null && c.lon != null)
+            ? `${c.lat.toFixed(4)}, ${c.lon.toFixed(4)}`
+            : 'no fix';
+          const classTxt = c.classification
+            ? esc(c.classification.protocol || c.classification.family || 'classified')
+            : 'unclassified';
+          const originLine = `captured ${esc(capturedAt)} · gps ${esc(gpsTxt)} · ${classTxt}`;
           out.push(`<div class="capture-row">
             <div>
               <div class="meta">${esc(f)} · ${esc(m || 'raw')} · ${esc(ageTxt)}</div>
               <div class="raw">${esc(raw.slice(0, 64))}</div>
             </div>
             <span class="ghost-btn" ${replayAttrs}>REPLAY</span>
-            ${isPending ? `<div class="confirm-row subghz-confirm" data-confirm-row="${esc(safeId)}"><span class="tx-badge">SUBGHZ TX</span>Replay this capture? <span class="ghost-btn live" data-confirm-replay="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
+            ${isPending ? `<div class="confirm-row subghz-confirm" data-confirm-row="${esc(safeId)}"><span class="tx-badge">SUBGHZ TX</span>Replay this capture?<br><span class="muted" style="font-size:11px;opacity:.7">${originLine}</span> <span class="ghost-btn live" data-confirm-replay="${esc(safeId)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel="${esc(safeId)}" role="button" tabindex="0">CANCEL</span></div>` : ''}
           </div>`);
         }
+      }
+
+      // ── Wi-Fi panel (ESP32 Marauder add-on) — TASK 2.2 ──
+      // Buttons surface only the PASSIVE commands. DEAUTH/BEACON SPAM/
+      // EVIL TWIN are firmware-supported but deliberately NOT wired here
+      // per the operator's revised spec.
+      const wifiOn = moduleId === 'wifi';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · wifi</span><span class="tag">${wifiOn ? 'module attached' : '(module not attached)'}</span></div>`);
+      if (!wifiOn) {
+        out.push(`<div class="muted dim" style="opacity:.5;padding:4px 0">WIFI SCAN AP · WIFI SCAN STA · BLE SCAN · PACKET MONITOR · PROBE REQUEST CAPTURE · PWNAGOTCHI MODE (passive)</div>`);
+      } else {
+        const wifiBtn = (id, label, cap, extra='') => {
+          const enabled = capSet.has(cap);
+          const cls = enabled ? 'ghost-btn' : 'ghost-btn';
+          const aria = enabled ? 'false' : 'true';
+          return `<span class="${cls}" data-flipper-cmd="${esc(id)}" role="button" tabindex="0" aria-disabled="${aria}" ${extra}>${esc(label)}</span>`;
+        };
+        // Pwnagotchi gating — backend disables when allowlist empty; the
+        // cockpit also exposes the explicit label so the operator sees why.
+        const pwnLabel = (hw.audit_allowlist_empty === true)
+          ? 'PWNAGOTCHI (ALLOWLIST EMPTY)'
+          : 'PWNAGOTCHI MODE';
+        out.push(`<div class="btn-grid">
+          ${wifiBtn('wifi_scan_ap',      'WIFI SCAN AP',           'scan_ap')}
+          ${wifiBtn('wifi_scan_sta',     'WIFI SCAN STA',          'scan_sta')}
+          ${wifiBtn('ble_scan',          'BLE SCAN',               'ble_scan')}
+          ${wifiBtn('packet_monitor',    'PACKET MONITOR',         'packet_monitor')}
+          ${wifiBtn('probe_capture',     'PROBE REQUEST CAPTURE',  'probe_capture')}
+          ${wifiBtn('pwnagotchi_passive', pwnLabel,                'pwnagotchi_passive')}
+        </div>`);
+      }
+
+      // ── Sub-GHz panel (CC1101 add-on) — TASK 2.3 ──
+      const subOn = moduleId === 'subghz';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>v3sper · subghz</span><span class="tag">${subOn ? 'module attached' : '(module not attached)'}</span></div>`);
+      if (!subOn) {
+        out.push(`<div class="muted dim" style="opacity:.5;padding:4px 0">FREQ ANALYZER · RAW CAPTURE · READ PROTOCOL · REPLAY</div>`);
+      } else {
+        const subBtn = (id, label, cap, extra='') => {
+          const enabled = capSet.has(cap);
+          const aria = enabled ? 'false' : 'true';
+          return `<span class="ghost-btn" data-flipper-cmd="${esc(id)}" role="button" tabindex="0" aria-disabled="${aria}" ${extra}>${esc(label)}</span>`;
+        };
+        out.push(`<div class="btn-grid">
+          ${subBtn('freq_analyzer', 'FREQ ANALYZER', 'freq_analyzer')}
+          ${subBtn('raw_capture',   'RAW CAPTURE',   'raw_capture',
+                   'data-subghz-freq="433.92"')}
+          <span class="ghost-btn" data-flipper-cmd="read_protocol" role="button" tabindex="0" aria-disabled="${capSet.has('read_protocol') ? 'false' : 'true'}">READ PROTOCOL</span>
+        </div>`);
+        // Capture-freq dropdown for RAW CAPTURE.
+        out.push(`<div class="kv"><div class="k">Capture freq</div><div class="v">
+          <select id="flipper-subghz-freq">
+            <option value="433.92">433.92 MHz</option>
+            <option value="315">315 MHz</option>
+            <option value="868">868 MHz</option>
+            <option value="915">915 MHz</option>
+          </select>
+        </div></div>`);
       }
 
       // rfaudio quick-tune presets — wired here per brief
@@ -3129,6 +3253,116 @@
       }
       // Defer canvas paint until DOM lands.
       setTimeout(renderAdsbRadar, 0);
+      return out.join('');
+    },
+
+    candisc(){
+      // CAN DISCOVERY drawer (Agent A · TASK 1.2) — CaringCaribou bridge.
+      const snap = cache.canDiscovery || {};
+      const discoveries = Array.isArray(snap.discoveries) ? snap.discoveries : [];
+      const caps = cache.canCaptures || {};
+      const capList = Array.isArray(caps.captures) ? caps.captures : [];
+
+      // Extract distinct ECU IDs seen in past discoveries to populate the
+      // LIST SERVICES dropdown. discover_ecus prints "0x7E0 supported..." rows.
+      const ecuSet = new Set();
+      for (const d of discoveries) {
+        if (!Array.isArray(d.results)) continue;
+        for (const r of d.results) {
+          const tokens = r.hex_tokens || [];
+          if (tokens.length && /^0x[0-9A-Fa-f]+$/.test(tokens[0])) {
+            ecuSet.add(tokens[0]);
+          }
+        }
+      }
+      const ecuOpts = Array.from(ecuSet).sort().slice(0, 32);
+
+      const out = [];
+      out.push(`<div class="section-head"><span>can · discovery</span><span class="tag">caringcaribou · drifter/can/command</span></div>`);
+
+      // Preset command buttons.
+      const ecuSelect = ecuOpts.length
+        ? `<select class="ghost-btn" id="candisc-ecu-select" style="background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px 6px">
+             ${ecuOpts.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
+           </select>`
+        : `<span class="ghost-btn" aria-disabled="true" title="Run DISCOVER ECUs first">NO ECU YET</span>`;
+      out.push(`<div class="btn-row">
+        <span class="ghost-btn live" id="candisc-discover" role="button" tabindex="0">DISCOVER ECUs</span>
+        <span class="ghost-btn" id="candisc-list-services" role="button" tabindex="0">LIST SERVICES</span>
+        ${ecuSelect}
+        <span class="ghost-btn" id="candisc-dump-dids" role="button" tabindex="0">DUMP IDENTIFIERS</span>
+      </div>`);
+      out.push(`<div class="btn-row" style="margin-top:4px">
+        <span class="candisc-fuzz-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-dim)">FUZZ RANGE</span>
+        <input id="candisc-fuzz-start" type="text" value="0x700" style="width:80px;background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
+        <input id="candisc-fuzz-end"   type="text" value="0x7FF" style="width:80px;background:transparent;color:var(--fg);border:1px solid var(--glass-stroke);padding:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
+        <span class="ghost-btn crit" id="candisc-fuzz-range" role="button" tabindex="0">FUZZ ID RANGE</span>
+      </div>`);
+
+      // Results table — sortable by header click (lightweight, no library).
+      out.push(`<div class="section-head" style="margin-top:8px"><span>results</span><span class="tag">${discoveries.length} run${discoveries.length === 1 ? '' : 's'} · last ${Math.min(8, discoveries.length)}</span></div>`);
+      if (!discoveries.length) {
+        out.push(emptyState('◌', 'No discoveries yet. Press DISCOVER ECUs to enumerate the bus.'));
+      } else {
+        const rows = [];
+        rows.push(`<div class="kv" style="font-weight:bold;color:var(--fg-dim)">
+          <div class="k">ECU / SERVICE</div>
+          <div class="v">RESPONSE · TS</div>
+        </div>`);
+        for (const d of discoveries.slice(0, 8)) {
+          const cmdTag = `<span class="tag">${esc(d.command || '?')}</span>`;
+          if (!d.ok) {
+            rows.push(`<div class="kv">
+              <div class="k">${cmdTag} ${esc(d.error || 'failed')}</div>
+              <div class="v dim">${d.ts ? fmtAge(d.ts) : '—'}</div>
+            </div>`);
+            continue;
+          }
+          const reslist = (d.results || []).slice(0, 5);
+          for (const r of reslist) {
+            const tokens = (r.hex_tokens || []).slice(0, 4).join(' ');
+            rows.push(`<div class="kv">
+              <div class="k">${cmdTag} ${esc(tokens || '—')}</div>
+              <div class="v">${esc((r.raw || '').slice(0, 60))} <span class="delta">${r.ts ? fmtAge(r.ts) : ''}</span></div>
+            </div>`);
+          }
+        }
+        out.push(rows.join(''));
+      }
+
+      // SavvyCAN-compatible CSV captures list with download links.
+      out.push(`<div class="section-head" style="margin-top:8px"><span>csv · captures</span><span class="tag">${capList.length} stored</span></div>`);
+      if (!capList.length) {
+        out.push(emptyState('▤', 'No CSV captures. Each FUZZ RANGE run writes a SavvyCAN-compatible CSV.'));
+      } else {
+        for (const c of capList.slice(0, 8)) {
+          const sizeKb = (c.size / 1024).toFixed(1);
+          out.push(`<div class="feed-row">
+            <div class="icon">▤</div>
+            <div class="name">${esc(c.name)}<span class="sub">${esc(sizeKb)} kB · ${c.ts ? fmtAge(c.ts) : ''}</span></div>
+            <a class="ghost-btn" href="/api/can/captures/${esc(c.name)}" download>DOWNLOAD</a>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    airspace(){
+      // AIRSPACE drawer (Agent A · TASK 1.3) — tar1090 iframe + meta.
+      const snap = cache.airspace || {};
+      const aircraft = Array.isArray(snap.aircraft) ? snap.aircraft : [];
+      const ageTxt = snap.ts ? fmtAge(snap.ts) + ' ago' : 'awaiting';
+      const out = [];
+      out.push(`<div class="section-head"><span>airspace · tar1090</span><span class="tag">${aircraft.length} tracked · ${esc(ageTxt)}</span></div>`);
+      out.push(`<div class="btn-row" style="margin-bottom:6px">
+        <a class="ghost-btn" href="http://${location.hostname}:8504/" target="_blank" rel="noopener">OPEN FULL SCREEN</a>
+      </div>`);
+      out.push(`<iframe id="tar1090-frame" src="http://${location.hostname}:8504/"
+        sandbox="allow-scripts allow-same-origin allow-popups"
+        style="width:100%; height:520px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
+        loading="lazy"
+        onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"></iframe>`);
+      out.push(`<div style="display:none; padding:12px; text-align:center; color:var(--fg-dim); font-family:'Major Mono Display',monospace">tar1090 · unavailable on :8504</div>`);
       return out.join('');
     },
 
@@ -3320,6 +3554,7 @@
   async function loadFlipper(){
     cache.flipperStatus = await safeFetch('/api/flipper/status') || cache.flipperStatus;
     cache.flipperCaptures = await safeFetch('/api/flipper/captures') || cache.flipperCaptures;
+    cache.flipperHardware = await safeFetch('/api/flipper/hardware') || cache.flipperHardware;
     const caps = (cache.flipperCaptures && cache.flipperCaptures.captures) || [];
     const state = (cache.flipperStatus && cache.flipperStatus.state) || '—';
     setCount('flipper', state === 'connected' ? `${caps.length}` : 'off',
@@ -3641,6 +3876,10 @@
     }
     if (topic === 'drifter/flipper/status') {
       cache.flipperStatus = data;
+      if (activeTab === 'flipper') render();
+    }
+    if (topic === 'drifter/flipper/hardware') {
+      cache.flipperHardware = data;
       if (activeTab === 'flipper') render();
     }
     if (topic === 'drifter/flipper/subghz') {
@@ -4310,6 +4549,24 @@
       // would need a backend command we don't have yet.
       markBusy(t);
       await postJSON('/api/rf/command', { command: 'tpms_learn_start' });
+      return;
+    }
+
+    // ── v3sper / Flipper add-on workflow buttons ──
+    // (TASK 2.2/2.3) The bridge gates on hardware_state.module so the
+    // backend returns an honest "module not attached" error if no add-on
+    // is present. The cockpit also dims the buttons via aria-disabled.
+    if (t.dataset.flipperCmd) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      const cmd = t.dataset.flipperCmd;
+      const body = { command: cmd };
+      if (cmd === 'raw_capture') {
+        const sel = document.getElementById('flipper-subghz-freq');
+        if (sel && sel.value) body.freq_mhz = parseFloat(sel.value);
+      }
+      markBusy(t);
+      await postJSON('/api/flipper/command', body);
+      setTimeout(loadFlipper, 600);
       return;
     }
 

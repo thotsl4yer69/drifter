@@ -788,6 +788,13 @@ TOPICS = {
     'thresholds_learned': 'drifter/thresholds/learned',
     'thresholds_update': 'drifter/thresholds/update',
 
+    # Recon / audit expansion (Agent B)
+    'wifi_devices': 'drifter/wifi/devices',
+    'ble_devices': 'drifter/ble/devices',
+    'wifi_audit': 'drifter/wifi/audit',
+    'airspace_aircraft': 'drifter/airspace/aircraft',
+    'airspace_aircraft_classified': 'drifter/airspace/aircraft_classified',
+
     # v2 — Session Reporter
     'session_report': 'drifter/session/report',
     'session_summary': 'drifter/session/summary',
@@ -901,6 +908,13 @@ SERVICES = [
     "drifter-trip",         # per-trip distance + fuel computer
     "drifter-thresholds",   # adaptive baseline learner
     "drifter-reporter",     # post-drive markdown report via LLM
+    # Recon / audit expansion (Agent B)
+    "drifter-kismet",        # headless Wi-Fi/BLE recon daemon
+    "drifter-kismet-bridge", # Kismet REST → MQTT bridge
+    "drifter-wifi-audit",    # bettercap PMKID/handshake (allowlist-scoped)
+    "drifter-fly-catcher",   # ADS-B ghost detector
+    # RF/CAN expansion (Agent A)
+    "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge
 ]
 
 # ── Modes ──
@@ -925,11 +939,17 @@ DRIVE_ONLY_SERVICES = [
     "drifter-trip",        # per-trip distance + fuel computer
     "drifter-thresholds",  # adaptive baseline learner
     "drifter-reporter",    # post-drive markdown report via LLM
+    # RF/CAN expansion (Agent A)
+    "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge — CAN-only
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon
     "drifter-flipper",     # Flipper Zero CLI bridge
     "drifter-opsec",       # OPSEC dashboard on :8090 (Kali aesthetic)
+    # Recon / audit expansion (Agent B) — foot-mode only (uses recon dongle)
+    "drifter-kismet",
+    "drifter-kismet-bridge",
+    "drifter-wifi-audit",
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
@@ -940,6 +960,7 @@ SHARED_SERVICES = [
     "drifter-vivi",        # voice assistant LLM brain
     "drifter-voicein",     # wake-word + STT
     "drifter-rfaudio",     # on-demand SDR → speaker (emergency-band listen)
+    "drifter-fly-catcher", # ADS-B ghost detector (passive; runs in both modes)
 ]
 MODES = {
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),

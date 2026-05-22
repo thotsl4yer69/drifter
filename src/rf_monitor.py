@@ -84,6 +84,93 @@ def _kill_active_scan() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Unknown-signal IQ classifier hook
+# ═══════════════════════════════════════════════════════════════════
+# When rtl_433 emits model="UNKNOWN" or a low-confidence decode, dump the
+# last 4s of IQ data and kick urh_classifier asynchronously. The classify
+# call is heavy (URH spins up scipy on import) so it MUST run off the
+# scheduler thread or rtl_433's stdout backs up and we lose decodes.
+
+IQ_BUFFER_DIR = Path('/opt/drifter/state/iq_buffer')
+IQ_BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+
+# Sample rate at which the dump is captured (rtl_433's default tuned rate).
+_IQ_CAPTURE_SAMPLE_RATE = 250_000
+_IQ_CAPTURE_DURATION_S = 4.0
+_IQ_CAPTURE_BIN = 'rtl_sdr'
+# Cooldown — at most one classify per N seconds, otherwise a noisy band
+# would spawn a worker per decode.
+_IQ_CAPTURE_COOLDOWN_S = 8.0
+_iq_last_capture_ts = 0.0
+_iq_capture_lock = threading.Lock()
+
+
+def _capture_iq_window(frequency_hz: int, sample_rate: int = _IQ_CAPTURE_SAMPLE_RATE,
+                       duration_s: float = _IQ_CAPTURE_DURATION_S) -> Path:
+    """Dump duration_s of IQ data to disk via rtl_sdr. Returns the path.
+
+    Caller is responsible for the dongle lock — this function spawns
+    rtl_sdr against the same RTL-SDR device rtl_433 is using, so the
+    caller must coordinate (pause rtl_433 first, or accept that this
+    is best-effort during a TPMS cycle).
+    """
+    ts = int(time.time())
+    out = IQ_BUFFER_DIR / f'{ts}_{frequency_hz}.complex'
+    n_samples = int(sample_rate * duration_s)
+    cmd = [
+        _IQ_CAPTURE_BIN, '-f', str(frequency_hz),
+        '-s', str(sample_rate),
+        '-n', str(n_samples),
+        str(out),
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=duration_s + 5)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        log.debug("rtl_sdr capture failed: %s", e)
+    return out
+
+
+def _classify_in_thread(out_path: Path, frequency_hz: int,
+                        sample_rate: int, mqtt_client) -> None:
+    """Worker thread body — import urh_classifier lazily so the scheduler
+    process boot doesn't pay the scipy/PyQt import cost when no unknown
+    signals have landed."""
+    try:
+        import urh_classifier
+        urh_classifier.classify_and_publish(
+            out_path,
+            frequency_hz=frequency_hz,
+            sample_rate=sample_rate,
+            mqtt_client=mqtt_client,
+        )
+    except Exception as e:
+        log.warning("urh_classifier worker failed: %s", e)
+
+
+def _kick_unknown_signal_classifier(mqtt_client, data: dict, confidence: float) -> None:
+    """Trigger an async IQ capture + classify. Rate-limited via cooldown."""
+    global _iq_last_capture_ts
+    now = time.time()
+    with _iq_capture_lock:
+        if (now - _iq_last_capture_ts) < _IQ_CAPTURE_COOLDOWN_S:
+            return
+        _iq_last_capture_ts = now
+    # rtl_433 reports freq in MHz; default to the band centre when missing.
+    freq_mhz = data.get('freq')
+    try:
+        freq_hz = int(float(freq_mhz) * 1_000_000) if freq_mhz else 433_920_000
+    except (TypeError, ValueError):
+        freq_hz = 433_920_000
+
+    def _runner():
+        out_path = _capture_iq_window(freq_hz)
+        _classify_in_thread(out_path, freq_hz, _IQ_CAPTURE_SAMPLE_RATE, mqtt_client)
+
+    threading.Thread(target=_runner, daemon=True,
+                     name='urh-classify').start()
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  TPMS State
 # ═══════════════════════════════════════════════════════════════════
 
@@ -508,6 +595,20 @@ def run_rtl_433(mqtt_client, stop_event, proc_ref=None):
                 'raw': data,
             }
             mqtt_client.publish(TOPICS['rf_signal'], json.dumps(signal_data))
+
+            # ── URH-NG classifier hook ──
+            # rtl_433 emits {model: "UNKNOWN"} or model=="" for raw bursts it
+            # can't decode, and exposes a "confidence" field on some decoders.
+            # When either signals an unknown, hand the most recent IQ window
+            # off to urh_classifier in a worker thread so the scheduler loop
+            # never blocks on the classify call.
+            try:
+                conf = float(data.get('confidence', 1.0))
+            except (TypeError, ValueError):
+                conf = 1.0
+            is_unknown = str(model).upper() == 'UNKNOWN' or model == 'unknown' or conf < 0.5
+            if is_unknown:
+                _kick_unknown_signal_classifier(mqtt_client, data, conf)
 
             if signal_count % 50 == 0:
                 log.info(f"Signals decoded: {signal_count} total, {tpms_count} TPMS")
