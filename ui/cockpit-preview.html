@@ -510,7 +510,19 @@
   }
 
   /* ── HERO GAUGES ──────────────────────────────────────────── */
-  .row-hero { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; min-height: 0; }
+  .row-hero { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; min-height: 0; position: relative; }
+  .hero-empty-banner {
+    position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%);
+    font-family: 'Major Mono Display', monospace; font-size: 9.5px;
+    letter-spacing: 0.22em; color: var(--fg-mute); text-transform: uppercase;
+    padding: 4px 10px; border: 1px solid var(--glass-stroke);
+    background: rgba(0,0,0,0.55); border-radius: 4px; white-space: nowrap;
+    opacity: 0; pointer-events: none;
+    transition: opacity 600ms ease;
+  }
+  .hero-empty-banner b { color: var(--amber); font-weight: 400; }
+  .hero-empty-banner.on { opacity: 1; }
+  :root[data-theme="daylight"] .hero-empty-banner { background: rgba(255,255,255,0.7); color: #475569; }
   .gauge { padding-bottom: 14px; display: grid; grid-template-rows: auto 1fr auto auto auto; gap: 4px; }
   .gauge .val {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -1198,10 +1210,11 @@
   .drawer-tab .count.pulse { transform: scale(1.18); }
   .drawer-tab:hover { color: var(--fg-mute); }
   .drawer-tab.active {
-    color: var(--amber);
-    background: linear-gradient(180deg, rgba(255,174,66,0.10), rgba(255,174,66,0.02));
-    box-shadow: inset 0 -2px 0 var(--amber);
+    color: var(--amber); font-weight: 500;
+    background: linear-gradient(180deg, rgba(255,174,66,0.14), rgba(255,174,66,0.02));
+    box-shadow: inset 0 -3px 0 var(--amber), 0 0 12px -4px rgba(255,174,66,0.45);
   }
+  .drawer-tab.active .count { background: rgba(255,174,66,0.18); color: var(--amber); }
   .drawer-body {
     padding: 10px 12px;
     display: flex; flex-direction: column; gap: 8px;
@@ -1806,7 +1819,7 @@
       <span class="vitals-popover" id="vitals-popover-mem"></span></span>
     <span class="pill vitals" id="vitals-temp" tabindex="0" role="button" aria-haspopup="true">TEMP <span class="v">—</span>
       <span class="vitals-popover" id="vitals-popover-temp"></span></span>
-    <span class="reg"><span class="mono" id="clock">--:--:--</span> · S/N <b>0042</b></span>
+    <span class="reg"><span class="mono" id="clock">--:--:--</span> · S/N <b id="topbar-serial">—</b></span>
   </header>
 
   <!-- ── LEFT RAIL ────────────────────────────────────────── -->
@@ -1853,6 +1866,7 @@
 
       <!-- HERO GAUGES -->
       <div class="row-hero">
+        <div class="hero-empty-banner" id="hero-empty-banner">awaiting ecu · <b>can0 idle</b> — connect obd-ii to bring gauges live</div>
 
         <div class="tile gauge" id="g-coolant">
           <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
@@ -2027,7 +2041,7 @@
             <span class="who">VIVI</span>
             <span class="listening" id="vivi-listening">link <b>—</b> · awaiting status</span>
           </div>
-          <div class="msg" id="vivi-msg">No response yet. Hold to talk, or open Mechanic for diagnostic queries.</div>
+          <div class="msg" id="vivi-msg">Vivi idle · hold <b>SPACE</b> or tap <b>HOLD TO TALK</b> · or open Mechanic for diagnostics</div>
         </div>
         <div class="vivi-actions">
           <span class="ghost-btn live" id="btn-talk"><span class="dot"></span>HOLD TO TALK <span class="kbd">SPC</span></span>
@@ -2080,7 +2094,7 @@
 
     <div class="drawer-foot">
       <span>driver · <span class="driver" id="foot-driver">MAZ</span></span>
-      <span class="mono" id="foot-session">session 0042</span>
+      <span class="mono" id="foot-session">session —</span>
     </div>
   </aside>
 
@@ -2231,6 +2245,21 @@
   const SPARK_LEN = 60;
   const gaugeBuf = { coolant: [], voltage: [], rpm: [], speed: [] };
   const gaugeLastTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
+
+  // ── Hero gauge live-state ───────────────────────────────────────
+  // Counts gauges that have received a value (have .live class) and
+  // toggles the AWAITING ECU banner + the sensors drawer tab count.
+  function updateHeroLiveState(){
+    const names = ['coolant', 'voltage', 'rpm', 'speed'];
+    let liveCount = 0;
+    for (const n of names) {
+      const tile = document.getElementById(GAUGES[n].id);
+      if (tile && tile.classList.contains('live')) liveCount++;
+    }
+    setCount('sensors', `${liveCount}/4`, { live: liveCount > 0 });
+    const banner = document.getElementById('hero-empty-banner');
+    if (banner) banner.classList.toggle('on', liveCount === 0);
+  }
 
   // Map of learned-baseline key -> gauge name (drifter/thresholds/learned schema).
   const LEARNED_TO_GAUGE = {
@@ -2422,6 +2451,7 @@
       else if (value >= cfg.warn) tile.classList.add('warn');
     }
     tile.classList.add('live');
+    updateHeroLiveState();
 
     // Needle position
     const needle = tile.querySelector('.needle');
@@ -2699,10 +2729,11 @@
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    // Per-pixel-column min/max/mean aggregation. Top row = peak (max),
-    // bottom row = noise floor (mean), so narrow spikes stay visible.
-    // TODO: when drifter/rf/spectrum/summary lands ({level_db_min,
-    // level_db_max, level_db_mean} per bin), consume that directly.
+    // Per-pixel-column max/mean aggregation. Top row = peak, bottom row =
+    // noise floor, so narrow spikes stay visible. Summary bins from
+    // /api/rf/spectrum/summary already carry pre-aggregated
+    // {level_db_max, level_db_mean, level_db_min}; full-sweep bins only
+    // carry {level_db | power_db} and need per-pixel aggregation.
     const halfH = Math.max(1, Math.floor(h / 2));
     const lastIdx = bins.length - 1;
     const hzPerBin = span * 1e6 / Math.max(1, lastIdx);
@@ -2711,30 +2742,30 @@
     for (let x = 0; x < w; x++) {
       const startHz = (lo * 1e6) + x * hzPerPx;
       const endHz = startHz + hzPerPx;
-      // Map [startHz, endHz] → [startIdx, endIdx] inclusive
       let startIdx = Math.floor((startHz - bins[0].freq_hz) / Math.max(1, hzPerBin));
       let endIdx = Math.floor((endHz - bins[0].freq_hz) / Math.max(1, hzPerBin));
       if (startIdx < 0) startIdx = 0;
       if (endIdx > lastIdx) endIdx = lastIdx;
       if (endIdx < startIdx) endIdx = startIdx;
-      let maxDb = -Infinity, sumDb = 0, count = 0;
+      let maxDb = -Infinity, sumMean = 0, count = 0;
       for (let i = startIdx; i <= endIdx; i++) {
         const b = bins[i];
         if (!b) continue;
-        const d = (b.level_db != null ? b.level_db : b.power_db);
-        if (d == null || !isFinite(d)) continue;
-        if (d > maxDb) maxDb = d;
-        sumDb += d; count++;
+        const peak = (b.level_db_max != null ? b.level_db_max
+                    : b.level_db != null ? b.level_db : b.power_db);
+        const mean = (b.level_db_mean != null ? b.level_db_mean : peak);
+        if (peak == null || !isFinite(peak)) continue;
+        if (peak > maxDb) maxDb = peak;
+        sumMean += mean; count++;
       }
       if (count === 0) {
         ctx.fillStyle = spectrumColorForDb(undefined);
         ctx.fillRect(x, 0, 1, h);
         continue;
       }
-      const meanDb = sumDb / count;
       ctx.fillStyle = spectrumColorForDb(maxDb);
       ctx.fillRect(x, 0, 1, halfH);
-      ctx.fillStyle = spectrumColorForDb(meanDb);
+      ctx.fillStyle = spectrumColorForDb(sumMean / count);
       ctx.fillRect(x, halfH, 1, h - halfH);
     }
     if (peakMark) {
@@ -3644,7 +3675,7 @@
       const out = [];
       out.push(`<div class="section-head"><span>sessions · recent</span><span class="tag">${list.length} of last 10</span></div>`);
       if (!list.length) {
-        out.push(emptyState('∿', 'No sessions yet. Each ignition cycle becomes one.'));
+        out.push(emptyState('∿', 'No sessions yet. Drives auto-record when CAN traffic begins (ignition ON). drifter-logger writes one .jsonl per drive to /opt/drifter/state/sessions/.'));
       } else {
         for (const s of list) {
           const startTs = s.start_ts || s.started_at || s.ts;
@@ -3971,7 +4002,15 @@
     if (activeTab === 'trip') render();
   }
   async function loadRfSpec(){
-    cache.rfSpec = await safeFetch('/api/rf/spectrum') || cache.rfSpec;
+    // Prefer the downsampled summary endpoint (≤256 bins with pre-aggregated
+    // min/max/mean) — falls back to the full /api/rf/spectrum sweep if the
+    // summary cache is empty (e.g. rf_monitor hasn't completed first scan).
+    const sum = await safeFetch('/api/rf/spectrum/summary');
+    if (sum && Array.isArray(sum.bins) && sum.bins.length) {
+      cache.rfSpec = sum;
+    } else {
+      cache.rfSpec = await safeFetch('/api/rf/spectrum') || cache.rfSpec;
+    }
     renderRfTile();
     if (activeTab === 'rf') render();
   }
@@ -4034,6 +4073,9 @@
     const fresh = snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
     const list = fresh ? (snap.aircraft || []) : [];
     setCount('adsb', list.length, { live: list.some(a => a.interesting) });
+    // airspace tab mirrors the same /api/aircraft/recent feed (tar1090
+    // enrichment is overlaid via iframe), so use the same count.
+    setCount('airspace', list.length, { live: list.length > 0 });
     refreshMap();
     if (activeTab === 'adsb') render();
   }
@@ -4046,7 +4088,28 @@
     const list = Array.isArray(cache.sessions) ? cache.sessions : [];
     setCount('sessions', list.length);
     setCount('playback', list.length, { live: cache.replay && cache.replay.active });
+    updateSessionSerial();
     if (activeTab === 'sessions') render();
+  }
+  // Derive the visible S/N (topbar + footer) from the freshest session id.
+  // Pi nodes have no fleet-issued serial yet — the active drive id is the
+  // closest thing the operator can correlate against logs / reports.
+  function updateSessionSerial(){
+    const list = Array.isArray(cache.sessions) ? cache.sessions : [];
+    const newest = list[0] || {};
+    const sid = newest.session_id || newest.id || '';
+    const tag = sid ? String(sid).slice(-4).toUpperCase() : '—';
+    const topEl = document.getElementById('topbar-serial');
+    if (topEl) topEl.textContent = tag;
+    const footEl = document.getElementById('foot-session');
+    if (footEl) footEl.textContent = sid ? `session ${tag}` : 'session —';
+  }
+  async function loadCanDiscovery(){
+    cache.canDiscovery = await safeFetch('/api/can/discovery') || cache.canDiscovery;
+    const list = (cache.canDiscovery && Array.isArray(cache.canDiscovery.discoveries))
+      ? cache.canDiscovery.discoveries : [];
+    setCount('candisc', list.length || '—', { live: list.length > 0 });
+    if (activeTab === 'candisc') render();
   }
   async function loadHealth(){
     cache.healthz = await safeFetch('/healthz') || cache.healthz;
@@ -4337,9 +4400,24 @@
       Object.assign(cache.rfStatus, data || {});
       scheduleRender('rfTile');
     }
+    if (topic === 'drifter/rf/spectrum/summary') {
+      // Downsampled sweep (≤256 bins, pre-aggregated min/max/mean) — the
+      // cheap path for the strip. Preferred over the full /spectrum frame.
+      if (data && Array.isArray(data.bins) && data.bins.length) {
+        cache.rfSpec = data;
+        const btn = document.getElementById('btn-force-spectrum');
+        if (btn) btn.classList.remove('busy');
+        forceSpectrumBusyUntil = 0;
+        scheduleRender('rfTile');
+      }
+    }
     if (topic === 'drifter/rf/spectrum') {
-      cache.rfSpec = data;
-      // Force-spectrum sweep finished — clear the operator-visible busy state.
+      // Full sweep — only adopt as cache if a summary hasn't already landed
+      // for this sweep (summary always wins; it carries the same info ×30 cheaper).
+      if (!cache.rfSpec || !Array.isArray(cache.rfSpec.bins)
+          || cache.rfSpec.bins.length > 256) {
+        cache.rfSpec = data;
+      }
       const btn = document.getElementById('btn-force-spectrum');
       if (btn) btn.classList.remove('busy');
       forceSpectrumBusyUntil = 0;
@@ -5752,8 +5830,11 @@
   loadAlerts(); loadDtcs(); loadTpms(); loadTpmsAssignments(); loadTrip();
   loadRfSpec(); loadRfEmer(); loadRfClassification(); loadFlipper(); loadRfaudio();
   loadBle(); loadPersistent(); loadWardrive();
-  loadAircraft(); loadAdsb(); loadSessions();
+  loadAircraft(); loadAdsb(); loadSessions(); loadCanDiscovery();
   loadOrigin(); loadMode(); loadDriver();
+  // Initial hero banner / sensors count — gauges start dim, so banner
+  // shows immediately until the first CAN frame lands.
+  updateHeroLiveState();
 
   tickClock();
   setInterval(tickClock, 1000);
@@ -5773,6 +5854,7 @@
       loadRfSpec, loadRfEmer, loadFlipper, loadBle, loadPersistent,
       loadWardrive, loadAircraft, loadAdsb, loadSessions, loadOrigin,
       loadMode, loadRfStatus, loadRfaudio, loadRfClassification,
+      loadCanDiscovery,
     ];
     const fn = slowLoaders[_slowTick % slowLoaders.length];
     if (fn) fn();
