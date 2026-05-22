@@ -816,7 +816,12 @@ TELEMETRY_PUBLISH_HZ = 1
 TELEMETRY_KEEP_SAMPLES = 200
 
 # ── Trip Computer ──
-TRIP_FUEL_PRICE_GBP_PER_L = 1.55
+TRIP_FUEL_CURRENCY = os.getenv("TRIP_FUEL_CURRENCY", "AUD")  # ISO-4217; cockpit maps to symbol.
+TRIP_FUEL_PRICE_PER_L = float(os.getenv("TRIP_FUEL_PRICE_PER_L", "1.85"))  # AU regular unleaded ~mid-2026.
+# Backward-compat alias — drifter-trip historically read GBP_PER_L; keeps the
+# import surface stable for any older deploy. Operator overrides via env var
+# or config/driver.yaml fuel_price_per_l (no currency suffix).
+TRIP_FUEL_PRICE_GBP_PER_L = TRIP_FUEL_PRICE_PER_L
 TRIP_FUEL_TANK_LITRES = 60
 TRIP_AVG_CONSUMPTION_L_PER_100KM = 12
 TRIP_SESSION_GAP_MIN = 15

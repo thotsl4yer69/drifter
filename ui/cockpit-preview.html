@@ -1969,6 +1969,10 @@
     return Math.round(d/86400) + 'd';
   }
   function esc(s){ const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+  // ISO-4217 → display symbol. Trip cost payloads carry their own
+  // currency code now; default AUD ($) for the Australian vehicle node.
+  const CURRENCY_SYMBOLS = { AUD:'$', USD:'$', GBP:'£', EUR:'€', NZD:'$', CAD:'$', JPY:'¥' };
+  function currencySymbol(code){ return CURRENCY_SYMBOLS[(code || 'AUD').toUpperCase()] || '$'; }
   function clamp01(x){ return Math.max(0, Math.min(1, x)); }
 
   // ── Theme ───────────────────────────────────────────────────────
@@ -2663,9 +2667,9 @@
     if (slots) slots.hidden = false;
     const fmt = (v, d) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
     const fmtCost = () => {
-      if (s.cost_gbp != null) return '£' + s.cost_gbp.toFixed(2);
-      if (s.cost != null) return '$' + s.cost.toFixed(2);
-      return '—';
+      const v = (s.cost != null) ? s.cost : s.cost_gbp;
+      if (v == null) return '—';
+      return currencySymbol(s.currency) + v.toFixed(2);
     };
     const fmtDur = (sec) => {
       if (!sec || !isFinite(sec)) return '—';
@@ -3018,7 +3022,7 @@
       push('Distance', s.distance_km != null ? `${s.distance_km.toFixed(2)} km` : '—');
       push('Duration', fmtDur(s.duration_s));
       push('Fuel used', s.fuel_l != null ? `${s.fuel_l.toFixed(2)} L` : '—');
-      push('Cost', s.cost_gbp != null ? `£${s.cost_gbp.toFixed(2)}` : (s.cost != null ? `$${s.cost.toFixed(2)}` : '—'));
+      push('Cost', (s.cost != null) ? `${currencySymbol(s.currency)}${s.cost.toFixed(2)}` : (s.cost_gbp != null ? `${currencySymbol(s.currency)}${s.cost_gbp.toFixed(2)}` : '—'));
       push('Avg L/100km', s.avg_l_per_100km != null ? s.avg_l_per_100km.toFixed(1) : '—');
       push('Speed', s.speed_kph != null ? `${Math.round(s.speed_kph)} km/h` : '—');
       const hasAny = s.distance_km != null || s.fuel_l != null;
@@ -4686,7 +4690,7 @@
                                               body: JSON.stringify({ query: q }) });
         const pending = document.getElementById('pending');
         if (r.ok) { const j = await r.json(); pending.classList.remove('pending'); pending.classList.add('assistant');
-                    pending.textContent = j.text || j.error || '(empty response)'; }
+                    pending.textContent = j.response || j.text || j.error || '(empty response)'; }
         else      { const pending2 = document.getElementById('pending'); pending2.classList.remove('pending');
                     pending2.classList.add('error'); pending2.textContent = `Error ${r.status}: ${await r.text()}`; }
       } catch(err) {
@@ -4718,7 +4722,7 @@
           <div class="sys-cell"><div class="lbl">Distance</div><div class="val">${(s.distance_km ?? 0).toFixed(1)}<span class="u">km</span></div></div>
           <div class="sys-cell"><div class="lbl">Duration</div><div class="val">${esc(fmtDur(s.duration_s))}</div></div>
           <div class="sys-cell"><div class="lbl">Fuel</div><div class="val">${(s.fuel_l ?? 0).toFixed(2)}<span class="u">L</span></div></div>
-          <div class="sys-cell"><div class="lbl">Cost</div><div class="val">£${(s.cost_gbp ?? 0).toFixed(2)}</div></div>
+          <div class="sys-cell"><div class="lbl">Cost</div><div class="val">${currencySymbol(s.currency)}${(s.cost ?? s.cost_gbp ?? 0).toFixed(2)}</div></div>
         </div>`;
     }
     let drivesHtml = '';

@@ -18,7 +18,7 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, TRIP_FUEL_PRICE_GBP_PER_L, TRIP_FUEL_TANK_LITRES,
+    DRIFTER_DIR, TRIP_FUEL_PRICE_PER_L, TRIP_FUEL_CURRENCY, TRIP_FUEL_TANK_LITRES,
     TRIP_AVG_CONSUMPTION_L_PER_100KM, TRIP_SESSION_GAP_MIN,
     FUEL_TYPE,
 )
@@ -47,7 +47,8 @@ def _afr() -> float:
 
 
 class TripState:
-    def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float) -> None:
+    def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float,
+                 currency: str = 'AUD') -> None:
         self.start_ts: Optional[float] = None
         self.last_ts: Optional[float] = None
         self.distance_km: float = 0.0
@@ -57,12 +58,14 @@ class TripState:
         self.fuel_price = fuel_price
         self.tank_l = tank_l
         self.avg_l_per_100km = avg_l_per_100
+        self.currency = currency
         self.idle_since: Optional[float] = None
         self.events: list = []
 
     def reset(self) -> None:
         log.info(f"Trip reset (was {self.distance_km:.1f} km, {self.fuel_l:.2f} L)")
-        self.__init__(self.fuel_price, self.tank_l, self.avg_l_per_100km)
+        self.__init__(self.fuel_price, self.tank_l, self.avg_l_per_100km,
+                      self.currency)
 
     def tick(self, ts: float, speed_kph: Optional[float], maf_gps: Optional[float]) -> None:
         if self.start_ts is None:
@@ -101,14 +104,18 @@ class TripState:
         avg_l_per_100 = None
         if self.distance_km > 0.1:
             avg_l_per_100 = round(self.fuel_l / self.distance_km * 100.0, 2)
-        cost_gbp = round(self.fuel_l * self.fuel_price, 2)
+        cost = round(self.fuel_l * self.fuel_price, 2)
         return {
             'duration_s': round(elapsed, 1),
             'distance_km': round(self.distance_km, 3),
             'fuel_l': round(self.fuel_l, 3),
             'avg_l_per_100km': avg_l_per_100 or self.avg_l_per_100km,
             'cur_l_per_100km': cur_l_per_100,
-            'cost_gbp': cost_gbp,
+            'cost': cost,
+            'currency': self.currency,
+            # cost_gbp kept as a legacy alias so retained consumers
+            # (session_reporter old snapshots, etc.) don't blow up.
+            'cost_gbp': cost,
             'fuel_price_per_l': self.fuel_price,
             'speed_kph': round(self.last_speed_kph, 1),
             'ts': time.time(),
@@ -129,11 +136,17 @@ def _load_config() -> dict:
 def main() -> None:
     log.info("DRIFTER Trip Computer starting...")
     cfg = _load_config()
+    # fuel_price_per_l is the current-name key; fuel_price_gbp_per_l is
+    # the legacy alias from when the project assumed GBP. Read either.
+    fuel_price = float(cfg.get('fuel_price_per_l',
+                       cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_PER_L)))
+    currency = str(cfg.get('currency', TRIP_FUEL_CURRENCY)).upper()
     state = TripState(
-        fuel_price=float(cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L)),
+        fuel_price=fuel_price,
         tank_l=float(cfg.get('tank_litres', TRIP_FUEL_TANK_LITRES)),
         avg_l_per_100=float(cfg.get('avg_consumption_l_per_100km',
                                     TRIP_AVG_CONSUMPTION_L_PER_100KM)),
+        currency=currency,
     )
 
     running = True
@@ -191,7 +204,8 @@ def main() -> None:
         (TOPICS['drive_session'], 0),
     ])
     client.loop_start()
-    log.info(f"Trip Computer LIVE — fuel £{state.fuel_price}/L, tank {state.tank_l}L")
+    log.info(f"Trip Computer LIVE — fuel {state.fuel_price} {state.currency}/L, "
+             f"tank {state.tank_l}L")
 
     while running:
         snap = state.to_dict()
@@ -203,7 +217,9 @@ def main() -> None:
             'ts': snap['ts'],
         }))
         client.publish(TOPICS['trip_cost'], json.dumps({
-            'cost_gbp': snap['cost_gbp'],
+            'cost': snap['cost'],
+            'currency': snap['currency'],
+            'cost_gbp': snap['cost'],  # legacy alias
             'fuel_price_per_l': snap['fuel_price_per_l'],
             'ts': snap['ts'],
         }))

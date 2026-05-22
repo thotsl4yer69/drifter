@@ -58,10 +58,12 @@ def _summary_packet(session: dict) -> str:
         f"  Min voltage: {session.get('min_voltage', '?')}V",
     ]
     if _last_trip:
+        cost = _last_trip.get('cost', _last_trip.get('cost_gbp', '?'))
+        cur = _last_trip.get('currency', 'AUD')
         parts.append(
             f"  Fuel used: {_last_trip.get('fuel_l', '?')} L "
             f"({_last_trip.get('avg_l_per_100km', '?')} L/100km, "
-            f"£{_last_trip.get('cost_gbp', '?')})"
+            f"{cost} {cur})"
         )
     if _safety_events:
         parts.append("")
