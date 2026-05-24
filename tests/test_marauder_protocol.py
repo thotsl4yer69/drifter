@@ -241,3 +241,24 @@ class TestEvilPortalBuilders:
             assert c.endswith("\r\n")
         # Last chunk is the "upload-complete" sentinel
         assert chunks[-1].strip() == "evilportal -p commit"
+
+
+class TestParsePortalEvents:
+    def test_parse_portal_client_connect(self):
+        line = "Portal client connected mac=aa:bb:cc:dd:ee:ff"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "portal_client_connect"
+        assert ev["mac"] == "aa:bb:cc:dd:ee:ff"
+
+    def test_parse_cred_capture_returns_sentinel(self):
+        line = 'Captured: user=alice pass=hunter2 email=a@b.c'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "cred_capture"
+        assert ev["fields"] == {"user": "alice", "pass": "hunter2", "email": "a@b.c"}
+
+    def test_parse_cred_capture_with_url_encoded(self):
+        line = 'Captured: user=alice%40acme pass=p%40ss'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "cred_capture"
+        # Values kept as-emitted; URL-decode is operator's job
+        assert ev["fields"]["user"] == "alice%40acme"
