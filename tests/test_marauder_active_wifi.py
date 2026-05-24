@@ -58,3 +58,57 @@ class TestDeauthAttack:
             bssid="aa:bb:cc:dd:ee:ff", ssid="x", duration_s=9999,
         )
         assert result["duration_s"] == 300
+
+
+class TestBeaconSpam:
+    def test_beacon_spam_random_refused(self):
+        transport = MagicMock()
+        transport.mode = "direct"
+        result = aw.start_beacon_spam(transport, allowlist_scope={"wifi": []},
+                                       mode="random", duration_s=60)
+        assert result["ok"] is False
+        assert "random" in result["response"].lower()
+        transport.send.assert_not_called()
+
+    def test_beacon_spam_rickroll_refused_when_no_wildcard(self):
+        transport = MagicMock()
+        transport.mode = "direct"
+        result = aw.start_beacon_spam(transport, allowlist_scope={"wifi": []},
+                                       mode="rickroll", duration_s=60)
+        assert result["ok"] is False
+        assert "rickroll" in result["response"].lower()
+        transport.send.assert_not_called()
+
+    def test_beacon_spam_rickroll_allowed_with_wildcard(self):
+        transport = MagicMock()
+        transport.mode = "direct"
+        scope = {"wifi": [{"ssid": "*"}], "ble": [], "evilportal": []}
+        result = aw.start_beacon_spam(transport, scope,
+                                       mode="rickroll", duration_s=60)
+        assert result["ok"] is True
+        transport.send.assert_called_once_with("attack -t rickroll\r\n")
+
+    def test_beacon_spam_list_all_in_scope(self, tmp_path):
+        list_path = tmp_path / "list.txt"
+        list_path.write_text("ACME-Pentest\nACME-Guest\n")
+        transport = MagicMock()
+        transport.mode = "direct"
+        scope = {"wifi": [{"ssid": "ACME-Pentest"}, {"ssid": "ACME-Guest"}],
+                 "ble": [], "evilportal": []}
+        result = aw.start_beacon_spam(transport, scope, mode="list",
+                                       beacon_list_path=str(list_path),
+                                       list_idx=0, duration_s=60)
+        assert result["ok"] is True
+
+    def test_beacon_spam_list_partial_out_of_scope_refused(self, tmp_path):
+        list_path = tmp_path / "list.txt"
+        list_path.write_text("ACME-Pentest\nNotAllowed\n")
+        transport = MagicMock()
+        transport.mode = "direct"
+        scope = {"wifi": [{"ssid": "ACME-Pentest"}], "ble": [], "evilportal": []}
+        result = aw.start_beacon_spam(transport, scope, mode="list",
+                                       beacon_list_path=str(list_path),
+                                       list_idx=0, duration_s=60)
+        assert result["ok"] is False
+        assert "NotAllowed" in result["response"]
+        transport.send.assert_not_called()
