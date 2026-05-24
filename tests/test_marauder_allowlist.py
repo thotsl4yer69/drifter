@@ -139,3 +139,35 @@ class TestIsTargetAllowedBLE:
         )
         assert ok is False
         assert "area_label" in reason
+
+
+class TestIsTargetAllowedEvilPortal:
+    def test_empty_evilportal_refuses(self):
+        ok, reason = ma.is_target_allowed(
+            {"wifi": [], "ble": [], "evilportal": []},
+            "evilportal", ssid="x", template="t",
+        )
+        assert ok is False
+        assert "empty" in reason.lower()
+
+    def test_ssid_template_pair_match(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest",
+                                 "max_captures": 50, "authorized_use": "contract X"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="ACME-Guest", template="acme-guest")
+        assert ok is True
+
+    def test_ssid_match_but_template_mismatch_refused(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="ACME-Guest", template="OTHER")
+        assert ok is False
+
+    def test_template_match_but_ssid_mismatch_refused(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="OTHER", template="acme-guest")
+        assert ok is False

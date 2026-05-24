@@ -110,8 +110,13 @@ def _check_ble(entries: list[dict], fields: dict) -> tuple[bool, str]:
 
 
 def _check_evilportal(entries: list[dict], fields: dict) -> tuple[bool, str]:
-    # Implemented in Phase 4 — stub returns refuse for now.
-    return False, "evilportal allowlist check not yet implemented"
+    ssid = fields.get("ssid", "")
+    template = fields.get("template", "")
+    for entry in entries:
+        if entry.get("ssid") == ssid and entry.get("template") == template:
+            return True, f"matched evilportal (ssid={ssid}, template={template})"
+    return False, ("no (ssid, template) pair match in evilportal allowlist — "
+                   "both must match a single entry")
 
 
 if __name__ == "__main__":
