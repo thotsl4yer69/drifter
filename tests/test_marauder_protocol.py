@@ -81,3 +81,25 @@ class TestParseSTA:
         line = "RSSI: -82 BSSID: aa:bb:cc:dd:ee:ff STA: 11:22:33:44:55:66 ESSID: x"
         ev = mp.parse_event(line)
         assert ev["type"] == "station"  # not 'ap'
+
+
+class TestParseProbe:
+    def test_parse_probe_typical_line(self):
+        line = 'Probe req: 11:22:33:44:55:66 -> "MyHomeWifi"'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "probe"
+        assert ev["sta_mac"] == "11:22:33:44:55:66"
+        assert ev["looking_for_ssid"] == "MyHomeWifi"
+
+    def test_parse_probe_with_arrow_unicode(self):
+        """Some Marauder builds emit U+2192 (→), others ASCII ->. Both must parse."""
+        line = 'Probe req: aa:bb:cc:dd:ee:ff → "Starbucks WiFi"'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "probe"
+        assert ev["looking_for_ssid"] == "Starbucks WiFi"
+
+    def test_parse_probe_empty_ssid(self):
+        line = 'Probe req: aa:bb:cc:dd:ee:ff -> ""'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "probe"
+        assert ev["looking_for_ssid"] == ""

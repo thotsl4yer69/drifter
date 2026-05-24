@@ -67,9 +67,24 @@ def _build_ap(m: re.Match) -> dict:
     }
 
 
+_RE_PROBE = re.compile(
+    r"^Probe req:\s*(?P<sta_mac>[0-9a-fA-F:]{17})\s*"
+    r"(?:->|→)\s*"
+    r'"(?P<ssid>.*)"\s*$'
+)
+
+
+def _build_probe(m: re.Match) -> dict:
+    return {
+        "sta_mac": m.group("sta_mac").lower(),
+        "looking_for_ssid": m.group("ssid"),
+    }
+
+
 _PARSERS: list[tuple[re.Pattern, str, "callable"]] = [
     (_RE_STA, "station", _build_sta),
     (_RE_AP, "ap", _build_ap),
+    (_RE_PROBE, "probe", _build_probe),
 ]
 
 
