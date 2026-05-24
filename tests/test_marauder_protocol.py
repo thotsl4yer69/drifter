@@ -103,3 +103,36 @@ class TestParseProbe:
         ev = mp.parse_event(line)
         assert ev["type"] == "probe"
         assert ev["looking_for_ssid"] == ""
+
+
+class TestActiveWifiBuilders:
+    def test_cmd_attack_deauth_single_no_target(self):
+        assert mp.cmd_attack_deauth() == "attack -t deauth\r\n"
+
+    def test_cmd_attack_deauth_single_with_target(self):
+        assert mp.cmd_attack_deauth(target_idx=3, mode="single") == \
+            "attack -t deauth -a 3\r\n"
+
+    def test_cmd_attack_deauth_all(self):
+        assert mp.cmd_attack_deauth(mode="all") == "attack -t deauth -c\r\n"
+
+    def test_cmd_attack_deauth_detect(self):
+        assert mp.cmd_attack_deauth_detect() == "attack -t deauth -d\r\n"
+
+    def test_cmd_attack_beacon_random(self):
+        assert mp.cmd_attack_beacon(mode="random") == "attack -t beacon -r\r\n"
+
+    def test_cmd_attack_beacon_rickroll(self):
+        assert mp.cmd_attack_beacon(mode="rickroll") == "attack -t rickroll\r\n"
+
+    def test_cmd_attack_beacon_list(self):
+        assert mp.cmd_attack_beacon(mode="list", list_idx=2) == \
+            "attack -t beacon -l 2\r\n"
+
+    def test_cmd_attack_beacon_list_requires_idx(self):
+        import pytest
+        with pytest.raises(ValueError, match="list_idx"):
+            mp.cmd_attack_beacon(mode="list")
+
+    def test_cmd_attack_probe_flood(self):
+        assert mp.cmd_attack_probe_flood(list_idx=1) == "attack -t probe -l 1\r\n"
