@@ -364,6 +364,24 @@ if [ -f "$KISMET_SITE_SRC" ] && [ -d /etc/kismet ]; then
     ok "Kismet site config installed"
 fi
 
+# Marauder config tree — operator allowlist + portal templates + beacon lists
+mkdir -p /opt/drifter/etc/marauder/portals \
+         /opt/drifter/etc/marauder/beacon_lists
+chown -R drifter:drifter /opt/drifter/etc/marauder
+ok "Marauder config tree at /opt/drifter/etc/marauder/"
+
+# Seed audit_targets.yaml ONLY if it doesn't already exist — never
+# overwrite operator scope.
+if [ ! -f /opt/drifter/etc/audit_targets.yaml ]; then
+    mkdir -p /opt/drifter/etc
+    install -m 0640 -o drifter -g drifter \
+        "${REPO_DIR}/config/audit_targets.sample.yaml" \
+        /opt/drifter/etc/audit_targets.yaml
+    ok "audit_targets.yaml seeded (EMPTY — populate before HIGH-risk commands work)"
+else
+    ok "audit_targets.yaml already present — not overwriting"
+fi
+
 # Log & session + state directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions ${DRIFTER_DIR}/state
 chown -R drifter:drifter ${DRIFTER_DIR}/state ${DRIFTER_DIR}/logs 2>/dev/null || true
@@ -478,7 +496,7 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-db-checkpoint drifter-boot-reason"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-db-checkpoint drifter-boot-reason drifter-marauder"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
