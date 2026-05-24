@@ -186,3 +186,32 @@ class TestBLEBuilders:
         import pytest
         with pytest.raises(ValueError, match="ble spam"):
             mp.cmd_ble_spam("bogus")
+
+
+class TestParseBLEEvents:
+    def test_parse_airtag(self):
+        line = "BLE: AirTag spotted aa:bb:cc:dd:ee:ff RSSI -55"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "airtag"
+        assert ev["mac"] == "aa:bb:cc:dd:ee:ff"
+        assert ev["rssi"] == -55
+
+    def test_parse_skimmer(self):
+        line = "BLE: skimmer fingerprint aa:bb:cc:dd:ee:ff"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "skimmer"
+        assert ev["mac"] == "aa:bb:cc:dd:ee:ff"
+
+    def test_parse_ble_device(self):
+        line = 'BLE: device aa:bb:cc:dd:ee:ff name="Galaxy Buds Pro" RSSI -72'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "ble_device"
+        assert ev["mac"] == "aa:bb:cc:dd:ee:ff"
+        assert ev["name"] == "Galaxy Buds Pro"
+        assert ev["rssi"] == -72
+
+    def test_parse_ble_device_no_name(self):
+        line = 'BLE: device aa:bb:cc:dd:ee:ff name="" RSSI -85'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "ble_device"
+        assert ev["name"] == ""
