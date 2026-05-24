@@ -103,6 +103,7 @@ import json
 
 import marauder_allowlist as ma
 from marauder_features import passive as passive_feat
+from marauder_features import active_wifi as aw_feat
 
 
 class Bridge:
@@ -210,6 +211,30 @@ class Bridge:
                                             duration_s=args.get("duration_s", 60))
         if command == "stop":
             return passive_feat.stop_scan(self.transport)
+        if command == "deauth_detect":
+            return aw_feat.start_deauth_detect(self.transport,
+                                                duration_s=args.get("duration_s", 60))
+        if command == "deauth_attack":
+            return aw_feat.start_deauth_attack(self.transport, self.allowlist,
+                                                bssid=args.get("bssid", ""),
+                                                ssid=args.get("ssid", ""),
+                                                duration_s=args.get("duration_s", 60))
+        if command == "beacon_spam_random":
+            return aw_feat.start_beacon_spam(self.transport, self.allowlist,
+                                              mode="random",
+                                              duration_s=args.get("duration_s", 60))
+        if command == "beacon_spam_rickroll":
+            return aw_feat.start_beacon_spam(self.transport, self.allowlist,
+                                              mode="rickroll",
+                                              duration_s=args.get("duration_s", 60))
+        if command == "beacon_spam_list":
+            return aw_feat.start_beacon_spam(self.transport, self.allowlist,
+                                              mode="list",
+                                              beacon_list_path=args.get("beacon_list_path"),
+                                              list_idx=args.get("list_idx"),
+                                              duration_s=args.get("duration_s", 60))
+        if command == "probe_flood":
+            return {"ok": True, "response": "probe_flood placeholder; wired in Task 2.8"}
         return {"ok": False, "response": f"command not implemented in this phase: {command}"}
 
 
