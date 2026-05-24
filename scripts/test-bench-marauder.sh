@@ -71,31 +71,44 @@ case "$MODE" in
         ;;
     allowlist_refuse)
         echo "→ Test: deauth_attack to BSSID NOT in allowlist must be refused"
-        # 1) First call: should get confirm_token
+        _tmpevt=$(mktemp)
+        trap 'rm -f "$_tmpevt"' EXIT
+
+        # 1) Subscribe FIRST (bridge publishes asynchronously), then POST.
+        #    Event payload uses "id" (== op_id returned by HTTP) not "op_id".
+        mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" \
+            -t 'drifter/marauder/event' -C 1 -W 8 2>/dev/null > "$_tmpevt" &
+        _sub1_pid=$!
+        sleep 0.3
+
         r1=$(curl -fsS -X POST "$OPSEC_BASE/api/marauder/cmd" \
             -H 'Content-Type: application/json' \
             -d '{"command":"deauth_attack","args":{"bssid":"de:ad:be:ef:00:00","ssid":"NOT_IN_ALLOWLIST"}}')
         op_id_1=$(echo "$r1" | jq -r .op_id)
 
-        # Subscribe briefly to the event topic to get the token
-        event_line=$(timeout 3s mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" \
-                     -t 'drifter/marauder/event' -C 2 -W 3 2>/dev/null \
-                     | grep "$op_id_1" || true)
-        token=$(echo "$event_line" | jq -r .confirm_token 2>/dev/null || echo "")
-        [ -z "$token" ] && die "did not receive a confirm_token for op_id=$op_id_1"
+        wait $_sub1_pid || true
+        event_line=$(cat "$_tmpevt")
+        token=$(echo "$event_line" | jq -r '.confirm_token // empty' 2>/dev/null || true)
+        [ -z "$token" ] && die "did not receive a confirm_token for op_id=$op_id_1 (got: $event_line)"
         ok "got confirm_token (length=${#token})"
 
-        # 2) Second call with token must be refused due to empty allowlist
+        # 2) Subscribe again, then POST with token — must be refused (BSSID not in allowlist)
+        mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" \
+            -t 'drifter/marauder/event' -C 1 -W 8 2>/dev/null > "$_tmpevt" &
+        _sub2_pid=$!
+        sleep 0.3
+
         r2=$(curl -fsS -X POST "$OPSEC_BASE/api/marauder/cmd" \
             -H 'Content-Type: application/json' \
             -d "{\"command\":\"deauth_attack\",\"args\":{\"bssid\":\"de:ad:be:ef:00:00\",\"ssid\":\"NOT_IN_ALLOWLIST\"},\"confirm_token\":\"$token\"}")
         op_id_2=$(echo "$r2" | jq -r .op_id)
 
-        event_line_2=$(timeout 3s mosquitto_sub -h "$MQTT_HOST" -p "$MQTT_PORT" \
-                       -t 'drifter/marauder/event' -C 2 -W 3 2>/dev/null \
-                       | grep "$op_id_2" || true)
-        echo "$event_line_2" | grep -q '"ok":false' || die "expected refusal, got: $event_line_2"
-        echo "$event_line_2" | grep -qi 'allowlist' || die "refusal reason missing 'allowlist': $event_line_2"
+        wait $_sub2_pid || true
+        event_line_2=$(cat "$_tmpevt")
+        echo "$event_line_2" | jq -e '."ok" == false' > /dev/null \
+            || die "expected ok:false refusal, got: $event_line_2"
+        echo "$event_line_2" | grep -qi 'allowlist' \
+            || die "refusal reason missing 'allowlist': $event_line_2"
         ok "allowlist refusal correctly fired"
         ;;
     *)
