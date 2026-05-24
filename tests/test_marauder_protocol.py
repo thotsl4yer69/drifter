@@ -215,3 +215,29 @@ class TestParseBLEEvents:
         ev = mp.parse_event(line)
         assert ev["type"] == "ble_device"
         assert ev["name"] == ""
+
+
+class TestEvilPortalBuilders:
+    def test_cmd_evilportal_start(self):
+        assert mp.cmd_evilportal_start("ACME-Pentest") == \
+            'evilportal -s "ACME-Pentest"\r\n'
+
+    def test_cmd_evilportal_start_escapes_quotes_in_ssid(self):
+        """SSIDs with embedded quotes get sanitized — never inject CLI."""
+        result = mp.cmd_evilportal_start('Acme " Test')
+        # Quote-stripped to prevent CLI injection
+        assert '"' not in result.replace('evilportal -s ', '').rstrip('\r\n').strip('"')
+
+    def test_cmd_evilportal_stop(self):
+        assert mp.cmd_evilportal_stop() == "evilportal -s stop\r\n"
+
+    def test_cmd_evilportal_load_template_chunks(self):
+        """Template upload returns a LIST of chunks (Marauder CLI has line-length limits)."""
+        html = b"<html><body>%s</body></html>" % (b"x" * 2000)
+        chunks = mp.cmd_evilportal_load_template(html)
+        assert isinstance(chunks, list)
+        assert len(chunks) >= 1
+        for c in chunks:
+            assert c.endswith("\r\n")
+        # Last chunk is the "upload-complete" sentinel
+        assert chunks[-1].strip() == "evilportal -p commit"
