@@ -84,3 +84,53 @@ def publish_cmd(mqtt_client, command: str, args: dict | None = None,
                         json.dumps(payload, separators=(",", ":")),
                         qos=0, retain=False)
     return op_id
+
+
+import hmac
+import os
+import time as _time
+from pathlib import Path as _Path
+import secrets
+
+_PORTAL_STATE_ROOT = _Path(os.environ.get(
+    "MARAUDER_STATE_ROOT", "/opt/drifter/state/marauder"))
+_REVEAL_TOKENS: dict[str, tuple[float, str]] = {}  # token → (expiry_ts, session_id)
+_REVEAL_TTL_S = 60
+
+
+def list_portal_sessions() -> list[dict]:
+    out = []
+    pdir = _PORTAL_STATE_ROOT / "evilportal"
+    if not pdir.exists():
+        return out
+    for f in sorted(pdir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except Exception:
+            continue
+        out.append({"id": data.get("id"), "ssid": data.get("ssid"),
+                    "template_name": data.get("template_name"),
+                    "started_ts": data.get("started_ts"),
+                    "ended_ts": data.get("ended_ts"),
+                    "captures_count": data.get("captures_count", 0)})
+    return out
+
+
+def issue_reveal_token(session_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    _REVEAL_TOKENS[token] = (_time.time() + _REVEAL_TTL_S, session_id)
+    return token
+
+
+def consume_reveal_token(token: str, session_id: str) -> bool:
+    entry = _REVEAL_TOKENS.pop(token, None)
+    if not entry:
+        return False
+    expiry, sid = entry
+    if _time.time() > expiry:
+        return False
+    return hmac.compare_digest(sid, session_id)
+
+
+def portal_capture_path(session_id: str) -> _Path:
+    return _PORTAL_STATE_ROOT / "evilportal" / f"captures-{session_id}.jsonl"
