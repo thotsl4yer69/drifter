@@ -213,5 +213,124 @@ class Bridge:
         return {"ok": False, "response": f"command not implemented in this phase: {command}"}
 
 
+import signal
+import sys
+from pathlib import Path
+
+
+def _make_mqtt_client(client_id: str):
+    """Defer paho import so tests that monkey-patch can run without it."""
+    from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
+    return make_mqtt_client(client_id), MQTT_HOST, MQTT_PORT
+
+
+def _publish_status(bridge, state: str) -> None:
+    bridge._publish("drifter/marauder/status", {
+        "state": state,
+        "mode": bridge.transport.mode,
+        "transport": bridge.transport.mode,
+        "hw_detail": bridge.transport.hw_detail,
+        "ts": time.time(),
+    }, retain=True)
+
+
+def main(argv=None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+
+    # 1) Transport autodetect
+    from marauder_transport import MarauderTransport
+    transport = MarauderTransport()
+    transport.autodetect()
+
+    # 2) Allowlist
+    scope = ma.load_marauder_allowlist()
+
+    # 3) Session storage
+    from marauder_storage import SessionWriter
+    state_root = Path("/opt/drifter/state/marauder")
+    state_root.mkdir(parents=True, exist_ok=True)
+    storage = SessionWriter(state_root=state_root)
+
+    # 4) MQTT
+    mqtt_client, host, port = _make_mqtt_client("drifter-marauder")
+    mqtt_client.connect(host, port, keepalive=60)
+
+    bridge = Bridge(transport=transport, mqtt_client=mqtt_client,
+                    allowlist_scope=scope, session_writer=storage)
+
+    # 5) Reader thread → MQTT scan events (only if direct transport)
+    if transport.mode == "direct":
+        from marauder_protocol import parse_event
+
+        def line_handler(line: str) -> None:
+            ev = parse_event(line)
+            if ev is None:
+                return
+            topic_for_type = {
+                "ap": "drifter/marauder/scan/ap",
+                "station": "drifter/marauder/scan/sta",
+                "probe": "drifter/marauder/scan/probe",
+            }
+            topic = topic_for_type.get(ev["type"])
+            if topic:
+                bridge._publish(topic, ev)
+            elif ev["type"] == "unknown":
+                log.debug("unknown line: %s", ev.get("raw", "")[:120])
+
+        transport.start(line_callback=line_handler)
+
+    # 6) MQTT command subscribe
+    def on_message(client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode())
+        except Exception as e:
+            log.warning("invalid cmd payload: %s", e)
+            return
+        bridge.dispatch(payload)
+
+    mqtt_client.on_message = on_message
+    mqtt_client.subscribe("drifter/marauder/cmd", qos=0)
+
+    # 7) Initial status publish
+    initial_state = "no_hardware" if transport.mode == "none" else "idle"
+    _publish_status(bridge, initial_state)
+
+    # 8) Signal handling
+    stop_event = threading.Event()
+
+    def handle_signal(signum, frame):
+        log.info("signal %s received — shutting down", signum)
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    # 9) Background loop — status heartbeat every 30s, sweep stale confirms
+    last_status = 0.0
+    mqtt_client.loop_start()
+    try:
+        while not stop_event.is_set():
+            time.sleep(0.5)
+            now = time.time()
+            if now - last_status > 30:
+                state = "no_hardware" if transport.mode == "none" else "idle"
+                _publish_status(bridge, state)
+                last_status = now
+            bridge.confirms.sweep()
+    finally:
+        mqtt_client.loop_stop()
+        if transport.mode == "direct":
+            transport.stop()
+        try:
+            mqtt_client.disconnect()
+        except Exception:
+            pass
+        log.info("marauder bridge exiting cleanly")
+    return 0
+
+
 if __name__ == "__main__":
-    raise NotImplementedError("marauder_bridge main() lands in Task 1.18")
+    sys.exit(main())
