@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from unittest.mock import patch, MagicMock
 
 import marauder_transport as mt
 
@@ -104,3 +105,36 @@ class TestProbeDirect:
             assert "timeout" in detail.lower() or "no response" in detail.lower()
         finally:
             os.close(master)
+
+
+class TestProbeFlipperProxy:
+    def test_probe_proxy_finds_module_via_hardware_endpoint(self):
+        fake_response = MagicMock(status_code=200)
+        fake_response.json.return_value = {"marauder_module_present": True,
+                                            "module": "marauder",
+                                            "capabilities": ["wifi", "ble"]}
+        with patch("marauder_transport.requests.get", return_value=fake_response):
+            ok, detail = mt.probe_flipper_proxy("http://127.0.0.1:8080")
+            assert ok is True
+            assert "marauder" in detail.lower()
+
+    def test_probe_proxy_module_absent(self):
+        fake_response = MagicMock(status_code=200)
+        fake_response.json.return_value = {"marauder_module_present": False,
+                                            "module": "none"}
+        with patch("marauder_transport.requests.get", return_value=fake_response):
+            ok, _ = mt.probe_flipper_proxy("http://127.0.0.1:8080")
+            assert ok is False
+
+    def test_probe_proxy_dashboard_unreachable(self):
+        with patch("marauder_transport.requests.get",
+                   side_effect=ConnectionError("refused")):
+            ok, detail = mt.probe_flipper_proxy("http://127.0.0.1:8080")
+            assert ok is False
+            assert "unreachable" in detail.lower() or "refused" in detail.lower()
+
+    def test_probe_proxy_dashboard_http_error(self):
+        fake_response = MagicMock(status_code=500)
+        with patch("marauder_transport.requests.get", return_value=fake_response):
+            ok, detail = mt.probe_flipper_proxy("http://127.0.0.1:8080")
+            assert ok is False
