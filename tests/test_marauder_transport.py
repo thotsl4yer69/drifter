@@ -46,6 +46,7 @@ class TestEnumerateCandidates:
 
 import os
 import pty
+import queue
 import threading
 import time
 
@@ -177,3 +178,43 @@ class TestAutodetect:
             t.autodetect()
             assert t.mode == "none"
             assert t.port_path is None
+
+
+class TestSendReceiveDirect:
+    def test_send_command_and_receive_lines(self):
+        """send_command writes bytes; reader thread parses lines into queue."""
+        master, slave = pty.openpty()
+        slave_path = os.ttyname(slave)
+
+        t = mt.MarauderTransport(probe_timeout=0.2)
+        t.mode = "direct"
+        t.port_path = slave_path
+        line_q: queue.Queue[str] = queue.Queue()
+
+        t.start(line_callback=lambda l: line_q.put(l))
+
+        # Simulate Marauder pushing two lines after our command
+        def feeder():
+            os.read(master, 256)  # consume the command we sent
+            time.sleep(0.05)
+            os.write(master, b"RSSI: -67 Ch: 6 BSSID: aa:bb:cc:dd:ee:ff ESSID: X\r\n")
+            os.write(master, b"RSSI: -55 Ch: 11 BSSID: 11:22:33:44:55:66 ESSID: Y\r\n")
+
+        threading.Thread(target=feeder, daemon=True).start()
+
+        t.send("scanap\r\n")
+
+        # Reader should produce 2 lines
+        lines = []
+        for _ in range(2):
+            try:
+                lines.append(line_q.get(timeout=1.0))
+            except queue.Empty:
+                break
+
+        t.stop()
+        os.close(master)
+
+        assert len(lines) == 2
+        assert "BSSID: aa:bb:cc:dd:ee:ff" in lines[0]
+        assert "BSSID: 11:22:33:44:55:66" in lines[1]
