@@ -87,8 +87,26 @@ def _check_wifi(entries: list[dict], fields: dict) -> tuple[bool, str]:
 
 
 def _check_ble(entries: list[dict], fields: dict) -> tuple[bool, str]:
-    # Implemented in Phase 3 — stub returns refuse for now.
-    return False, "ble allowlist check not yet implemented"
+    action = fields.get("action", "targeted")  # 'targeted' | 'spam' | 'scan'
+    mac = (fields.get("mac") or "").lower()
+
+    if action in ("targeted", "scan"):
+        for entry in entries:
+            if "mac" in entry and entry["mac"].lower() == mac:
+                return True, f"matched ble mac={mac}"
+        return False, "no per-mac match in ble allowlist"
+
+    if action == "spam":
+        for entry in entries:
+            if entry.get("area_authorized") is True:
+                label = entry.get("area_label")
+                if not label:
+                    return False, ("ble area_authorized entry missing area_label "
+                                   "— operator must record where authorization applies")
+                return True, f"matched area_authorized: {label}"
+        return False, "no area_authorized:true entry in ble allowlist for spam"
+
+    return False, f"unknown ble action={action}"
 
 
 def _check_evilportal(entries: list[dict], fields: dict) -> tuple[bool, str]:

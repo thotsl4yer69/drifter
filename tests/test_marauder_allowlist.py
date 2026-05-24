@@ -89,3 +89,53 @@ class TestIsTargetAllowedWifi:
         )
         assert ok is False
         assert "no match" in reason.lower()
+
+
+class TestIsTargetAllowedBLE:
+    def test_empty_ble_refuses(self):
+        ok, reason = ma.is_target_allowed(
+            {"wifi": [], "ble": [], "evilportal": []},
+            "ble", mac="aa:bb:cc:dd:ee:ff", action="scan",
+        )
+        assert ok is False
+        assert "empty" in reason.lower()
+
+    def test_specific_mac_allows_for_targeted_action(self):
+        scope = {"wifi": [], "ble": [{"mac": "aa:bb:cc:dd:ee:ff"}],
+                 "evilportal": []}
+        ok, reason = ma.is_target_allowed(
+            scope, "ble", mac="aa:bb:cc:dd:ee:ff", action="targeted",
+        )
+        assert ok is True
+
+    def test_specific_mac_does_NOT_allow_indiscriminate_spam(self):
+        """Per-MAC scope only authorizes targeted operations. Spam
+        requires the area_authorized entry."""
+        scope = {"wifi": [], "ble": [{"mac": "aa:bb:cc:dd:ee:ff"}],
+                 "evilportal": []}
+        ok, reason = ma.is_target_allowed(
+            scope, "ble", mac="aa:bb:cc:dd:ee:ff", action="spam",
+        )
+        assert ok is False
+        assert "area_authorized" in reason
+
+    def test_area_authorized_allows_spam(self):
+        scope = {"wifi": [],
+                 "ble": [{"area_authorized": True, "area_label": "ACME lab 204"}],
+                 "evilportal": []}
+        ok, reason = ma.is_target_allowed(
+            scope, "ble", mac=None, action="spam",
+        )
+        assert ok is True
+        assert "ACME lab 204" in reason
+
+    def test_area_authorized_without_label_refused(self):
+        """Operator must provide an area_label — friction point."""
+        scope = {"wifi": [],
+                 "ble": [{"area_authorized": True}],
+                 "evilportal": []}
+        ok, reason = ma.is_target_allowed(
+            scope, "ble", mac=None, action="spam",
+        )
+        assert ok is False
+        assert "area_label" in reason
