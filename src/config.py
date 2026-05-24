@@ -917,6 +917,7 @@ SERVICES = [
     "drifter-kismet",        # headless Wi-Fi/BLE recon daemon
     "drifter-kismet-bridge", # Kismet REST → MQTT bridge
     "drifter-wifi-audit",    # bettercap PMKID/handshake (allowlist-scoped)
+    "drifter-marauder",      # ESP32 Marauder Wi-Fi/BT attack bridge (NEW)
     "drifter-fly-catcher",   # ADS-B ghost detector
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge
@@ -955,6 +956,7 @@ FOOT_ONLY_SERVICES = [
     "drifter-kismet",
     "drifter-kismet-bridge",
     "drifter-wifi-audit",
+    "drifter-marauder",      # NEW
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
@@ -985,3 +987,13 @@ assert not (set(DRIVE_ONLY_SERVICES) & set(FOOT_ONLY_SERVICES)), \
 # persona is currently armed. Updated by `drifter mode <name>`.
 MODE_STATE_PATH = DRIFTER_DIR / "mode.state"
 DEFAULT_MODE = "drive"
+
+# ── Marauder bridge feature flags ─────────────────────────────────────
+# Random-SSID beacon spam is refused outright by the bridge — random
+# SSIDs cannot be allowlisted and the firmware-level command is purely
+# disruptive. Flip to False + redeploy to enable (deliberate friction).
+BEACON_SPAM_RANDOM_REFUSE = True
+
+# Same reasoning for Rick Astley beacon spam. Flip plus add a wildcard
+# `marauder.wifi[].ssid: "*"` allowlist entry to enable.
+BEACON_SPAM_RICKROLL_REFUSE = True
