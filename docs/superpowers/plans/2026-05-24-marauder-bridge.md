@@ -5051,3 +5051,967 @@ git -C /home/kali/drifter tag -a marauder-phase3-accept -m "Phase 3 (BLE recon +
 
 ---
 
+## Phase 4 — EvilPortal / Karma
+
+Heaviest phase. Rogue AP + captive portal + cred capture, with the strictest gating in the whole spec. Cred capture **bypasses MQTT entirely** — it goes to `0600` JSONL files only, and reveal requires a single-use HMAC token.
+
+---
+
+### Task 4.1: Protocol — EvilPortal command builders
+
+**Files:**
+- Modify: `src/marauder_protocol.py`
+- Modify: `tests/test_marauder_protocol.py`
+
+- [ ] **Step 1: Write failing tests** — append to `tests/test_marauder_protocol.py`:
+
+```python
+class TestEvilPortalBuilders:
+    def test_cmd_evilportal_start(self):
+        assert mp.cmd_evilportal_start("ACME-Pentest") == \
+            'evilportal -s "ACME-Pentest"\r\n'
+
+    def test_cmd_evilportal_start_escapes_quotes_in_ssid(self):
+        """SSIDs with embedded quotes get sanitized — never inject CLI."""
+        result = mp.cmd_evilportal_start('Acme " Test')
+        # Quote-stripped to prevent CLI injection
+        assert '"' not in result.replace('evilportal -s ', '').rstrip('\r\n').strip('"')
+
+    def test_cmd_evilportal_stop(self):
+        assert mp.cmd_evilportal_stop() == "evilportal -s stop\r\n"
+
+    def test_cmd_evilportal_load_template_chunks(self):
+        """Template upload returns a LIST of chunks (Marauder CLI has line-length limits)."""
+        html = b"<html><body>%s</body></html>" % (b"x" * 2000)
+        chunks = mp.cmd_evilportal_load_template(html)
+        assert isinstance(chunks, list)
+        assert len(chunks) >= 1
+        # Each chunk ends with newline
+        for c in chunks:
+            assert c.endswith("\r\n")
+        # Last chunk is the "upload-complete" sentinel
+        assert chunks[-1].strip() == "evilportal -p commit"
+```
+
+- [ ] **Step 2: Run tests to fail.** `pytest tests/test_marauder_protocol.py::TestEvilPortalBuilders -v` → 4 FAIL.
+
+- [ ] **Step 3: Implement** — append to `src/marauder_protocol.py` (builders section, BEFORE the `# ── Event parser ──` header):
+
+```python
+def cmd_evilportal_start(ssid: str) -> str:
+    # Strip embedded double-quotes to prevent CLI injection; truncate at 32
+    # (Marauder/IEEE Wi-Fi SSID max).
+    safe = ssid.replace('"', "").replace("\n", "").replace("\r", "")[:32]
+    return f'evilportal -s "{safe}"\r\n'
+
+
+def cmd_evilportal_stop() -> str:
+    return "evilportal -s stop\r\n"
+
+
+def cmd_evilportal_load_template(html_bytes: bytes) -> list[str]:
+    """Upload portal HTML as a sequence of CLI lines.
+
+    Marauder's evilportal -p sub-command accepts the template body
+    chunk-by-chunk; we split at ~1KB boundaries and end with a
+    commit line.
+    """
+    CHUNK = 1024
+    text = html_bytes.decode("utf-8", errors="replace")
+    # Replace any embedded newlines that would break the line protocol
+    text = text.replace("\r", " ").replace("\n", " ")
+    out: list[str] = []
+    for i in range(0, len(text), CHUNK):
+        out.append(f"evilportal -p append {text[i:i+CHUNK]}\r\n")
+    out.append("evilportal -p commit\r\n")
+    return out
+```
+
+- [ ] **Step 4: Run tests.** `pytest tests/test_marauder_protocol.py -v` → all pass (124+).
+
+- [ ] **Step 5: Commit.**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_protocol.py src/marauder_protocol.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): protocol — EvilPortal command builders
+
+evilportal -s "<ssid>" / -s stop / -p append/commit chunked upload.
+SSID sanitized (no embedded quotes/newlines, truncated to 32 char IEEE
+limit). Template upload returns a list of CLI lines for the transport
+layer to write sequentially.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.2: Protocol — parse portal events + cred capture sentinel
+
+**Files:**
+- Modify: `src/marauder_protocol.py`
+- Modify: `tests/test_marauder_protocol.py`
+
+- [ ] **Step 1: Write failing tests:**
+
+```python
+class TestParsePortalEvents:
+    def test_parse_portal_client_connect(self):
+        line = "Portal client connected mac=aa:bb:cc:dd:ee:ff"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "portal_client_connect"
+        assert ev["mac"] == "aa:bb:cc:dd:ee:ff"
+
+    def test_parse_cred_capture_returns_sentinel(self):
+        """Cred captures get a SENTINEL type; raw fields parsed but the
+        caller (bridge) is expected to NOT publish them on MQTT."""
+        line = 'Captured: user=alice pass=hunter2 email=a@b.c'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "cred_capture"
+        assert ev["fields"] == {"user": "alice", "pass": "hunter2", "email": "a@b.c"}
+
+    def test_parse_cred_capture_with_url_encoded(self):
+        line = 'Captured: user=alice%40acme pass=p%40ss'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "cred_capture"
+        # Values are kept as-emitted (URL-decode is operator's job in reveal flow)
+        assert ev["fields"]["user"] == "alice%40acme"
+```
+
+- [ ] **Step 2: Run tests to fail.** `pytest tests/test_marauder_protocol.py::TestParsePortalEvents -v` → 3 FAIL.
+
+- [ ] **Step 3: Implement** — add to `src/marauder_protocol.py`:
+
+```python
+_RE_PORTAL_CLIENT = re.compile(
+    r"^Portal client connected\s+mac=(?P<mac>[0-9a-fA-F:]{17})\s*$"
+)
+
+
+def _build_portal_client(m: re.Match) -> dict:
+    return {"mac": m.group("mac").lower()}
+
+
+_RE_CRED_CAPTURE = re.compile(r"^Captured:\s*(?P<body>.+)$")
+
+
+def _build_cred_capture(m: re.Match) -> dict:
+    body = m.group("body").strip()
+    fields: dict[str, str] = {}
+    for token in body.split():
+        if "=" not in token:
+            continue
+        k, _, v = token.partition("=")
+        fields[k.strip()] = v.strip()
+    return {"fields": fields}
+
+
+_PARSERS.extend([
+    (_RE_PORTAL_CLIENT, "portal_client_connect", _build_portal_client),
+    (_RE_CRED_CAPTURE, "cred_capture", _build_cred_capture),
+])
+```
+
+- [ ] **Step 4: Run tests.** `pytest tests/test_marauder_protocol.py -v` → all pass.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_protocol.py src/marauder_protocol.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): protocol — parse portal events + cred capture sentinel
+
+portal_client_connect + cred_capture. cred_capture parses key=value
+fields from the line but the BRIDGE layer is responsible for never
+publishing this on MQTT (file-only per spec §3.3).
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.3: Allowlist — EvilPortal category (ssid + template pair)
+
+**Files:**
+- Modify: `src/marauder_allowlist.py`
+- Modify: `tests/test_marauder_allowlist.py`
+
+- [ ] **Step 1: Write failing tests** — append:
+
+```python
+class TestIsTargetAllowedEvilPortal:
+    def test_empty_evilportal_refuses(self):
+        ok, reason = ma.is_target_allowed(
+            {"wifi": [], "ble": [], "evilportal": []},
+            "evilportal", ssid="x", template="t",
+        )
+        assert ok is False
+        assert "empty" in reason.lower()
+
+    def test_ssid_template_pair_match(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest",
+                                 "max_captures": 50, "authorized_use": "contract X"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="ACME-Guest", template="acme-guest")
+        assert ok is True
+
+    def test_ssid_match_but_template_mismatch_refused(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="ACME-Guest", template="OTHER")
+        assert ok is False
+
+    def test_template_match_but_ssid_mismatch_refused(self):
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="OTHER", template="acme-guest")
+        assert ok is False
+```
+
+- [ ] **Step 2: Run tests.** Expected 4 FAIL.
+
+- [ ] **Step 3: Replace `_check_evilportal` stub:**
+
+```python
+def _check_evilportal(entries: list[dict], fields: dict) -> tuple[bool, str]:
+    ssid = fields.get("ssid", "")
+    template = fields.get("template", "")
+    for entry in entries:
+        if entry.get("ssid") == ssid and entry.get("template") == template:
+            return True, f"matched evilportal (ssid={ssid}, template={template})"
+    return False, ("no (ssid, template) pair match in evilportal allowlist — "
+                   "both must match a single entry")
+```
+
+- [ ] **Step 4: Run tests.** All 19 allowlist tests pass.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_allowlist.py src/marauder_allowlist.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): allowlist — EvilPortal (ssid, template) pair match
+
+Both SSID and template must match the same allowlist entry. SSID-only
+or template-only match is refused — per-pair authorization prevents
+operator from mixing an authorized SSID with an unauthorized portal
+template.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.4: Storage — portal session writer + cred capture file
+
+**Files:**
+- Modify: `src/marauder_storage.py`
+- Modify: `tests/test_marauder_storage.py`
+
+- [ ] **Step 1: Write failing tests:**
+
+```python
+class TestPortalStorage:
+    def test_write_capture_creates_0600_file(self, tmp_path):
+        sid = "abc123"
+        path = ms.write_portal_capture(state_root=tmp_path, session_id=sid,
+                                        fields={"user": "alice", "pass": "x"})
+        # File exists at expected location
+        assert path == tmp_path / "evilportal" / f"captures-{sid}.jsonl"
+        assert path.exists()
+        # Mode is 0600 (owner read/write only)
+        import os
+        mode = oct(os.stat(path).st_mode & 0o777)
+        assert mode == "0o600", f"capture file mode should be 0o600, got {mode}"
+        # Content is one JSON object per line
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 1
+        data = json.loads(lines[0])
+        assert data["fields"] == {"user": "alice", "pass": "x"}
+        assert "ts" in data
+
+    def test_write_capture_appends_subsequent_calls(self, tmp_path):
+        sid = "abc123"
+        ms.write_portal_capture(state_root=tmp_path, session_id=sid, fields={"x": "1"})
+        ms.write_portal_capture(state_root=tmp_path, session_id=sid, fields={"x": "2"})
+        path = tmp_path / "evilportal" / f"captures-{sid}.jsonl"
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 2
+
+    def test_write_portal_audit_required_fields(self, tmp_path):
+        ms.write_portal_audit(state_root=tmp_path, record={
+            "id": "p1", "operator_ip": "10.42.0.5",
+            "started_ts": 1.0, "ended_ts": 2.0,
+            "ssid": "ACME", "template_name": "acme-guest",
+            "template_sha256": "abc", "allowlist_sha256": "def",
+            "allowlist_entry": {"ssid": "ACME", "template": "acme-guest"},
+            "duration_s": 60, "transport": "direct",
+            "captures_count": 0, "captures_file": "captures-p1.jsonl",
+            "captures_revealed_at": [],
+            "captures_wiped": False, "stop_reason": "duration_elapsed",
+        })
+        f = tmp_path / "evilportal" / "p1.json"
+        assert f.exists()
+        data = json.loads(f.read_text())
+        assert data["template_sha256"] == "abc"
+
+    def test_write_portal_audit_missing_field_raises(self, tmp_path):
+        import pytest
+        with pytest.raises(ValueError, match="missing required"):
+            ms.write_portal_audit(state_root=tmp_path, record={"id": "p1"})
+```
+
+- [ ] **Step 2: Run tests.** Expected 4 FAIL.
+
+- [ ] **Step 3: Implement** — append to `src/marauder_storage.py`:
+
+```python
+PORTAL_REQUIRED_FIELDS = {
+    "id", "operator_ip", "started_ts", "ended_ts",
+    "ssid", "template_name", "template_sha256",
+    "allowlist_sha256", "allowlist_entry",
+    "transport", "captures_count", "captures_file",
+    "stop_reason",
+}
+
+
+def write_portal_capture(*, state_root: Path | str, session_id: str,
+                        fields: dict) -> Path:
+    """Append one captured form post to the session's JSONL.
+
+    File is 0600, owned by the running process's user. This bypasses
+    MQTT entirely — captured content is never published on the bus.
+    """
+    root = Path(state_root)
+    out_dir = root / "evilportal"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"captures-{session_id}.jsonl"
+    line = json.dumps({"fields": fields, "ts": time.time()},
+                       separators=(",", ":")) + "\n"
+    # O_APPEND + 0600 on first create
+    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+    finally:
+        os.close(fd)
+    # Re-apply 0600 in case existing file had different mode
+    os.chmod(out_path, 0o600)
+    return out_path
+
+
+def write_portal_audit(*, state_root: Path | str, record: dict) -> Path:
+    """Write a portal session audit record. Required-field invariant."""
+    missing = PORTAL_REQUIRED_FIELDS - set(record.keys())
+    if missing:
+        raise ValueError(f"missing required portal-audit fields: {sorted(missing)}")
+    root = Path(state_root)
+    out_dir = root / "evilportal"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{record['id']}.json"
+    out_path.write_text(json.dumps(record, indent=2))
+    return out_path
+```
+
+(`time` is already imported at module top.)
+
+- [ ] **Step 4: Run tests.** All 10 storage tests pass.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_storage.py src/marauder_storage.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): storage — portal capture file (0600) + portal audit JSON
+
+write_portal_capture appends one JSONL line per cred post; file mode
+is explicitly 0o600 on every write (re-applied even if file existed).
+write_portal_audit has the same required-field invariant as
+write_attack_audit. Captures NEVER hit MQTT — file-only.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.5: EvilPortal feature — template store + start + auto-stop
+
+**Files:**
+- Modify: `src/marauder_features/evilportal.py`
+- Create: `tests/test_marauder_evilportal.py`
+
+- [ ] **Step 1: Write failing tests:**
+
+```python
+import json
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from marauder_features import evilportal as ep
+
+
+def _make_template(tmp_path, name="acme-guest"):
+    tdir = tmp_path / name
+    tdir.mkdir()
+    (tdir / "portal.html").write_text(
+        '<html><body><form method=post>'
+        '<input name=user><input name=pass>'
+        '<input type=hidden name=cb value="{{captive_post_url}}">'
+        '</form></body></html>'
+    )
+    (tdir / "meta.yaml").write_text(
+        'ssid_default: "ACME-Guest"\n'
+        'description: "ACME guest"\n'
+        'authorized_use: "test only"\n'
+        'created: "2026-05-24"\n'
+    )
+    return tdir
+
+
+class TestTemplateValidator:
+    def test_valid_template_loads(self, tmp_path):
+        tdir = _make_template(tmp_path)
+        html = ep.load_and_validate_template(tdir)
+        assert b"{{captive_post_url}}" in html
+
+    def test_missing_placeholder_rejected(self, tmp_path):
+        tdir = tmp_path / "bad"; tdir.mkdir()
+        (tdir / "portal.html").write_text("<html><body>no placeholder</body></html>")
+        import pytest
+        with pytest.raises(ValueError, match="captive_post_url"):
+            ep.load_and_validate_template(tdir)
+
+    def test_oversize_template_rejected(self, tmp_path):
+        tdir = tmp_path / "huge"; tdir.mkdir()
+        big = "x" * (70 * 1024) + " {{captive_post_url}} "
+        (tdir / "portal.html").write_text(big)
+        import pytest
+        with pytest.raises(ValueError, match="64.?KB|too large"):
+            ep.load_and_validate_template(tdir)
+
+    def test_external_script_rejected(self, tmp_path):
+        tdir = tmp_path / "exfil"; tdir.mkdir()
+        (tdir / "portal.html").write_text(
+            '<html><script src="http://evil.com/exfil.js"></script>'
+            ' {{captive_post_url}} </html>'
+        )
+        import pytest
+        with pytest.raises(ValueError, match="script"):
+            ep.load_and_validate_template(tdir)
+
+
+class TestPortalStart:
+    def test_start_authorized_pair(self, tmp_path):
+        _make_template(tmp_path / "templates")
+        transport = MagicMock(); transport.mode = "direct"
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest",
+                                 "max_captures": 50,
+                                 "authorized_use": "test contract"}]}
+        result = ep.start(transport, scope,
+                          template_root=tmp_path / "templates",
+                          ssid="ACME-Guest", template_name="acme-guest",
+                          duration_s=600)
+        assert result["ok"] is True
+        assert result["session_id"]
+        # Transport got the chunks plus the start command
+        assert transport.send.called
+        # Last call is the start
+        last = transport.send.call_args_list[-1].args[0]
+        assert "evilportal -s" in last
+        assert "ACME-Guest" in last
+
+    def test_start_unauthorized_refused(self, tmp_path):
+        _make_template(tmp_path / "templates")
+        transport = MagicMock(); transport.mode = "direct"
+        scope = {"wifi": [], "ble": [], "evilportal": []}
+        result = ep.start(transport, scope,
+                          template_root=tmp_path / "templates",
+                          ssid="ACME-Guest", template_name="acme-guest",
+                          duration_s=600)
+        assert result["ok"] is False
+        transport.send.assert_not_called()
+
+    def test_start_duration_capped_at_1800(self, tmp_path):
+        _make_template(tmp_path / "templates")
+        transport = MagicMock(); transport.mode = "direct"
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest",
+                                 "max_captures": 50, "authorized_use": "x"}]}
+        result = ep.start(transport, scope,
+                          template_root=tmp_path / "templates",
+                          ssid="ACME-Guest", template_name="acme-guest",
+                          duration_s=99999)
+        assert result["duration_s"] == 1800
+
+
+class TestPortalStop:
+    def test_stop_sends_stop_command(self):
+        transport = MagicMock(); transport.mode = "direct"
+        result = ep.stop(transport)
+        assert result["ok"] is True
+        transport.send.assert_called_with("evilportal -s stop\r\n")
+```
+
+- [ ] **Step 2: Run tests.** Expected ~8 FAIL.
+
+- [ ] **Step 3: Implement** — replace `src/marauder_features/evilportal.py` body:
+
+```python
+"""MZ1312 DRIFTER — Marauder bridge module: rogue AP + portal + cred capture."""
+
+import hashlib
+import uuid
+from pathlib import Path
+
+import marauder_allowlist as ma
+import marauder_protocol as mp
+
+MAX_PORTAL_DURATION_S = 1800  # 30 minutes
+MAX_TEMPLATE_BYTES = 64 * 1024
+
+REQUIRED_PLACEHOLDER = "{{captive_post_url}}"
+BLOCKED_PATTERNS = ['<script src="http']
+
+
+def load_and_validate_template(template_dir: Path | str) -> bytes:
+    """Read portal.html from template_dir, validate against the three rules:
+      - contains {{captive_post_url}} placeholder
+      - ≤ MAX_TEMPLATE_BYTES
+      - no external <script src="http..."> exfil tags
+    Returns the HTML as bytes (raw, unsubstituted)."""
+    d = Path(template_dir)
+    html_path = d / "portal.html"
+    raw = html_path.read_bytes()
+    if len(raw) > MAX_TEMPLATE_BYTES:
+        raise ValueError(f"portal template too large ({len(raw)}B > 64KB cap)")
+    text = raw.decode("utf-8", errors="replace")
+    if REQUIRED_PLACEHOLDER not in text:
+        raise ValueError(f"portal template missing {REQUIRED_PLACEHOLDER} placeholder")
+    for pat in BLOCKED_PATTERNS:
+        if pat in text.lower() or pat in text:
+            raise ValueError(f"portal template contains blocked pattern: external script src")
+    return raw
+
+
+def start(transport, allowlist_scope: dict, *,
+         template_root: Path | str,
+         ssid: str, template_name: str,
+         duration_s: int) -> dict:
+    """Start a rogue-AP + captive-portal session.
+
+    Returns {ok, response, session_id?, duration_s?, template_sha256?, ...}.
+    """
+    if transport.mode == "none":
+        return {"ok": False, "response": "no transport available"}
+
+    # Allowlist gate — (ssid, template) pair must match a single entry
+    ok, reason = ma.is_target_allowed(allowlist_scope, "evilportal",
+                                       ssid=ssid, template=template_name)
+    if not ok:
+        return {"ok": False, "response": reason}
+
+    template_dir = Path(template_root) / template_name
+    if not template_dir.is_dir():
+        return {"ok": False, "response": f"template dir not found: {template_dir}"}
+
+    try:
+        raw_html = load_and_validate_template(template_dir)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "response": f"template invalid: {e}"}
+
+    template_sha = hashlib.sha256(raw_html).hexdigest()
+    session_id = uuid.uuid4().hex
+
+    # Upload template (chunked) then start
+    for chunk in mp.cmd_evilportal_load_template(raw_html):
+        transport.send(chunk)
+    transport.send(mp.cmd_evilportal_start(ssid))
+
+    capped = min(int(duration_s), MAX_PORTAL_DURATION_S)
+    return {"ok": True,
+            "response": f"portal started ssid={ssid} template={template_name}",
+            "session_id": session_id,
+            "ssid": ssid,
+            "template_name": template_name,
+            "template_sha256": template_sha,
+            "duration_s": capped}
+
+
+def stop(transport) -> dict:
+    if transport.mode == "none":
+        return {"ok": False, "response": "no transport"}
+    transport.send(mp.cmd_evilportal_stop())
+    return {"ok": True, "response": "portal stop sent"}
+```
+
+- [ ] **Step 4: Run tests.** All ~8 pass.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_evilportal.py src/marauder_features/evilportal.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): features.evilportal — template loader + start/stop
+
+load_and_validate_template enforces three rules: {{captive_post_url}}
+placeholder present, ≤64KB, no external <script src="http"> tags.
+start() runs the (ssid, template) allowlist gate, uploads template
+chunks via cmd_evilportal_load_template, sends the start command.
+1800s hard cap (longer than attacks because portals need dwell time).
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.6: Bridge — wire EvilPortal commands + cred capture file-only path
+
+**Files:**
+- Modify: `src/marauder_bridge.py`
+- Modify: `tests/test_marauder_bridge.py`
+
+- [ ] **Step 1: Write failing tests** — append to `tests/test_marauder_bridge.py`:
+
+```python
+class TestEvilPortalDispatch:
+    def test_evilportal_start_unauthorized_refused(self, tmp_path):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        # Token first
+        bridge.dispatch({"id": "a", "command": "evilportal_start",
+                         "args": {"ssid": "ACME", "template_name": "x",
+                                  "template_root": str(tmp_path)}})
+        token = None
+        for c in mqtt.publish.call_args_list:
+            if c.args[0] == "drifter/marauder/event":
+                ev = json.loads(c.args[1])
+                if ev["id"] == "a":
+                    token = ev.get("confirm_token")
+        assert token
+        # Confirm — should refuse (empty allowlist)
+        mqtt.publish.reset_mock()
+        bridge.dispatch({"id": "b", "command": "evilportal_start",
+                         "args": {"ssid": "ACME", "template_name": "x",
+                                  "template_root": str(tmp_path)},
+                         "confirm_token": token})
+        # Confirm event ok=False
+        seen = False
+        for c in mqtt.publish.call_args_list:
+            if c.args[0] == "drifter/marauder/event":
+                ev = json.loads(c.args[1])
+                if ev["id"] == "b":
+                    seen = True
+                    assert ev["ok"] is False
+        assert seen
+
+    def test_cred_capture_never_publishes_raw_to_mqtt(self):
+        """When parse_event yields type=cred_capture, the bridge must
+        write to the capture file and publish ONLY a count notification."""
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        bridge.handle_parser_event({"type": "cred_capture",
+                                     "fields": {"user": "alice", "pass": "x"},
+                                     "ts": 1.0},
+                                    session_id="sess1",
+                                    capture_writer=MagicMock(return_value=Path("/tmp/x")))
+        # Find publishes and assert none contain "alice" or "pass=x"
+        for c in mqtt.publish.call_args_list:
+            body = c.args[1]
+            assert "alice" not in body, f"raw creds leaked to MQTT: {body}"
+            assert '"pass"' not in body, f"raw 'pass' field leaked: {body}"
+        # But a count notification should be published
+        found_count = any(
+            "cred_capture_count" in c.args[1]
+            for c in mqtt.publish.call_args_list
+        )
+        assert found_count, f"no cred_capture_count published; got {mqtt.publish.call_args_list}"
+```
+
+- [ ] **Step 2: Run tests.** Expected 2 FAIL.
+
+- [ ] **Step 3: Wire EvilPortal into Bridge._execute** in `src/marauder_bridge.py`:
+
+Add `from marauder_features import evilportal as portal_feat` near the other feature imports.
+
+In `_execute()`, before the final `return ... not implemented ...` line, add:
+
+```python
+        if command == "evilportal_start":
+            from pathlib import Path as _P
+            return portal_feat.start(self.transport, self.allowlist,
+                                      template_root=_P(args.get("template_root",
+                                          "/opt/drifter/etc/marauder/portals")),
+                                      ssid=args.get("ssid", ""),
+                                      template_name=args.get("template_name", ""),
+                                      duration_s=args.get("duration_s", 600))
+        if command == "evilportal_stop":
+            return portal_feat.stop(self.transport)
+```
+
+Also add a `handle_parser_event(self, event, session_id, capture_writer)` method to the Bridge class:
+
+```python
+    def handle_parser_event(self, event: dict, *, session_id: str | None,
+                           capture_writer) -> None:
+        """Route an event from the transport reader thread.
+
+        For cred_capture: write to disk (capture_writer), publish only a
+        redacted count notification. Never publishes raw fields on MQTT.
+        """
+        et = event.get("type")
+        if et == "cred_capture":
+            if session_id:
+                capture_writer(session_id=session_id,
+                                fields=event.get("fields", {}))
+            # Redacted notification only — count, not content
+            self._publish("drifter/marauder/event", {
+                "type": "cred_capture_count",
+                "session": session_id,
+                "count": 1,
+                "ts": event.get("ts", 0),
+            })
+            return
+        # All other event types follow the normal scan/event topic mapping;
+        # for Phase 4 we just forward to /event as a generic notification.
+        if et:
+            self._publish(f"drifter/marauder/event", event)
+```
+
+Also extend `_command_to_allowlist_category` — add `evilportal_start` → `"evilportal"` if not already there.
+
+- [ ] **Step 4: Run all marauder tests:** `pytest tests/test_marauder_*.py 2>&1 | tail -5`. All pass.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git -C /home/kali/drifter add tests/test_marauder_bridge.py src/marauder_bridge.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): bridge — wire EvilPortal commands + cred-capture file path
+
+evilportal_start/stop plumbed through Bridge._execute with confirm +
+allowlist gate. handle_parser_event() routes cred_capture events to
+file-only storage and publishes ONLY a redacted count notification on
+MQTT — raw fields never hit the bus.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.7: OPSEC dashboard — portal session list + HMAC reveal token
+
+**Files:**
+- Modify: `src/opsec_marauder_client.py`
+- Modify: `src/opsec_dashboard.py`
+
+- [ ] **Step 1: Add portal session helpers to `src/opsec_marauder_client.py`**
+
+```python
+import hmac
+import os
+import time as _time
+from pathlib import Path as _Path
+import secrets
+
+_PORTAL_STATE_ROOT = _Path(os.environ.get(
+    "MARAUDER_STATE_ROOT", "/opt/drifter/state/marauder"))
+_REVEAL_TOKENS: dict[str, tuple[float, str]] = {}  # token → (expiry_ts, session_id)
+_REVEAL_TTL_S = 60
+
+
+def list_portal_sessions() -> list[dict]:
+    out = []
+    pdir = _PORTAL_STATE_ROOT / "evilportal"
+    if not pdir.exists():
+        return out
+    for f in sorted(pdir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except Exception:
+            continue
+        out.append({"id": data.get("id"), "ssid": data.get("ssid"),
+                    "template_name": data.get("template_name"),
+                    "started_ts": data.get("started_ts"),
+                    "ended_ts": data.get("ended_ts"),
+                    "captures_count": data.get("captures_count", 0)})
+    return out
+
+
+def issue_reveal_token(session_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    _REVEAL_TOKENS[token] = (_time.time() + _REVEAL_TTL_S, session_id)
+    return token
+
+
+def consume_reveal_token(token: str, session_id: str) -> bool:
+    entry = _REVEAL_TOKENS.pop(token, None)
+    if not entry:
+        return False
+    expiry, sid = entry
+    if _time.time() > expiry:
+        return False
+    return hmac.compare_digest(sid, session_id)
+
+
+def portal_capture_path(session_id: str) -> _Path:
+    return _PORTAL_STATE_ROOT / "evilportal" / f"captures-{session_id}.jsonl"
+```
+
+- [ ] **Step 2: Add routes to `src/opsec_dashboard.py`**
+
+In `do_GET`:
+
+```python
+        if self.path == "/api/marauder/portal/sessions":
+            return self._send_json(200, {"sessions": marauder_client.list_portal_sessions()})
+
+        if self.path.startswith("/api/marauder/portal/session/"):
+            # Path like /api/marauder/portal/session/<id>/captures.jsonl[?wipe=1]
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(self.path)
+            parts = parsed.path.split("/")
+            # parts: ['', 'api', 'marauder', 'portal', 'session', '<id>', 'captures.jsonl']
+            if len(parts) == 7 and parts[6] == "captures.jsonl":
+                if not _is_local_peer(self.client_address[0]):
+                    return self._send_json(403, {"ok": False, "response": "remote not allowed"})
+                sid = parts[5]
+                token = self.headers.get("X-Drifter-Op-Confirm", "")
+                if not marauder_client.consume_reveal_token(token, sid):
+                    return self._send_json(403, {"ok": False,
+                                                  "response": "invalid or expired reveal token"})
+                cap_path = marauder_client.portal_capture_path(sid)
+                if not cap_path.exists():
+                    return self._send_json(404, {"ok": False, "response": "no captures"})
+                body = cap_path.read_bytes()
+                # Optional wipe
+                qs = parse_qs(parsed.query)
+                if qs.get("wipe", ["0"])[0] == "1":
+                    try:
+                        with open(cap_path, "wb") as f:
+                            f.write(b"")
+                        cap_path.unlink()
+                    except OSError:
+                        pass
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+```
+
+In `do_POST`:
+
+```python
+        if self.path.startswith("/api/marauder/portal/session/") and \
+                self.path.endswith("/reveal_token"):
+            if not _is_local_peer(self.client_address[0]):
+                return self._send_json(403, {"ok": False, "response": "remote not allowed"})
+            parts = self.path.split("/")
+            sid = parts[5]
+            token = marauder_client.issue_reveal_token(sid)
+            return self._send_json(200, {"ok": True, "token": token,
+                                         "expires_in_s": 60,
+                                         "header": "X-Drifter-Op-Confirm"})
+```
+
+- [ ] **Step 3: Restart drifter-opsec and verify**
+
+```bash
+sudo systemctl restart drifter-opsec
+sleep 3
+curl -fsS http://127.0.0.1:8090/api/marauder/portal/sessions | head -c 200
+```
+Expected: `{"sessions":[]}` (no sessions yet).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git -C /home/kali/drifter add src/opsec_marauder_client.py src/opsec_dashboard.py
+git -C /home/kali/drifter commit -m "$(cat <<'EOF'
+feat(marauder): opsec — portal sessions + HMAC reveal token route
+
+GET /api/marauder/portal/sessions lists portal audit records (no
+captures content). POST .../reveal_token issues a 60s one-shot token.
+GET .../captures.jsonl with X-Drifter-Op-Confirm: <token> streams
+the capture file once. Optional ?wipe=1 zeroes + unlinks after stream.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 4.8: Phase 4 acceptance + tag
+
+**Files:** (verification only)
+
+- [ ] **Step 1: Deploy updated bridge + opsec**
+
+```bash
+sudo cp /home/kali/drifter/src/marauder_bridge.py /opt/drifter/src/marauder_bridge.py
+sudo cp /home/kali/drifter/src/marauder_protocol.py /opt/drifter/src/marauder_protocol.py
+sudo cp /home/kali/drifter/src/marauder_allowlist.py /opt/drifter/src/marauder_allowlist.py
+sudo cp /home/kali/drifter/src/marauder_storage.py /opt/drifter/src/marauder_storage.py
+sudo cp /home/kali/drifter/src/marauder_features/evilportal.py /opt/drifter/src/marauder_features/evilportal.py
+sudo cp /home/kali/drifter/src/opsec_marauder_client.py /opt/drifter/src/opsec_marauder_client.py
+sudo cp /home/kali/drifter/src/opsec_dashboard.py /opt/drifter/src/opsec_dashboard.py
+sudo systemctl restart drifter-marauder drifter-opsec
+sleep 3
+systemctl is-active drifter-marauder drifter-opsec
+```
+
+- [ ] **Step 2: Full marauder suite**
+
+```bash
+cd /home/kali/drifter && pytest tests/test_marauder_*.py 2>&1 | tail -5
+```
+Expected: all PASS, 0 failures. Should be ~140 tests total.
+
+- [ ] **Step 3: Bench refusal still works**
+
+```bash
+/home/kali/drifter/scripts/test-bench-marauder.sh allowlist_refuse
+```
+
+- [ ] **Step 4: No cred leaks on the bus**
+
+```bash
+mosquitto_sub -R -h 127.0.0.1 -p 1883 -t 'drifter/marauder/#' -W 3 2>/dev/null | grep -i 'pass\|user\|email' | head
+```
+Expected: NO matches (no creds retained).
+
+- [ ] **Step 5: Tag Phase 4 acceptance**
+
+```bash
+git -C /home/kali/drifter tag -a marauder-phase4-accept -m "Phase 4 (EvilPortal) acceptance criteria met"
+git -C /home/kali/drifter tag -a marauder-complete -m "All 4 Marauder phases complete and accepted"
+```
+
+---
+
+## Final review checklist (executor: self-confirm before declaring complete)
+
+- [ ] All 4 phase-acceptance tags exist (`marauder-phase1-accept` through `marauder-phase4-accept`).
+- [ ] `marauder-complete` umbrella tag exists.
+- [ ] `pytest tests/test_marauder_*.py` → 0 failures.
+- [ ] `systemctl is-active drifter-marauder` → `active`.
+- [ ] `curl http://127.0.0.1:8080/healthz` → status `ok` or `ok-hw-pending`, `services_failed: []`.
+- [ ] `scripts/test-bench-marauder.sh allowlist_refuse` → green.
+- [ ] No raw cred field names (user/pass/email) appear in any retained MQTT message.
