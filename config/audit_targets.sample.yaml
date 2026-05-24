@@ -1,0 +1,33 @@
+# MZ1312 DRIFTER — audit target allowlist (sample)
+#
+# Copy to /opt/drifter/etc/audit_targets.yaml and populate before running
+# any HIGH-risk drifter-wifi-audit or drifter-marauder commands. Empty
+# lists mean every offensive command will be refused with "allowlist
+# empty" until you add entries.
+#
+# This file is the SINGLE source of truth for what targets the operator
+# has authorization to attack. The Pi has no other authorization mechanism.
+
+# Used by drifter-wifi-audit for handshake/PMKID capture.
+networks: []
+#  - ssid: "ACME-Pentest-Guest"
+#    bssid: "aa:bb:cc:dd:ee:ff"
+
+# Used by drifter-marauder for deauth / beacon spam / BLE / EvilPortal.
+# See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §5.3
+# for the full schema.
+marauder:
+  wifi: []
+  #  - ssid: "ACME-Pentest-Guest"
+  #  - bssid: "aa:bb:cc:dd:ee:ff"
+
+  ble: []
+  #  - mac: "11:22:33:44:55:66"
+  #  - area_authorized: true
+  #    area_label: "ACME HQ pen-test lab room 204"
+
+  evilportal: []
+  #  - ssid: "ACME-Pentest-Guest"
+  #    template: "acme-guest"
+  #    max_captures: 50
+  #    authorized_use: "ACME contract #1234 valid 2026-05-01 → 2026-06-30"
