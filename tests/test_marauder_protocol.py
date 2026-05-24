@@ -35,3 +35,32 @@ class TestEventParserScaffold:
     def test_parse_event_strips_trailing_whitespace(self):
         result = mp.parse_event("some line we have never seen before xyzzy\r\n")
         assert result == {"type": "unknown", "raw": "some line we have never seen before xyzzy"}
+
+
+class TestParseAP:
+    def test_parse_ap_typical_line(self):
+        line = "RSSI: -67 Ch: 6 BSSID: aa:bb:cc:dd:ee:ff ESSID: CoffeeShop"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "ap"
+        assert ev["rssi"] == -67
+        assert ev["ch"] == 6
+        assert ev["bssid"] == "aa:bb:cc:dd:ee:ff"
+        assert ev["ssid"] == "CoffeeShop"
+        assert "ts" in ev
+
+    def test_parse_ap_ssid_with_spaces(self):
+        line = "RSSI: -45 Ch: 11 BSSID: 11:22:33:44:55:66 ESSID: My Home Wi-Fi 5GHz"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "ap"
+        assert ev["ssid"] == "My Home Wi-Fi 5GHz"
+
+    def test_parse_ap_hidden_ssid(self):
+        """Marauder shows hidden SSIDs as empty string after ESSID:"""
+        line = "RSSI: -82 Ch: 1 BSSID: 99:88:77:66:55:44 ESSID: "
+        ev = mp.parse_event(line)
+        assert ev["type"] == "ap"
+        assert ev["ssid"] == ""
+
+    def test_parse_ap_negative_rssi_bounds(self):
+        ev = mp.parse_event("RSSI: -100 Ch: 13 BSSID: aa:bb:cc:dd:ee:ff ESSID: x")
+        assert ev["rssi"] == -100

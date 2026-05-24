@@ -33,8 +33,26 @@ def cmd_stop() -> str:
 import re
 import time
 
-# Filled in by subsequent tasks (parse_ap, parse_sta, parse_probe...).
-_PARSERS: list[tuple[re.Pattern, str, "callable"]] = []
+_RE_AP = re.compile(
+    r"^RSSI:\s*(?P<rssi>-?\d+)\s+"
+    r"Ch:\s*(?P<ch>\d+)\s+"
+    r"BSSID:\s*(?P<bssid>[0-9a-fA-F:]{17})\s+"
+    r"ESSID:\s?(?P<ssid>.*?)$"
+)
+
+
+def _build_ap(m: re.Match) -> dict:
+    return {
+        "rssi": int(m.group("rssi")),
+        "ch": int(m.group("ch")),
+        "bssid": m.group("bssid").lower(),
+        "ssid": m.group("ssid"),
+    }
+
+
+_PARSERS: list[tuple[re.Pattern, str, "callable"]] = [
+    (_RE_AP, "ap", _build_ap),
+]
 
 
 def parse_event(line: str) -> dict | None:
