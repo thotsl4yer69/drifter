@@ -112,3 +112,30 @@ class TestBeaconSpam:
         assert result["ok"] is False
         assert "NotAllowed" in result["response"]
         transport.send.assert_not_called()
+
+
+class TestProbeFlood:
+    def test_probe_flood_all_in_scope(self, tmp_path):
+        list_path = tmp_path / "list.txt"
+        list_path.write_text("AcmeWifi\nAcmeGuest\n")
+        transport = MagicMock()
+        transport.mode = "direct"
+        scope = {"wifi": [{"ssid": "AcmeWifi"}, {"ssid": "AcmeGuest"}],
+                 "ble": [], "evilportal": []}
+        result = aw.start_probe_flood(transport, scope,
+                                       beacon_list_path=str(list_path),
+                                       list_idx=0, duration_s=30)
+        assert result["ok"] is True
+        transport.send.assert_called_once_with("attack -t probe -l 0\r\n")
+
+    def test_probe_flood_partial_out_of_scope_refused(self, tmp_path):
+        list_path = tmp_path / "list.txt"
+        list_path.write_text("AcmeWifi\nBadGuest\n")
+        transport = MagicMock()
+        transport.mode = "direct"
+        scope = {"wifi": [{"ssid": "AcmeWifi"}], "ble": [], "evilportal": []}
+        result = aw.start_probe_flood(transport, scope,
+                                       beacon_list_path=str(list_path),
+                                       list_idx=0, duration_s=30)
+        assert result["ok"] is False
+        assert "BadGuest" in result["response"]

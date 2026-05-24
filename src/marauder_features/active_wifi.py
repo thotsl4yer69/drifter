@@ -110,3 +110,30 @@ def start_beacon_spam(transport, allowlist_scope: dict, *,
                 "duration_s": capped, "list_size": len(entries)}
 
     return {"ok": False, "response": f"unknown beacon mode={mode}"}
+
+
+def start_probe_flood(transport, allowlist_scope: dict, *,
+                     beacon_list_path: str, list_idx: int,
+                     duration_s: int) -> dict:
+    if transport.mode == "none":
+        return {"ok": False, "response": "no transport available"}
+    try:
+        entries = [
+            line.strip() for line in Path(beacon_list_path).read_text().splitlines()
+            if line.strip()
+        ]
+    except OSError as e:
+        return {"ok": False, "response": f"cannot read probe list: {e}"}
+    if not entries:
+        return {"ok": False, "response": "probe list is empty"}
+    out_of_scope = [
+        ssid for ssid in entries
+        if not ma.is_target_allowed(allowlist_scope, "wifi", ssid=ssid, bssid="")[0]
+    ]
+    if out_of_scope:
+        return {"ok": False,
+                "response": f"probe list contains out-of-scope SSIDs: {out_of_scope[:5]}"}
+    capped = min(int(duration_s), MAX_ATTACK_DURATION_S)
+    transport.send(mp.cmd_attack_probe_flood(list_idx=int(list_idx)))
+    return {"ok": True, "response": f"probe_flood ({len(entries)} SSIDs) started",
+            "duration_s": capped, "list_size": len(entries)}

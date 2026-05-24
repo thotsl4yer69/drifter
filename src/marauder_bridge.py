@@ -234,7 +234,10 @@ class Bridge:
                                               list_idx=args.get("list_idx"),
                                               duration_s=args.get("duration_s", 60))
         if command == "probe_flood":
-            return {"ok": True, "response": "probe_flood placeholder; wired in Task 2.8"}
+            return aw_feat.start_probe_flood(self.transport, self.allowlist,
+                                              beacon_list_path=args.get("beacon_list_path"),
+                                              list_idx=args.get("list_idx", 0),
+                                              duration_s=args.get("duration_s", 60))
         return {"ok": False, "response": f"command not implemented in this phase: {command}"}
 
 
