@@ -159,3 +159,30 @@ class TestParseActiveEvents:
         assert ev["type"] == "beacon_tx"
         assert ev["pkt_n"] == 42
         assert ev["ssid"] == "ACME-Pentest-Guest"
+
+
+class TestBLEBuilders:
+    def test_cmd_ble_scan_all(self):
+        assert mp.cmd_ble_scan("all") == "blescan -t all\r\n"
+
+    def test_cmd_ble_scan_airtag(self):
+        assert mp.cmd_ble_scan("airtag") == "blescan -t airtag\r\n"
+
+    def test_cmd_ble_scan_skim(self):
+        assert mp.cmd_ble_scan("skim") == "blescan -t skim\r\n"
+
+    def test_cmd_ble_scan_unknown_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="ble scan"):
+            mp.cmd_ble_scan("bogus")
+
+    def test_cmd_ble_spam_variants(self):
+        assert mp.cmd_ble_spam("swift") == "blespam -t swift\r\n"
+        assert mp.cmd_ble_spam("samsung") == "blespam -t samsung\r\n"
+        assert mp.cmd_ble_spam("apple") == "blespam -t apple\r\n"
+        assert mp.cmd_ble_spam("all") == "blespam -t all\r\n"
+
+    def test_cmd_ble_spam_unknown_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="ble spam"):
+            mp.cmd_ble_spam("bogus")

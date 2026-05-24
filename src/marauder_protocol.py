@@ -54,6 +54,22 @@ def cmd_attack_probe_flood(list_idx: int) -> str:
     return f"attack -t probe -l {int(list_idx)}\r\n"
 
 
+_BLE_SCAN_MODES = {"all", "airtag", "skim"}
+_BLE_SPAM_MODES = {"swift", "samsung", "apple", "all"}
+
+
+def cmd_ble_scan(mode: str) -> str:
+    if mode not in _BLE_SCAN_MODES:
+        raise ValueError(f"unknown ble scan mode={mode} (want one of {_BLE_SCAN_MODES})")
+    return f"blescan -t {mode}\r\n"
+
+
+def cmd_ble_spam(mode: str) -> str:
+    if mode not in _BLE_SPAM_MODES:
+        raise ValueError(f"unknown ble spam mode={mode} (want one of {_BLE_SPAM_MODES})")
+    return f"blespam -t {mode}\r\n"
+
+
 # ── Event parser ──────────────────────────────────────────────────────
 # Single regex table for all known Marauder line shapes. A firmware
 # bump that changes line format is a one-place edit here.
