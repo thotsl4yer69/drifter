@@ -105,6 +105,7 @@ import marauder_allowlist as ma
 from marauder_features import passive as passive_feat
 from marauder_features import active_wifi as aw_feat
 from marauder_features import ble as ble_feat
+from marauder_features import evilportal as portal_feat
 
 
 class Bridge:
@@ -257,7 +258,41 @@ class Bridge:
                                         mode=mode_map[command],
                                         duration_s=args.get("duration_s", 60),
                                         acked_warning=args.get("acked_warning", False))
+        if command == "evilportal_start":
+            from pathlib import Path as _P
+            return portal_feat.start(self.transport, self.allowlist,
+                                      template_root=_P(args.get("template_root",
+                                          "/opt/drifter/etc/marauder/portals")),
+                                      ssid=args.get("ssid", ""),
+                                      template_name=args.get("template_name", ""),
+                                      duration_s=args.get("duration_s", 600))
+        if command == "evilportal_stop":
+            return portal_feat.stop(self.transport)
         return {"ok": False, "response": f"command not implemented in this phase: {command}"}
+
+    def handle_parser_event(self, event: dict, *, session_id: str | None,
+                            capture_writer) -> None:
+        """Route an event from the transport reader thread.
+
+        For cred_capture: write to disk (capture_writer), publish only a
+        redacted count notification. Never publishes raw fields on MQTT.
+        """
+        et = event.get("type")
+        if et == "cred_capture":
+            if session_id:
+                capture_writer(session_id=session_id,
+                               fields=event.get("fields", {}))
+            # Redacted notification only — count, not content
+            self._publish("drifter/marauder/event", {
+                "type": "cred_capture_count",
+                "session": session_id,
+                "count": 1,
+                "ts": event.get("ts", 0),
+            })
+            return
+        # All other event types just forward to /event as generic notification.
+        if et:
+            self._publish("drifter/marauder/event", event)
 
 
 import signal

@@ -203,3 +203,55 @@ class TestBLEDispatch:
                     transport.send.assert_not_called()
                     return
         raise AssertionError("no event for op_id=b")
+
+
+class TestEvilPortalDispatch:
+    def test_evilportal_start_unauthorized_refused(self, tmp_path):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        # Token first
+        bridge.dispatch({"id": "a", "command": "evilportal_start",
+                         "args": {"ssid": "ACME", "template_name": "x",
+                                  "template_root": str(tmp_path)}})
+        token = None
+        for c in mqtt.publish.call_args_list:
+            if c.args[0] == "drifter/marauder/event":
+                ev = json.loads(c.args[1])
+                if ev["id"] == "a":
+                    token = ev.get("confirm_token")
+        assert token
+        # Confirm — should refuse (empty allowlist)
+        mqtt.publish.reset_mock()
+        bridge.dispatch({"id": "b", "command": "evilportal_start",
+                         "args": {"ssid": "ACME", "template_name": "x",
+                                  "template_root": str(tmp_path)},
+                         "confirm_token": token})
+        seen = False
+        for c in mqtt.publish.call_args_list:
+            if c.args[0] == "drifter/marauder/event":
+                ev = json.loads(c.args[1])
+                if ev["id"] == "b":
+                    seen = True
+                    assert ev["ok"] is False
+        assert seen
+
+    def test_cred_capture_never_publishes_raw_to_mqtt(self):
+        """When parse_event yields type=cred_capture, the bridge must
+        write to the capture file and publish ONLY a count notification."""
+        from pathlib import Path
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        bridge.handle_parser_event({"type": "cred_capture",
+                                     "fields": {"user": "alice", "pass": "x"},
+                                     "ts": 1.0},
+                                    session_id="sess1",
+                                    capture_writer=MagicMock(return_value=Path("/tmp/x")))
+        # Find publishes and assert none contain "alice" or "pass=x"
+        for c in mqtt.publish.call_args_list:
+            body = c.args[1]
+            assert "alice" not in body, f"raw creds leaked to MQTT: {body}"
+            assert '"pass"' not in body, f"raw 'pass' field leaked: {body}"
+        # But a count notification should be published
+        found_count = any(
+            "cred_capture_count" in c.args[1]
+            for c in mqtt.publish.call_args_list
+        )
+        assert found_count, f"no cred_capture_count published; got {mqtt.publish.call_args_list}"
