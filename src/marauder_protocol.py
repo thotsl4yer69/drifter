@@ -70,6 +70,29 @@ def cmd_ble_spam(mode: str) -> str:
     return f"blespam -t {mode}\r\n"
 
 
+def cmd_evilportal_start(ssid: str) -> str:
+    # Strip embedded double-quotes to prevent CLI injection; truncate at 32
+    # (Marauder/IEEE Wi-Fi SSID max).
+    safe = ssid.replace('"', "").replace("\n", "").replace("\r", "")[:32]
+    return f'evilportal -s "{safe}"\r\n'
+
+
+def cmd_evilportal_stop() -> str:
+    return "evilportal -s stop\r\n"
+
+
+def cmd_evilportal_load_template(html_bytes: bytes) -> list[str]:
+    """Upload portal HTML as a sequence of CLI lines."""
+    CHUNK = 1024
+    text = html_bytes.decode("utf-8", errors="replace")
+    text = text.replace("\r", " ").replace("\n", " ")
+    out: list[str] = []
+    for i in range(0, len(text), CHUNK):
+        out.append(f"evilportal -p append {text[i:i+CHUNK]}\r\n")
+    out.append("evilportal -p commit\r\n")
+    return out
+
+
 # ── Event parser ──────────────────────────────────────────────────────
 # Single regex table for all known Marauder line shapes. A firmware
 # bump that changes line format is a one-place edit here.
