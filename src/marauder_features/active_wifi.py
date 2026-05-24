@@ -1,11 +1,15 @@
-"""MZ1312 DRIFTER — Marauder bridge module: active Wi-Fi (deauth/beacon/probe-flood).
+"""MZ1312 DRIFTER — Marauder bridge module: active Wi-Fi (deauth/beacon/probe-flood)."""
 
-See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md for
-the contract this module implements. Implementation lands across the
-plan in docs/superpowers/plans/2026-05-24-marauder-bridge.md.
-"""
+import marauder_protocol as mp
 
-if __name__ == "__main__":
-    raise NotImplementedError(
-        "drifter-marauder scaffold — module not yet implemented; see plan"
-    )
+MAX_ATTACK_DURATION_S = 300
+
+
+def start_deauth_detect(transport, *, duration_s: int) -> dict:
+    """Passive deauth frame listener. LOW risk — no RF emission."""
+    if transport.mode == "none":
+        return {"ok": False, "response": "no transport available"}
+    capped = min(int(duration_s), MAX_ATTACK_DURATION_S)
+    transport.send(mp.cmd_attack_deauth_detect())
+    return {"ok": True, "response": "deauth_detect started",
+            "duration_s": capped}
