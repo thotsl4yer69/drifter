@@ -17,3 +17,21 @@ class TestPassiveBuilders:
 
     def test_cmd_stop(self):
         assert mp.cmd_stop() == "stopscan\r\n"
+
+
+class TestEventParserScaffold:
+    def test_parse_event_unknown_line_returns_unknown_type(self):
+        """Unknown lines must return {type:'unknown', raw:...}, NOT None.
+        This makes firmware drift observable instead of silent."""
+        result = mp.parse_event("some line we have never seen before xyzzy")
+        assert result == {"type": "unknown", "raw": "some line we have never seen before xyzzy"}
+
+    def test_parse_event_empty_line_returns_none(self):
+        """Empty / whitespace-only lines are pure noise — return None."""
+        assert mp.parse_event("") is None
+        assert mp.parse_event("   ") is None
+        assert mp.parse_event("\r\n") is None
+
+    def test_parse_event_strips_trailing_whitespace(self):
+        result = mp.parse_event("some line we have never seen before xyzzy\r\n")
+        assert result == {"type": "unknown", "raw": "some line we have never seen before xyzzy"}
