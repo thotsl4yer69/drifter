@@ -47,3 +47,45 @@ class TestLoadAllowlist:
         p.write_text("marauder:\n  wifi:\n    - {malformed")
         result = ma.load_marauder_allowlist(p)
         assert result == {"wifi": [], "ble": [], "evilportal": []}
+
+
+class TestIsTargetAllowedWifi:
+    def _scope(self, wifi_entries):
+        return {"wifi": wifi_entries, "ble": [], "evilportal": []}
+
+    def test_empty_wifi_refuses_everything(self):
+        ok, reason = ma.is_target_allowed(
+            self._scope([]), "wifi", ssid="anything", bssid="aa:bb:cc:dd:ee:ff"
+        )
+        assert ok is False
+        assert "empty" in reason.lower()
+
+    def test_ssid_match_allows(self):
+        ok, reason = ma.is_target_allowed(
+            self._scope([{"ssid": "ACME-Pentest"}]),
+            "wifi", ssid="ACME-Pentest", bssid="aa:bb:cc:dd:ee:ff",
+        )
+        assert ok is True
+        assert reason == "matched ssid=ACME-Pentest"
+
+    def test_bssid_match_allows(self):
+        ok, _ = ma.is_target_allowed(
+            self._scope([{"bssid": "aa:bb:cc:dd:ee:ff"}]),
+            "wifi", ssid="WhateverSSID", bssid="aa:bb:cc:dd:ee:ff",
+        )
+        assert ok is True
+
+    def test_bssid_match_is_case_insensitive(self):
+        ok, _ = ma.is_target_allowed(
+            self._scope([{"bssid": "AA:BB:CC:DD:EE:FF"}]),
+            "wifi", ssid="x", bssid="aa:bb:cc:dd:ee:ff",
+        )
+        assert ok is True
+
+    def test_no_match_refuses(self):
+        ok, reason = ma.is_target_allowed(
+            self._scope([{"ssid": "ACME-Pentest"}]),
+            "wifi", ssid="SomeoneElsesWiFi", bssid="99:88:77:66:55:44",
+        )
+        assert ok is False
+        assert "no match" in reason.lower()
