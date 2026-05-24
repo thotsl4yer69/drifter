@@ -165,3 +165,41 @@ class TestActiveWifiDispatch:
                     assert ev["ok"] is True
         assert found
         transport.send.assert_called_with("attack -t deauth\r\n")
+
+
+class TestBLEDispatch:
+    def test_ble_scan_airtag_low_risk(self):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        bridge.dispatch({"id": "x", "command": "ble_scan_airtag",
+                         "args": {"duration_s": 60}})
+        transport.send.assert_called_once_with("blescan -t airtag\r\n")
+
+    def test_ble_spam_high_risk_refused_when_empty(self):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+
+        # First call → confirm_token
+        bridge.dispatch({"id": "a", "command": "ble_spam_swift_pair",
+                         "args": {"duration_s": 30}})
+        token = None
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "a":
+                    token = ev.get("confirm_token")
+        assert token
+
+        # Second call → refused (empty allowlist)
+        mqtt.publish.reset_mock()
+        bridge.dispatch({"id": "b", "command": "ble_spam_swift_pair",
+                         "args": {"duration_s": 30},
+                         "confirm_token": token})
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "b":
+                    assert ev["ok"] is False
+                    assert "empty" in ev["response"].lower() or \
+                           "area_authorized" in ev["response"].lower()
+                    transport.send.assert_not_called()
+                    return
+        raise AssertionError("no event for op_id=b")

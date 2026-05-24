@@ -104,6 +104,7 @@ import json
 import marauder_allowlist as ma
 from marauder_features import passive as passive_feat
 from marauder_features import active_wifi as aw_feat
+from marauder_features import ble as ble_feat
 
 
 class Bridge:
@@ -238,6 +239,24 @@ class Bridge:
                                               beacon_list_path=args.get("beacon_list_path"),
                                               list_idx=args.get("list_idx", 0),
                                               duration_s=args.get("duration_s", 60))
+        if command in ("ble_scan_all", "ble_scan_airtag", "ble_scan_skim"):
+            mode_map = {"ble_scan_all": "all",
+                        "ble_scan_airtag": "airtag",
+                        "ble_scan_skim": "skim"}
+            return ble_feat.start_scan(self.transport, mode=mode_map[command],
+                                        duration_s=args.get("duration_s", 60))
+        if command in ("ble_spam_swift_pair", "ble_spam_easy_setup",
+                       "ble_spam_apple_proximity", "ble_spam_all"):
+            mode_map = {
+                "ble_spam_swift_pair": "swift",
+                "ble_spam_easy_setup": "samsung",
+                "ble_spam_apple_proximity": "apple",
+                "ble_spam_all": "all",
+            }
+            return ble_feat.start_spam(self.transport, self.allowlist,
+                                        mode=mode_map[command],
+                                        duration_s=args.get("duration_s", 60),
+                                        acked_warning=args.get("acked_warning", False))
         return {"ok": False, "response": f"command not implemented in this phase: {command}"}
 
 
