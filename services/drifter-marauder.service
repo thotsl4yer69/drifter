@@ -11,10 +11,10 @@ User=drifter
 Group=drifter
 SupplementaryGroups=dialout
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/opt/drifter/src
+Environment=PYTHONPATH=/opt/drifter
 StateDirectory=drifter-marauder
-WorkingDirectory=/var/lib/drifter-marauder
-ExecStart=/opt/drifter/venv/bin/python /opt/drifter/src/marauder_bridge.py
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python /opt/drifter/marauder_bridge.py
 Restart=on-failure
 RestartSec=10
 
