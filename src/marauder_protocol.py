@@ -23,6 +23,37 @@ def cmd_stop() -> str:
     return "stopscan\r\n"
 
 
+def cmd_attack_deauth(target_idx: int | None = None,
+                      mode: str = "single") -> str:
+    if mode == "all":
+        return "attack -t deauth -c\r\n"
+    if mode == "single":
+        if target_idx is None:
+            return "attack -t deauth\r\n"
+        return f"attack -t deauth -a {int(target_idx)}\r\n"
+    raise ValueError(f"unknown deauth mode={mode}")
+
+
+def cmd_attack_deauth_detect() -> str:
+    return "attack -t deauth -d\r\n"
+
+
+def cmd_attack_beacon(mode: str, list_idx: int | None = None) -> str:
+    if mode == "random":
+        return "attack -t beacon -r\r\n"
+    if mode == "rickroll":
+        return "attack -t rickroll\r\n"
+    if mode == "list":
+        if list_idx is None:
+            raise ValueError("list_idx required for beacon mode=list")
+        return f"attack -t beacon -l {int(list_idx)}\r\n"
+    raise ValueError(f"unknown beacon mode={mode}")
+
+
+def cmd_attack_probe_flood(list_idx: int) -> str:
+    return f"attack -t probe -l {int(list_idx)}\r\n"
+
+
 # ── Event parser ──────────────────────────────────────────────────────
 # Single regex table for all known Marauder line shapes. A firmware
 # bump that changes line format is a one-place edit here.
