@@ -138,3 +138,42 @@ class TestProbeFlipperProxy:
         with patch("marauder_transport.requests.get", return_value=fake_response):
             ok, detail = mt.probe_flipper_proxy("http://127.0.0.1:8080")
             assert ok is False
+
+
+class TestAutodetect:
+    def test_autodetect_picks_direct_when_present(self, tmp_path):
+        """Direct USB wins over proxy when both present."""
+        # Create a fake by-id symlink with a real pty backend
+        slave_path, master, _ = TestProbeDirect()._pty_pair(b"Marauder ready>")
+        try:
+            (tmp_path / "usb-Espressif_303a_1001_FF-if00").symlink_to(slave_path)
+            t = mt.MarauderTransport(
+                by_id_dir=tmp_path,
+                dashboard_url="http://127.0.0.1:8080",
+                probe_timeout=1.0,
+            )
+            t.autodetect()
+            assert t.mode == "direct"
+            assert t.port_path == str(tmp_path / "usb-Espressif_303a_1001_FF-if00")
+        finally:
+            os.close(master)
+
+    def test_autodetect_falls_back_to_proxy(self, tmp_path):
+        """No direct hardware → tries flipper proxy."""
+        fake_response = MagicMock(status_code=200)
+        fake_response.json.return_value = {"marauder_module_present": True}
+        with patch("marauder_transport.requests.get", return_value=fake_response):
+            t = mt.MarauderTransport(by_id_dir=tmp_path,
+                                     dashboard_url="http://127.0.0.1:8080")
+            t.autodetect()
+            assert t.mode == "proxy"
+
+    def test_autodetect_no_hardware(self, tmp_path):
+        """Neither direct nor proxy → mode='none'."""
+        with patch("marauder_transport.requests.get",
+                   side_effect=ConnectionError("refused")):
+            t = mt.MarauderTransport(by_id_dir=tmp_path,
+                                     dashboard_url="http://127.0.0.1:8080")
+            t.autodetect()
+            assert t.mode == "none"
+            assert t.port_path is None

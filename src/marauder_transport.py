@@ -40,6 +40,7 @@ def enumerate_serial_candidates(by_id_dir: Path | None = None) -> list[str]:
     return out
 
 
+import threading
 import time
 
 try:
@@ -110,6 +111,56 @@ def probe_flipper_proxy(
     if payload.get("marauder_module_present"):
         return True, f"marauder module via flipper: caps={payload.get('capabilities', [])}"
     return False, "marauder module not present on flipper"
+
+
+class MarauderTransport:
+    """Holds the chosen transport for the session. autodetect() picks
+    direct USB or Flipper proxy or 'none'. Subsequent send/receive
+    operations dispatch to the chosen path.
+    """
+
+    def __init__(
+        self,
+        by_id_dir: Path | None = None,
+        dashboard_url: str = "http://127.0.0.1:8080",
+        probe_timeout: float = 1.0,
+    ):
+        self.by_id_dir = by_id_dir
+        self.dashboard_url = dashboard_url
+        self.probe_timeout = probe_timeout
+        self.mode: str = "none"  # "direct" | "proxy" | "none"
+        self.port_path: str | None = None
+        self.hw_detail: str = ""
+        self._serial = None  # opened on first send for direct mode
+
+    def autodetect(self) -> str:
+        """Probe direct first, then proxy. Sets self.mode and returns it."""
+        # 1) Direct USB
+        for candidate in enumerate_serial_candidates(self.by_id_dir):
+            ok, detail = probe_direct(candidate, timeout=self.probe_timeout)
+            if ok:
+                self.mode = "direct"
+                self.port_path = candidate
+                self.hw_detail = detail
+                log.info("transport=direct port=%s", candidate)
+                return self.mode
+
+        # 2) Flipper proxy
+        ok, detail = probe_flipper_proxy(self.dashboard_url,
+                                          timeout=self.probe_timeout)
+        if ok:
+            self.mode = "proxy"
+            self.port_path = None
+            self.hw_detail = detail
+            log.info("transport=proxy detail=%s", detail)
+            return self.mode
+
+        # 3) Nothing
+        self.mode = "none"
+        self.port_path = None
+        self.hw_detail = "no hardware found (no direct ESP32, no Flipper marauder module)"
+        log.warning("transport=none — staying idle")
+        return self.mode
 
 
 if __name__ == "__main__":
