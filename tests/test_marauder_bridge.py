@@ -123,3 +123,45 @@ class TestDispatch:
                     assert ev["ok"] is False
                     assert "allowlist" in ev["response"].lower()
         assert found
+
+
+class TestActiveWifiDispatch:
+    def test_deauth_detect_dispatches_without_confirm(self):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        bridge.dispatch({"id": "x", "command": "deauth_detect",
+                         "args": {"duration_s": 30}})
+        transport.send.assert_called_once_with("attack -t deauth -d\r\n")
+
+    def test_deauth_attack_in_scope_executes_after_confirm(self):
+        bridge, transport, mqtt = TestDispatch()._make_bridge()
+        bridge.allowlist = {"wifi": [{"bssid": "aa:bb:cc:dd:ee:ff"}],
+                            "ble": [], "evilportal": []}
+
+        # First call → token
+        bridge.dispatch({"id": "a", "command": "deauth_attack",
+                         "args": {"bssid": "aa:bb:cc:dd:ee:ff",
+                                  "ssid": "ACME"}})
+        token = None
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "a":
+                    token = ev.get("confirm_token")
+        assert token
+
+        # Second call with token → executes
+        mqtt.publish.reset_mock()
+        bridge.dispatch({"id": "b", "command": "deauth_attack",
+                         "args": {"bssid": "aa:bb:cc:dd:ee:ff",
+                                  "ssid": "ACME"},
+                         "confirm_token": token})
+        # find the matching event with id=b
+        found = False
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "b":
+                    found = True
+                    assert ev["ok"] is True
+        assert found
+        transport.send.assert_called_with("attack -t deauth\r\n")
