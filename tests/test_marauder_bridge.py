@@ -46,3 +46,80 @@ class TestPendingConfirms:
         time.sleep(0.1)
         store.sweep()
         assert store.pop(token) is None
+
+
+import json
+from unittest.mock import MagicMock
+
+
+class TestDispatch:
+    def _make_bridge(self, transport_mode="direct"):
+        transport = MagicMock()
+        transport.mode = transport_mode
+        transport.hw_detail = "fake"
+        mqtt = MagicMock()
+        bridge = mb.Bridge(transport=transport, mqtt_client=mqtt,
+                           allowlist_scope={"wifi": [], "ble": [], "evilportal": []},
+                           session_writer=MagicMock())
+        return bridge, transport, mqtt
+
+    def test_dispatch_scan_ap_publishes_event_with_id(self):
+        bridge, _, mqtt = self._make_bridge()
+        payload = {"id": "op-uuid-1", "command": "scan_ap",
+                   "args": {"mode": "ap", "duration_s": 30}}
+        bridge.dispatch(payload)
+        # Look for a publish to drifter/marauder/event with id echo
+        found = False
+        for call in mqtt.publish.call_args_list:
+            topic, body = call.args[0], call.args[1]
+            if topic == "drifter/marauder/event":
+                ev = json.loads(body)
+                if ev.get("id") == "op-uuid-1":
+                    found = True
+                    assert ev["ok"] is True
+        assert found, f"No matching event publish: {mqtt.publish.call_args_list}"
+
+    def test_dispatch_high_risk_without_token_returns_confirm_required(self):
+        bridge, _, mqtt = self._make_bridge()
+        payload = {"id": "op-uuid-2", "command": "deauth_attack",
+                   "args": {"target_bssid": "aa:bb:cc:dd:ee:ff"}}
+        bridge.dispatch(payload)
+        for call in mqtt.publish.call_args_list:
+            topic, body = call.args[0], call.args[1]
+            if topic == "drifter/marauder/event":
+                ev = json.loads(body)
+                if ev["id"] == "op-uuid-2":
+                    assert ev["ok"] is False
+                    assert "confirm" in ev["response"].lower()
+                    assert "confirm_token" in ev
+                    return
+        raise AssertionError("no event for op-uuid-2")
+
+    def test_dispatch_high_risk_empty_allowlist_refuses(self):
+        bridge, _, mqtt = self._make_bridge()
+        # First call gets confirm token
+        bridge.dispatch({"id": "a", "command": "deauth_attack",
+                         "args": {"target_bssid": "aa:bb:cc:dd:ee:ff"}})
+        token = None
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "a":
+                    token = ev.get("confirm_token")
+                    break
+        assert token, "expected token on first call"
+
+        mqtt.publish.reset_mock()
+        # Second call with token still refuses (allowlist empty)
+        bridge.dispatch({"id": "b", "command": "deauth_attack",
+                         "args": {"target_bssid": "aa:bb:cc:dd:ee:ff"},
+                         "confirm_token": token})
+        found = False
+        for call in mqtt.publish.call_args_list:
+            if call.args[0] == "drifter/marauder/event":
+                ev = json.loads(call.args[1])
+                if ev["id"] == "b":
+                    found = True
+                    assert ev["ok"] is False
+                    assert "allowlist" in ev["response"].lower()
+        assert found
