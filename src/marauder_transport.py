@@ -162,6 +162,58 @@ class MarauderTransport:
         log.warning("transport=none — staying idle")
         return self.mode
 
+    def start(self, line_callback) -> None:
+        """Open the serial port (direct mode) and start the reader thread.
+        line_callback is invoked with each received line (no trailing \\r\\n).
+        """
+        if self.mode != "direct":
+            raise RuntimeError(f"start() only supported in direct mode (got {self.mode})")
+        if serial is None:
+            raise RuntimeError("pyserial not installed")
+        self._serial = serial.Serial(self.port_path, baudrate=115200, timeout=0.25)
+        self._line_callback = line_callback
+        self._stop_event = threading.Event()
+        self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader_thread.start()
+
+    def stop(self) -> None:
+        if getattr(self, "_stop_event", None):
+            self._stop_event.set()
+        if getattr(self, "_reader_thread", None):
+            self._reader_thread.join(timeout=2.0)
+        if self._serial:
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+            self._serial = None
+
+    def send(self, text: str) -> None:
+        if self.mode != "direct":
+            raise RuntimeError(f"send() only supported in direct mode (got {self.mode})")
+        if not self._serial:
+            raise RuntimeError("transport not started")
+        self._serial.write(text.encode("utf-8"))
+        self._serial.flush()
+
+    def _read_loop(self) -> None:
+        buf = b""
+        while not self._stop_event.is_set():
+            try:
+                chunk = self._serial.read(256)
+            except Exception as e:
+                log.error("read error: %s", e)
+                break
+            if not chunk:
+                continue
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                try:
+                    self._line_callback(line.decode("utf-8", errors="replace").rstrip("\r"))
+                except Exception:
+                    log.exception("line callback raised")
+
 
 if __name__ == "__main__":
     raise NotImplementedError("marauder_transport is a library; import don't run")
