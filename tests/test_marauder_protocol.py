@@ -64,3 +64,20 @@ class TestParseAP:
     def test_parse_ap_negative_rssi_bounds(self):
         ev = mp.parse_event("RSSI: -100 Ch: 13 BSSID: aa:bb:cc:dd:ee:ff ESSID: x")
         assert ev["rssi"] == -100
+
+
+class TestParseSTA:
+    def test_parse_sta_typical_line(self):
+        line = "RSSI: -82 BSSID: aa:bb:cc:dd:ee:ff STA: 11:22:33:44:55:66 ESSID: CoffeeShop"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "station"
+        assert ev["rssi"] == -82
+        assert ev["ap_bssid"] == "aa:bb:cc:dd:ee:ff"
+        assert ev["sta_mac"] == "11:22:33:44:55:66"
+        assert ev["ssid"] == "CoffeeShop"
+
+    def test_parse_sta_does_not_match_ap_pattern(self):
+        """STA lines lack 'Ch:' — must not be claimed by the AP parser."""
+        line = "RSSI: -82 BSSID: aa:bb:cc:dd:ee:ff STA: 11:22:33:44:55:66 ESSID: x"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "station"  # not 'ap'
