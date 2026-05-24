@@ -91,6 +91,52 @@ ATTACK_REQUIRED_FIELDS = {
 }
 
 
+PORTAL_REQUIRED_FIELDS = {
+    "id", "operator_ip", "started_ts", "ended_ts",
+    "ssid", "template_name", "template_sha256",
+    "allowlist_sha256", "allowlist_entry",
+    "transport", "captures_count", "captures_file",
+    "stop_reason",
+}
+
+
+def write_portal_capture(*, state_root: Path | str, session_id: str,
+                         fields: dict) -> Path:
+    """Append one captured form post to the session's JSONL.
+
+    File is 0600, owned by the running process's user. This bypasses
+    MQTT entirely — captured content is never published on the bus.
+    """
+    root = Path(state_root)
+    out_dir = root / "evilportal"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"captures-{session_id}.jsonl"
+    line = json.dumps({"fields": fields, "ts": time.time()},
+                      separators=(",", ":")) + "\n"
+    # O_APPEND + 0600 on first create
+    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+    finally:
+        os.close(fd)
+    # Re-apply 0600 in case existing file had different mode
+    os.chmod(out_path, 0o600)
+    return out_path
+
+
+def write_portal_audit(*, state_root: Path | str, record: dict) -> Path:
+    """Write a portal session audit record. Required-field invariant."""
+    missing = PORTAL_REQUIRED_FIELDS - set(record.keys())
+    if missing:
+        raise ValueError(f"missing required portal-audit fields: {sorted(missing)}")
+    root = Path(state_root)
+    out_dir = root / "evilportal"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{record['id']}.json"
+    out_path.write_text(json.dumps(record, indent=2))
+    return out_path
+
+
 def write_attack_audit(*, state_root: Path | str, record: dict) -> Path:
     """Write a HIGH-risk attack session record to attacks/<id>.json.
 
