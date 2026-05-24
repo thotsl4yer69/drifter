@@ -136,3 +136,26 @@ class TestActiveWifiBuilders:
 
     def test_cmd_attack_probe_flood(self):
         assert mp.cmd_attack_probe_flood(list_idx=1) == "attack -t probe -l 1\r\n"
+
+
+class TestParseActiveEvents:
+    def test_parse_deauth_seen(self):
+        line = "Deauth detected from aa:bb:cc:dd:ee:ff -> 11:22:33:44:55:66"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "deauth_seen"
+        assert ev["from_mac"] == "aa:bb:cc:dd:ee:ff"
+        assert ev["to_mac"] == "11:22:33:44:55:66"
+
+    def test_parse_deauth_tx(self):
+        line = "Sent deauth pkt #1240 target=aa:bb:cc:dd:ee:ff"
+        ev = mp.parse_event(line)
+        assert ev["type"] == "deauth_tx"
+        assert ev["pkt_n"] == 1240
+        assert ev["target_bssid"] == "aa:bb:cc:dd:ee:ff"
+
+    def test_parse_beacon_tx(self):
+        line = 'Sent beacon pkt #42 ssid="ACME-Pentest-Guest"'
+        ev = mp.parse_event(line)
+        assert ev["type"] == "beacon_tx"
+        assert ev["pkt_n"] == 42
+        assert ev["ssid"] == "ACME-Pentest-Guest"

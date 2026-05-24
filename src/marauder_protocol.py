@@ -112,11 +112,47 @@ def _build_probe(m: re.Match) -> dict:
     }
 
 
+_RE_DEAUTH_SEEN = re.compile(
+    r"^Deauth detected from\s*(?P<from_mac>[0-9a-fA-F:]{17})\s*"
+    r"(?:->|→)\s*(?P<to_mac>[0-9a-fA-F:]{17})\s*$"
+)
+
+
+def _build_deauth_seen(m: re.Match) -> dict:
+    return {"from_mac": m.group("from_mac").lower(),
+            "to_mac": m.group("to_mac").lower()}
+
+
+_RE_DEAUTH_TX = re.compile(
+    r"^Sent deauth pkt #(?P<pkt_n>\d+)\s+target=(?P<target>[0-9a-fA-F:]{17})\s*$"
+)
+
+
+def _build_deauth_tx(m: re.Match) -> dict:
+    return {"pkt_n": int(m.group("pkt_n")),
+            "target_bssid": m.group("target").lower()}
+
+
+_RE_BEACON_TX = re.compile(
+    r'^Sent beacon pkt #(?P<pkt_n>\d+)\s+ssid="(?P<ssid>.*)"\s*$'
+)
+
+
+def _build_beacon_tx(m: re.Match) -> dict:
+    return {"pkt_n": int(m.group("pkt_n")), "ssid": m.group("ssid")}
+
+
 _PARSERS: list[tuple[re.Pattern, str, "callable"]] = [
     (_RE_STA, "station", _build_sta),
     (_RE_AP, "ap", _build_ap),
     (_RE_PROBE, "probe", _build_probe),
 ]
+
+_PARSERS.extend([
+    (_RE_DEAUTH_SEEN, "deauth_seen", _build_deauth_seen),
+    (_RE_DEAUTH_TX, "deauth_tx", _build_deauth_tx),
+    (_RE_BEACON_TX, "beacon_tx", _build_beacon_tx),
+])
 
 
 def parse_event(line: str) -> dict | None:
