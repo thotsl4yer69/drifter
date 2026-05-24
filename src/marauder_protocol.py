@@ -33,6 +33,23 @@ def cmd_stop() -> str:
 import re
 import time
 
+_RE_STA = re.compile(
+    r"^RSSI:\s*(?P<rssi>-?\d+)\s+"
+    r"BSSID:\s*(?P<ap_bssid>[0-9a-fA-F:]{17})\s+"
+    r"STA:\s*(?P<sta_mac>[0-9a-fA-F:]{17})\s+"
+    r"ESSID:\s?(?P<ssid>.*?)$"
+)
+
+
+def _build_sta(m: re.Match) -> dict:
+    return {
+        "rssi": int(m.group("rssi")),
+        "ap_bssid": m.group("ap_bssid").lower(),
+        "sta_mac": m.group("sta_mac").lower(),
+        "ssid": m.group("ssid"),
+    }
+
+
 _RE_AP = re.compile(
     r"^RSSI:\s*(?P<rssi>-?\d+)\s+"
     r"Ch:\s*(?P<ch>\d+)\s+"
@@ -51,6 +68,7 @@ def _build_ap(m: re.Match) -> dict:
 
 
 _PARSERS: list[tuple[re.Pattern, str, "callable"]] = [
+    (_RE_STA, "station", _build_sta),
     (_RE_AP, "ap", _build_ap),
 ]
 
