@@ -35,6 +35,8 @@ from urllib.parse import urlparse
 sys.path.insert(0, '/opt/drifter')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import opsec_marauder_client as marauder_client  # noqa: E402
+
 from config import (  # noqa: E402
     MODE_STATE_PATH, DEFAULT_MODE, MODES, MQTT_HOST, MQTT_PORT, TOPICS,
 )
@@ -235,6 +237,11 @@ CACHE = MqttCache()
 _MQTT_CLIENT = None  # set on connect; used to publish flipper commands
 
 
+def _is_local_peer(peer: str) -> bool:
+    """Hotspot-only ACL — 127.0.0.1 + 10.42.0.0/24 Wi-Fi hotspot."""
+    return peer == '127.0.0.1' or peer.startswith('10.42.0.')
+
+
 def _start_mqtt() -> None:
     """Subscribe to flipper + wardrive topics in a daemon thread."""
     global _MQTT_CLIENT
@@ -286,6 +293,7 @@ def _start_mqtt() -> None:
 
     global _MQTT_CLIENT
     _MQTT_CLIENT = client
+    marauder_client.install(client)
     threading.Thread(target=runner, name='mqtt-sub', daemon=True).start()
 
 
@@ -924,6 +932,17 @@ class OpsecHandler(BaseHTTPRequestHandler):
         if path == '/api/mqtt/cache':
             self._send_json(200, CACHE.snapshot())
             return
+        if path == '/api/marauder/status':
+            self._send_json(200, marauder_client.get_status())
+            return
+        if path.startswith('/api/marauder/scan/recent'):
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            stream = qs.get('stream', ['ap'])[0]
+            n = int(qs.get('n', ['200'])[0])
+            events = marauder_client.get_scan_recent(stream, n=n)
+            self._send_json(200, {'stream': stream, 'count': len(events), 'events': events})
+            return
         self.send_error(404)
 
     # ── POST ───────────────────────────────────────────────────────────
@@ -963,6 +982,39 @@ class OpsecHandler(BaseHTTPRequestHandler):
                 'rc':        r.returncode,
                 'stderr':    r.stderr.strip(),
             })
+            return
+        if path == '/api/marauder/cmd':
+            if not _is_local_peer(self.client_address[0]):
+                self._send_json(403, {'ok': False, 'response': 'remote not allowed'})
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                body = json.loads(self.rfile.read(length).decode() or '{}')
+            except Exception as e:
+                self._send_json(400, {'ok': False, 'response': f'bad body: {e}'})
+                return
+            op_id = marauder_client.publish_cmd(
+                _MQTT_CLIENT,
+                command=body.get('command', ''),
+                args=body.get('args') or {},
+                confirm_token=body.get('confirm_token'),
+            )
+            self._send_json(200, {'ok': True, 'op_id': op_id,
+                                  'note': 'command published; subscribe to drifter/marauder/event'})
+            return
+        if path == '/api/marauder/probe':
+            if not _is_local_peer(self.client_address[0]):
+                self._send_json(403, {'ok': False, 'response': 'remote not allowed'})
+                return
+            op_id = marauder_client.publish_cmd(_MQTT_CLIENT, command='probe')
+            self._send_json(200, {'ok': True, 'op_id': op_id})
+            return
+        if path == '/api/marauder/stop':
+            if not _is_local_peer(self.client_address[0]):
+                self._send_json(403, {'ok': False, 'response': 'remote not allowed'})
+                return
+            op_id = marauder_client.publish_cmd(_MQTT_CLIENT, command='stop')
+            self._send_json(200, {'ok': True, 'op_id': op_id})
             return
         self.send_error(404)
 
