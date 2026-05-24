@@ -229,6 +229,34 @@ _PARSERS.extend([
     (_RE_BLE_DEVICE, "ble_device", _build_ble_device),
 ])
 
+_RE_PORTAL_CLIENT = re.compile(
+    r"^Portal client connected\s+mac=(?P<mac>[0-9a-fA-F:]{17})\s*$"
+)
+
+
+def _build_portal_client(m: re.Match) -> dict:
+    return {"mac": m.group("mac").lower()}
+
+
+_RE_CRED_CAPTURE = re.compile(r"^Captured:\s*(?P<body>.+)$")
+
+
+def _build_cred_capture(m: re.Match) -> dict:
+    body = m.group("body").strip()
+    fields: dict[str, str] = {}
+    for token in body.split():
+        if "=" not in token:
+            continue
+        k, _, v = token.partition("=")
+        fields[k.strip()] = v.strip()
+    return {"fields": fields}
+
+
+_PARSERS.extend([
+    (_RE_PORTAL_CLIENT, "portal_client_connect", _build_portal_client),
+    (_RE_CRED_CAPTURE, "cred_capture", _build_cred_capture),
+])
+
 
 def parse_event(line: str) -> dict | None:
     """Parse one line of Marauder serial output.
