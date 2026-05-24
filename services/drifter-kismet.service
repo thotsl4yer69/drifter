@@ -7,10 +7,15 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+# Kismet writes config + cache to $HOME/.kismet. ProtectHome=true blocks
+# /root, so point HOME at a state dir systemd creates for us.
+Environment=HOME=/var/lib/drifter-kismet
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=drifter-kismet
+WorkingDirectory=/var/lib/drifter-kismet
 ExecStart=/usr/bin/kismet --no-ncurses-wrapper -t drifter-kismet --silent
 Restart=on-failure
 RestartSec=10
-Environment=PYTHONUNBUFFERED=1
 
 # Kismet needs CAP_NET_ADMIN/RAW for monitor-mode capture.
 # Running as root is the documented Kali install posture; the bridge

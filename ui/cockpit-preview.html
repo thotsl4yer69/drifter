@@ -873,22 +873,352 @@
   .health-popover { padding: 6px 8px; border-top: 1px dashed var(--glass-stroke);
     background: rgba(0,0,0,0.25); font-family: 'JetBrains Mono', monospace;
     font-size: 10px; color: var(--fg-mute); white-space: pre-wrap; }
-  /* Spectrum strip — single-row viridis heatmap of latest sweep. */
-  .spectrum-strip { margin: 6px 0 4px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 4px 6px 5px; }
-  .spectrum-strip .ticks { position: relative; height: 10px; font-family: 'JetBrains Mono', monospace; font-size: 8.5px; color: var(--fg-dim); letter-spacing: 0.04em; }
-  .spectrum-strip .ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
-  .spectrum-strip .heat-wrap { position: relative; height: 24px; margin-top: 2px; }
-  .spectrum-strip canvas { width: 100%; height: 100%; display: block; border-radius: 2px; image-rendering: pixelated; }
-  .spectrum-strip .peak-mark { position: absolute; top: -3px; font-size: 9px; color: var(--amber); transform: translateX(-50%); text-shadow: 0 0 4px rgba(255,174,66,0.75); pointer-events: none; }
-  .spectrum-strip .empty { text-align: center; font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-dim); padding: 6px 0 4px; font-family: 'Major Mono Display', monospace; }
-  :root[data-theme="daylight"] .spectrum-strip { background: rgba(255,255,255,0.55); }
+  /* Spectrum strip — stencil-CRT scope. Peak-envelope waveform with phosphor
+     decay rides above a heatmap floor; band-plan overlay names the major
+     allocations as faint vertical stripes; crosshair locks the loudest peak
+     with freq+dB stencil readout. */
+  .spectrum-strip {
+    position: relative;
+    margin: 6px 0 4px;
+    border: 1px solid var(--glass-stroke-amber);
+    border-radius: var(--r-sm);
+    background:
+      radial-gradient(ellipse at 50% 60%, rgba(255,174,66,0.04), transparent 70%),
+      linear-gradient(180deg, rgba(7,9,13,0.92), rgba(7,9,13,0.78));
+    padding: 4px 6px 5px;
+    box-shadow: inset 0 0 18px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,174,66,0.06);
+    overflow: hidden;
+  }
+  /* CRT scanlines */
+  .spectrum-strip::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(
+      0deg, rgba(255,174,66,0.05) 0 1px, transparent 1px 3px);
+    mix-blend-mode: screen;
+    opacity: 0.55;
+  }
+  /* Faint vignette + amber phosphor wash */
+  .spectrum-strip::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+  .spectrum-strip .scope-frame {
+    position: relative; z-index: 1;
+  }
+  /* Stencil corner brackets — read as instrument bezel */
+  .spectrum-strip .scope-frame::before,
+  .spectrum-strip .scope-frame::after {
+    content: ""; position: absolute; width: 10px; height: 10px;
+    border-color: var(--amber); border-style: solid; border-width: 0;
+    pointer-events: none; opacity: 0.65;
+  }
+  .spectrum-strip .scope-frame::before {
+    top: -2px; left: -3px; border-top-width: 1px; border-left-width: 1px;
+  }
+  .spectrum-strip .scope-frame::after {
+    bottom: -2px; right: -3px; border-bottom-width: 1px; border-right-width: 1px;
+  }
+  .spectrum-strip .ticks {
+    position: relative; height: 11px;
+    font-family: 'Major Mono Display', 'JetBrains Mono', monospace;
+    font-size: 8.5px; color: var(--amber);
+    letter-spacing: 0.08em; opacity: 0.78;
+  }
+  .spectrum-strip .ticks span {
+    position: absolute; top: 0; transform: translateX(-50%);
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(255,174,66,0.55);
+  }
+  /* Band-plan overlay — soft vertical stripes labelled in stencil */
+  .spectrum-strip .bandplan {
+    position: relative; height: 12px; margin-top: 1px;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 7.5px; letter-spacing: 0.14em;
+  }
+  .spectrum-strip .bandplan .band {
+    position: absolute; top: 0; bottom: 0;
+    border-left: 1px dashed rgba(125,211,252,0.18);
+    border-right: 1px dashed rgba(125,211,252,0.18);
+    color: var(--cyan-dim);
+    background: linear-gradient(180deg, rgba(125,211,252,0.06), rgba(125,211,252,0));
+  }
+  .spectrum-strip .bandplan .band b {
+    position: absolute; top: -1px; left: 50%;
+    transform: translateX(-50%);
+    font-weight: 400;
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(125,211,252,0.45);
+  }
+  /* Scope display — waveform on top, heatmap floor below */
+  .spectrum-strip .scope {
+    position: relative;
+    height: 72px;
+    margin-top: 3px;
+    background:
+      linear-gradient(180deg, rgba(255,174,66,0.025) 0%, rgba(7,9,13,0.7) 100%);
+    border-top: 1px solid rgba(255,174,66,0.18);
+    border-bottom: 1px solid rgba(255,174,66,0.18);
+  }
+  /* Centerline grid */
+  .spectrum-strip .scope::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(0deg, transparent 24%, rgba(255,174,66,0.08) 25%, transparent 26%),
+      linear-gradient(0deg, transparent 49%, rgba(255,174,66,0.12) 50%, transparent 51%),
+      linear-gradient(0deg, transparent 74%, rgba(255,174,66,0.08) 75%, transparent 76%),
+      linear-gradient(90deg, transparent 24%, rgba(255,174,66,0.04) 25%, transparent 26%),
+      linear-gradient(90deg, transparent 49%, rgba(255,174,66,0.08) 50%, transparent 51%),
+      linear-gradient(90deg, transparent 74%, rgba(255,174,66,0.04) 75%, transparent 76%);
+  }
+  .spectrum-strip .scope canvas {
+    position: absolute; left: 0; right: 0;
+    width: 100%; display: block;
+    image-rendering: pixelated;
+  }
+  .spectrum-strip .scope .wave-canvas {
+    top: 0; height: 50px;
+    mix-blend-mode: screen;
+    filter: drop-shadow(0 0 3px rgba(255,174,66,0.6));
+  }
+  .spectrum-strip .scope .heat-canvas {
+    bottom: 0; height: 22px;
+    border-top: 1px solid rgba(255,174,66,0.22);
+    opacity: 0.92;
+  }
+  .spectrum-strip .scope .floor-label {
+    position: absolute; right: 4px; bottom: 2px;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 7px; letter-spacing: 0.18em;
+    color: var(--amber); opacity: 0.65;
+    text-shadow: 0 0 4px rgba(255,174,66,0.5);
+    pointer-events: none;
+  }
+  .spectrum-strip .scope .db-axis {
+    position: absolute; left: 2px; top: 0; bottom: 22px;
+    width: 22px; pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.5px; color: rgba(255,174,66,0.55);
+    letter-spacing: 0.04em;
+  }
+  .spectrum-strip .scope .db-axis span {
+    position: absolute; left: 0; transform: translateY(-50%);
+    text-shadow: 0 0 4px rgba(255,174,66,0.45);
+  }
+  /* Peak crosshair — vertical line + circle + stencil readout */
+  .spectrum-strip .scope .crosshair {
+    position: absolute; top: 0; bottom: 22px;
+    width: 1px;
+    background: linear-gradient(180deg,
+      rgba(255,174,66,0) 0%,
+      rgba(255,174,66,0.9) 18%,
+      rgba(255,174,66,0.9) 82%,
+      rgba(255,174,66,0) 100%);
+    box-shadow: 0 0 6px rgba(255,174,66,0.7);
+    pointer-events: none;
+    transform: translateX(-50%);
+    transition: left 220ms ease-out;
+  }
+  .spectrum-strip .scope .crosshair::before {
+    content: ""; position: absolute;
+    left: 50%; top: 30%;
+    width: 9px; height: 9px;
+    margin: -4.5px 0 0 -4.5px;
+    border: 1px solid var(--amber);
+    border-radius: 50%;
+    background: rgba(255,174,66,0.18);
+    box-shadow: 0 0 8px rgba(255,174,66,0.65);
+    animation: scopePulse 1.6s ease-in-out infinite;
+  }
+  @keyframes scopePulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,174,66,0.4); }
+    50%      { box-shadow: 0 0 14px rgba(255,174,66,0.9); }
+  }
+  .spectrum-strip .scope .peak-readout {
+    position: absolute; top: 4px;
+    transform: translateX(-50%);
+    font-family: 'Major Mono Display', monospace;
+    font-size: 9px; letter-spacing: 0.1em;
+    color: var(--amber);
+    padding: 2px 5px 1px;
+    border: 1px solid rgba(255,174,66,0.55);
+    background: rgba(7,9,13,0.88);
+    border-radius: 2px;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 0 4px rgba(255,174,66,0.55);
+    box-shadow: 0 0 8px rgba(255,174,66,0.25);
+    transition: left 220ms ease-out;
+  }
+  .spectrum-strip .scope .peak-readout .db {
+    margin-left: 5px; color: var(--cyan); opacity: 0.9;
+    text-shadow: 0 0 4px rgba(125,211,252,0.5);
+  }
+  /* Live sweep indicator — tiny "TX" style blip top-right */
+  .spectrum-strip .scope-stamp {
+    position: absolute; top: 4px; right: 6px; z-index: 2;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 7.5px; letter-spacing: 0.22em;
+    color: var(--amber); opacity: 0.78;
+    text-shadow: 0 0 6px rgba(255,174,66,0.6);
+    pointer-events: none;
+  }
+  .spectrum-strip .scope-stamp::before {
+    content: ""; display: inline-block;
+    width: 5px; height: 5px; margin-right: 4px;
+    border-radius: 50%; background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+    vertical-align: middle;
+    animation: scopeBlink 1.4s steps(2, end) infinite;
+  }
+  @keyframes scopeBlink { 50% { opacity: 0.15; } }
+  .spectrum-strip .empty {
+    text-align: center; font-size: 10px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--amber);
+    padding: 22px 0 24px;
+    font-family: 'Major Mono Display', monospace;
+    text-shadow: 0 0 8px rgba(255,174,66,0.5);
+    opacity: 0.85;
+  }
+  .spectrum-strip .empty::before {
+    content: "▣ ▣ ▣"; display: block;
+    color: rgba(255,174,66,0.35); letter-spacing: 0.4em;
+    margin-bottom: 6px; font-size: 11px;
+  }
+  /* Daylight: shed CRT glow, lean on contrast */
+  :root[data-theme="daylight"] .spectrum-strip {
+    background: rgba(255,255,255,0.78);
+    border: 1px solid rgba(217,119,6,0.45);
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.06);
+  }
+  :root[data-theme="daylight"] .spectrum-strip::before { opacity: 0.18; }
+  :root[data-theme="daylight"] .spectrum-strip::after { display: none; }
+  :root[data-theme="daylight"] .spectrum-strip .scope {
+    background: rgba(255,255,255,0.6);
+    border-color: rgba(217,119,6,0.35);
+  }
+  :root[data-theme="daylight"] .spectrum-strip .ticks { color: #92400e; opacity: 0.92; }
+  :root[data-theme="daylight"] .spectrum-strip .bandplan .band { color: #1e40af; }
 
-  /* ADS-B radar — concentric range plot; augments the closest-5 list. */
-  .adsb-radar-wrap { position: relative; margin: 4px 0 10px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm); background: rgba(0,0,0,0.35); padding: 8px; }
-  .adsb-radar-wrap canvas { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
-  .adsb-radar-wrap .radar-meta { margin-top: 4px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-dim); text-align: center; letter-spacing: 0.08em; }
-  .adsb-popup { position: absolute; pointer-events: none; background: rgba(7,9,13,0.96); color: var(--fg); border: 1px solid var(--glass-stroke-cyan); border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 4px 7px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 5; display: none; }
-  :root[data-theme="daylight"] .adsb-radar-wrap { background: rgba(255,255,255,0.55); }
+  /* ADS-B radar — phosphor scope with rotating sweep beam, ping rings,
+     callsign trails and compass rose. Single canvas hosts the data; an
+     overlay canvas paints the sweep & pings so we can repaint at 30fps
+     without redrawing the contact list. */
+  .adsb-radar-wrap {
+    position: relative;
+    margin: 6px 0 12px;
+    border: 1px solid rgba(125,211,252,0.32);
+    border-radius: var(--r-md);
+    background:
+      radial-gradient(ellipse at 50% 45%, rgba(94,234,212,0.05), transparent 70%),
+      radial-gradient(ellipse at 50% 100%, rgba(125,211,252,0.08), transparent 65%),
+      linear-gradient(180deg, rgba(7,9,13,0.92), rgba(7,9,13,0.78));
+    padding: 12px 10px 8px;
+    box-shadow:
+      inset 0 0 28px rgba(94,234,212,0.06),
+      inset 0 0 60px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(125,211,252,0.05);
+    overflow: hidden;
+  }
+  /* CRT scanlines */
+  .adsb-radar-wrap::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(
+      0deg, rgba(125,211,252,0.045) 0 1px, transparent 1px 3px);
+    mix-blend-mode: screen;
+    opacity: 0.65;
+  }
+  /* Corner brackets — instrument bezel */
+  .adsb-radar-wrap::after {
+    content: ""; position: absolute; inset: 4px; pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) top left / 14px 1px no-repeat,
+      linear-gradient(180deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) top left / 1px 14px no-repeat,
+      linear-gradient(270deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) top right / 14px 1px no-repeat,
+      linear-gradient(180deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) top right / 1px 14px no-repeat,
+      linear-gradient(90deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) bottom left / 14px 1px no-repeat,
+      linear-gradient(0deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) bottom left / 1px 14px no-repeat,
+      linear-gradient(270deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) bottom right / 14px 1px no-repeat,
+      linear-gradient(0deg, rgba(125,211,252,0.7) 0 14px, transparent 14px) bottom right / 1px 14px no-repeat;
+    opacity: 0.55;
+  }
+  .adsb-radar-wrap .scope-id {
+    position: absolute; top: 8px; left: 12px; z-index: 3;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 8.5px; letter-spacing: 0.28em;
+    color: var(--cyan);
+    text-shadow: 0 0 8px rgba(125,211,252,0.65);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+  .adsb-radar-wrap .scope-stamp {
+    position: absolute; top: 8px; right: 12px; z-index: 3;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 8px; letter-spacing: 0.24em;
+    color: var(--teal);
+    text-shadow: 0 0 8px rgba(94,234,212,0.55);
+    pointer-events: none;
+  }
+  .adsb-radar-wrap .scope-stamp::before {
+    content: ""; display: inline-block;
+    width: 5px; height: 5px; margin-right: 5px;
+    border-radius: 50%; background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+    vertical-align: middle;
+    animation: scopeBlink 1.4s steps(2, end) infinite;
+  }
+  .adsb-radar-wrap .canvas-stack {
+    position: relative;
+    width: 100%; max-width: 320px;
+    margin: 0 auto;
+    aspect-ratio: 1;
+  }
+  .adsb-radar-wrap canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  .adsb-radar-wrap .sweep-canvas {
+    pointer-events: none;
+    mix-blend-mode: screen;
+    filter: drop-shadow(0 0 4px rgba(94,234,212,0.45));
+  }
+  .adsb-radar-wrap .radar-meta {
+    margin-top: 6px;
+    font-family: 'Major Mono Display', monospace;
+    font-size: 8.5px; color: var(--cyan-dim);
+    text-align: center; letter-spacing: 0.22em;
+    text-shadow: 0 0 6px rgba(125,211,252,0.4);
+  }
+  .adsb-radar-wrap .radar-meta b {
+    font-weight: 400; color: var(--teal);
+    text-shadow: 0 0 6px rgba(94,234,212,0.55);
+  }
+  .adsb-popup {
+    position: absolute; pointer-events: none;
+    background: rgba(7,9,13,0.96);
+    color: var(--fg);
+    border: 1px solid var(--cyan);
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 4px 7px;
+    white-space: nowrap;
+    box-shadow:
+      0 4px 14px rgba(0,0,0,0.6),
+      0 0 12px rgba(125,211,252,0.35);
+    z-index: 5; display: none;
+    text-shadow: 0 0 4px rgba(125,211,252,0.45);
+  }
+  :root[data-theme="daylight"] .adsb-radar-wrap {
+    background: rgba(255,255,255,0.78);
+    border: 1px solid rgba(2,132,199,0.45);
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.06);
+  }
+  :root[data-theme="daylight"] .adsb-radar-wrap::before { opacity: 0.2; }
+  :root[data-theme="daylight"] .adsb-radar-wrap .scope-id,
+  :root[data-theme="daylight"] .adsb-radar-wrap .scope-stamp { color: #075985; text-shadow: none; }
+  :root[data-theme="daylight"] .adsb-radar-wrap .radar-meta { color: #0c4a6e; text-shadow: none; }
+
   .rf-foot .freq {
     font-family: 'JetBrains Mono', monospace;
     color: var(--amber); font-size: 10.5px;
@@ -1986,10 +2316,24 @@
             </div>
             <div class="bands" id="rf-bands"></div>
             <div class="spectrum-strip" id="spectrum-strip">
-              <div class="ticks" id="spectrum-ticks"></div>
-              <div class="heat-wrap" id="spectrum-heat-wrap">
-                <canvas id="spectrum-canvas" width="320" height="24"></canvas>
-                <div class="peak-mark" id="spectrum-peak-mark" style="display:none">▼</div>
+              <div class="scope-stamp">SWEEP · LIVE</div>
+              <div class="scope-frame">
+                <div class="ticks" id="spectrum-ticks"></div>
+                <div class="bandplan" id="spectrum-bandplan"></div>
+                <div class="scope" id="spectrum-heat-wrap">
+                  <div class="db-axis" id="spectrum-db-axis">
+                    <span style="top:6%">−10</span>
+                    <span style="top:42%">−45</span>
+                    <span style="top:78%">−80</span>
+                  </div>
+                  <canvas class="wave-canvas" id="spectrum-wave-canvas" width="320" height="50"></canvas>
+                  <canvas class="heat-canvas" id="spectrum-canvas" width="320" height="22"></canvas>
+                  <div class="floor-label">FLOOR</div>
+                  <div class="crosshair" id="spectrum-peak-mark" style="display:none"></div>
+                  <div class="peak-readout" id="spectrum-peak-readout" style="display:none">
+                    <span class="freq">—</span><span class="db">—dB</span>
+                  </div>
+                </div>
               </div>
               <div class="empty" id="spectrum-empty">AWAITING SWEEP — tap FORCE SPECTRUM</div>
             </div>
@@ -2694,52 +3038,101 @@
     }
     return 'rgb(80,80,80)';
   }
+  // Band-plan allocations rendered as faint vertical stripes on the scope.
+  // Each entry: [lo_mhz, hi_mhz, label]. Only bands intersecting the
+  // current sweep window are drawn; the engine clips to the visible span.
+  const _SPEC_BANDPLAN = [
+    [ 88.0,  108.0, 'FM'],
+    [118.0,  137.0, 'AVI'],
+    [156.0,  162.0, 'VHF'],
+    [380.0,  410.0, 'UHF'],
+    [433.05, 434.79, 'ISM·433'],
+    [470.0,  608.0, 'TV'],
+    [824.0,  894.0, 'CELL'],
+    [868.0,  870.0, 'ISM·868'],
+    [925.0,  960.0, 'GSM-9'],
+    [1710.0, 1880.0, 'GSM-18'],
+  ];
+  // Phosphor-decay buffer for the envelope waveform. Cleared between
+  // empty states so a stale trace doesn't ghost over "AWAITING SWEEP".
+  const _SPEC_PHOSPHOR = { buf: null, w: 0, h: 0 };
+  function _spectrumClearPhosphor(){
+    _SPEC_PHOSPHOR.buf = null;
+    _SPEC_PHOSPHOR.w = 0; _SPEC_PHOSPHOR.h = 0;
+  }
+
   function renderSpectrumStrip(){
     const sp = cache.rfSpec || {};
     const bins = Array.isArray(sp.bins) ? sp.bins : null;
-    const canvas = document.getElementById('spectrum-canvas');
+    const heatCanvas = document.getElementById('spectrum-canvas');
+    const waveCanvas = document.getElementById('spectrum-wave-canvas');
     const empty = document.getElementById('spectrum-empty');
     const peakMark = document.getElementById('spectrum-peak-mark');
+    const peakReadout = document.getElementById('spectrum-peak-readout');
     const ticksEl = document.getElementById('spectrum-ticks');
-    if (!canvas) return;
+    const bandEl = document.getElementById('spectrum-bandplan');
+    const heatWrap = document.getElementById('spectrum-heat-wrap');
+    if (!heatCanvas || !waveCanvas) return;
     if (!bins || !bins.length) {
       if (empty) empty.style.display = '';
-      canvas.style.display = 'none';
+      if (heatWrap) heatWrap.style.display = 'none';
       if (peakMark) peakMark.style.display = 'none';
+      if (peakReadout) peakReadout.style.display = 'none';
       if (ticksEl) ticksEl.innerHTML = '';
+      if (bandEl) bandEl.innerHTML = '';
+      _spectrumClearPhosphor();
       return;
     }
     if (empty) empty.style.display = 'none';
-    canvas.style.display = '';
+    if (heatWrap) heatWrap.style.display = '';
     const lo = bins[0].freq_hz / 1e6;
     const hi = bins[bins.length - 1].freq_hz / 1e6;
     const span = Math.max(1e-6, hi - lo);
+
+    // Frequency ticks — stencil amber, evenly distributed inside span.
     if (ticksEl) {
+      const candidates = [50, 100, 200, 433, 600, 900, 1090, 1300, 1500, 1766];
       const parts = [];
-      for (const mhz of [100, 450, 900, 1300, 1766]) {
+      for (const mhz of candidates) {
         if (mhz < lo || mhz > hi) continue;
         parts.push(`<span style="left:${(((mhz-lo)/span)*100).toFixed(2)}%">${mhz}M</span>`);
       }
-      if (!parts.length) {
+      if (parts.length < 2) {
+        parts.length = 0;
         parts.push(`<span style="left:0">${Math.round(lo)}M</span>`);
+        parts.push(`<span style="left:50%">${Math.round((lo+hi)/2)}M</span>`);
         parts.push(`<span style="left:100%">${Math.round(hi)}M</span>`);
       }
       ticksEl.innerHTML = parts.join('');
     }
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    // Per-pixel-column max/mean aggregation. Top row = peak, bottom row =
-    // noise floor, so narrow spikes stay visible. Summary bins from
-    // /api/rf/spectrum/summary already carry pre-aggregated
-    // {level_db_max, level_db_mean, level_db_min}; full-sweep bins only
-    // carry {level_db | power_db} and need per-pixel aggregation.
-    const halfH = Math.max(1, Math.floor(h / 2));
+
+    // Band-plan stripes — only allocations intersecting [lo,hi].
+    if (bandEl) {
+      const parts = [];
+      for (const [bLo, bHi, label] of _SPEC_BANDPLAN) {
+        if (bHi < lo || bLo > hi) continue;
+        const a = Math.max(bLo, lo), b = Math.min(bHi, hi);
+        const left = ((a - lo) / span) * 100;
+        const width = Math.max(0.4, ((b - a) / span) * 100);
+        parts.push(`<div class="band" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"><b>${label}</b></div>`);
+      }
+      bandEl.innerHTML = parts.join('');
+    }
+
+    // ── Per-pixel column aggregation ──────────────────────────────
+    const heatCtx = heatCanvas.getContext('2d');
+    const wCanvas = heatCanvas.width, hHeat = heatCanvas.height;
+    heatCtx.clearRect(0, 0, wCanvas, hHeat);
     const lastIdx = bins.length - 1;
     const hzPerBin = span * 1e6 / Math.max(1, lastIdx);
     const totalHz = span * 1e6;
-    const hzPerPx = totalHz / w;
-    for (let x = 0; x < w; x++) {
+    const hzPerPx = totalHz / wCanvas;
+    // Buffer per-column max + mean for both the heatmap floor and the
+    // envelope waveform line.
+    const colMax = new Float32Array(wCanvas);
+    const colMean = new Float32Array(wCanvas);
+    const colHas = new Uint8Array(wCanvas);
+    for (let x = 0; x < wCanvas; x++) {
       const startHz = (lo * 1e6) + x * hzPerPx;
       const endHz = startHz + hzPerPx;
       let startIdx = Math.floor((startHz - bins[0].freq_hz) / Math.max(1, hzPerBin));
@@ -2758,22 +3151,112 @@
         if (peak > maxDb) maxDb = peak;
         sumMean += mean; count++;
       }
-      if (count === 0) {
-        ctx.fillStyle = spectrumColorForDb(undefined);
-        ctx.fillRect(x, 0, 1, h);
-        continue;
-      }
-      ctx.fillStyle = spectrumColorForDb(maxDb);
-      ctx.fillRect(x, 0, 1, halfH);
-      ctx.fillStyle = spectrumColorForDb(sumMean / count);
-      ctx.fillRect(x, halfH, 1, h - halfH);
+      if (count === 0) continue;
+      colMax[x] = maxDb;
+      colMean[x] = sumMean / count;
+      colHas[x] = 1;
     }
-    if (peakMark) {
-      const freq = (sp.strongest_signal || {}).freq;
-      if (freq != null && freq >= lo && freq <= hi) {
-        peakMark.style.left = (((freq-lo)/span)*100).toFixed(2) + '%';
+    // Heatmap floor — single-row gradient using mean dB. Reads as the
+    // noise-floor band; narrow spikes still surface via the wave above.
+    for (let x = 0; x < wCanvas; x++) {
+      heatCtx.fillStyle = colHas[x] ? spectrumColorForDb(colMean[x])
+                                    : 'rgba(40,40,48,0.55)';
+      heatCtx.fillRect(x, 0, 1, hHeat);
+    }
+    // Thin amber accent line where peaks punch through (>-30 dB).
+    heatCtx.globalAlpha = 0.95;
+    for (let x = 0; x < wCanvas; x++) {
+      if (colHas[x] && colMax[x] > -30) {
+        heatCtx.fillStyle = 'rgba(255,210,120,0.85)';
+        heatCtx.fillRect(x, 0, 1, 2);
+      }
+    }
+    heatCtx.globalAlpha = 1.0;
+
+    // ── Envelope waveform with phosphor decay ─────────────────────
+    const waveCtx = waveCanvas.getContext('2d');
+    const wW = waveCanvas.width, wH = waveCanvas.height;
+    // Phosphor decay: blit the previous frame back at reduced alpha so
+    // recent traces ghost amber-dim before fading to black.
+    if (_SPEC_PHOSPHOR.buf && _SPEC_PHOSPHOR.w === wW && _SPEC_PHOSPHOR.h === wH) {
+      waveCtx.globalCompositeOperation = 'source-over';
+      waveCtx.clearRect(0, 0, wW, wH);
+      waveCtx.globalAlpha = 0.55;
+      waveCtx.drawImage(_SPEC_PHOSPHOR.buf, 0, 0);
+      waveCtx.globalAlpha = 1.0;
+    } else {
+      waveCtx.clearRect(0, 0, wW, wH);
+    }
+    // dB → y mapping: -10 dB at top, -100 dB at bottom.
+    const dbToY = (db) => {
+      const t = Math.max(0, Math.min(1, (-10 - db) / 90));
+      return Math.round(t * (wH - 2)) + 1;
+    };
+    // Filled area under the curve — faint amber wash.
+    waveCtx.beginPath();
+    let started = false;
+    for (let x = 0; x < wW; x++) {
+      if (!colHas[x]) continue;
+      const y = dbToY(colMax[x]);
+      if (!started) { waveCtx.moveTo(x, y); started = true; }
+      else waveCtx.lineTo(x, y);
+    }
+    if (started) {
+      waveCtx.lineTo(wW - 1, wH);
+      waveCtx.lineTo(0, wH);
+      waveCtx.closePath();
+      const fill = waveCtx.createLinearGradient(0, 0, 0, wH);
+      fill.addColorStop(0, 'rgba(255,174,66,0.42)');
+      fill.addColorStop(0.6, 'rgba(255,174,66,0.10)');
+      fill.addColorStop(1, 'rgba(255,174,66,0)');
+      waveCtx.fillStyle = fill;
+      waveCtx.fill();
+    }
+    // Sharp envelope line on top.
+    waveCtx.beginPath();
+    started = false;
+    for (let x = 0; x < wW; x++) {
+      if (!colHas[x]) continue;
+      const y = dbToY(colMax[x]);
+      if (!started) { waveCtx.moveTo(x, y); started = true; }
+      else waveCtx.lineTo(x, y);
+    }
+    waveCtx.lineWidth = 1.4;
+    waveCtx.strokeStyle = 'rgba(255,210,140,0.95)';
+    waveCtx.shadowColor = 'rgba(255,174,66,0.9)';
+    waveCtx.shadowBlur = 6;
+    waveCtx.stroke();
+    waveCtx.shadowBlur = 0;
+    // Cache this frame as the next iteration's phosphor source.
+    if (!_SPEC_PHOSPHOR.buf || _SPEC_PHOSPHOR.w !== wW || _SPEC_PHOSPHOR.h !== wH) {
+      const off = document.createElement('canvas');
+      off.width = wW; off.height = wH;
+      _SPEC_PHOSPHOR.buf = off; _SPEC_PHOSPHOR.w = wW; _SPEC_PHOSPHOR.h = wH;
+    }
+    const offCtx = _SPEC_PHOSPHOR.buf.getContext('2d');
+    offCtx.clearRect(0, 0, wW, wH);
+    offCtx.drawImage(waveCanvas, 0, 0);
+
+    // ── Crosshair + peak readout ──────────────────────────────────
+    const peak = sp.strongest_signal || {};
+    const peakFreq = peak.freq;
+    const peakDb = (peak.level_db != null ? peak.level_db
+                  : peak.power_db != null ? peak.power_db : null);
+    if (peakMark && peakReadout) {
+      if (peakFreq != null && peakFreq >= lo && peakFreq <= hi) {
+        const pct = ((peakFreq - lo) / span) * 100;
+        peakMark.style.left = pct.toFixed(2) + '%';
         peakMark.style.display = '';
-      } else { peakMark.style.display = 'none'; }
+        peakReadout.style.left = Math.min(92, Math.max(8, pct)).toFixed(2) + '%';
+        const freqStr = peakFreq >= 1000 ? (peakFreq/1000).toFixed(3) + 'G'
+                                         : peakFreq.toFixed(2) + 'M';
+        const dbStr = peakDb != null && isFinite(peakDb) ? `${Math.round(peakDb)}dB` : '—dB';
+        peakReadout.innerHTML = `<span class="freq">${freqStr}</span><span class="db">${dbStr}</span>`;
+        peakReadout.style.display = '';
+      } else {
+        peakMark.style.display = 'none';
+        peakReadout.style.display = 'none';
+      }
     }
   }
 
@@ -2927,7 +3410,16 @@
   const ADSB_RADAR_RANGE_KM = 30;
   const ADSB_RADAR_RINGS = [1, 3, 10, 30];
   const ADSB_PLACEHOLDER_ORIGIN = { lat: -37.85, lon: 144.96 };
-  const _adsbRadarState = { hits: [] };
+  // Tracks: hex → { trail: [{x,y,t}], firstSeen }. Trail dots fade
+  // behind each contact so motion is legible between updates.
+  const _adsbRadarState = {
+    hits: [],
+    tracks: new Map(),
+    firstSeenByHex: new Map(),
+    pings: [],            // {x, y, t0}
+    sweepRaf: 0,
+    sweepStart: 0,
+  };
 
   function _adsbAltColor(altFt){
     if (altFt == null || isNaN(altFt)) return 'rgba(180,180,180,0.85)';
@@ -2943,44 +3435,173 @@
     return { dx: (lon - oLon) * toRad * R * Math.cos(meanLat),
              dy: (lat - oLat) * toRad * R };
   }
+  function _adsbDrawSweepFrame(){
+    const sweep = document.getElementById('adsb-radar-sweep');
+    if (!sweep) { _adsbRadarState.sweepRaf = 0; return; }
+    const ctx = sweep.getContext('2d');
+    const w = sweep.width, h = sweep.height;
+    const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 14;
+    ctx.clearRect(0, 0, w, h);
+    // ── Rotating sweep beam ───────────────────────────────────────
+    const now = performance.now();
+    if (!_adsbRadarState.sweepStart) _adsbRadarState.sweepStart = now;
+    // Full rotation every 4.5s. Beam is a 60° wedge with a trailing
+    // alpha gradient — head bright, tail dim.
+    const elapsed = (now - _adsbRadarState.sweepStart) / 1000;
+    const headRad = (elapsed / 4.5) * Math.PI * 2;
+    const tailWidth = Math.PI / 3;          // 60°
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(headRad - Math.PI/2);        // 0 rad points up (north)
+    // Manual wedge: build a path from center sweeping back tailWidth.
+    const steps = 24;
+    for (let i = 0; i < steps; i++) {
+      const t0 = (i / steps) * tailWidth;
+      const t1 = ((i + 1) / steps) * tailWidth;
+      const alpha = (1 - i / steps) * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radius, -t1, -t0, false);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(94,234,212,${alpha.toFixed(3)})`;
+      ctx.fill();
+    }
+    // Bright leading edge
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -radius);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(160,255,240,0.9)';
+    ctx.shadowColor = 'rgba(94,234,212,0.9)';
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // ── Ping rings ───────────────────────────────────────────────
+    const pings = _adsbRadarState.pings;
+    const PING_MS = 1400;
+    const nowMs = now;
+    for (let i = pings.length - 1; i >= 0; i--) {
+      const p = pings[i];
+      const t = (nowMs - p.t0) / PING_MS;
+      if (t > 1) { pings.splice(i, 1); continue; }
+      const r = 4 + t * 28;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,210,140,${(1 - t).toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.shadowColor = 'rgba(255,174,66,0.7)';
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+    // Continue animation if anything is moving.
+    _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
+  }
+
+  function _adsbEnsureSweep(){
+    if (!_adsbRadarState.sweepRaf) {
+      _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
+    }
+  }
+
   function renderAdsbRadar(){
     const canvas = document.getElementById('adsb-radar');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
-    const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 14;
+    const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 18;
     ctx.clearRect(0,0,w,h);
-    ctx.strokeStyle = 'rgba(110,231,255,0.35)';
-    ctx.fillStyle = 'rgba(110,231,255,0.55)';
-    ctx.font = '9px JetBrains Mono, monospace';
+
+    // ── Outer bezel + faint radial wash ───────────────────────────
+    const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius + 8);
+    wash.addColorStop(0, 'rgba(94,234,212,0.06)');
+    wash.addColorStop(0.7, 'rgba(125,211,252,0.03)');
+    wash.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = wash;
+    ctx.beginPath(); ctx.arc(cx, cy, radius + 8, 0, Math.PI*2); ctx.fill();
+
+    // ── Range rings ───────────────────────────────────────────────
+    ctx.font = '9px "JetBrains Mono", monospace';
     ctx.lineWidth = 1;
-    for (const km of ADSB_RADAR_RINGS) {
+    for (let i = 0; i < ADSB_RADAR_RINGS.length; i++) {
+      const km = ADSB_RADAR_RINGS[i];
       const r = (km / ADSB_RADAR_RANGE_KM) * radius;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
-      ctx.fillText(km+'km', cx + r + 2, cy - 2);
+      const isOuter = (i === ADSB_RADAR_RINGS.length - 1);
+      ctx.beginPath();
+      ctx.setLineDash(isOuter ? [] : [3, 3]);
+      ctx.strokeStyle = isOuter
+        ? 'rgba(125,211,252,0.55)'
+        : 'rgba(125,211,252,0.22)';
+      ctx.arc(cx, cy, r, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Range label inside the ring at 45°.
+      ctx.fillStyle = 'rgba(125,211,252,0.6)';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(km + 'km', cx + r * 0.71 + 3, cy - r * 0.71 - 2);
     }
-    ctx.fillStyle = 'rgba(245,245,245,0.7)';
-    ctx.font = 'bold 10px JetBrains Mono, monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('N', cx, cy - radius - 6);
-    ctx.fillText('S', cx, cy + radius + 6);
-    ctx.fillText('E', cx + radius + 8, cy);
-    ctx.fillText('W', cx - radius - 8, cy);
-    ctx.strokeStyle = 'rgba(110,231,255,0.15)';
+
+    // ── Crosshair quadrants (dashed) ─────────────────────────────
+    ctx.strokeStyle = 'rgba(125,211,252,0.12)';
+    ctx.setLineDash([2, 4]);
     ctx.beginPath();
     ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
     ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(94,234,212,0.9)';
-    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+    ctx.setLineDash([]);
+
+    // ── Compass rose — N/E/S/W + intermediate ticks ──────────────
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (let deg = 0; deg < 360; deg += 30) {
+      ctx.rotate((deg === 0 ? 0 : 30) * Math.PI / 180);
+      const major = (deg % 90 === 0);
+      ctx.beginPath();
+      ctx.moveTo(0, -radius);
+      ctx.lineTo(0, -radius + (major ? 6 : 3));
+      ctx.strokeStyle = major
+        ? 'rgba(125,211,252,0.85)'
+        : 'rgba(125,211,252,0.35)';
+      ctx.lineWidth = major ? 1.4 : 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = 'rgba(245,245,245,0.85)';
+    ctx.font = '600 11px "Major Mono Display", "JetBrains Mono", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(125,211,252,0.55)';
+    ctx.shadowBlur = 6;
+    ctx.fillText('N', cx, cy - radius - 10);
+    ctx.fillText('S', cx, cy + radius + 10);
+    ctx.fillText('E', cx + radius + 12, cy);
+    ctx.fillText('W', cx - radius - 12, cy);
+    ctx.shadowBlur = 0;
+
+    // ── Origin marker (cross + dot) ──────────────────────────────
+    ctx.strokeStyle = 'rgba(94,234,212,0.85)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy);
+    ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(94,234,212,0.95)';
+    ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI*2); ctx.fill();
 
     const snap = cache.aircraft || {};
     const list = Array.isArray(snap.aircraft) ? snap.aircraft : [];
     const oSnap = snap.origin || {};
     const oLat = oSnap.lat != null ? oSnap.lat : ADSB_PLACEHOLDER_ORIGIN.lat;
     const oLon = oSnap.lon != null ? oSnap.lon : ADSB_PLACEHOLDER_ORIGIN.lon;
-    const now = Date.now()/1000;
+    const now = Date.now() / 1000;
+    const nowMs = performance.now();
+
     _adsbRadarState.hits = [];
+    const seenHexes = new Set();
+    const TRAIL_MAX = 6;
+
+    // First pass: paint trail dots underneath the new aircraft icons.
     for (const a of list) {
       if (a.lat == null || a.lon == null) continue;
       const { dx, dy } = _adsbBearingKm(oLat, oLon, a.lat, a.lon);
@@ -2988,22 +3609,97 @@
       if (distKm > ADSB_RADAR_RANGE_KM) continue;
       const px = cx + (dx / ADSB_RADAR_RANGE_KM) * radius;
       const py = cy - (dy / ADSB_RADAR_RANGE_KM) * radius;
-      const alpha = a.ts ? Math.max(0.35, 1 - (now - a.ts)/120) : 1.0;
+      const hex = (a.hex || a.flight || a.callsign || '').toString();
+      seenHexes.add(hex);
+      let track = _adsbRadarState.tracks.get(hex);
+      if (!track) { track = { trail: [] }; _adsbRadarState.tracks.set(hex, track); }
+      const last = track.trail[track.trail.length - 1];
+      if (!last || Math.hypot(last.x - px, last.y - py) > 2.5) {
+        track.trail.push({ x: px, y: py, t: now });
+        if (track.trail.length > TRAIL_MAX) track.trail.shift();
+      }
+      // Trail dots
+      for (let i = 0; i < track.trail.length - 1; i++) {
+        const t = track.trail[i];
+        const a01 = (i + 1) / track.trail.length * 0.45;
+        ctx.fillStyle = `rgba(94,234,212,${a01.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 1.4, 0, Math.PI*2);
+        ctx.fill();
+      }
+      // First-sighting ping
+      if (!_adsbRadarState.firstSeenByHex.has(hex)) {
+        _adsbRadarState.firstSeenByHex.set(hex, nowMs);
+        _adsbRadarState.pings.push({ x: px, y: py, t0: nowMs });
+      }
+    }
+    // GC stale tracks (not seen for 5 min).
+    for (const [hex, track] of _adsbRadarState.tracks) {
+      const last = track.trail[track.trail.length - 1];
+      if (!seenHexes.has(hex) && (!last || now - last.t > 300)) {
+        _adsbRadarState.tracks.delete(hex);
+        _adsbRadarState.firstSeenByHex.delete(hex);
+      }
+    }
+
+    // Second pass: paint aircraft icons on top with stencil callsigns
+    // for the closest 3 contacts.
+    const sorted = list.slice().filter(a => a.lat != null && a.lon != null)
+      .map(a => {
+        const { dx, dy } = _adsbBearingKm(oLat, oLon, a.lat, a.lon);
+        return { a, dx, dy, distKm: Math.hypot(dx, dy) };
+      })
+      .filter(h => h.distKm <= ADSB_RADAR_RANGE_KM)
+      .sort((x, y) => x.distKm - y.distKm);
+
+    sorted.forEach((hit, idx) => {
+      const a = hit.a;
+      const px = cx + (hit.dx / ADSB_RADAR_RANGE_KM) * radius;
+      const py = cy - (hit.dy / ADSB_RADAR_RANGE_KM) * radius;
+      const alpha = a.ts ? Math.max(0.4, 1 - (now - a.ts) / 120) : 1.0;
       const altFt = typeof a.altitude === 'number' ? a.altitude
                   : typeof a.alt_baro === 'number' ? a.alt_baro : null;
       const color = _adsbAltColor(altFt).replace(/,\s*[\d.]+\)$/, `, ${alpha.toFixed(2)})`);
       const trackDeg = typeof a.track === 'number' ? a.track
                      : (typeof a.heading === 'number' ? a.heading : 0);
+      // Glow halo
       ctx.save();
-      ctx.translate(px, py); ctx.rotate(trackDeg * Math.PI / 180);
+      ctx.translate(px, py);
+      ctx.fillStyle = color.replace(/,\s*[\d.]+\)$/, ', 0.18)');
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI*2); ctx.fill();
+      ctx.rotate(trackDeg * Math.PI / 180);
       ctx.fillStyle = color;
-      ctx.strokeStyle = 'rgba(7,9,13,0.85)'; ctx.lineWidth = 0.8;
+      ctx.strokeStyle = 'rgba(7,9,13,0.9)'; ctx.lineWidth = 0.9;
       ctx.beginPath();
-      ctx.moveTo(0,-6); ctx.lineTo(4,5); ctx.lineTo(0,3); ctx.lineTo(-4,5);
+      ctx.moveTo(0, -7);
+      ctx.lineTo(5, 5.5);
+      ctx.lineTo(0, 3);
+      ctx.lineTo(-5, 5.5);
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
-      _adsbRadarState.hits.push({ x: px, y: py, ac: a, distKm });
-    }
+      // Stencil callsign on the closest 3 contacts
+      if (idx < 3) {
+        const flight = (a.flight || a.callsign || (a.hex || '').toString().toUpperCase()).trim();
+        if (flight) {
+          ctx.save();
+          const lx = px + 9, ly = py - 9;
+          ctx.font = '8.5px "JetBrains Mono", monospace';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          ctx.fillStyle = 'rgba(7,9,13,0.85)';
+          ctx.fillRect(lx - 2, ly - 8, ctx.measureText(flight).width + 4, 10);
+          ctx.fillStyle = 'rgba(255,210,140,0.95)';
+          ctx.shadowColor = 'rgba(255,174,66,0.7)';
+          ctx.shadowBlur = 4;
+          ctx.fillText(flight, lx, ly);
+          ctx.shadowBlur = 0;
+          ctx.restore();
+        }
+      }
+      _adsbRadarState.hits.push({ x: px, y: py, ac: a, distKm: hit.distKm });
+    });
+
+    _adsbEnsureSweep();
+
     if (!canvas._adsbHandlersBound) {
       canvas._adsbHandlersBound = true;
       const popup = document.getElementById('adsb-popup');
@@ -3506,10 +4202,16 @@
       const originLabel = hasGpsOrigin
         ? `origin ${originSnap.lat.toFixed(3)}, ${originSnap.lon.toFixed(3)}`
         : 'origin · placeholder (no GPS fix)';
+      const contactsCount = list.length;
       out.push(`<div class="adsb-radar-wrap" id="adsb-radar-wrap">
-        <canvas id="adsb-radar" width="320" height="320"></canvas>
+        <div class="scope-id">PPI · ADS-B · 30KM</div>
+        <div class="scope-stamp">${contactsCount} CONTACT${contactsCount === 1 ? '' : 'S'}</div>
+        <div class="canvas-stack">
+          <canvas id="adsb-radar" width="320" height="320"></canvas>
+          <canvas id="adsb-radar-sweep" class="sweep-canvas" width="320" height="320"></canvas>
+        </div>
         <div class="adsb-popup" id="adsb-popup"></div>
-        <div class="radar-meta">${esc(originLabel)} · rings 1·3·10·30 km</div>
+        <div class="radar-meta">${esc(originLabel)} · rings <b>1·3·10·30</b> km</div>
       </div>`);
 
       if (!list.length) {

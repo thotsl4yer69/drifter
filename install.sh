@@ -355,6 +355,15 @@ if [ -f "$POLKIT_SRC" ]; then
     ok "BlueZ polkit rule installed"
 fi
 
+# Kismet site config — overrides configdir to /var/lib/drifter-kismet
+# so the daemon survives ProtectHome=true in drifter-kismet.service.
+KISMET_SITE_SRC="${REPO_DIR}/config/kismet_site.conf"
+KISMET_SITE_DST="/etc/kismet/kismet_site.conf"
+if [ -f "$KISMET_SITE_SRC" ] && [ -d /etc/kismet ]; then
+    install -m 0644 -o root -g root "$KISMET_SITE_SRC" "$KISMET_SITE_DST"
+    ok "Kismet site config installed"
+fi
+
 # Log & session + state directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions ${DRIFTER_DIR}/state
 chown -R drifter:drifter ${DRIFTER_DIR}/state ${DRIFTER_DIR}/logs 2>/dev/null || true
