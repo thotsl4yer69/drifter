@@ -48,3 +48,39 @@ class TestSessionWriter:
         s.end(sid)
         second_end = json.loads((tmp_path / "sessions.json").read_text())["sessions"][0]["ended_ts"]
         assert first_end == second_end  # invariant: ended_ts immutable
+
+
+class TestAuditSessionRecord:
+    def test_write_attack_record_round_trip(self, tmp_path):
+        ms.write_attack_audit(state_root=tmp_path, record={
+            "id": "abc123",
+            "operator_ip": "10.42.0.5",
+            "started_ts": 1779600000.0,
+            "ended_ts": 1779600060.0,
+            "mode": "deauth_attack",
+            "target_bssid": "aa:bb:cc:dd:ee:ff",
+            "target_ssid": "ACME-Pentest-Guest",
+            "allowlist_path": "/opt/drifter/etc/audit_targets.yaml",
+            "allowlist_sha256": "deadbeef",
+            "confirm_token_consumed": "tok-uuid",
+            "packets_sent": 1240,
+            "transport": "direct",
+            "marauder_fw_banner": "Marauder v0.13.4",
+            "stop_reason": "duration_elapsed",
+        })
+        files = list((tmp_path / "attacks").glob("*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text())
+        assert data["id"] == "abc123"
+        assert data["allowlist_sha256"] == "deadbeef"
+
+    def test_write_attack_record_rejects_missing_required_fields(self, tmp_path):
+        """Invariant: every audit record contains the documented required
+        fields, or it doesn't get written. Catches a class of caller bugs
+        where attack lifecycle code forgets a field."""
+        import pytest
+        with pytest.raises(ValueError, match="missing required"):
+            ms.write_attack_audit(state_root=tmp_path, record={
+                "id": "abc",
+                # missing operator_ip, mode, etc.
+            })

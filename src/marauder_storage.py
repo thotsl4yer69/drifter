@@ -82,3 +82,28 @@ class SessionWriter:
         tmp = idx_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(existing, indent=2))
         os.replace(tmp, idx_path)
+
+
+ATTACK_REQUIRED_FIELDS = {
+    "id", "operator_ip", "started_ts", "ended_ts", "mode",
+    "allowlist_path", "allowlist_sha256",
+    "confirm_token_consumed", "transport", "stop_reason",
+}
+
+
+def write_attack_audit(*, state_root: Path | str, record: dict) -> Path:
+    """Write a HIGH-risk attack session record to attacks/<id>.json.
+
+    Raises ValueError if the record is missing required fields. Returns
+    the written file path. Idempotent — overwrites existing file with
+    same id (the lifecycle ensures only one writer per session).
+    """
+    missing = ATTACK_REQUIRED_FIELDS - set(record.keys())
+    if missing:
+        raise ValueError(f"missing required attack-audit fields: {sorted(missing)}")
+    root = Path(state_root)
+    out_dir = root / "attacks"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{record['id']}.json"
+    out_path.write_text(json.dumps(record, indent=2))
+    return out_path
