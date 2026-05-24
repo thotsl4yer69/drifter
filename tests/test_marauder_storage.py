@@ -84,3 +84,53 @@ class TestAuditSessionRecord:
                 "id": "abc",
                 # missing operator_ip, mode, etc.
             })
+
+
+class TestPortalStorage:
+    def test_write_capture_creates_0600_file(self, tmp_path):
+        sid = "abc123"
+        path = ms.write_portal_capture(state_root=tmp_path, session_id=sid,
+                                        fields={"user": "alice", "pass": "x"})
+        # File exists at expected location
+        assert path == tmp_path / "evilportal" / f"captures-{sid}.jsonl"
+        assert path.exists()
+        # Mode is 0600 (owner read/write only)
+        import os
+        mode = oct(os.stat(path).st_mode & 0o777)
+        assert mode == "0o600", f"capture file mode should be 0o600, got {mode}"
+        # Content is one JSON object per line
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 1
+        data = json.loads(lines[0])
+        assert data["fields"] == {"user": "alice", "pass": "x"}
+        assert "ts" in data
+
+    def test_write_capture_appends_subsequent_calls(self, tmp_path):
+        sid = "abc123"
+        ms.write_portal_capture(state_root=tmp_path, session_id=sid, fields={"x": "1"})
+        ms.write_portal_capture(state_root=tmp_path, session_id=sid, fields={"x": "2"})
+        path = tmp_path / "evilportal" / f"captures-{sid}.jsonl"
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 2
+
+    def test_write_portal_audit_required_fields(self, tmp_path):
+        ms.write_portal_audit(state_root=tmp_path, record={
+            "id": "p1", "operator_ip": "10.42.0.5",
+            "started_ts": 1.0, "ended_ts": 2.0,
+            "ssid": "ACME", "template_name": "acme-guest",
+            "template_sha256": "abc", "allowlist_sha256": "def",
+            "allowlist_entry": {"ssid": "ACME", "template": "acme-guest"},
+            "duration_s": 60, "transport": "direct",
+            "captures_count": 0, "captures_file": "captures-p1.jsonl",
+            "captures_revealed_at": [],
+            "captures_wiped": False, "stop_reason": "duration_elapsed",
+        })
+        f = tmp_path / "evilportal" / "p1.json"
+        assert f.exists()
+        data = json.loads(f.read_text())
+        assert data["template_sha256"] == "abc"
+
+    def test_write_portal_audit_missing_field_raises(self, tmp_path):
+        import pytest
+        with pytest.raises(ValueError, match="missing required"):
+            ms.write_portal_audit(state_root=tmp_path, record={"id": "p1"})
