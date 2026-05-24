@@ -41,3 +41,66 @@ class TestEnumerateCandidates:
         names = {Path(p).name for p in result}
         assert any("303a_1001" in n for n in names)
         assert any("10c4_ea60" in n for n in names)
+
+
+import os
+import pty
+import threading
+import time
+
+
+class TestProbeDirect:
+    def _pty_pair(self, fake_response: bytes, delay: float = 0.05):
+        """Open a pty pair. Spawn a thread that, when the test side reads
+        a request line, writes fake_response after a small delay."""
+        master, slave = pty.openpty()
+        slave_path = os.ttyname(slave)
+
+        def responder():
+            # Wait for any write from device side (the probe sends stopscan\r\n)
+            try:
+                os.read(master, 256)
+            except OSError:
+                return
+            time.sleep(delay)
+            os.write(master, fake_response)
+
+        t = threading.Thread(target=responder, daemon=True)
+        t.start()
+        return slave_path, master, t
+
+    def test_probe_direct_finds_marauder_banner(self):
+        slave_path, master, _ = self._pty_pair(
+            b"Marauder v0.13.4 ready\r\n>\r\n"
+        )
+        try:
+            ok, detail = mt.probe_direct(slave_path, timeout=1.0)
+            assert ok is True
+            assert "Marauder" in detail or "ESP32" in detail
+        finally:
+            os.close(master)
+
+    def test_probe_direct_finds_esp32_banner(self):
+        slave_path, master, _ = self._pty_pair(b"ESP32 chip waking up\r\n>")
+        try:
+            ok, _ = mt.probe_direct(slave_path, timeout=1.0)
+            assert ok is True
+        finally:
+            os.close(master)
+
+    def test_probe_direct_rejects_unrelated_device(self):
+        slave_path, master, _ = self._pty_pair(b"GPS fix: $GPGGA,...\r\n")
+        try:
+            ok, _ = mt.probe_direct(slave_path, timeout=1.0)
+            assert ok is False
+        finally:
+            os.close(master)
+
+    def test_probe_direct_handles_no_response(self):
+        slave_path, master, _ = self._pty_pair(b"", delay=2.0)
+        try:
+            ok, detail = mt.probe_direct(slave_path, timeout=0.5)
+            assert ok is False
+            assert "timeout" in detail.lower() or "no response" in detail.lower()
+        finally:
+            os.close(master)
