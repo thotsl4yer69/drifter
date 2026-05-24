@@ -170,6 +170,42 @@ _PARSERS.extend([
     (_RE_BEACON_TX, "beacon_tx", _build_beacon_tx),
 ])
 
+_RE_AIRTAG = re.compile(
+    r"^BLE:\s*AirTag spotted\s*(?P<mac>[0-9a-fA-F:]{17})\s*RSSI\s*(?P<rssi>-?\d+)\s*$"
+)
+
+
+def _build_airtag(m: re.Match) -> dict:
+    return {"mac": m.group("mac").lower(), "rssi": int(m.group("rssi"))}
+
+
+_RE_SKIMMER = re.compile(
+    r"^BLE:\s*skimmer fingerprint\s*(?P<mac>[0-9a-fA-F:]{17})\s*$"
+)
+
+
+def _build_skimmer(m: re.Match) -> dict:
+    return {"mac": m.group("mac").lower()}
+
+
+_RE_BLE_DEVICE = re.compile(
+    r'^BLE:\s*device\s*(?P<mac>[0-9a-fA-F:]{17})\s*'
+    r'name="(?P<name>.*)"\s*RSSI\s*(?P<rssi>-?\d+)\s*$'
+)
+
+
+def _build_ble_device(m: re.Match) -> dict:
+    return {"mac": m.group("mac").lower(),
+            "name": m.group("name"),
+            "rssi": int(m.group("rssi"))}
+
+
+_PARSERS.extend([
+    (_RE_AIRTAG, "airtag", _build_airtag),
+    (_RE_SKIMMER, "skimmer", _build_skimmer),
+    (_RE_BLE_DEVICE, "ble_device", _build_ble_device),
+])
+
 
 def parse_event(line: str) -> dict | None:
     """Parse one line of Marauder serial output.
