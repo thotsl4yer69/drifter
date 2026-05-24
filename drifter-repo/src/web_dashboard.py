@@ -48,6 +48,30 @@ WEB_PORT = 8080
 WS_PORT = 8081
 AUDIO_WS_PORT = 8082
 
+# ── Static asset paths ──
+# In production, /opt/drifter/src/web_dashboard.py serves /opt/drifter/assets/*.
+# In dev, this file sits alongside vivi_avatar.html in drifter-repo/src/.
+SRC_DIR = Path(__file__).resolve().parent
+REPO_DIR = SRC_DIR.parent
+AVATAR_HTML_PATH = SRC_DIR / "vivi_avatar.html"
+ASSETS_DIRS = [REPO_DIR / "assets", DRIFTER_DIR / "assets"]
+
+# MIME types for static asset serving
+ASSET_MIME = {
+    '.glb': 'model/gltf-binary',
+    '.gltf': 'model/gltf+json',
+    '.bin': 'application/octet-stream',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+}
+
 running = True
 latest_state = {}
 latest_report = {}
@@ -1181,6 +1205,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._serve_html(DASHBOARD_HTML)
         elif parsed.path == '/mechanic':
             self._serve_html(MECHANIC_HTML)
+        elif parsed.path == '/avatar':
+            self._serve_file(AVATAR_HTML_PATH, 'text/html; charset=utf-8')
+        elif parsed.path.startswith('/assets/'):
+            self._serve_asset(parsed.path[len('/assets/'):])
         elif parsed.path == '/api/state':
             self._serve_json(latest_state)
         elif parsed.path == '/api/hardware':
@@ -1261,6 +1289,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status": "triggered"}')
+        elif self.path == '/api/vivi/query':
+            length = int(self.headers.get('Content-Length', 0) or 0)
+            raw = self.rfile.read(length) if length else b'{}'
+            try:
+                payload = json.loads(raw or b'{}')
+            except json.JSONDecodeError:
+                payload = {}
+            query = (payload.get('query') or payload.get('text') or '').strip()
+            if not query:
+                self.send_error(400, 'query required')
+                return
+            try:
+                mqtt_client.publish(
+                    TOPICS['vivi_query'],
+                    json.dumps({'query': query, 'ts': time.time()}),
+                )
+                self._serve_json({'status': 'queued', 'query': query})
+            except Exception as e:
+                log.warning(f"vivi query publish failed: {e}")
+                self.send_error(503, 'mqtt unavailable')
         else:
             self.send_error(404)
 
@@ -1270,6 +1318,38 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         self.wfile.write(html.encode())
+
+    def _serve_file(self, path: Path, content_type: str):
+        if not path.exists() or not path.is_file():
+            self.send_error(404, f'{path.name} not found')
+            return
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_asset(self, rel: str):
+        # Reject path traversal — only allow alphanumeric, dot, dash, underscore, slash
+        if not rel or '..' in rel.split('/') or rel.startswith('/'):
+            self.send_error(400, 'bad asset path')
+            return
+        for base in ASSETS_DIRS:
+            candidate = (base / rel).resolve()
+            try:
+                base_resolved = base.resolve()
+            except FileNotFoundError:
+                continue
+            if not str(candidate).startswith(str(base_resolved)):
+                continue
+            if candidate.exists() and candidate.is_file():
+                ext = candidate.suffix.lower()
+                mime = ASSET_MIME.get(ext, 'application/octet-stream')
+                self._serve_file(candidate, mime)
+                return
+        self.send_error(404, f'asset not found: {rel}')
 
     def _serve_json(self, data):
         self.send_response(200)
