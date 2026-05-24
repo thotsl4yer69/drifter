@@ -1,0 +1,12 @@
+[Unit]
+Description=MZ1312 DRIFTER LLM keep-warm timer (5-min ping to Ollama)
+
+[Timer]
+# First tick 60s after boot so Ollama has time to start, then every 5min.
+# Keep-warm is set to 10m on each ping, so even a missed tick is recoverable.
+OnBootSec=60s
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

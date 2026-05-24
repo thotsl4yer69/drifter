@@ -1,0 +1,27 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+venv/
+.env
+logs/
+*.log
+*.wav
+*.db
+*.onnx
+*.onnx.json
+calibration.json
+settings.json
+tpms_sensors.json
+data/
+# ...but the mechanic knowledge-base lives under src/data/mechanic and
+# IS source code — track it explicitly.
+!src/data/
+!src/data/**
+reports/
+.vscode/
+.idea/
+
+# OMC/superpowers runtime — local agent state, not for the repo
+.omc/
+.superpowers/

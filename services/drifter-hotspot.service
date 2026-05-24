@@ -1,0 +1,13 @@
+[Unit]
+Description=MZ1312 DRIFTER Wi-Fi Hotspot
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nmcli con up "MZ1312_DRIFTER"
+ExecStop=/usr/bin/nmcli con down "MZ1312_DRIFTER"
+
+[Install]
+WantedBy=multi-user.target

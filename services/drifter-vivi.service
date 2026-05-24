@@ -1,0 +1,24 @@
+[Unit]
+Description=MZ1312 DRIFTER Vivi Voice Assistant
+After=nanomq.service sound.target
+Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/vivi.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Vehicle-survival hardening 2026-05-20: cap vivi to ~1.5G hard /
+# 1.2G soft. Ollama llm runtime is intentionally uncapped; total RAM
+# budget assumes vivi+dashboard+rfaudio caps absorb other growth.
+MemoryHigh=1.2G
+MemoryMax=1.5G
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

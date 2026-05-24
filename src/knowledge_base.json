@@ -1,0 +1,3041 @@
+{
+  "metadata": {
+    "version": "1.1.0",
+    "created": "2026-03-31",
+    "description": "Comprehensive repair knowledge base for Jack's 2004 Jaguar X-Type (X400 platform, Australian-spec, RHD). Designed for LM context injection in the Drifter AI mechanic assistant.",
+    "source_documents": [
+      "Jaguar X-Type Workshop Manual (2,810 pages)",
+      "2004.25/2004.5 Electrical Guide (JJM 10 38 20/42)",
+      "Chassis & Suspension Manual",
+      "X-Type 2002 Driver's Handbook",
+      "X-Type 2003.5 Owner's Guide",
+      "EOBD Quick Reference Diagnostic Guide",
+      "Vehicle Maintenance Schedule"
+    ],
+    "coverage": "Engine, Transmission, Electrical, CAN bus, Chassis, Suspension, Brakes, Steering, Body, Climate, Security, Lighting, Audio, Diagnostics, Maintenance"
+  },
+  "vehicle": {
+    "make": "Jaguar",
+    "model": "X-Type",
+    "platform": "X400 (based on Ford CD132)",
+    "model_years": "2001-2009",
+    "owner_specific_year": 2004,
+    "body_styles": [
+      "Sedan",
+      "Estate (Wagon)"
+    ],
+    "engine_options": {
+      "2.0L_petrol": {
+        "type": "Duratec HE I4",
+        "displacement_cc": 1999,
+        "power": "130 PS (96 kW)",
+        "fuel_type": "Unleaded petrol 95 RON minimum",
+        "ecm_connector": "EN65 / 104-way / Black",
+        "ecm_location": "Engine compartment, front bulkhead, RH side"
+      },
+      "2.5L_V6": {
+        "type": "AJ-V6 (Duratec 25)",
+        "displacement_cc": 2495,
+        "power": "196 PS (144 kW)",
+        "fuel_type": "Unleaded petrol 95 RON minimum",
+        "ecm_connector": "EN16 / 134-way / Black",
+        "ecm_location": "Engine compartment, front bulkhead, RH side",
+        "can_pins": {
+          "CAN_minus": "EN16-123",
+          "CAN_plus": "EN16-124"
+        }
+      },
+      "3.0L_V6": {
+        "type": "AJ-V6 (Duratec 30)",
+        "displacement_cc": 2967,
+        "power": "231 PS (170 kW)",
+        "fuel_type": "Unleaded petrol 95 RON minimum",
+        "ecm_connector": "EN16 / 134-way / Black",
+        "ecm_location": "Engine compartment, front bulkhead, RH side",
+        "can_pins": {
+          "CAN_minus": "EN16-123",
+          "CAN_plus": "EN16-124"
+        }
+      },
+      "2.0L_diesel": {
+        "type": "Duratorq TDCi I4",
+        "displacement_cc": 1998,
+        "power": "130 PS (96 kW)",
+        "fuel_type": "Diesel",
+        "ecm_connector": "EN62",
+        "ecm_location": "Engine compartment, front bulkhead, RH side",
+        "special_systems": [
+          "Glow plug circuit",
+          "Fuel metering valve",
+          "Turbocharger solenoid"
+        ]
+      }
+    },
+    "transmission_options": {
+      "automatic": {
+        "type": "Jatco JF506E (JA5A-EL)",
+        "speeds": 5,
+        "tcm_variants": [
+          "16-bit TCM",
+          "32-bit TCM"
+        ],
+        "tcm_location": "Transmission top",
+        "modes": [
+          "P",
+          "R",
+          "N",
+          "D",
+          "Sport"
+        ],
+        "towing_limit": "Maximum 0.5 miles at 30 mph with front wheels on ground"
+      },
+      "manual": {
+        "type": "Ford MTX75",
+        "speeds": 5,
+        "towing_limit": "Maximum 30 miles at 30 mph with front wheels on ground"
+      }
+    },
+    "drivetrain": {
+      "type": "All-Wheel Drive (AWD) standard on V6 models",
+      "front_drive": "FWD available on 2.0L models",
+      "transfer_case": "Viscous coupling center differential"
+    },
+    "vin_ranges": {
+      "2001.5_MY": "C00344 to C59260",
+      "2002.25_MY": "C59261 onwards"
+    },
+    "dimensions": {
+      "fuel_tank_capacity_litres": 61.5,
+      "fuel_tank_capacity_us_gallons": 16.2,
+      "refill_capacity_litres": 56.5,
+      "unindicated_reserve_litres": 5.0
+    },
+    "market_specification": "ROW (Rest of World) — Australian Delivery",
+    "drive_side": "Right-Hand Drive (RHD)"
+  },
+  "electrical_system": {
+    "networks": {
+      "CAN": {
+        "type": "High-speed Controller Area Network",
+        "baud_rate": "500 kbaud",
+        "physical_layer": "Two-wire twisted pair shielded cable",
+        "architecture": "Multi-master with distributed intelligence",
+        "termination": "120-ohm resistors at both ends",
+        "primary_nodes": [
+          {
+            "name": "Engine Control Module (ECM)",
+            "role": "Master for engine management",
+            "transmits": [
+              "RPM",
+              "load",
+              "timing",
+              "fuel status"
+            ],
+            "receives": [
+              "transmission status",
+              "climate demand",
+              "vehicle speed"
+            ]
+          },
+          {
+            "name": "Transmission Control Module (TCM)",
+            "role": "Shift control and diagnostics",
+            "transmits": [
+              "gear status",
+              "transmission temperature",
+              "pressure"
+            ],
+            "receives": [
+              "engine status",
+              "throttle position",
+              "wheel speeds"
+            ]
+          },
+          {
+            "name": "Instrument Cluster",
+            "role": "Network Gateway (CAN/SCP bridge)",
+            "transmits": [
+              "display data"
+            ],
+            "receives": [
+              "all CAN node data"
+            ]
+          },
+          {
+            "name": "ABS/TC/DSC Module",
+            "role": "Brake and stability control",
+            "transmits": [
+              "wheel speeds",
+              "brake status"
+            ],
+            "receives": [
+              "engine torque requests"
+            ]
+          },
+          {
+            "name": "Climate Control Module",
+            "role": "HVAC operation",
+            "transmits": [
+              "compressor clutch demand"
+            ],
+            "receives": [
+              "coolant temp",
+              "vehicle speed"
+            ]
+          },
+          {
+            "name": "General Electronic Module (GEM)",
+            "role": "Power distribution and SCP gateway",
+            "transmits": [
+              "power management commands"
+            ],
+            "receives": [
+              "battery saver requests"
+            ]
+          }
+        ],
+        "secondary_nodes": [
+          "Headlamp Leveling Module (HID vehicles)",
+          "Restraints Control Module (Airbags)",
+          "Speed Control Module (Cruise)",
+          "Parking Aid Module"
+        ],
+        "message_priorities": [
+          "1. Critical engine management (RPM, fuel injection)",
+          "2. Transmission control",
+          "3. Braking system data",
+          "4. Stability control",
+          "5. Comfort/convenience systems"
+        ],
+        "typical_intervals": "100ms-200ms for periodic messages"
+      },
+      "SCP": {
+        "type": "Standard Corporate Protocol",
+        "baud_rate": "10.4 kbaud",
+        "physical_layer": "Two-wire twisted pair",
+        "architecture": "Multi-master body systems network",
+        "nodes": {
+          "GEM": {
+            "SCP_minus": "IP5-18",
+            "SCP_plus": "IP5-19"
+          },
+          "Instrument_Cluster": {
+            "SCP_plus": "IP10-22",
+            "SCP_minus": "IP10-23"
+          },
+          "Audio_Unit": {
+            "SCP_plus": "IP65-09",
+            "SCP_minus": "IP65-10"
+          }
+        }
+      },
+      "D2B": {
+        "type": "D2B Fiber Optic Network",
+        "physical_layer": "Optical fiber (BOF designation)",
+        "topology": "Point-to-point (not multi-master)",
+        "purpose": "Real-time audio data transfer",
+        "gateway": "Audio Unit",
+        "nodes": {
+          "Audio_Unit": {
+            "transmit": "ID1-1 (BOF)",
+            "receive": "ID1-2 (BOF)",
+            "connectors": [
+              "IP65 (20-way)",
+              "IP106 (2-way metallic)"
+            ]
+          },
+          "CD_Autochanger": {
+            "transmit": "CD2-1 (BOF)",
+            "receive": "CD2-2 (BOF)",
+            "connector": "CA301 (3-way black)",
+            "location": "Trunk, LH side"
+          },
+          "Power_Amplifier": {
+            "connectors": [
+              "CA426 (18-way black)",
+              "CD7 D2B fiber"
+            ],
+            "location": "Trunk, LH rear"
+          },
+          "Voice_Activation_Module": {
+            "connection": "D2B fiber to Audio Unit"
+          },
+          "Navigation_Module": {
+            "connection": "D2B network gateway"
+          },
+          "Cellular_Phone_Module": {
+            "connection": "D2B audio for phone"
+          }
+        }
+      }
+    },
+    "abbreviations": {
+      "A/C": "Air Conditioning",
+      "AWD": "All Wheel Drive",
+      "B+": "Battery Voltage",
+      "CAN": "Controller Area Network",
+      "CKP": "Crankshaft Position Sensor",
+      "CMP": "Camshaft Position Sensor (RH Bank /1, LH Bank /2)",
+      "D2B": "D2B Network (Fiber optic)",
+      "ECT": "Engine Coolant Temperature Sensor",
+      "EFT": "Engine Fuel Temperature Sensor",
+      "EGR": "Exhaust Gas Recirculation Valve",
+      "EGT": "Exhaust Gas Temperature Sensor",
+      "EMS": "Engine Management System",
+      "EOT": "Engine Oil Temperature Sensor",
+      "EVAP": "Evaporative Emission Control",
+      "FTP": "Fuel Tank Pressure Sensor",
+      "GPS": "Global Positioning System",
+      "HID": "High Intensity Discharge",
+      "HO2": "Heated Oxygen Sensor",
+      "IAT": "Intake Air Temperature Sensor",
+      "ICE": "In-Car Entertainment System",
+      "IMT": "Intake Manifold Tuning Solenoid Valve",
+      "IP": "Injection Pressure Sensor",
+      "KS": "Knock Sensor",
+      "MAF": "Mass Air Flow Sensor",
+      "MAP": "Manifold Absolute Pressure Sensor",
+      "PATS": "Passive Anti-Theft System",
+      "PWM": "Pulse Width Modulated",
+      "SCP": "Standard Corporate Protocol Network",
+      "TP": "Throttle Position Sensor",
+      "VVT": "Variable Valve Timing Solenoid Valve",
+      "GEM": "General Electronic Module",
+      "TCM": "Transmission Control Module",
+      "ECM": "Engine Control Module",
+      "DSC": "Dynamic Stability Control",
+      "ABS": "Anti-Lock Braking System"
+    },
+    "harness_codes": {
+      "AC": "Climate Control",
+      "AS": "Side Airbag",
+      "BH": "Engine Block Heaters",
+      "BL": "LH Rear Door",
+      "BR": "RH Rear Door",
+      "CA": "Cabin",
+      "DE": "Diesel Engine",
+      "DL": "Diesel Engine Link",
+      "EN": "Engine",
+      "FB": "Front Bumper",
+      "FL": "LH Front Door",
+      "FR": "RH Front Door",
+      "FT": "Fuel Tank",
+      "GC": "Cooling Pack",
+      "IJ": "Injector Rail",
+      "IP": "Instrument Panel",
+      "JB": "Junction Box",
+      "LF": "LH Front Wheel Speed Sensor",
+      "LR": "LH Rear Wheel Speed Sensor",
+      "LS": "LH Front Seat",
+      "NA": "Navigation System",
+      "PA": "Pedal Assembly",
+      "PH": "Telephone",
+      "RB": "Rear Bumper",
+      "RC": "Roof Console",
+      "RF": "RH Front Wheel Speed Sensor",
+      "RR": "RH Rear Wheel Speed Sensor",
+      "RS": "RH Front Seat",
+      "SL": "Security Sounder Link",
+      "TL": "Trunk Lid",
+      "TT": "Trailer Towing",
+      "WG": "Tailgate Glass (Estate)",
+      "WS": "Weight Sensor",
+      "WT": "Tailgate (Estate)"
+    },
+    "wire_colors": {
+      "N": "Brown",
+      "B": "Black",
+      "W": "White",
+      "K": "Pink",
+      "G": "Green",
+      "R": "Red",
+      "Y": "Yellow",
+      "O": "Orange",
+      "S": "Slate",
+      "L": "Light",
+      "U": "Blue",
+      "P": "Purple",
+      "BRD": "Braid",
+      "BOF": "Fiber optic (D2B)"
+    },
+    "control_modules": {
+      "ECM_V6": {
+        "connector": "EN16 / 134-way / Black",
+        "location": "Engine compartment, front bulkhead, RH side",
+        "key_pins": {
+          "EN16-006": "Engine crank supply (B+)",
+          "EN16-031": "Park/Neutral switch (Auto trans)",
+          "EN16-041": "Starter relay drive output",
+          "EN16-053": "Generator control (variable voltage)",
+          "EN16-065": "Generator field return signal",
+          "EN16-079": "Generator charge/fault signal",
+          "EN16-123": "CAN - network",
+          "EN16-124": "CAN + network"
+        }
+      },
+      "GEM": {
+        "location": "Behind instrument panel, RH side",
+        "connectors": [
+          "CA86 (23-way grey)",
+          "CA87 (23-way green)",
+          "IP5 (23-way brown)",
+          "IP6 (23-way natural)",
+          "JB172 (23-way blue)"
+        ],
+        "key_pins": {
+          "CA86-03": "Interior lamps output",
+          "CA86-05": "Power ground",
+          "IP5-18": "SCP - network",
+          "IP5-19": "SCP + network",
+          "IP6-22": "Driver door ajar input",
+          "IP6-08": "Key-in ignition switch (B+)"
+        },
+        "functions": [
+          "Interior lighting",
+          "Door locks",
+          "Battery saver circuit",
+          "SCP network gateway"
+        ]
+      },
+      "Instrument_Cluster": {
+        "connectors": [
+          "IP10 (26-way white)",
+          "IP11 (26-way white)"
+        ],
+        "location": "Instrument panel",
+        "key_pins": {
+          "IP10-03": "PATS encoded communication 1",
+          "IP10-04": "PATS encoded communication 2",
+          "IP10-05": "PATS ground",
+          "IP10-06": "PATS transceiver power (B+)",
+          "IP10-17": "CAN +",
+          "IP10-18": "CAN -",
+          "IP10-22": "SCP +",
+          "IP10-23": "SCP -",
+          "IP11-08": "Power ground",
+          "IP11-13": "Ignition switched power (Key II)"
+        },
+        "functions": [
+          "Vehicle information display",
+          "PATS processing",
+          "CAN/SCP network gateway"
+        ]
+      },
+      "Climate_Control": {
+        "connectors_manual": [
+          "AC1 (26-way yellow)",
+          "IP39 (4-way)",
+          "IP101 (26-way white)",
+          "IP135 (2-way)"
+        ],
+        "location": "Behind climate control panel",
+        "functions": [
+          "Blower control",
+          "Temperature regulation",
+          "Air distribution"
+        ]
+      },
+      "ABS_DSC": {
+        "location": "Behind battery/engine compartment",
+        "variants": [
+          "ABS only",
+          "ABS with Traction Control",
+          "Dynamic Stability Control (DSC)"
+        ],
+        "dsc_inputs": [
+          "Steering angle sensor",
+          "Yaw rate sensor",
+          "All 4 wheel speed sensors",
+          "Brake pressure sensor"
+        ]
+      },
+      "Restraints_Module": {
+        "variants": [
+          "FWD vehicles",
+          "AWD vehicles"
+        ],
+        "location": "Center of vehicle, behind trim panel",
+        "inputs": [
+          "Front impact sensors",
+          "Side impact sensors",
+          "Seat occupancy sensors",
+          "Seat belt tension sensors",
+          "Seat position switches"
+        ]
+      },
+      "J_Gate_Module": {
+        "connector": "IP14 / 16-way / Grey",
+        "location": "Center console",
+        "function": "Transmission mode selection"
+      },
+      "Audio_Unit": {
+        "connectors": [
+          "IP65 (20-way)",
+          "IP106 (2-way metallic)",
+          "ID1 (2-way D2B)"
+        ],
+        "location": "Instrument panel center",
+        "network": "D2B fiber optic (audio gateway)"
+      }
+    },
+    "fuses_and_relays": {
+      "engine_compartment_fuse_box": {
+        "location": "Left side of engine compartment, adjacent to battery",
+        "relays_gasoline": {
+          "R1": "Main Beam / Front Fog Relay",
+          "R3": "A/C Compressor Clutch Relay",
+          "R4": "Windshield Wiper Motor Relay",
+          "R5": "Power Distribution Fuse Box Ignition Relay",
+          "R6": "Windshield Heater Relay",
+          "R7": "EMS Control Relay",
+          "R8": "Powerwash Pump Relay",
+          "R11": "Dip Beam Relay",
+          "R12": "Starter Relay",
+          "R13": "Slave Ignition Relay",
+          "R15": "Horn Relay"
+        },
+        "relays_diesel_differences": {
+          "R2": "Horn Relay (differs from gasoline)",
+          "R10": "Glow Plug Relay (diesel-specific)",
+          "R15": "Auxiliary Heater Relay 1 (diesel-specific)"
+        },
+        "fuses_gasoline": {
+          "F1": "10A",
+          "F2": "15A",
+          "F4": "10A",
+          "F5": "10A",
+          "F6": "7.5A",
+          "F8": "30A",
+          "F9": "30A",
+          "F10": "15A",
+          "F11": "15A",
+          "F13": "5A",
+          "F14": "30A",
+          "F15": "30A",
+          "F16": "5A",
+          "F17": "10A",
+          "F18": "10A",
+          "F19": "10A",
+          "F20": "30A",
+          "F21": "30A",
+          "F24": "30A",
+          "F27": "15A",
+          "F29": "20A",
+          "F30": "20A",
+          "F32": "15A",
+          "F34": "30A",
+          "F35": "5A",
+          "F36": "5A",
+          "F38": "20A"
+        },
+        "bottom_section_relays": {
+          "R6": "Heated Rear Window Relay",
+          "R7_V6": "Throttle Motor Relay (2.5/3.0L)",
+          "R7_2L": "Fuel Pump Relay (2.0L)",
+          "R9": "Reverse Lamps Relay",
+          "R10": "Battery Saver Relay"
+        },
+        "high_current_fuses": {
+          "F39": "150A (Main distribution)",
+          "F40": "80A",
+          "F41": "60A",
+          "F42": "50A"
+        }
+      },
+      "passenger_junction_fuse_box": {
+        "location": "Behind instrument panel, LH side",
+        "relays": {
+          "R1": "Fold-Back Mirror Module",
+          "R2": "Accessory Relay",
+          "R3": "Rear Wiper Motor Relay (Estate only)",
+          "R4": "Blower Motor Relay",
+          "R5": "Passenger Junction Fuse Box Ignition Relay"
+        }
+      },
+      "relay_iso_pin_standard": {
+        "pin_1": "Coil positive supply (+)",
+        "pin_2": "Coil negative supply / NC",
+        "pin_3": "Change-over (COM)",
+        "pin_4": "Normally open (NO)",
+        "pin_5": "Coil return"
+      }
+    },
+    "ground_points": {
+      "battery_grounds": {
+        "G13": {
+          "location": "Engine block",
+          "function": "Battery engine ground"
+        },
+        "G16": {
+          "location": "Engine compartment / under battery tray",
+          "function": "Battery chassis ground (primary)"
+        }
+      },
+      "engine_compartment": {
+        "G14": {
+          "location": "Rearward of Power Distribution Fuse Box",
+          "function": "Engine compartment circuits, ECM returns"
+        },
+        "G17": {
+          "location": "On generator bracket, RH side of engine",
+          "function": "Generator return path"
+        },
+        "G10": {
+          "location": "Under RH headlamp assembly",
+          "function": "RH front corner ground"
+        },
+        "G11": {
+          "location": "Under LH headlamp assembly",
+          "function": "LH front corner ground"
+        },
+        "G18": {
+          "location": "Under RH headlamp assembly (alt)",
+          "function": "Alternative RH ground"
+        },
+        "G32": {
+          "location": "Under LH headlamp assembly (alt)",
+          "function": "Alternative LH ground"
+        }
+      },
+      "dash_panel": {
+        "G36": {
+          "location": "LH side of cross car beam, behind instrument panel",
+          "function": "Instrument cluster, control module returns"
+        },
+        "G37": {
+          "location": "RH side of cross car beam, behind instrument panel",
+          "function": "Dashboard circuits, lighting control returns"
+        },
+        "G51": {
+          "location": "Under body, LH dash panel",
+          "function": "Secondary dash panel grounds"
+        }
+      },
+      "structural": {
+        "G15": {
+          "location": "LH A-post, lower",
+          "function": "Cabin circuit returns"
+        },
+        "G5": {
+          "location": "RH A-post, lower",
+          "function": "RH cabin circuits"
+        },
+        "G4": {
+          "location": "RH A-post, upper",
+          "function": "Alternative RH post"
+        },
+        "G35": {
+          "location": "LH E-post, lower",
+          "function": "Rear lamp circuits"
+        },
+        "G38": {
+          "location": "Roof, top of LH E-post (sedan only)",
+          "function": "High-mount brake light return"
+        },
+        "G3": {
+          "location": "LH E-post",
+          "function": "Heated rear window return"
+        },
+        "G33": {
+          "location": "ABS/TC/DSC module bracket",
+          "function": "ABS module ground reference"
+        },
+        "G8": {
+          "location": "RH strut tower",
+          "function": "Braking system grounds"
+        }
+      },
+      "trunk": {
+        "G1": {
+          "location": "Trunk, LH rear (under LH tail lamp unit)",
+          "function": "Trunk lamp, tail light returns"
+        },
+        "G2": {
+          "location": "Trunk, LH rear (alternative)",
+          "function": "Secondary trunk circuits"
+        },
+        "G39": {
+          "location": "Trunk, LH rear, lower",
+          "function": "Additional trunk grounds"
+        },
+        "G40": {
+          "location": "Trunk, rear cargo section",
+          "function": "Tail lamp area grounds"
+        },
+        "G50": {
+          "location": "RH rear roof panel (Estate only)",
+          "function": "Rear cargo lighting/accessories"
+        }
+      }
+    }
+  },
+  "chassis_and_suspension": {
+    "wheel_alignment": {
+      "front": {
+        "applicable": "2001.50 MY onwards (VIN C00344+)",
+        "castor": {
+          "value_degrees": 2.25,
+          "tolerance_degrees": 0.75,
+          "split_LH_RH_tolerance": 0.75
+        },
+        "camber": {
+          "value_degrees": -0.54,
+          "tolerance_degrees": 0.75,
+          "split_LH_RH_tolerance": 0.75
+        },
+        "total_toe": {
+          "value_degrees": -0.1,
+          "tolerance_degrees": 0.2
+        }
+      },
+      "rear": {
+        "camber": {
+          "value_degrees": -0.7,
+          "tolerance_degrees": 0.75
+        },
+        "individual_toe": {
+          "value_degrees": 0.125,
+          "tolerance_degrees": 0.14
+        },
+        "total_toe": {
+          "value_degrees": 0.25,
+          "tolerance_degrees": 0.2
+        },
+        "thrust_angle": {
+          "value_degrees": 0,
+          "tolerance_degrees": 0.14
+        },
+        "thrust_angle_formula": "(LH toe - RH toe) / 2"
+      },
+      "measurement_conditions": "All fluids full, full fuel tank, tires at normal pressure. Ride height measured from wheel center to apex of wheel arch."
+    },
+    "ride_height": {
+      "front_mm": {
+        "value": 371,
+        "tolerance": 15,
+        "showroom_value": 376
+      },
+      "rear_mm": {
+        "value": 370,
+        "tolerance": 15,
+        "showroom_value": 379
+      },
+      "measurement_note": "Showroom condition: vehicle empty, 9 litres fuel in tank"
+    },
+    "ball_joint": {
+      "lower_radial_play_max_mm": 0.8
+    },
+    "vehicle_lean": {
+      "front_wheel_opening_diff_max_mm": 12,
+      "rear_wheel_opening_diff_max_mm": 0.25,
+      "max_attitude_front_minus_rear_mm": 14.5
+    },
+    "repair_procedures": {
+      "front_toe_adjustment": {
+        "reference": "57.65.01",
+        "steps": [
+          "Start engine and centralize steering wheel",
+          "Turn engine off, attach rigid link from steering wheel to brake pedal",
+          "Check toe setting using four wheel alignment equipment",
+          "Loosen tie rod end locknuts",
+          "Reposition steering gear boot outer clamps",
+          "Rotate tie-rods equal amount clockwise or counterclockwise to adjust",
+          "Tighten tie-rod end locknuts to 40 Nm",
+          "Reposition steering gear boot outer clamps",
+          "Recheck toe setting"
+        ],
+        "torque_specs": {
+          "tie_rod_locknut": "40 Nm"
+        }
+      },
+      "rear_toe_adjustment": {
+        "reference": "57.65.08",
+        "steps": [
+          "Check toe setting using four wheel alignment equipment",
+          "Raise and support vehicle",
+          "Loosen rear lower arm cam bolt nuts",
+          "Rotate cam bolts equal amounts to adjust toe",
+          "CAUTION: Final tightening must be with vehicle on its wheels",
+          "Lower vehicle",
+          "Bounce vehicle to settle suspension",
+          "Tighten rear lower arm cam bolt nuts to 115 Nm"
+        ],
+        "torque_specs": {
+          "rear_lower_arm_cam_bolt_nut": "115 Nm"
+        }
+      },
+      "wheel_bearing_inspection": {
+        "steps": [
+          "Raise and support vehicle",
+          "Ensure wheel rotates freely and brake pads retracted",
+          "Hold tire at top and bottom, move inward/outward while lifting weight off bearing",
+          "If loose or does not rotate freely, install new bearing (front: 204-01, rear: 204-02)"
+        ]
+      }
+    },
+    "wheel_torque_specs": {
+      "alloy_wheels_Nm": {
+        "value": 103,
+        "tolerance": 15.5
+      },
+      "steel_wheels_Nm": {
+        "value": 80,
+        "tolerance": 12.0
+      }
+    }
+  },
+  "maintenance_schedule": {
+    "overview": "Scheduled maintenance intervals in kilometers and miles",
+    "intervals": [
+      {
+        "interval_km": 16000,
+        "interval_miles": 10000,
+        "items": [
+          "Wiper blade inspection",
+          "Tire pressure and condition check",
+          "Engine oil and filter renewal",
+          "Fluid level checks (coolant, brake fluid, washer fluid)"
+        ]
+      },
+      {
+        "interval_km": 32000,
+        "interval_miles": 20000,
+        "items": [
+          "Pollen filter renewal",
+          "All items from 16,000 km service"
+        ]
+      },
+      {
+        "interval_km": 48000,
+        "interval_miles": 30000,
+        "items": [
+          "Brake pad inspection",
+          "All items from 16,000 km service"
+        ]
+      },
+      {
+        "interval_km": 64000,
+        "interval_miles": 40000,
+        "items": [
+          "All items from 16,000 km service"
+        ]
+      },
+      {
+        "interval_km": 80000,
+        "interval_miles": 50000,
+        "items": [
+          "All items from 16,000 km service"
+        ]
+      },
+      {
+        "interval_km": 96000,
+        "interval_miles": 60000,
+        "items": [
+          "All items from 16,000 km service"
+        ]
+      }
+    ],
+    "periodic_items": [
+      {
+        "item": "Coolant renewal",
+        "interval": "Every 5 years or 240,000 km (150,000 miles)",
+        "notes": "Whichever comes first"
+      },
+      {
+        "item": "Brake fluid renewal",
+        "interval": "Every 2 years",
+        "notes": "Independent of mileage"
+      },
+      {
+        "item": "Air cleaner element renewal",
+        "interval": "Every 112,000 km (70,000 miles)",
+        "notes": "Or as needed"
+      },
+      {
+        "item": "Fuel filter renewal",
+        "interval": "Every 112,000 km (70,000 miles)",
+        "notes": "Or as needed"
+      },
+      {
+        "item": "Spark plug renewal",
+        "interval": "Every 112,000 km (70,000 miles)",
+        "notes": "Or as needed"
+      },
+      {
+        "item": "Accessory drive belt inspection and renewal",
+        "interval": "Every 160,000 km (100,000 miles)",
+        "notes": "Inspect at earlier intervals, replace as needed"
+      }
+    ]
+  },
+  "diagnostic_trouble_codes": {
+    "overview": "Complete EOBD/OBD2 diagnostic codes for Jaguar X-Type powertrain systems",
+    "systems": {
+      "powertrain_ems": {
+        "system_name": "Engine Management System (EMS) / EOBD",
+        "dtc_codes": [
+          {
+            "code": "P0010",
+            "description": "Camshaft position actuator solenoid circuit malfunction (Bank 1)",
+            "monitoring_conditions": "Variable camshaft timing drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Speed control inhibited",
+            "cm_pin": "EB13/-102/-103",
+            "possible_causes": [
+              "Camshaft position solenoid circuit open/short",
+              "Transmission internal solenoid circuit issues",
+              "TCM ground circuit fault",
+              "High resistance in solenoid circuit"
+            ]
+          },
+          {
+            "code": "P0020",
+            "description": "Camshaft position actuator solenoid circuit malfunction (Bank 2)",
+            "monitoring_conditions": "Variable camshaft timing drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Speed control inhibited",
+            "cm_pin": "EB13/-102/-103",
+            "possible_causes": [
+              "Camshaft position solenoid circuit open/short",
+              "Transmission internal solenoid circuit issues",
+              "TCM ground circuit fault",
+              "High resistance in solenoid circuit"
+            ]
+          },
+          {
+            "code": "P0031",
+            "description": "Heated Oxygen Sensor heater circuit low voltage (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-047",
+            "possible_causes": [
+              "HO2S heater circuit wiring fault",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0032",
+            "description": "Heated Oxygen Sensor heater circuit high voltage (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-047",
+            "possible_causes": [
+              "HO2S heater circuit short to voltage",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0033",
+            "description": "Heated Oxygen Sensor heater circuit low voltage (Bank 1, Sensor 2)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-048",
+            "possible_causes": [
+              "HO2S heater circuit wiring fault",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0034",
+            "description": "Heated Oxygen Sensor heater circuit high voltage (Bank 1, Sensor 2)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-048",
+            "possible_causes": [
+              "HO2S heater circuit short to voltage",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0035",
+            "description": "Heated Oxygen Sensor heater circuit low voltage (Bank 2, Sensor 1)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-049",
+            "possible_causes": [
+              "HO2S heater circuit wiring fault",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0036",
+            "description": "Heated Oxygen Sensor heater circuit high voltage (Bank 2, Sensor 1)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-049",
+            "possible_causes": [
+              "HO2S heater circuit short to voltage",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0037",
+            "description": "Heated Oxygen Sensor heater circuit low voltage (Bank 2, Sensor 2)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-050",
+            "possible_causes": [
+              "HO2S heater circuit wiring fault",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0038",
+            "description": "Heated Oxygen Sensor heater circuit high voltage (Bank 2, Sensor 2)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering inhibited",
+            "cm_pin": "EB16/-050",
+            "possible_causes": [
+              "HO2S heater circuit short to voltage",
+              "Heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0040",
+            "description": "Oxygen Sensor signals swapped (Bank 1 and Bank 2)",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "Adaptive fuel metering disabled",
+            "cm_pin": "EB16/-051",
+            "possible_causes": [
+              "HO2S signal wiring crossed",
+              "HO2S sensors installed in wrong location",
+              "ECM/PCM signal processing fault"
+            ]
+          },
+          {
+            "code": "P0101",
+            "description": "Mass Air Flow (MAF) Sensor out of range",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air mass used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EN16/-045",
+            "possible_causes": [
+              "MAF Sensor to ECM sensor ground circuit open circuit, short circuit to high voltage",
+              "MAF Sensor to ECM sensing circuit open circuit",
+              "MAF Sensor failure"
+            ]
+          },
+          {
+            "code": "P0102",
+            "description": "Mass Air Flow (MAF) Sensor circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air mass used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EN16/-046",
+            "possible_causes": [
+              "MAF Sensor to ECM sensor ground circuit open circuit, short circuit to high voltage",
+              "MAF Sensor to ECM sensing circuit open circuit",
+              "MAF Sensor failure"
+            ]
+          },
+          {
+            "code": "P0103",
+            "description": "Mass Air Flow (MAF) Sensor circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air mass used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EN16/-046",
+            "possible_causes": [
+              "MAF Sensor to ECM sensor ground circuit open circuit, short circuit to high voltage",
+              "MAF Sensor to ECM sensing circuit open circuit",
+              "MAF Sensor failure"
+            ]
+          },
+          {
+            "code": "P0106",
+            "description": "Barometric Absolute Pressure (MAP) Sensor out of range",
+            "monitoring_conditions": "System Readiness Test",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Refer to page 3"
+            ]
+          },
+          {
+            "code": "P0107",
+            "description": "MAP Sensor sense circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default value of 1.013 BAR (29.92 in hg) used",
+            "cm_pin": "EN16/-127",
+            "possible_causes": [
+              "MAP Sensor to ECM sense circuit open circuit, short circuit to ground",
+              "MAP Sensor sensor supply circuit (to splice): open circuit",
+              "MAP Sensor failure"
+            ]
+          },
+          {
+            "code": "P0108",
+            "description": "MAP Sensor sense circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default value of 1.013 BAR (29.92 in hg) used",
+            "cm_pin": "EN16/-127",
+            "possible_causes": [
+              "MAP Sensor ground circuit (to splice): open circuit",
+              "MAP Sensor to ECM sense circuit: short circuit to high voltage, open circuit",
+              "MAP Sensor failure"
+            ]
+          },
+          {
+            "code": "P0111",
+            "description": "Intake Air Temperature (IAT) Sensor circuit out of range",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air temperature value used, Adaptive fuel metering inhibited",
+            "cm_pin": "EN16/-128",
+            "possible_causes": [
+              "IAT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "IAT Sensor to ECM sensing circuit: open circuit",
+              "IAT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0112",
+            "description": "Intake Air Temperature (IAT) Sensor circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air temperature value used, Adaptive fuel metering inhibited",
+            "cm_pin": "EN16/-128",
+            "possible_causes": [
+              "IAT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "IAT Sensor to ECM sensing circuit: open circuit",
+              "IAT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0113",
+            "description": "Intake Air Temperature (IAT) Sensor circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default air temperature value used, Adaptive fuel metering inhibited",
+            "cm_pin": "EN16/-128",
+            "possible_causes": [
+              "IAT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "IAT Sensor to ECM sensing circuit: open circuit",
+              "IAT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0116",
+            "description": "Engine Coolant Temperature (ECT) Sensor circuit out of range",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default coolant temperature used, Fuel enrichment mode used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced, Idle speed controlled by fuel injection intervention",
+            "cm_pin": "EN16/-129",
+            "possible_causes": [
+              "ECT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "ECT Sensor to ECM sensing circuit: open circuit",
+              "ECT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0117",
+            "description": "Engine Coolant Temperature (ECT) Sensor circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default coolant temperature used, Fuel enrichment mode used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced, Idle speed controlled by fuel injection intervention",
+            "cm_pin": "EN16/-129",
+            "possible_causes": [
+              "ECT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "ECT Sensor to ECM sensing circuit: open circuit",
+              "ECT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0118",
+            "description": "Engine Coolant Temperature (ECT) Sensor circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default coolant temperature used, Fuel enrichment mode used, Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced, Idle speed controlled by fuel injection intervention",
+            "cm_pin": "EN16/-129",
+            "possible_causes": [
+              "ECT Sensor to ECM sensor ground circuit: open circuit, short circuit to high voltage",
+              "ECT Sensor to ECM sensing circuit: open circuit",
+              "ECT Sensor failure"
+            ]
+          },
+          {
+            "code": "P0121",
+            "description": "Throttle Position (TP) Sensor circuit out of range",
+            "monitoring_conditions": "Battery voltage > 10 v, Ignition ON, Slowly press accelerator pedal to the floor over a 5 second period, Slowly return the pedal to the rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - TP Sensor disconnected, TP angle default value used, Speed control inhibited, TP adaptations (wear, variance) inhibited",
+            "cm_pin": "EN16/-102",
+            "possible_causes": [
+              "Throttle adaptations not performed after battery disconnection",
+              "TP Sensor disconnected",
+              "TP Sensor to ECM sense circuits: open circuit, high resistance",
+              "Throttle motor failure"
+            ]
+          },
+          {
+            "code": "P0122",
+            "description": "Throttle Position (TP) Sensor circuit low voltage - APP1",
+            "monitoring_conditions": "Battery voltage > 10 v, Ignition ON, Slowly press accelerator pedal to the floor over a 5 second period, Slowly return the pedal to the rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - TP Sensor disconnected, TP angle default value used, Speed control inhibited, TP adaptations (wear, variance) inhibited",
+            "cm_pin": "EN16/-102",
+            "possible_causes": [
+              "Throttle adaptations not performed after battery disconnection",
+              "TP Sensor disconnected",
+              "TP Sensor to ECM sense circuits: open circuit, high resistance",
+              "Throttle motor failure"
+            ]
+          },
+          {
+            "code": "P0123",
+            "description": "Throttle Position (TP) Sensor circuit high voltage - APP1",
+            "monitoring_conditions": "Battery voltage > 10 v, Ignition ON, Slowly press accelerator pedal to the floor over a 5 second period, Slowly return the pedal to the rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - TP Sensor disconnected, TP angle default value used, Speed control inhibited, TP adaptations (wear, variance) inhibited",
+            "cm_pin": "EN16/-102",
+            "possible_causes": [
+              "Throttle adaptations not performed after battery disconnection",
+              "TP Sensor disconnected",
+              "TP Sensor to ECM sense circuits: open circuit, high resistance",
+              "Throttle motor failure"
+            ]
+          },
+          {
+            "code": "P0125",
+            "description": "Engine Coolant Temperature Insufficient for Closed Loop Fueling",
+            "monitoring_conditions": "Start engine, Slowly depress accelerator pedal to the floor over a 5 second period, Slowly return the pedal to rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Open loop fuel metering used",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Thermostat malfunction",
+              "ECT Sensor failure",
+              "Engine mechanical problem"
+            ]
+          },
+          {
+            "code": "P0131",
+            "description": "Heated Oxygen Sensor circuit malfunction (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-043",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0132",
+            "description": "Heated Oxygen Sensor circuit malfunction (Bank 1, Sensor 2)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-044",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0133",
+            "description": "Heated Oxygen Sensor circuit slow response (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-043",
+            "possible_causes": [
+              "HO2S contamination (silicone, carbon)",
+              "HO2S sensor failing",
+              "HO2S circuit wiring fault"
+            ]
+          },
+          {
+            "code": "P0134",
+            "description": "Heated Oxygen Sensor circuit no activity (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-043",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0135",
+            "description": "Heated Oxygen Sensor heater circuit malfunction (Bank 1, Sensor 1)",
+            "monitoring_conditions": "Heated Oxygen Sensor monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-047",
+            "possible_causes": [
+              "HO2S heater circuit: open circuit, short circuit",
+              "HO2S heater element failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0136",
+            "description": "Heated Oxygen Sensor circuit malfunction (Bank 1, Sensor 2)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-044",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0137",
+            "description": "Heated Oxygen Sensor circuit malfunction (Bank 2, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-045",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0138",
+            "description": "Heated Oxygen Sensor circuit malfunction (Bank 2, Sensor 2)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-046",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0139",
+            "description": "Heated Oxygen Sensor circuit slow response (Bank 2, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-045",
+            "possible_causes": [
+              "HO2S contamination (silicone, carbon)",
+              "HO2S sensor failing",
+              "HO2S circuit wiring fault"
+            ]
+          },
+          {
+            "code": "P0140",
+            "description": "Heated Oxygen Sensor circuit no activity (Bank 2, Sensor 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "EB16/-045",
+            "possible_causes": [
+              "HO2S signal circuit: open circuit, short circuit to ground or high voltage",
+              "HO2S sensor supply circuit: open circuit",
+              "HO2S sensor failure"
+            ]
+          },
+          {
+            "code": "P0171",
+            "description": "System too Rich (Adaptive Fuel System Bank 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Fuel pressure regulator malfunction",
+              "Fuel injector(s) leaking",
+              "HO2S sensor fault",
+              "MAF sensor fault",
+              "Coolant temperature sensor fault",
+              "Engine vacuum leak"
+            ]
+          },
+          {
+            "code": "P0172",
+            "description": "System too Lean (Adaptive Fuel System Bank 1)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Fuel pump malfunction",
+              "Fuel pressure regulator malfunction",
+              "Fuel injector circuit open",
+              "HO2S sensor fault",
+              "MAF sensor fault",
+              "Engine mechanical problem"
+            ]
+          },
+          {
+            "code": "P0173",
+            "description": "System too Rich (Adaptive Fuel System Bank 2)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Fuel pressure regulator malfunction",
+              "Fuel injector(s) leaking",
+              "HO2S sensor fault",
+              "MAF sensor fault",
+              "Coolant temperature sensor fault",
+              "Engine vacuum leak"
+            ]
+          },
+          {
+            "code": "P0174",
+            "description": "System too Lean (Adaptive Fuel System Bank 2)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Fuel pump malfunction",
+              "Fuel pressure regulator malfunction",
+              "Fuel injector circuit open",
+              "HO2S sensor fault",
+              "MAF sensor fault",
+              "Engine mechanical problem"
+            ]
+          },
+          {
+            "code": "P0175",
+            "description": "Adaptive fuel system error (Multi-cylinder)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Multiple fuel system faults",
+              "Sensor calibration issue",
+              "ECM/PCM malfunction"
+            ]
+          },
+          {
+            "code": "P0176",
+            "description": "Adaptive fuel system error (Multi-cylinder)",
+            "monitoring_conditions": "Adaptive Fuel Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Adaptive fuel metering inhibited, Canister purge inhibited, Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Multiple fuel system faults",
+              "Sensor calibration issue",
+              "ECM/PCM malfunction"
+            ]
+          },
+          {
+            "code": "P0181",
+            "description": "Fuel tank level sensor circuit malfunction",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel tank level sensor reading defaulted",
+            "cm_pin": "EN16/-096",
+            "possible_causes": [
+              "Fuel tank sender unit failure",
+              "Fuel tank sender unit wiring fault",
+              "Fuel tank level sensor circuit fault"
+            ]
+          },
+          {
+            "code": "P0182",
+            "description": "Fuel tank level sensor circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel tank level sensor reading defaulted",
+            "cm_pin": "EN16/-096",
+            "possible_causes": [
+              "Fuel tank sender unit failure",
+              "Fuel tank sender unit wiring fault",
+              "Fuel tank level sensor circuit fault"
+            ]
+          },
+          {
+            "code": "P0183",
+            "description": "Fuel tank level sensor circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel tank level sensor reading defaulted",
+            "cm_pin": "EN16/-096",
+            "possible_causes": [
+              "Fuel tank sender unit failure",
+              "Fuel tank sender unit wiring fault",
+              "Fuel tank level sensor circuit fault"
+            ]
+          },
+          {
+            "code": "P0191",
+            "description": "Fuel rail pressure sensor circuit malfunction",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default fuel pressure value used, Fuel pressure control inhibited",
+            "cm_pin": "EN16/-097",
+            "possible_causes": [
+              "Fuel rail pressure sensor circuit fault",
+              "Fuel rail pressure sensor failure",
+              "Fuel pressure regulator malfunction"
+            ]
+          },
+          {
+            "code": "P0192",
+            "description": "Fuel rail pressure sensor circuit low voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default fuel pressure value used, Fuel pressure control inhibited",
+            "cm_pin": "EN16/-097",
+            "possible_causes": [
+              "Fuel rail pressure sensor circuit fault",
+              "Fuel rail pressure sensor failure",
+              "Fuel pressure regulator malfunction"
+            ]
+          },
+          {
+            "code": "P0193",
+            "description": "Fuel rail pressure sensor circuit high voltage",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Default fuel pressure value used, Fuel pressure control inhibited",
+            "cm_pin": "EN16/-097",
+            "possible_causes": [
+              "Fuel rail pressure sensor circuit fault",
+              "Fuel rail pressure sensor failure",
+              "Fuel pressure regulator malfunction"
+            ]
+          },
+          {
+            "code": "P0201",
+            "description": "Fuel Injector circuit malfunction (Cylinder 1)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 1)",
+            "cm_pin": "EN16/-090",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0202",
+            "description": "Fuel Injector circuit malfunction (Cylinder 2)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 2)",
+            "cm_pin": "EN16/-091",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0203",
+            "description": "Fuel Injector circuit malfunction (Cylinder 3)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 3)",
+            "cm_pin": "EN16/-092",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0204",
+            "description": "Fuel Injector circuit malfunction (Cylinder 4)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 4)",
+            "cm_pin": "EN16/-093",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0205",
+            "description": "Fuel Injector circuit malfunction (Cylinder 5)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 5)",
+            "cm_pin": "EN16/-094",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0206",
+            "description": "Fuel Injector circuit malfunction (Cylinder 6)",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Fuel injection cut-off (cylinder 6)",
+            "cm_pin": "EN16/-095",
+            "possible_causes": [
+              "Fuel injector circuit: open circuit, short circuit",
+              "Fuel injector failure",
+              "ECM/PCM driver circuit fault"
+            ]
+          },
+          {
+            "code": "P0222",
+            "description": "Throttle / Pedal Position Sensor / Switch B circuit low voltage",
+            "monitoring_conditions": "Battery voltage > 10 v, Ignition ON, Slowly press accelerator pedal to the floor over a 5 second period, Slowly return the pedal to the rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - TP Sensor angle default value used, Speed control inhibited, TP adaptations (wear, variance) inhibited",
+            "cm_pin": "EN16/-102",
+            "possible_causes": [
+              "Throttle adaptations not performed after battery disconnection",
+              "TP Sensor disconnected",
+              "TP Sensor to ECM sense circuits: open circuit, high resistance",
+              "Throttle motor failure"
+            ]
+          },
+          {
+            "code": "P0223",
+            "description": "Throttle / Pedal Position Sensor / Switch B circuit high voltage",
+            "monitoring_conditions": "Battery voltage > 10 v, Ignition ON, Slowly press accelerator pedal to the floor over a 5 second period, Slowly return the pedal to the rest. Repeat 3 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - TP Sensor angle default value used, Speed control inhibited, TP adaptations (wear, variance) inhibited",
+            "cm_pin": "EN16/-102",
+            "possible_causes": [
+              "Throttle adaptations not performed after battery disconnection",
+              "TP Sensor disconnected",
+              "TP Sensor to ECM sense circuits: open circuit, high resistance",
+              "Throttle motor failure"
+            ]
+          },
+          {
+            "code": "P0300",
+            "description": "Random / Multiple Cylinder Misfire Detected",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0301",
+            "description": "Misfire Detected - Cylinder 1",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0302",
+            "description": "Misfire Detected - Cylinder 2",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0303",
+            "description": "Misfire Detected - Cylinder 3",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0304",
+            "description": "Misfire Detected - Cylinder 4",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0305",
+            "description": "Misfire Detected - Cylinder 5",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0306",
+            "description": "Misfire Detected - Cylinder 6",
+            "monitoring_conditions": "Misfire monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cylinder compression low",
+              "Worn camshaft / broken valve springs",
+              "Fuel delivery pressure (low / high)",
+              "Fuel injection restricted / leaking",
+              "Fuel injector(s) continuously open",
+              "Fuel contamination",
+              "Fuel injector circuit fault(s)",
+              "Injector DTCs also flagged",
+              "Spark plug failure / fouled / incorrect gap",
+              "ECM to ignition coil primary circuit fault",
+              "Ignition coil secondary DTC also flagged",
+              "Ignition coil failure"
+            ]
+          },
+          {
+            "code": "P0325",
+            "description": "Knock Sensor circuit malfunction",
+            "monitoring_conditions": "Drive vehicle 15 - 20 mph between 1500 - 3000 rpm for 30 seconds. Repeat 10 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Knock control inhibited, Maximum engine speed reduced",
+            "cm_pin": "EN16/-130",
+            "possible_causes": [
+              "Knock Sensor circuit: open circuit, short circuit",
+              "Knock Sensor failure"
+            ]
+          },
+          {
+            "code": "P0330",
+            "description": "Knock Sensor circuit malfunction (Bank 2)",
+            "monitoring_conditions": "Drive vehicle 15 - 20 mph between 1500 - 3000 rpm for 30 seconds. Repeat 10 times",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Knock control inhibited, Maximum engine speed reduced",
+            "cm_pin": "EN16/-131",
+            "possible_causes": [
+              "Knock Sensor circuit: open circuit, short circuit",
+              "Knock Sensor failure"
+            ]
+          },
+          {
+            "code": "P0335",
+            "description": "Crankshaft Position Sensor circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Engine start inhibited, Fuel injection inhibited, Ignition disabled",
+            "cm_pin": "EN16/-097",
+            "possible_causes": [
+              "Crankshaft position sensor circuit: open circuit, short circuit",
+              "Crankshaft position sensor failure",
+              "Crankshaft reluctor ring damaged"
+            ]
+          },
+          {
+            "code": "P0340",
+            "description": "Camshaft Position Sensor circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Variable camshaft timing disabled, Fuel injection controlled by crank reference only",
+            "cm_pin": "EN16/-098",
+            "possible_causes": [
+              "Camshaft position sensor circuit: open circuit, short circuit",
+              "Camshaft position sensor failure"
+            ]
+          },
+          {
+            "code": "P0341",
+            "description": "Camshaft Position Sensor circuit signal out of range",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Variable camshaft timing disabled, Fuel injection controlled by crank reference only",
+            "cm_pin": "EN16/-098",
+            "possible_causes": [
+              "Camshaft position sensor circuit: open circuit, short circuit",
+              "Camshaft position sensor failure",
+              "Variable camshaft timing malfunction"
+            ]
+          },
+          {
+            "code": "P0360",
+            "description": "Ignition / Distributor Engine Speed Input circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Ignition timing set to default value, Engine speed limited",
+            "cm_pin": "EN16/-099",
+            "possible_causes": [
+              "Engine speed sensor circuit: open circuit, short circuit",
+              "Engine speed sensor failure",
+              "Ignition module failure"
+            ]
+          },
+          {
+            "code": "P0365",
+            "description": "Intake Valve Timing Actuator Control circuit malfunction (Bank 2)",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Variable camshaft timing disabled (Bank 2), Fuel injection controlled by crank reference only",
+            "cm_pin": "EN16/-100",
+            "possible_causes": [
+              "Camshaft position solenoid circuit: open circuit, short circuit",
+              "Camshaft position solenoid failure",
+              "Variable camshaft timing malfunction"
+            ]
+          },
+          {
+            "code": "P0400",
+            "description": "EGR system circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - EGR recirculation disabled",
+            "cm_pin": "EN16/-101",
+            "possible_causes": [
+              "EGR valve stuck open/closed",
+              "EGR solenoid valve failure",
+              "EGR circuit wiring fault",
+              "EGR flow blocked"
+            ]
+          },
+          {
+            "code": "P0401",
+            "description": "EGR system insufficient flow detected",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - EGR recirculation disabled",
+            "cm_pin": "—",
+            "possible_causes": [
+              "EGR valve stuck",
+              "EGR cooler clogged",
+              "EGR flow passage blocked",
+              "Carbon buildup"
+            ]
+          },
+          {
+            "code": "P0430",
+            "description": "Catalyst System Efficiency below threshold (Bank 2)",
+            "monitoring_conditions": "Catalyst Efficiency Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Maximum engine speed reduced",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Catalytic converter efficiency degraded",
+              "Catalytic converter substrate failure",
+              "HO2S sensor fault",
+              "Fuel system faults"
+            ]
+          },
+          {
+            "code": "P0441",
+            "description": "Evaporative Emission system incorrect purge flow",
+            "monitoring_conditions": "Purge System Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Canister purge inhibited",
+            "cm_pin": "EN16/-104",
+            "possible_causes": [
+              "Purge solenoid valve stuck",
+              "Purge valve circuit fault",
+              "Charcoal canister blocked",
+              "Fuel vapor lines blocked"
+            ]
+          },
+          {
+            "code": "P0445",
+            "description": "Evaporative Emission system purge control solenoid circuit malfunction",
+            "monitoring_conditions": "Purge System Monitor drive cycle - page 5",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Canister purge inhibited",
+            "cm_pin": "EN16/-105",
+            "possible_causes": [
+              "Purge solenoid circuit: open circuit, short circuit",
+              "Purge solenoid valve failure",
+              "Canister purge lines disconnected"
+            ]
+          },
+          {
+            "code": "P0500",
+            "description": "Vehicle Speed Sensor circuit malfunction",
+            "monitoring_conditions": "Drive vehicle above 16 kmh (10 mph) for 15 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Speed control inhibited, Idle speed adaptation limited",
+            "cm_pin": "EN16/-106",
+            "possible_causes": [
+              "Vehicle speed sensor circuit: open circuit, short circuit",
+              "Vehicle speed sensor failure",
+              "Transmission output speed sensor failure"
+            ]
+          },
+          {
+            "code": "P0505",
+            "description": "Idle Air Control System malfunction",
+            "monitoring_conditions": "Engine idling at operating temperature for 20 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Idle speed controlled by fuel injection",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Throttle body carbon buildup",
+              "Throttle position sensor fault",
+              "Engine vacuum leak",
+              "Air intake system fault"
+            ]
+          },
+          {
+            "code": "P0506",
+            "description": "Idle Air Control System rpm lower than expected",
+            "monitoring_conditions": "Engine idling at operating temperature for 20 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Idle speed controlled by fuel injection",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Engine vacuum leak",
+              "Throttle position sensor out of range",
+              "Fuel pressure regulator malfunction",
+              "Air bypass circuit blocked"
+            ]
+          },
+          {
+            "code": "P0507",
+            "description": "Idle Air Control System rpm higher than expected",
+            "monitoring_conditions": "Engine idling at operating temperature for 20 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - Idle speed controlled by fuel injection",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Throttle body stuck partially open",
+              "Air bypass circuit fault",
+              "Throttle position sensor out of range",
+              "Engine vacuum leak"
+            ]
+          },
+          {
+            "code": "P0560",
+            "description": "System voltage malfunction",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "ECM Default - All non-essential systems disabled",
+            "cm_pin": "EN16/-107",
+            "possible_causes": [
+              "Battery voltage low/high",
+              "Charging system malfunction",
+              "Alternator failure",
+              "Battery cable connection fault"
+            ]
+          },
+          {
+            "code": "P0565",
+            "description": "Cruise Control / Speed Control button circuit malfunction",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cruise control switch circuit fault",
+              "Cruise control button stuck",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0566",
+            "description": "Cruise Control / Speed Control switch circuit high / low voltage",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Cruise control switch circuit: open circuit, short circuit",
+              "Cruise control switch failure",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0567",
+            "description": "Cruise Control / Speed Control resume switch circuit malfunction",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Resume switch circuit fault",
+              "Resume switch failure",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0568",
+            "description": "Cruise Control / Speed Control set switch circuit malfunction",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Set switch circuit fault",
+              "Set switch failure",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0569",
+            "description": "Cruise Control / Speed Control coast switch circuit malfunction",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Coast switch circuit fault",
+              "Coast switch failure",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0570",
+            "description": "Cruise Control / Speed Control accel switch circuit malfunction",
+            "monitoring_conditions": "Ignition ON",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "—",
+            "possible_causes": [
+              "Accelerate switch circuit fault",
+              "Accelerate switch failure",
+              "Steering wheel control wiring fault"
+            ]
+          },
+          {
+            "code": "P0706",
+            "description": "Transmission control system malfunction",
+            "monitoring_conditions": "Start and run engine - 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-012/-013",
+            "possible_causes": [
+              "Transmission to TCM transmission fluid temperature circuit: open circuit, short circuit",
+              "Transmission internal transmission fluid temperature sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance"
+            ]
+          },
+          {
+            "code": "P0710",
+            "description": "Transmission fluid temperature sensor circuit malfunction",
+            "monitoring_conditions": "Start and run engine - 10 seconds",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-012/-013",
+            "possible_causes": [
+              "Transmission to TCM transmission fluid temperature circuit: open circuit, short circuit",
+              "Transmission internal transmission fluid temperature sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance"
+            ]
+          },
+          {
+            "code": "P0715",
+            "description": "Input Speed Sensor circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-014/-015",
+            "possible_causes": [
+              "Transmission to TCM input speed solenoid circuit: open circuit, short circuit",
+              "Transmission internal input speed solenoid circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance"
+            ]
+          },
+          {
+            "code": "P0720",
+            "description": "Output Speed Sensor circuit malfunction",
+            "monitoring_conditions": "Drive vehicle above 16 kmh (10 mph) for 15 seconds",
+            "ck_eng_flag": "N",
+            "default_action": "None",
+            "cm_pin": "EN16/-006",
+            "possible_causes": [
+              "Output speed sensor power supply circuit: open circuit, short circuit, high resistance",
+              "Transmission to ECM output speed sensor circuits: open circuit, short circuit",
+              "Output speed sensor failure"
+            ]
+          },
+          {
+            "code": "P0731",
+            "description": "Transmission: Gear 1 Incorrect ratio",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear, Transmission range sensor to ECM circuit: open circuit, high resistance",
+            "cm_pin": "JB131/-016/-017",
+            "possible_causes": [
+              "Transmission to TCM transmission gear ratio sensor circuit: open circuit, short circuit",
+              "Transmission internal transmission gear ratio sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Transmission mechanical problem"
+            ]
+          },
+          {
+            "code": "P0732",
+            "description": "Transmission: Gear 2 Incorrect ratio",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear, Transmission range sensor to ECM circuit: open circuit, high resistance",
+            "cm_pin": "JB131/-016/-017",
+            "possible_causes": [
+              "Transmission to TCM transmission gear ratio sensor circuit: open circuit, short circuit",
+              "Transmission internal transmission gear ratio sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Transmission mechanical problem"
+            ]
+          },
+          {
+            "code": "P0733",
+            "description": "Transmission: Gear 3 Incorrect ratio",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear, Transmission range sensor to ECM circuit: open circuit, high resistance",
+            "cm_pin": "JB131/-016/-017",
+            "possible_causes": [
+              "Transmission to TCM transmission gear ratio sensor circuit: open circuit, short circuit",
+              "Transmission internal transmission gear ratio sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Transmission mechanical problem"
+            ]
+          },
+          {
+            "code": "P0734",
+            "description": "Transmission: Gear 4 Incorrect ratio",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Fixed 4th gear, Transmission range sensor to ECM circuit: open circuit, high resistance",
+            "cm_pin": "JB131/-016/-017",
+            "possible_causes": [
+              "Transmission to TCM transmission gear ratio sensor circuit: open circuit, short circuit",
+              "Transmission internal transmission gear ratio sensor circuit: open circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Transmission mechanical problem"
+            ]
+          },
+          {
+            "code": "P0740",
+            "description": "Transmission Torque Converter Clutch circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Torque converter clutch lockup inhibited",
+            "cm_pin": "JB131/-018/-019",
+            "possible_causes": [
+              "Torque converter clutch solenoid circuit: open circuit, short circuit",
+              "Torque converter clutch solenoid failure",
+              "Transmission fluid pressure problem"
+            ]
+          },
+          {
+            "code": "P0840",
+            "description": "Transmission Fluid Pressure sensor / switch circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Transmission pressure control inhibited",
+            "cm_pin": "JB131/-020/-021",
+            "possible_causes": [
+              "Transmission fluid pressure sensor circuit: open circuit, short circuit",
+              "Transmission fluid pressure sensor failure",
+              "Transmission internal pressure sensor circuit fault"
+            ]
+          },
+          {
+            "code": "P0860",
+            "description": "Transmission Fluid Pressure sensor / switch circuit malfunction",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng_flag": "2",
+            "default_action": "TCM Default - Transmission pressure control inhibited",
+            "cm_pin": "JB131/-022/-023",
+            "possible_causes": [
+              "Transmission fluid pressure sensor circuit: open circuit, short circuit",
+              "Transmission fluid pressure sensor failure",
+              "Transmission internal pressure sensor circuit fault"
+            ]
+          }
+        ],
+        "additional_codes_p0763_p0878": [
+          {
+            "code": "P0763",
+            "description": "TCC Solenoid circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "TCM Default - If short circuit to B+ V - TCC permanently engaged, If other cause - TCC inoperative",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "Transmission to TCM TCC solenoid circuit: open circuit, short circuit",
+              "Transmission internal TCC solenoid circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "TCC Solenoid failure"
+            ]
+          },
+          {
+            "code": "P0748",
+            "description": "Line pressure control solenoid circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Start and run engine - 10 seconds",
+            "ck_eng": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "Transmission to TCM line pressure solenoid circuit: open circuit, short circuit",
+              "Transmission internal line pressure solenoid circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Line pressure solenoid failure"
+            ]
+          },
+          {
+            "code": "P0753",
+            "description": "Shift solenoid A circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "TCM Default - If short circuit to B+ V - fixed 5th gear. If other cause - fixed 4th gear at high vehicle speed, fixed 5th gear at high vehicle speed",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "Transmission to TCM shift solenoid A circuit: open circuit, short circuit",
+              "Transmission internal shift solenoid A circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Shift solenoid A pressure solenoid failure"
+            ]
+          },
+          {
+            "code": "P0758",
+            "description": "Shift solenoid B circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "TCM Default - If short circuit to B+ V - fixed 3rd gear, If other cause: fixed 4th gear",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "Transmission to TCM shift solenoid B circuit: open circuit, short circuit",
+              "Transmission internal shift solenoid B circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Shift solenoid B pressure solenoid failure"
+            ]
+          },
+          {
+            "code": "P0762",
+            "description": "Shift solenoid C circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-082/-009",
+            "possible_causes": [
+              "Transmission to TCM shift solenoid C circuit: open circuit, short circuit",
+              "Transmission internal shift solenoid C circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "Shift solenoid C pressure solenoid failure"
+            ]
+          },
+          {
+            "code": "P0778",
+            "description": "2/4 Brake timing solenoid circuit malfunction",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Start and run engine - 10 seconds",
+            "ck_eng": "2",
+            "default_action": "TCM Default - Fixed 4th gear",
+            "cm_pin": "JB131/-003/-009",
+            "possible_causes": [
+              "Transmission to TCM 2/4 brake pressure solenoid circuit: open circuit, short circuit",
+              "Transmission internal 2/4 brake pressure solenoid circuit: open circuit, short circuit",
+              "TCM Ground circuit",
+              "Open circuit, high resistance",
+              "2/4 Brake pressure solenoid failure"
+            ]
+          }
+        ],
+        "additional_emseobd_codes_p0791_p1346": [
+          {
+            "code": "P0791",
+            "description": "Intermediate speed sensor circuit malfunction (Automatic transmission)",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "None (Poor shift quality)",
+            "cm_pin": "JB131/-021/-020",
+            "possible_causes": [
+              "Transmission to TCM intermediate speed sensor circuit: open circuit, short circuit",
+              "Transmission internal intermediate speed sensor circuit: open circuit, high resistance",
+              "Transmission to TCM intermediate space sensor circuit, shielding defects",
+              "Sensor ground circuit fault",
+              "Intermediate speed sensor failure"
+            ]
+          },
+          {
+            "code": "P0791",
+            "description": "Output speed sensor circuit malfunction (Manual transmission)",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle above 16 kmh (10 mph) for 15 seconds",
+            "ck_eng": "N",
+            "default_action": "None",
+            "cm_pin": "EN16/-006",
+            "possible_causes": [
+              "Output speed sensor power supply circuit: open circuit, short circuit, high resistance",
+              "Transmission to ECM output speed sensor circuits: open circuit, short circuit, high resistance",
+              "Output speed sensor failure"
+            ]
+          },
+          {
+            "code": "P0831",
+            "description": "Clutch cancel switch low voltage (switch normally open) * Manual transmission input to ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle 60 - 100 kmh (40 - 62 mph) 1800 - 2500 rpm, engine load > 0.40 g/rev",
+            "ck_eng": "2",
+            "default_action": "None",
+            "cm_pin": "EN16/-033",
+            "possible_causes": [
+              "Clutch cancel switch supply circuit: open circuit",
+              "Clutch cancel switch to ECM circuit: open circuit, high resistance",
+              "Clutch cancel switch failure"
+            ]
+          },
+          {
+            "code": "P0832",
+            "description": "Clutch cancel switch high voltage (switch normally closed) * Manual transmission input to ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle, shift from 1st to 2nd, shift vehicle",
+            "ck_eng": "2",
+            "default_action": "None",
+            "cm_pin": "EN16/-033",
+            "possible_causes": [
+              "Clutch cancel switch to ECM circuit: short circuit to high voltage",
+              "Clutch cancel switch failure"
+            ]
+          },
+          {
+            "code": "P0834",
+            "description": "Clutch pedal safety switch low voltage (switch normally open) * Manual transmission input to ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle, shift from 1st to 2nd, shift vehicle. Repeat 5 times",
+            "ck_eng": "N",
+            "default_action": "None",
+            "cm_pin": "EN16/-031",
+            "possible_causes": [
+              "Clutch pedal safety switch supply circuit: open circuit",
+              "Clutch pedal safety switch to ECM circuit: open circuit, high resistance",
+              "Clutch pedal safety switch failure"
+            ]
+          },
+          {
+            "code": "P0835",
+            "description": "Clutch pedal safety switch high voltage (switch normally open) * Manual transmission input to ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle, shift from 1st to 2nd, shift vehicle. Repeat 5 times",
+            "ck_eng": "N",
+            "default_action": "None",
+            "cm_pin": "EN16/-031",
+            "possible_causes": [
+              "Clutch pedal safety switch to ECM circuit: short circuit to high voltage",
+              "Clutch pedal safety switch failure"
+            ]
+          },
+          {
+            "code": "P0860",
+            "description": "J Gate signal failure",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "None",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "2nd Gear signal to TCM circuit: short circuit, open circuit, high resistance",
+              "3rd Gear signal to TCM circuit: short circuit, open circuit, high resistance",
+              "J Gate ground circuit: open circuit, high resistance",
+              "TCM Ground circuit: open circuit, high resistance"
+            ]
+          },
+          {
+            "code": "P0862",
+            "description": "Clutch cancel switch low voltage (switch normally open) * Manual transmission input to ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Drive vehicle 60 - 100 kmh (40 - 62 mph) 1800 - 2500 rpm, engine load > 0.40 g/rev",
+            "ck_eng": "2",
+            "default_action": "None",
+            "cm_pin": "EN16/-033",
+            "possible_causes": [
+              "Clutch cancel switch supply circuit: open circuit",
+              "Clutch cancel switch to ECM circuit: open circuit, high resistance",
+              "Clutch cancel switch failure"
+            ]
+          },
+          {
+            "code": "P0910",
+            "description": "J Gate / CAN monitored by ECM",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Ignition ON 10 seconds",
+            "ck_eng": "2",
+            "default_action": "ECM Default - Speed control inhibited, Maximum throttle opening for N range inhibited, Throttle opening limited to 30%, Maximum engine speed reduced",
+            "cm_pin": "EN16/-123/-124",
+            "possible_causes": [
+              "CAN open circuit fault",
+              "CAN short circuit fault",
+              "J Gate failure"
+            ]
+          },
+          {
+            "code": "P1015",
+            "description": "2nd Gear signal to TCM circuit: short circuit, open circuit, high resistance, 3rd Gear signal to TCM circuit: short circuit, open circuit, high resistance, J Gate ground circuit: open circuit, high resistance",
+            "system": "TRANS/EOBD",
+            "monitoring_conditions": "Comprehensive component monitor transmission drive cycle",
+            "ck_eng": "2",
+            "default_action": "None",
+            "cm_pin": "JB131/-018/-009",
+            "possible_causes": [
+              "J Gate incorrect setting"
+            ]
+          }
+        ]
+      },
+      "transmission_dtc": {
+        "system_name": "Transmission Control Module (TCM) / EOBD",
+        "note": "See powertrain_ems section for TRANS/EOBD codes and TCM-specific DTCs"
+      }
+    },
+    "monitor_drive_cycles": {
+      "heated_oxygen_sensor_monitor": {
+        "name": "Heated Oxygen Sensor Monitor",
+        "drive_cycle": "page 5"
+      },
+      "adaptive_fuel_monitor": {
+        "name": "Adaptive Fuel Monitor",
+        "drive_cycle": "page 5"
+      },
+      "misfire_monitor": {
+        "name": "Misfire Monitor",
+        "drive_cycle": "page 5"
+      },
+      "catalyst_efficiency_monitor": {
+        "name": "Catalyst Efficiency Monitor",
+        "drive_cycle": "page 5"
+      },
+      "purge_system_monitor": {
+        "name": "Purge System Monitor",
+        "drive_cycle": "page 5"
+      },
+      "comprehensive_component_monitor": {
+        "name": "Comprehensive Component Monitor (CCM)",
+        "drive_cycle": "Transmission drive cycle"
+      }
+    }
+  },
+  "fluids_and_capacities": {
+    "fuel": {
+      "type": "Unleaded petrol, 95 RON minimum",
+      "tank_capacity_litres": 61.5,
+      "tank_capacity_us_gallons": 16.2,
+      "refill_capacity_litres": 56.5,
+      "unindicated_reserve_litres": 5.0
+    },
+    "coolant": {
+      "renewal_interval": "Every 5 years or 240,000 km (150,000 miles), whichever comes first"
+    },
+    "brake_fluid": {
+      "type": "DOT 4",
+      "renewal_interval": "Every 2 years, independent of mileage"
+    },
+    "engine_oil_filter": {
+      "renewal_interval": "Every 16,000 km (10,000 miles)"
+    },
+    "air_filter": {
+      "renewal_interval": "Every 112,000 km (70,000 miles)"
+    },
+    "fuel_filter": {
+      "renewal_interval": "Every 112,000 km (70,000 miles)"
+    },
+    "spark_plugs": {
+      "renewal_interval": "Every 112,000 km (70,000 miles)"
+    },
+    "drive_belt": {
+      "inspection_renewal_interval": "Every 160,000 km (100,000 miles)"
+    },
+    "pollen_filter": {
+      "renewal_interval": "Every 32,000 km (20,000 miles)"
+    }
+  },
+  "lighting": {
+    "bulb_specifications": {
+      "main_beam": "H1",
+      "dip_beam": "H1",
+      "side_lights": "W5W",
+      "direction_indicators": "3457 AK",
+      "reverse_lights": "P21W",
+      "fog_lights": "P21/5W",
+      "tail_lights": "P21/5W",
+      "number_plate_lights": "W5W",
+      "hid_xenon": {
+        "type": "D2S",
+        "wattage": "35W",
+        "note": "Where equipped"
+      }
+    }
+  },
+  "warning_lights": {
+    "red_critical": [
+      "Oil pressure warning",
+      "Coolant temperature warning",
+      "Battery charge warning",
+      "Brake system warning",
+      "Airbag status"
+    ],
+    "amber_secondary": [
+      "ABS system warning",
+      "DSC / Traction Control warning",
+      "Check Engine / Emissions warning",
+      "Fuel level low",
+      "Door / Seatbelt warnings"
+    ]
+  },
+  "climate_control": {
+    "temperature_range_fahrenheit": {
+      "min": 61,
+      "max": 89
+    },
+    "temperature_range_celsius": {
+      "min": 17,
+      "max": 31
+    },
+    "modes": [
+      "AUTO",
+      "Defrost/Demist",
+      "Air Recirculation",
+      "Manual fan"
+    ],
+    "control_types": [
+      "Touch-screen panel",
+      "LCD panel"
+    ],
+    "zones": "Single or dual zone (varies by trim)"
+  },
+  "security_system": {
+    "immobilizer": "PATS (Passive Anti-Theft System)",
+    "pats_communication_pins": {
+      "IP10-03": "PATS encoded 1",
+      "IP10-04": "PATS encoded 2",
+      "IP10-05": "PATS ground",
+      "IP10-06": "PATS transceiver power"
+    },
+    "central_locking": "Electronic with remote key fob and manual override",
+    "key_positions": {
+      "OFF": "Engine off, all systems powered down",
+      "ACC": "Accessory mode (radio, wipers functional)",
+      "ON": "Full electrical power, ready to start",
+      "START": "Engine cranking position"
+    },
+    "alarm": "Audible and visual alerts on unauthorized access"
+  },
+  "emergency_procedures": {
+    "jump_starting": {
+      "battery_location": "Under hood, left side of engine compartment",
+      "voltage": "12V system"
+    },
+    "towing": {
+      "automatic_transmission": "Maximum 0.5 miles at 30 mph with front wheels on ground",
+      "manual_transmission": "Maximum 30 miles at 30 mph with front wheels on ground",
+      "recommendation": "Professional recovery recommended for longer distances"
+    },
+    "wheel_changing": {
+      "alloy_wheel_torque_Nm": 103,
+      "steel_wheel_torque_Nm": 80,
+      "spare_max_speed_mph": 50
+    },
+    "inertia_switch": "Fuel pump cut-off on impact - reset by pressing button"
+  },
+  "wiring_diagrams_index": {
+    "01_power_distribution": [
+      "01.1 Main Power Distribution",
+      "01.2 Battery Power Part 1",
+      "01.3 Battery Power Part 2",
+      "01.4 Ignition Accessory",
+      "01.5 Ignition Run Part 1",
+      "01.6 Ignition Run Part 2",
+      "01.7 Battery Saver",
+      "01.8 EMS Gasoline",
+      "01.9 EMS Diesel"
+    ],
+    "02_battery_starter_generator": [
+      "02.1 2.5L & 3.0L",
+      "02.2 2.0L Petrol",
+      "02.3 2.0L Diesel"
+    ],
+    "03_engine_management": [
+      "03.1 V6 Part 1",
+      "03.2 V6 Part 2",
+      "03.3 2.0L Part 1",
+      "03.4 2.0L Part 2",
+      "03.5 Diesel Part 1",
+      "03.6 Diesel Part 2"
+    ],
+    "04_transmission": [
+      "04.1 Auto 16-bit TCM",
+      "04.2 Auto 32-bit TCM"
+    ],
+    "05_braking": [
+      "05.1 ABS",
+      "05.2 ABS/TC",
+      "05.3 DSC"
+    ],
+    "06_climate": [
+      "06.1 Manual",
+      "06.2 Automatic",
+      "06.3 Glass Heaters"
+    ],
+    "07_instrumentation": [
+      "07.1 Instrument Cluster",
+      "07.2 Audible Warnings"
+    ],
+    "08_exterior_lighting": [
+      "08.1-08.10 (10 variants covering sedan/wagon, auto/manual headlamps, trailer towing, HID leveling)"
+    ],
+    "09_interior_lighting": [
+      "09.1 Interior Lighting",
+      "09.2 Dimmer-Controlled"
+    ],
+    "10_door_mirrors": [
+      "10.1 Non Memory",
+      "10.2 Memory"
+    ],
+    "11_seat_systems": [
+      "11.1-11.7 (7 variants covering memory/8-way/4-way/2-way seats, heaters)"
+    ],
+    "12_door_locking_security": [
+      "12.1-12.5 (5 variants sedan/wagon, double/non-double locking)"
+    ],
+    "13_wash_wipe": [
+      "13.1 Front",
+      "13.2 Rain Sensing",
+      "13.3 Rear (Estate)"
+    ],
+    "14_windows_sunroof": [
+      "14.1 Powered Windows",
+      "14.2 Sliding Roof"
+    ],
+    "15_entertainment": [
+      "15.1 Standard ICE",
+      "15.2 Premium ICE"
+    ],
+    "16_telematics": [
+      "16.1-16.6 (Phone ROW/NAS, Voice Control, Navigation, Japan Nav)"
+    ],
+    "17_occupant_protection": [
+      "17.1 FWD Restraints",
+      "17.2 AWD Restraints"
+    ],
+    "18_driver_assist": [
+      "18.1 Parking Aid"
+    ],
+    "19_ancillaries": [
+      "19.1 Horn, Cigar Lighter, Accessory Connectors, Garage Door Opener, Electrochromic Mirror"
+    ],
+    "20_multiplex": [
+      "20.1 CAN LHD",
+      "20.2 CAN RHD",
+      "20.3 SCP/Serial Data Link",
+      "20.4 D2B Network"
+    ]
+  },
+  "obd2_integration": {
+    "protocol": "EOBD (European OBD) / OBD-II compliant",
+    "connector_location": "Under dashboard, driver side",
+    "supported_modes": {
+      "mode_01": "Show current data (live PIDs)",
+      "mode_02": "Show freeze frame data",
+      "mode_03": "Show stored DTCs",
+      "mode_04": "Clear DTCs and stored values",
+      "mode_05": "Test results, oxygen sensor monitoring",
+      "mode_06": "Test results, other monitoring",
+      "mode_07": "Show pending DTCs",
+      "mode_09": "Request vehicle information (VIN)"
+    },
+    "common_pids": {
+      "0x05": "Engine coolant temperature",
+      "0x0C": "Engine RPM",
+      "0x0D": "Vehicle speed",
+      "0x0F": "Intake air temperature",
+      "0x10": "MAF air flow rate",
+      "0x11": "Throttle position",
+      "0x14": "O2 sensor voltage (Bank 1 Sensor 1)",
+      "0x1F": "Run time since engine start",
+      "0x2F": "Fuel tank level input",
+      "0x46": "Ambient air temperature"
+    },
+    "monitor_drive_cycles": {
+      "oxygen_sensor": "Warm engine, drive at steady speed 40-60 mph for 5+ minutes",
+      "fuel_system": "Drive at various speeds and loads for 10+ minutes",
+      "misfire": "Drive at various RPM ranges including idle, cruise, and acceleration",
+      "catalyst": "Drive at steady 55 mph for 3+ minutes after full warmup",
+      "evaporative_purge": "Drive at steady cruise after cold start for 10+ minutes"
+    },
+    "elm327_notes": {
+      "ble_connection": "Web Bluetooth API via BLE ELM327 adapter",
+      "common_service_uuids": "Vary by manufacturer - test sequentially",
+      "initialization_sequence": [
+        "ATZ (reset)",
+        "ATE0 (echo off)",
+        "ATL0 (linefeeds off)",
+        "ATS0 (spaces off)",
+        "ATSP0 (auto protocol)",
+        "0100 (supported PIDs)"
+      ]
+    }
+  },
+  "workshop_manual_sections": {
+    "note": "Complete workshop manual covers 415+ sections. Key section codes below.",
+    "section_codes": {
+      "100-02": "Lifting and supporting vehicle",
+      "204-01": "Front wheel bearing replacement",
+      "204-02": "Rear wheel bearing replacement",
+      "57.65.01": "Front toe adjustment",
+      "57.65.08": "Rear toe adjustment"
+    }
+  },
+  "lm_usage_guide": {
+    "description": "Instructions for how the Drifter LM should use this knowledge base",
+    "search_tips": [
+      "For DTC lookups: search diagnostic_trouble_codes.systems.powertrain_ems.dtc_codes by code field",
+      "For electrical faults: check control_modules for pin assignments, then ground_points for return paths, then fuses_and_relays for protection",
+      "For CAN bus issues: reference electrical_system.networks.CAN for node architecture and pin locations",
+      "For maintenance questions: check maintenance_schedule for intervals and fluids_and_capacities for specs",
+      "For alignment/suspension: reference chassis_and_suspension for specs and procedures with torque values",
+      "Use specific technical terms (e.g., 'P0171 lean fault') rather than generic queries for best results",
+      "Cross-reference wiring_diagrams_index to locate the relevant figure number for any electrical system",
+      "For specific misfire diagnosis: reference known_issues_and_troubleshooting.P0303_cylinder_3_misfire for a complete step-by-step workflow",
+      "For Australian-specific questions: check australian_specification for RHD differences, fuel specs, VicRoads RWC requirements, and local parts sourcing"
+    ],
+    "diagnostic_workflow": [
+      "1. Read DTC code(s) via OBD-II",
+      "2. Look up code in diagnostic_trouble_codes for description, possible causes, and default actions",
+      "3. Identify affected control module and its pin assignments in electrical_system.control_modules",
+      "4. Check relevant fuse and relay in fuses_and_relays",
+      "5. Verify ground point integrity using ground_points",
+      "6. Reference wiring_diagrams_index for the relevant figure number",
+      "7. Use live OBD-II PIDs to verify sensor readings against expected values",
+      "8. Follow repair procedure from workshop_manual_sections if applicable"
+    ]
+  },
+  "australian_specification": {
+    "description": "Key differences between Australian-delivered (ROW) X-Types and NAS (North American) models",
+    "regulatory": {
+      "compliance": "Australian Design Rules (ADR)",
+      "emissions": "ADR 79/04 (equivalent to Euro III for 2004 MY)",
+      "obd_standard": "EOBD (European On-Board Diagnostics) — same protocol as NAS OBD-II but different readiness monitor thresholds",
+      "vin_prefix": "SAJWA01A (typical for Australian-delivered 2.5/3.0L V6 sedan)",
+      "vin_format": "SAJWA01Axx_xxxxxx where position 4 = body (W=sedan), position 5 = engine (A=2.5L, B=3.0L), position 8 = model year"
+    },
+    "electrical_differences": {
+      "drive_side": "RHD — wiper park position, instrument cluster, and headlamp beam pattern are mirror-image of LHD",
+      "headlamps": "RHD beam pattern (dipped to the left for left-side traffic). Headlamp leveling wiring and ground points follow RHD variant paths (G10AR, G37BL for RHD)",
+      "lighting": "Front and rear turn signals use amber lenses (not red/amber combo as NAS)",
+      "fog_lamps": "Rear fog lamp fitted as standard (single, LH side) — not standard on NAS",
+      "daytime_running_lamps": "Not required under ADR — may not be fitted",
+      "instruments": "Speedometer in km/h (primary), odometer in km",
+      "radio_frequency": "AM/FM tuned for Australian broadcast bands"
+    },
+    "mechanical_differences": {
+      "fuel": "Unleaded petrol 95 RON minimum (PULP). Australian fuel standards differ from US — ethanol blends (E10) may be used but E85 is NOT compatible",
+      "cooling": "Same cooling system as all markets but Australian ambient temperatures may stress the system more",
+      "air_conditioning": "R134a refrigerant, same system — may cycle more frequently in Australian heat",
+      "tyre_pressures": "Same specifications as global model. Common Australian OEM tyre sizes: 205/55 R16, 215/45 R17, 225/40 R18",
+      "spare_wheel": "Space-saver spare (T125/85 R16) or full-size depending on trim"
+    },
+    "inspection_requirements": {
+      "victoria": {
+        "rwc_required": "Roadworthy Certificate (RWC) required for vehicle transfer in Victoria",
+        "inspection_items": [
+          "Tyres (minimum 1.5mm tread depth — stricter than some states)",
+          "Brakes (pad thickness, disc condition, brake fluid)",
+          "Steering and suspension (play, leaks, bushings)",
+          "Lights (all external lights functional, correct beam pattern)",
+          "Windscreen and wipers (no cracks in driver's line of sight)",
+          "Exhaust system (no leaks, emissions within limits)",
+          "Seat belts (condition and operation)",
+          "Body/chassis (no excessive corrosion affecting safety)"
+        ],
+        "common_xtype_rwc_failures": [
+          "Front lower control arm bushings worn (very common on X-Types)",
+          "Rear trailing arm bushings deteriorated",
+          "Power steering fluid leaks at pump or rack seals",
+          "Brake disc scoring/minimum thickness",
+          "Front suspension spring breakage (known X-Type weak point)",
+          "CV boot splits on front halfshafts",
+          "Headlamp beam alignment (especially after headlamp bulb replacement)"
+        ]
+      }
+    },
+    "parts_sourcing_australia": {
+      "oem_alternatives": "Ford Mondeo Mk3 / Ford Contour parts cross-reference for many chassis and drivetrain components",
+      "common_suppliers": [
+        "Repco",
+        "Supercheap Auto",
+        "Bursons",
+        "Rare Spares (Jaguar specific)"
+      ],
+      "oil_filter_crossref": "Ryco Z436 or equivalent (for AJ-V6)",
+      "air_filter_crossref": "Ryco A1570 or equivalent",
+      "spark_plug_spec": "NGK ITR6F-13 (iridium, AJ-V6) or Motorcraft AGSF32FM",
+      "coolant_spec": "Jaguar OAT coolant or equivalent long-life OAT (orange). Do NOT mix with IAT (green) coolant"
+    }
+  },
+  "known_issues_and_troubleshooting": {
+    "P0303_cylinder_3_misfire": {
+      "dtc": "P0303",
+      "description": "Misfire Detected — Cylinder 3",
+      "severity": "HIGH — triggers limp mode (ECM Default: maximum engine speed reduced)",
+      "ecm_default_action": "Maximum engine speed reduced. If catalytic converter damage risk detected, CHECK ENGINE light will flash.",
+      "cylinder_location": {
+        "bank": "Bank 1 (RH side of engine, looking from front)",
+        "position": "Middle cylinder on RH bank",
+        "cylinder_numbering_diagram": "FRONT OF ENGINE: [2,1] / [4,3] / [6,5] (LH bank = 2,4,6 / RH bank = 1,3,5)",
+        "note": "There is NO 'Bank 3' on a V6. Bank 1 = RH cylinders (1,3,5). Bank 2 = LH cylinders (2,4,6)."
+      },
+      "injector_ecm_pin": "EN16-092 (Cylinder 3 fuel injector circuit)",
+      "ignition_coil": "Individual coil-on-plug (COP) unit for cylinder 3, RH bank middle position",
+      "diagnostic_workflow_after_spark_plug_change": {
+        "step_1_verify_spark_plug_installation": {
+          "description": "Confirm plugs are correct spec and properly installed",
+          "checks": [
+            "Correct plug type: NGK ITR6F-13 (iridium) or Motorcraft AGSF32FM",
+            "Gap: 1.0-1.1mm (0.039-0.043 in) — DO NOT regap iridium plugs",
+            "Torque: 11-15 Nm (hand-tight plus 1/4 turn if no torque wrench). Over-torquing can crack the porcelain insulator",
+            "Check for cross-threading (would cause compression loss)",
+            "Anti-seize NOT recommended on iridium plugs (changes torque spec)"
+          ]
+        },
+        "step_2_check_coil_pack": {
+          "description": "Most common cause of persistent misfire after plug change on AJ-V6",
+          "checks": [
+            "Remove coil from cylinder 3 and inspect boot for carbon tracking (black lines/burns inside the rubber boot)",
+            "Check coil connector is fully seated — a partially clicked connector causes intermittent misfire",
+            "Look for cracked coil housing (dropping the coil during plug change can crack it internally)",
+            "SWAP TEST: Move cylinder 3 coil to cylinder 1 and cylinder 1 coil to cylinder 3. Clear DTCs and drive. If the misfire follows the coil (now P0301), the coil is faulty. If it stays P0303, the coil is fine."
+          ],
+          "common_problem": "If you accidentally pulled the coil by the wiring rather than the connector body, internal winding damage can occur. The coil may work at idle but fail under load."
+        },
+        "step_3_check_what_you_may_have_disturbed": {
+          "description": "Things commonly damaged or dislodged during spark plug replacement on the AJ-V6",
+          "checks": [
+            "Vacuum hoses on intake manifold — pulling on the engine cover or reaching across can dislodge small vacuum lines, causing a lean misfire",
+            "Fuel injector connector on cylinder 3 — the injector connectors sit close to the coil wells and can be accidentally unclipped",
+            "Coil connector wiring — if the loom was pulled tight, check for broken wires at the connector",
+            "Debris in spark plug well — if debris fell into the well during plug change, it can short the coil to ground",
+            "PCV valve hose (runs across top of engine) — easily knocked off, causes rough idle and lean codes"
+          ]
+        },
+        "step_4_check_injector_circuit": {
+          "description": "If coil swap test passes, check fuel delivery to cylinder 3",
+          "checks": [
+            "Listen for injector click at cylinder 3 using a mechanic's stethoscope or long screwdriver to ear",
+            "Measure injector resistance: should be 12-16 ohms across pins",
+            "Check ECM pin EN16-092 for continuity to injector connector",
+            "Check for 12V at injector connector with ignition ON (one wire will show battery voltage)",
+            "NOID light test: insert NOID light into injector connector and crank — light should pulse"
+          ]
+        },
+        "step_5_compression_test": {
+          "description": "If spark and fuel are confirmed good, check mechanical condition",
+          "checks": [
+            "Perform compression test on all 6 cylinders — specification is 12-14 bar (174-203 psi)",
+            "Cylinder 3 should be within 10% of the highest reading",
+            "If low: perform wet test (add tablespoon of oil) — if compression rises, rings are worn. If no change, valves may be the issue.",
+            "Check for coolant in oil or oil in coolant (head gasket failure symptoms)"
+          ]
+        },
+        "step_6_live_data_via_obd": {
+          "description": "Use Drifter OBD-II connection to read live data",
+          "pids_to_monitor": {
+            "misfire_counters": "Mode 06 TID $A3-$A8 (per-cylinder misfire counters if supported)",
+            "fuel_trims": "Short Term Fuel Trim Bank 1 (PID 0x06) and Long Term Fuel Trim Bank 1 (PID 0x07) — values above +15% suggest lean condition on that bank",
+            "o2_sensors": "Bank 1 Sensor 1 (PID 0x14) — should oscillate 0.1-0.9V at cruise. Flat at 0.45V = dead sensor",
+            "rpm_stability": "Engine RPM (PID 0x0C) — look for rpm dips/fluctuations at idle indicating misfire events",
+            "coolant_temp": "PID 0x05 — ensure engine reaches operating temp (85-95°C). If not, thermostat may be stuck open, causing enrichment issues"
+          }
+        }
+      },
+      "things_that_make_it_worse": {
+        "description": "Common mistakes that escalate a cylinder 3 misfire on the AJ-V6",
+        "scenarios": [
+          {
+            "action": "Driving with active misfire for extended periods",
+            "consequence": "Unburnt fuel washes cylinder walls (dilutes oil on that cylinder), damages catalytic converter. Raw fuel entering the cat can cause it to overheat and melt the substrate."
+          },
+          {
+            "action": "Repeatedly clearing DTCs and driving without fixing root cause",
+            "consequence": "ECM adaptive fuel trims become increasingly skewed. Long-term fuel trim can go so far out of range that even after fixing the misfire, the engine runs poorly until trims re-learn (can take 50-100 miles of driving or a manual reset)."
+          },
+          {
+            "action": "Swapping plugs between cylinders after one was fouled",
+            "consequence": "A fouled plug from a misfiring cylinder can foul a good cylinder. Always use fresh plugs."
+          },
+          {
+            "action": "Over-tightening spark plugs",
+            "consequence": "Can crack the plug insulator (causing intermittent misfire), strip the aluminium head threads (loss of compression), or crush the sealing washer too flat."
+          },
+          {
+            "action": "Using wrong plug type or gap",
+            "consequence": "AJ-V6 requires fine-wire iridium plugs with precise gap. Standard copper plugs will misfire under load. Pre-gapped plugs should not be re-gapped."
+          }
+        ]
+      },
+      "limp_mode_details": {
+        "trigger": "ECM detects sustained misfire (typically 2+ consecutive drive cycles with active misfire)",
+        "symptoms": [
+          "Engine power severely reduced",
+          "Rev limiter set much lower than normal",
+          "CHECK ENGINE light on solid or flashing",
+          "Possible rough/shaking idle",
+          "May stall at low RPM"
+        ],
+        "recovery": "Fix root cause, clear DTCs with scan tool, perform drive cycle to complete OBD monitors. Limp mode clears when ECM confirms no misfire for a full drive cycle.",
+        "warning": "If CHECK ENGINE light is FLASHING (not steady), stop driving immediately — this indicates active misfire severe enough to damage the catalytic converter."
+      }
+    },
+    "common_xtype_v6_issues": [
+      {
+        "issue": "Ignition coil failure",
+        "frequency": "Very common — all 6 coils are the same part and can be swapped for diagnosis",
+        "symptoms": "Misfire under load, rough idle, DTC P0301-P0306",
+        "fix": "Replace failed coil(s). Consider replacing all 6 at the same service if mileage is high."
+      },
+      {
+        "issue": "Throttle body failure / sticking",
+        "frequency": "Common",
+        "symptoms": "Rough idle, stalling, P0222/P0223 TP sensor codes, limp mode",
+        "fix": "Clean throttle body first. If fault persists, replace unit and perform throttle adaptation reset via scan tool."
+      },
+      {
+        "issue": "Mass Air Flow (MAF) sensor contamination",
+        "frequency": "Common",
+        "symptoms": "Poor acceleration, lean codes (P0171/P0174), rough running",
+        "fix": "Clean with MAF-specific cleaner (not carb cleaner). Replace if cleaning doesn't resolve."
+      },
+      {
+        "issue": "Front lower control arm bushings",
+        "frequency": "Very common — design weakness",
+        "symptoms": "Knocking over bumps, vague steering, uneven tyre wear, RWC failure",
+        "fix": "Replace lower arm assemblies (bushings not separately serviceable on most variants)"
+      },
+      {
+        "issue": "Power steering pump/rack leaks",
+        "frequency": "Common on high-mileage examples",
+        "symptoms": "Whining noise on steering, low fluid, power steering fluid on ground",
+        "fix": "Replace seals or pump assembly. Check fluid cooler hose connections."
+      },
+      {
+        "issue": "Rear differential mount bushing failure (AWD models)",
+        "frequency": "Moderate",
+        "symptoms": "Clunk from rear on acceleration/deceleration, vibration",
+        "fix": "Replace rear diff mount bushings"
+      },
+      {
+        "issue": "Catalytic converter degradation",
+        "frequency": "Moderate — often caused by prolonged misfires",
+        "symptoms": "P0420/P0430 catalyst efficiency below threshold, reduced power, sulphur smell",
+        "fix": "Replace catalytic converter. Always fix the root cause (misfire, rich running) before replacing cat."
+      },
+      {
+        "issue": "Thermostat stuck open",
+        "frequency": "Moderate",
+        "symptoms": "Engine slow to warm up, heater blows cold, slightly rich fuel trims",
+        "fix": "Replace thermostat assembly. The X-Type thermostat housing is a known failure point."
+      }
+    ]
+  }
+}

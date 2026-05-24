@@ -1,0 +1,20 @@
+[Unit]
+Description=MZ1312 DRIFTER boot reason reporter (one-shot)
+After=local-fs.target network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=drifter
+Group=drifter
+# systemd-journal supplementary group lets us read `journalctl -b -1`
+# for the previous boot's flap/panic markers without granting drifter
+# group-wide journal access.
+SupplementaryGroups=systemd-journal
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python /opt/drifter/boot_reason.py
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=multi-user.target

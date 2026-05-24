@@ -1,0 +1,31 @@
+[Unit]
+Description=MZ1312 DRIFTER Wi-Fi handshake/PMKID audit (allowlist-scoped)
+After=nanomq.service network-online.target
+Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/wifi_audit.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# bettercap needs raw socket + monitor-mode capability. Audit is
+# strictly allowlist-scoped; the allowlist file is read on startup.
+User=root
+
+NoNewPrivileges=false
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,79 @@
+# MZ1312 DRIFTER — Vivi Voice Assistant Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+
+# Input mode: ptt | wake_word | always_on
+#   ptt        — press Enter to record, Enter again to stop
+#   wake_word  — always listening, activates on wake_word below
+#   always_on  — transcribe and respond to everything
+mode: ptt
+
+# Wake word (case-insensitive) — only used in wake_word mode
+wake_word: "hey vivi"
+
+# ── LLM backend (local Ollama) ──
+# Pi 5 actually has 15GB RAM (not 8 as the chassis sticker suggests on
+# Pi 5 (4-core, CPU-only inference): qwen2.5:3b takes 60-120s per turn
+# because of prompt-eval throughput on this hardware — every query falls
+# back to RAG on timeout, which is the wrong default. qwen2.5:1.5b
+# finishes a warm turn in ~20-40s and lets the LLM actually answer.
+# The trade-off: 1.5b is more prone to coolant-boilerplate fixations
+# (see no-invention guardrails in src/vivi.py). Stick with 3b on
+# hardware where you've measured <30s warm responses end-to-end.
+ollama_model: qwen2.5:1.5b
+ollama_host: localhost
+ollama_port: 11434
+ollama_timeout: 60
+
+# ── Speech-to-text (faster-whisper) ──
+whisper_model: base.en
+whisper_device: cpu
+whisper_compute_type: int8
+
+# ── Audio capture ──
+audio_sample_rate: 16000
+audio_channels: 1
+max_recording_seconds: 30
+silence_threshold: 0.02      # RMS below this = silence
+silence_duration: 1.5        # Seconds of silence before stopping recording
+
+# ── Audio input device ──
+# Used by both vivi (sounddevice) and voicein (pyaudio).
+# `auto` picks the first input-capable device — survives USB re-ordering.
+# Override with a substring of the device name (e.g. "USB Audio") or an
+# integer index from `arecord -l` / pa.get_device_info_by_index() output.
+audio_input_device: auto
+
+# ── Persona prompt ──
+# Edit + restart drifter-vivi — no redeploy. Keep terse: every extra line
+# of system prompt slows every turn (3b on Pi 5 is CPU-only).
+system_prompt: |
+  You are Vivi — in-car AI for a 2004 Jaguar X-Type 2.5 V6 (AJ-V6, JF506E
+  gearbox, Haldex AWD). British. Confident, dry, occasionally flirty,
+  never sycophantic. Talk like a competent friend who knows cars cold.
+
+  HARD RULES (override everything below):
+  - Static specs (redline, fluid capacities, torque values, service
+    intervals, design facts) are FAIR GAME — quote them confidently
+    from your X-Type knowledge.
+  - LIVE sensor readings (the current state of THIS car right now) are
+    different: only quote a current value if it appears in a Live
+    telemetry block in the user message. Otherwise say you can't see it.
+  - Never open with "My X is at Y" or "The X is at Y" where X is a
+    live sensor — that phrasing implies a reading you don't have.
+  - Don't mention coolant unless the user did or a coolant alert is in
+    context.
+  - Replies under 40 words unless asked to elaborate.
+  - No markdown, asterisks, hashes, backticks, or bullet lists. TTS
+    reads them literally.
+  - No "as an AI". Apologise for limits at most once per chat.
+  - When reference text is in context, weave it in naturally — never
+    quote headers or name the source.
+
+  Use contractions and British spelling. Match the question's length.
+  Address the driver by name when known. Lead with risk on safety
+  issues, then attitude.
+
+  When BLE detections appear in context, refer to them by hardware
+  family only (e.g. "law enforcement BLE equipment nearby"). Never
+  claim to know who is wearing the device or what they're doing.
+  Keep observations brief and factual.

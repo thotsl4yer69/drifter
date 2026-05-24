@@ -1,0 +1,148 @@
+{
+  "networks": {
+    "CAN_high_speed": {
+      "type": "Controller Area Network (ISO 11898)",
+      "baud_rate": "500 kbaud",
+      "physical": "Two-wire twisted pair shielded cable",
+      "termination": "120Ω resistors at both ends",
+      "primary_nodes": [
+        "ECM (Engine Control Module) — EN16-123/124",
+        "TCM (Transmission Control Module)",
+        "Instrument Cluster — IP10-17/18 (CAN gateway)",
+        "ABS/TC/DSC Module",
+        "Climate Control Module",
+        "GEM (General Electronic Module)",
+        "Speed Control Module (Cruise)",
+        "Restraints Control Module (Airbags)",
+        "Parking Aid Module"
+      ]
+    },
+    "SCP_body": {
+      "type": "Standard Corporate Protocol",
+      "baud_rate": "10.4 kbaud",
+      "physical": "Two-wire twisted pair",
+      "nodes": {
+        "GEM": "IP5-18 (SCP-), IP5-19 (SCP+)",
+        "Instrument Cluster": "IP10-22 (SCP+), IP10-23 (SCP-)",
+        "Audio Unit": "IP65-09 (SCP+), IP65-10 (SCP-)"
+      },
+      "note": "Body network for comfort/convenience. Instrument cluster bridges CAN↔SCP."
+    },
+    "D2B_fiber": {
+      "type": "D2B Fiber Optic Network",
+      "physical": "Optical fiber (BOF designation)",
+      "purpose": "Real-time audio data transfer only",
+      "nodes": [
+        "Audio Unit (gateway)",
+        "CD Autochanger",
+        "Power Amplifier",
+        "Voice Activation Module",
+        "Navigation Module",
+        "Cellular Phone Module"
+      ]
+    }
+  },
+  "key_modules": {
+    "ECM": {
+      "connector": "EN16 / 134-way / Black",
+      "location": "Engine compartment, front bulkhead, RH side",
+      "critical_pins": {
+        "EN16-006": "Engine crank supply (B+)",
+        "EN16-031": "Park/Neutral switch (auto)",
+        "EN16-041": "Starter relay drive output",
+        "EN16-053": "Generator control",
+        "EN16-123": "CAN - network",
+        "EN16-124": "CAN + network"
+      }
+    },
+    "GEM": {
+      "location": "Behind instrument panel, RH side",
+      "connectors": [
+        "CA86 (23-way grey)",
+        "CA87 (23-way green)",
+        "IP5 (23-way brown)",
+        "IP6 (23-way natural)",
+        "JB172 (23-way blue)"
+      ]
+    },
+    "Instrument_Cluster": {
+      "connectors": [
+        "IP10 (26-way white)",
+        "IP11 (26-way white)"
+      ],
+      "role": "CAN/SCP network gateway + PATS processing",
+      "pats_pins": "IP10-03/04 (PATS comms), IP10-05 (ground), IP10-06 (power)"
+    }
+  },
+  "ground_points": {
+    "G13": "Engine block — battery engine ground",
+    "G16": "Under battery tray — battery chassis ground (primary)",
+    "G14": "Rearward of power distribution fuse box — engine bay circuits, ECM returns",
+    "G17": "Generator bracket, RH engine — generator return path",
+    "G10": "Under RH headlamp — RH front corner ground",
+    "G11": "Under LH headlamp — LH front corner ground",
+    "G36": "LH cross car beam — instrument cluster, control module returns",
+    "G37": "RH cross car beam — dashboard circuits, lighting returns",
+    "G33": "ABS/DSC module bracket — ABS ground reference",
+    "G8": "RH strut tower — braking system grounds",
+    "G1": "Trunk LH rear — trunk lamp, tail light returns",
+    "G35": "LH E-post lower — rear lamp circuits"
+  },
+  "wire_color_codes": {
+    "N": "Brown",
+    "B": "Black",
+    "W": "White",
+    "K": "Pink",
+    "G": "Green",
+    "R": "Red",
+    "Y": "Yellow",
+    "O": "Orange",
+    "S": "Slate",
+    "L": "Light",
+    "U": "Blue",
+    "P": "Purple",
+    "BRD": "Braid (shield)",
+    "BOF": "Fiber optic (D2B)"
+  },
+  "harness_prefixes": {
+    "EN": "Engine",
+    "IP": "Instrument Panel",
+    "CA": "Cabin",
+    "FL": "LH Front Door",
+    "FR": "RH Front Door",
+    "BL": "LH Rear Door",
+    "BR": "RH Rear Door",
+    "FT": "Fuel Tank",
+    "GC": "Cooling Pack",
+    "TL": "Trunk Lid",
+    "JB": "Junction Box",
+    "AC": "Climate Control"
+  },
+  "abbreviations": {
+    "CKP": "Crankshaft Position Sensor",
+    "CMP": "Camshaft Position Sensor (RH Bank /1, LH Bank /2)",
+    "ECT": "Engine Coolant Temperature Sensor",
+    "IAT": "Intake Air Temperature Sensor",
+    "MAF": "Mass Air Flow Sensor",
+    "MAP": "Manifold Absolute Pressure Sensor",
+    "TP": "Throttle Position Sensor",
+    "HO2": "Heated Oxygen Sensor",
+    "KS": "Knock Sensor",
+    "IMT": "Intake Manifold Tuning Solenoid",
+    "VVT": "Variable Valve Timing Solenoid",
+    "EGR": "Exhaust Gas Recirculation Valve",
+    "EVAP": "Evaporative Emission Control",
+    "PATS": "Passive Anti-Theft System",
+    "DSC": "Dynamic Stability Control",
+    "GEM": "General Electronic Module",
+    "TCM": "Transmission Control Module",
+    "ECM": "Engine Control Module"
+  },
+  "relay_pin_standard": {
+    "pin_1": "Coil positive supply (+)",
+    "pin_2": "Coil negative / NC",
+    "pin_3": "Change-over (COM)",
+    "pin_4": "Normally open (NO)",
+    "pin_5": "Coil return"
+  }
+}

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DRIFTER Cockpit
+GenericName=Vehicle Telemetry HUD
+Comment=MZ1312 DRIFTER — launch the cockpit (hero gauges + RF intel + Mechanic/Vivi)
+Exec=/opt/drifter/bin/launch-cockpit.sh
+Icon=/opt/drifter/icons/drifter-cockpit.png
+Terminal=false
+StartupNotify=true
+StartupWMClass=Chromium-browser
+Categories=Utility;Network;
+Keywords=drifter;cockpit;telemetry;rf;mechanic;jaguar;mz1312;

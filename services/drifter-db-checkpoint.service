@@ -1,0 +1,42 @@
+[Unit]
+Description=MZ1312 DRIFTER SQLite WAL checkpoint on shutdown
+# Vehicle-survival hardening 2026-05-20: ensures any pending WAL is
+# folded back into /opt/drifter/data/drifter.db on a clean shutdown
+# so the next boot doesn't start from a stale main DB + replaying WAL.
+#
+# Ordering is delicate: DefaultDependencies=no removes the implicit
+# "stop before sysinit shutdown" wiring; we replace it with explicit
+# Requires+After=local-fs.target so the FS holding /opt/drifter is
+# still mounted when ExecStop fires, and Before=shutdown.target
+# umount.target final.target so we run before unmount.
+DefaultDependencies=no
+Requires=local-fs.target
+After=local-fs.target drifter-canbridge.service drifter-logger.service
+Before=shutdown.target umount.target final.target
+# Conflicts= restored 2026-05-20 (architect re-review caught the
+# regression): per `man systemd.special` shutdown.target, services
+# that shall be terminated on system shutdown MUST add both
+# Conflicts= AND Before= — Before= alone is purely ordering and
+# does NOT trigger the stop. DefaultDependencies=no removes the
+# implicit Conflicts=shutdown.target, so we must re-add it
+# explicitly here, otherwise ExecStop (the wal_checkpoint) never
+# fires on systemctl reboot.
+Conflicts=reboot.target shutdown.target halt.target poweroff.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# KillMode=mixed + a generous TimeoutStopSec gives the python -c
+# enough time to complete wal_checkpoint before systemd kills it on
+# shutdown. (KillMode=none would block shutdown if python hung;
+# mixed sends SIGTERM at TimeoutStopSec, so we trade hang-safety
+# for a hard upper bound.)
+KillMode=mixed
+ExecStart=/bin/true
+ExecStop=/opt/drifter/venv/bin/python -c "import sqlite3; c=sqlite3.connect('/opt/drifter/data/drifter.db'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

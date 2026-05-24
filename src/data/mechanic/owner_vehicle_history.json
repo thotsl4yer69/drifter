@@ -1,0 +1,42 @@
+{
+  "description": "Known history and current issues for THIS specific vehicle",
+  "known_repairs": [
+    {
+      "issue": "Spark plug exploded due to improper torque",
+      "details": "A spark plug was overtightened and eventually failed catastrophically. The aluminium cylinder head threads may be damaged. Anti-seize and a torque wrench are essential for all future plug changes (15 Nm max).",
+      "cylinder": "Unknown — inspect all wells",
+      "implications": "Possible thread damage requiring Helicoil repair. Check compression on the affected cylinder."
+    },
+    {
+      "issue": "Valve cover gasket oil leak into spark plug wells",
+      "details": "Oil has been found in spark plug wells, indicating the valve cover gasket seals have failed. Oil in the wells conducts electricity and causes coil pack secondary voltage breakdown, leading to misfires.",
+      "affected_banks": "Likely both banks given vehicle age",
+      "implications": "Root cause of coil pack failures. Must be fixed before replacing coils or the new coils will fail too."
+    }
+  ],
+  "current_symptoms": [
+    {
+      "symptom": "P0303 — Cylinder 3 misfire",
+      "details": "Active misfire on cylinder 3. Runs fine under 3000 RPM but misfires become apparent above that. This is consistent with a coil pack failing under load (higher RPM = higher secondary voltage demand).",
+      "related_codes": [
+        "P0303"
+      ]
+    },
+    {
+      "symptom": "Cruise control disabled — \"Cruise Unavailable\" message",
+      "details": "Cruise control is disabled by the ECM when powertrain faults are detected. The misfire code P0303 triggers this safety feature. Cruise will return once the misfire is resolved and codes are cleared.",
+      "trigger_rpm": "Above 3000 RPM"
+    },
+    {
+      "symptom": "Rough idle",
+      "details": "Slight roughness at idle. Could be from the misfire, vacuum leaks, or a combination. Check STFT/LTFT values to determine if lean condition exists."
+    }
+  ],
+  "suspected_vacuum_leaks": [
+    "PCV hose — common split point on AJ-V6",
+    "IMT valve O-ring — original nitrile rubber degrades from fuel vapours. Upgrade to Viton.",
+    "Brake booster hose — large vacuum hose at rear of intake manifold",
+    "Intake manifold gaskets — check with smoke test"
+  ],
+  "maintenance_notes": "Australian climate accelerates rubber and fluid degradation. All service intervals should be reduced by ~20% vs European schedule."
+}

@@ -1,0 +1,86 @@
+[
+  {
+    "title": "Overheating — Pull Over Procedure",
+    "steps": [
+      "Turn OFF air conditioning immediately — reduces engine load.",
+      "Turn heater to MAX HOT with fan on high — this acts as a secondary radiator.",
+      "If temperature keeps rising, pull over to a safe place as soon as possible.",
+      "Do NOT open the expansion tank cap while hot — pressurised system will scald.",
+      "Let engine idle for 2-3 minutes to circulate coolant, then turn off.",
+      "Wait 30+ minutes before opening expansion tank.",
+      "Check coolant level. Top up with WATER if needed (not ideal but safe short-term).",
+      "Check for visible leaks: thermostat housing (top of engine between the V), hoses, radiator seams, water pump weep hole.",
+      "If you must drive: keep RPM low, avoid hills, watch the temperature gauge closely."
+    ]
+  },
+  {
+    "title": "Engine Stall — Won't Restart",
+    "steps": [
+      "Turn hazards on. Ensure vehicle is in Park (auto) or Neutral.",
+      "Wait 30 seconds, then try starting again. Hold starter for max 10 seconds.",
+      "If cranks but won't fire: check fuel pump prime (key ON — listen for whir from rear).",
+      "If no prime sound: check fuel pump relay in engine bay fuse box. Swap with identical relay.",
+      "If cranks strongly but no fire: possible CMP sensor failure (P0340/P0345). Try disconnecting and reconnecting the CMP sensor connector.",
+      "If won't crank at all: check battery terminals for corrosion. Clean and retighten. Try jump start.",
+      "If starts then dies: possible throttle body failure (P2106 limp mode). Try key off → key on → start with NO throttle input."
+    ]
+  },
+  {
+    "title": "Limp Mode (Reduced Power)",
+    "steps": [
+      "Limp mode limits RPM to ~2500 and reduces power to protect the engine/transmission.",
+      "Safe to drive slowly — just won't have much power.",
+      "Pull over when convenient. Turn engine off, wait 30 seconds, restart.",
+      "If limp mode clears: likely a transient sensor glitch. Monitor with DRIFTER.",
+      "If limp mode persists: check DRIFTER dashboard for DTC codes.",
+      "Common causes: throttle body fault (P2106/P2111/P2112), TPS correlation (P2135), MAF fault, or transmission solenoid fault.",
+      "Drive gently to home/mechanic. Do not force high RPM in limp mode."
+    ]
+  },
+  {
+    "title": "Battery / Charging Failure",
+    "steps": [
+      "If battery light comes on while driving: alternator may have failed.",
+      "Turn off non-essential electrics: heated seats, rear screen, radio, phone charger.",
+      "Keep headlights on if needed for safety.",
+      "You have roughly 20-40 minutes of driving on battery alone.",
+      "Drive directly to nearest safe stopping point.",
+      "Do NOT turn off the engine — you may not be able to restart.",
+      "If voltage drops below 11V: power steering may become heavy, engine may die."
+    ]
+  },
+  {
+    "title": "Tyre Pressure Loss / Puncture",
+    "steps": [
+      "If sudden pressure drop: slow down gradually. Do not brake hard.",
+      "Pull over to a safe, flat area away from traffic.",
+      "The X-Type spare is a space-saver under the boot floor.",
+      "Jack point front: behind front wheel arch seam. Rear: in front of rear wheel arch seam.",
+      "Alloy wheel bolts: 103 Nm. Do not overtighten.",
+      "Space-saver max speed: 80 km/h. Drive to a tyre shop promptly."
+    ]
+  },
+  {
+    "title": "Coolant Loss Warning",
+    "steps": [
+      "Pull over ASAP — do NOT continue with coolant temp in RED.",
+      "Once stopped, leave engine idling for 2 minutes (if not critical).",
+      "Most common cause is thermostat housing crack — look for coolant pooling in the V of the engine (between cam covers).",
+      "Emergency: Let engine cool completely. Top up with water. Drive slowly.",
+      "Temporary repair: JB Weld epoxy on small cracks can get you home.",
+      "Call roadside assist if coolant is pouring out — do not drive without coolant."
+    ]
+  },
+  {
+    "title": "Transmission Limp Mode (3rd Gear Only)",
+    "steps": [
+      "Transmission defaults to 3rd gear only — this is a protection mode.",
+      "Safe to drive slowly to home or mechanic.",
+      "Try: engine off, wait 60 seconds, restart. May clear transient fault.",
+      "If cold-start limp that clears when warm: early solenoid failure — schedule service.",
+      "Check ATF level and colour (dipstick). Dark or burnt smell = urgent service needed.",
+      "Do NOT force acceleration in limp mode.",
+      "DRIFTER dashboard will show transmission-related DTCs."
+    ]
+  }
+]
