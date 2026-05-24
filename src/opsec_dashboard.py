@@ -943,6 +943,38 @@ class OpsecHandler(BaseHTTPRequestHandler):
             events = marauder_client.get_scan_recent(stream, n=n)
             self._send_json(200, {'stream': stream, 'count': len(events), 'events': events})
             return
+        if path == '/api/marauder/portal/sessions':
+            return self._send_json(200, {'sessions': marauder_client.list_portal_sessions()})
+        if path.startswith('/api/marauder/portal/session/'):
+            # Path like /api/marauder/portal/session/<id>/captures.jsonl[?wipe=1]
+            from urllib.parse import parse_qs as _parse_qs
+            parsed = urlparse(self.path)
+            parts = parsed.path.split('/')
+            # parts: ['', 'api', 'marauder', 'portal', 'session', '<id>', 'captures.jsonl']
+            if len(parts) == 7 and parts[6] == 'captures.jsonl':
+                if not _is_local_peer(self.client_address[0]):
+                    return self._send_json(403, {'ok': False, 'response': 'remote not allowed'})
+                sid = parts[5]
+                token = self.headers.get('X-Drifter-Op-Confirm', '')
+                if not marauder_client.consume_reveal_token(token, sid):
+                    return self._send_json(403, {'ok': False,
+                                                  'response': 'invalid or expired reveal token'})
+                cap_path = marauder_client.portal_capture_path(sid)
+                if not cap_path.exists():
+                    return self._send_json(404, {'ok': False, 'response': 'no captures'})
+                body = cap_path.read_bytes()
+                qs = _parse_qs(parsed.query)
+                if qs.get('wipe', ['0'])[0] == '1':
+                    try:
+                        cap_path.unlink()
+                    except OSError:
+                        pass
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
         self.send_error(404)
 
     # ── POST ───────────────────────────────────────────────────────────
@@ -1016,6 +1048,17 @@ class OpsecHandler(BaseHTTPRequestHandler):
             op_id = marauder_client.publish_cmd(_MQTT_CLIENT, command='stop')
             self._send_json(200, {'ok': True, 'op_id': op_id})
             return
+        if path.startswith('/api/marauder/portal/session/') and \
+                path.endswith('/reveal_token'):
+            if not _is_local_peer(self.client_address[0]):
+                self._send_json(403, {'ok': False, 'response': 'remote not allowed'})
+                return
+            parts = path.split('/')
+            sid = parts[5]
+            token = marauder_client.issue_reveal_token(sid)
+            return self._send_json(200, {'ok': True, 'token': token,
+                                         'expires_in_s': 60,
+                                         'header': 'X-Drifter-Op-Confirm'})
         self.send_error(404)
 
     def _run_probe(self, name: str) -> None:
