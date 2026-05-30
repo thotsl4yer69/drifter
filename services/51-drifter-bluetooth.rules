@@ -1,0 +1,16 @@
+/* MZ1312 DRIFTER — polkit grant for drifter user → org.bluez
+ *
+ * The drifter-bleconv service connects to BlueZ over D-Bus via bleak's
+ * passive BleakScanner. By default polkit denies non-root access to the
+ * bluez actions (StartDiscovery, RegisterAgent, etc.); this rule allows
+ * the drifter system user the minimal set needed for passive scanning.
+ *
+ * Installed by install.sh at /etc/polkit-1/rules.d/51-drifter-bluetooth.rules.
+ * Removing this file disables drifter-bleconv (the service will crash-loop
+ * on D-Bus permission errors).
+ */
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "drifter") return;
+    if (action.id.indexOf("org.bluez.") !== 0) return;
+    return polkit.Result.YES;
+});

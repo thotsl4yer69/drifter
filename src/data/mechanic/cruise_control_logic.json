@@ -1,0 +1,22 @@
+{
+  "description": "The ECM disables cruise control as a safety measure when powertrain faults are detected. Cruise will not function until ALL triggering DTCs are resolved and cleared. After clearing, 80-160 km of normal driving may be needed for adaptives.",
+  "triggering_faults": [
+    "Any misfire code (P0300-P0306)",
+    "Throttle faults (P0121-P0123, P2106, P2111, P2112, P2135)",
+    "MAF/MAP faults (P0101-P0103, P0107-P0108)",
+    "Lean/rich codes (P0171, P0172, P0174, P0175)",
+    "Transmission faults (P0750, P0755, P0760, P0765)",
+    "Vehicle speed sensor (P0500-P0502)",
+    "O2 sensor faults (P0130-P0159)",
+    "VVT faults (P0010, P0020)",
+    "Camshaft sensor faults (P0340, P0345)"
+  ],
+  "resolution_steps": [
+    "1. Scan for ALL active DTCs — not just the obvious one",
+    "2. Fix the root cause (e.g., coil pack, vacuum leak, solenoid)",
+    "3. Clear all DTCs with diagnostic scanner",
+    "4. Drive 80-160 km for adaptive strategy relearning",
+    "5. Cruise should become available once monitors pass"
+  ],
+  "note": "Vacuum leaks are the sneakiest cause — they trigger lean codes (P0171/P0174) which disable cruise, but the vacuum leak itself may not be obvious without a smoke test."
+}

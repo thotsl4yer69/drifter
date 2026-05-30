@@ -1,0 +1,25 @@
+#!/bin/bash
+# DRIFTER operator CLI.
+# Installed at /usr/local/bin/drifter by scripts/oneshot.sh.
+# Routes the first argument to the matching module under /opt/drifter.
+set -eo pipefail
+
+PY=/opt/drifter/venv/bin/python3
+
+case "${1:-}" in
+    mode)
+        shift
+        exec "$PY" /opt/drifter/mode.py "$@"
+        ;;
+    corpus)
+        shift
+        exec "$PY" /opt/drifter/corpus.py "$@"
+        ;;
+    diagnose|"")
+        exec "$PY" /opt/drifter/diagnose.py "$@"
+        ;;
+    *)
+        # Unknown verb — fall through to diagnose so its argparse owns the error.
+        exec "$PY" /opt/drifter/diagnose.py "$@"
+        ;;
+esac

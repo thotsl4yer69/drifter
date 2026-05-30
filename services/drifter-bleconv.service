@@ -1,0 +1,28 @@
+[Unit]
+Description=MZ1312 DRIFTER Passive BLE Scanner
+After=bluetooth.service nanomq.service
+Wants=bluetooth.service nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=drifter
+Group=drifter
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/ble_passive.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Sandboxing — bleak talks to BlueZ over D-Bus; permissions granted via
+# polkit at /etc/polkit-1/rules.d/51-drifter-bluetooth.rules.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

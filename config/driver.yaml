@@ -1,0 +1,9 @@
+# MZ1312 DRIFTER — Driver profile
+# Read by Vivi at the top of every turn. Keep tight; this lands in the
+# context window of every LLM call.
+
+name: Jack
+# Optional preferences Vivi can tap into:
+preferred_name: Jack
+units: metric            # metric | imperial — UI hint, Vivi adapts replies
+home_postcode: ""        # used by route/recon helpers when needed

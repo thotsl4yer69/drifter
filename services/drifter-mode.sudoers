@@ -1,0 +1,21 @@
+# /etc/sudoers.d/drifter-mode
+# NOPASSWD entries for the dashboards' mode-switch UI.
+# Installed by install.sh at /etc/sudoers.d/drifter-mode (mode 0440).
+#
+# The drifter user can invoke the bash CLI wrapper with one of the four
+# subcommands. The wrapper exec's /opt/drifter/mode.py; mode.py validates
+# the target via argparse against config.MODES so unknown verbs cannot leak.
+
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode drive
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode foot
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode both
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode status
+
+# systemd-run launches the switch as a transient unit OUTSIDE the calling
+# dashboard's cgroup. Required because the switch can stop the very service
+# that initiated it (opsec disabling itself on FOOT→DRIVE), and systemd
+# sends SIGTERM to the entire cgroup — Popen + start_new_session is not
+# enough; the child must be reparented to its own unit.
+drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode drive
+drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode foot
+drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode both

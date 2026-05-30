@@ -1,0 +1,37 @@
+[Unit]
+Description=MZ1312 DRIFTER Marauder bridge (Wi-Fi/BLE recon + active)
+After=network-online.target mosquitto.service drifter-flipper.service
+Wants=mosquitto.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=drifter
+Group=drifter
+SupplementaryGroups=dialout
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/drifter
+StateDirectory=drifter-marauder
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python /opt/drifter/marauder_bridge.py
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+ProtectHome=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/drifter/state /opt/drifter/etc /var/lib/drifter-marauder
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+NoNewPrivileges=true
+DeviceAllow=char-ttyACM rw
+DeviceAllow=char-ttyUSB rw
+DevicePolicy=closed
+
+[Install]
+WantedBy=multi-user.target

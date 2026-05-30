@@ -1,0 +1,46 @@
+[Unit]
+Description=MZ1312 DRIFTER CAN Bridge
+After=network.target nanomq.service
+Wants=nanomq.service
+StartLimitIntervalSec=120
+# Burst=3 tightened (was 5) per 2026-05-20 architect follow-up:
+# RestartSec=15 below gives ~45s of thrash before reboot-force
+# engages on a USB CAN adapter pop-off — burst=5 was ~75s.
+StartLimitBurst=3
+# Vehicle-survival hardening 2026-05-20: if canbridge can't stay up,
+# the system is non-functional as a telemetry node. Force a reboot
+# rather than leaving the unit in 'failed' for the rest of the drive.
+StartLimitAction=reboot-force
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStartPre=/usr/local/bin/drifter-setup-can
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/can_bridge.py
+Restart=on-failure
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+
+# Vehicle-survival hardening 2026-05-20: canbridge has bounded ring
+# buffers — 256M ceiling, growth past this is a coding defect.
+# OOMScoreAdjust=-500 protects this driver-safety service from
+# global OOM kill (Ollama uncapped per user decision; see
+# progress.txt for the OOM-priority-inversion discussion).
+MemoryMax=256M
+OOMScoreAdjust=-500
+
+# --- Hardening (see AGENTS.md) --------------------------------------
+# Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
+# read-only while leaving /opt/drifter writable for logs/state.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

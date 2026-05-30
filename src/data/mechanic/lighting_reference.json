@@ -1,0 +1,29 @@
+{
+  "headlamps": {
+    "dip_beam": "H7 55W",
+    "main_beam": "H1 55W",
+    "hid_option": "D2S xenon (if HID equipped)"
+  },
+  "front": {
+    "indicator": "PY21W (amber)",
+    "side_marker": "W5W",
+    "fog": "H11 55W"
+  },
+  "rear": {
+    "tail_brake": "P21/5W (dual filament)",
+    "indicator": "PY21W (amber)",
+    "reverse": "P21W",
+    "fog": "P21W",
+    "high_mount_brake": "LED array (non-serviceable)"
+  },
+  "interior": {
+    "map_light": "W5W",
+    "courtesy": "Festoon 10W",
+    "boot": "W5W",
+    "glovebox": "W5W"
+  },
+  "dashboard": {
+    "warning_lights": "Non-serviceable LEDs",
+    "instrument_illumination": "Non-serviceable"
+  }
+}

@@ -1,0 +1,666 @@
+{
+  "P0171": {
+    "desc": "System too lean — Bank 1",
+    "action": "Adaptive fuel metering inhibited, purge inhibited",
+    "causes": [
+      "Vacuum leak",
+      "MAF sensor fault",
+      "Fuel pressure low",
+      "O2 sensor fault",
+      "PCV hose split",
+      "IMT O-ring failure",
+      "Intake manifold gasket leak"
+    ]
+  },
+  "P0172": {
+    "desc": "System too rich — Bank 1",
+    "action": "Adaptive fuel metering inhibited",
+    "causes": [
+      "Fuel pressure high",
+      "Leaking injector",
+      "Purge valve stuck open",
+      "O2 sensor fault",
+      "MAF sensor fault"
+    ]
+  },
+  "P0174": {
+    "desc": "System too lean — Bank 2",
+    "action": "Adaptive fuel metering inhibited, purge inhibited",
+    "causes": [
+      "Vacuum leak",
+      "MAF sensor fault",
+      "Fuel pressure low",
+      "O2 sensor fault"
+    ]
+  },
+  "P0175": {
+    "desc": "System too rich — Bank 2",
+    "action": "Adaptive fuel metering inhibited",
+    "causes": [
+      "Fuel pressure high",
+      "Leaking injector",
+      "Purge valve stuck open"
+    ]
+  },
+  "P0101": {
+    "desc": "MAF sensor out of range",
+    "action": "Default air mass used, fuel adaptations inhibited",
+    "causes": [
+      "MAF sensor contaminated",
+      "MAF wiring fault",
+      "MAF sensor failure"
+    ]
+  },
+  "P0102": {
+    "desc": "MAF sensor circuit low voltage",
+    "action": "Default air mass used",
+    "causes": [
+      "MAF sensor ground open",
+      "MAF sensing circuit open",
+      "MAF failure"
+    ]
+  },
+  "P0103": {
+    "desc": "MAF sensor circuit high voltage",
+    "action": "Default air mass used",
+    "causes": [
+      "MAF sensor ground open",
+      "MAF sensing circuit shorted",
+      "MAF failure"
+    ]
+  },
+  "P0107": {
+    "desc": "MAP sensor circuit low voltage",
+    "action": "Default 1.013 BAR used",
+    "causes": [
+      "MAP circuit open/short to ground",
+      "MAP supply circuit open",
+      "MAP failure"
+    ]
+  },
+  "P0108": {
+    "desc": "MAP sensor circuit high voltage",
+    "action": "Default 1.013 BAR used",
+    "causes": [
+      "MAP ground open",
+      "MAP sense circuit shorted high",
+      "MAP failure"
+    ]
+  },
+  "P0111": {
+    "desc": "IAT sensor out of range",
+    "action": "Default air temp used, fuel adaptations inhibited",
+    "causes": [
+      "IAT sensor ground fault",
+      "IAT sensing circuit open",
+      "IAT sensor failure"
+    ]
+  },
+  "P0112": {
+    "desc": "IAT sensor circuit low voltage",
+    "action": "Default air temp used",
+    "causes": [
+      "IAT wiring fault",
+      "IAT sensor failure"
+    ]
+  },
+  "P0113": {
+    "desc": "IAT sensor circuit high voltage",
+    "action": "Default air temp used",
+    "causes": [
+      "IAT wiring fault",
+      "IAT sensor failure"
+    ]
+  },
+  "P0116": {
+    "desc": "ECT sensor out of range",
+    "action": "Default coolant temp, enrichment mode, max RPM reduced",
+    "causes": [
+      "ECT wiring fault",
+      "ECT sensor failure",
+      "Thermostat stuck"
+    ]
+  },
+  "P0117": {
+    "desc": "ECT sensor circuit low voltage",
+    "action": "Default coolant temp, enrichment mode",
+    "causes": [
+      "ECT wiring fault",
+      "ECT sensor failure"
+    ]
+  },
+  "P0118": {
+    "desc": "ECT sensor circuit high voltage",
+    "action": "Default coolant temp, enrichment mode",
+    "causes": [
+      "ECT wiring fault",
+      "ECT sensor failure"
+    ]
+  },
+  "P0125": {
+    "desc": "ECT insufficient for closed-loop fuelling",
+    "action": "Open-loop fuel metering",
+    "causes": [
+      "Thermostat stuck open",
+      "ECT sensor fault",
+      "Engine mechanical problem"
+    ]
+  },
+  "P0121": {
+    "desc": "Throttle position sensor out of range",
+    "action": "TP default value, cruise inhibited",
+    "causes": [
+      "Throttle adaptations not performed after battery disconnect",
+      "TP sensor disconnected",
+      "TP wiring fault",
+      "Throttle motor failure"
+    ]
+  },
+  "P0122": {
+    "desc": "TP sensor circuit low voltage",
+    "action": "TP default, cruise inhibited",
+    "causes": [
+      "TP sensor disconnected",
+      "TP wiring open/high resistance",
+      "Throttle motor failure"
+    ]
+  },
+  "P0123": {
+    "desc": "TP sensor circuit high voltage",
+    "action": "TP default, cruise inhibited",
+    "causes": [
+      "TP sensor fault",
+      "TP wiring shorted",
+      "Throttle motor failure"
+    ]
+  },
+  "P0507": {
+    "desc": "Idle speed higher than expected",
+    "action": "None — informational",
+    "causes": [
+      "Vacuum leak",
+      "Dirty throttle body",
+      "IAC fault",
+      "PCV leak"
+    ]
+  },
+  "P2106": {
+    "desc": "Throttle actuator forced limited power",
+    "action": "Limp mode — reduced power",
+    "causes": [
+      "Throttle body motor failure",
+      "TPS correlation fault",
+      "Wiring issue"
+    ]
+  },
+  "P2111": {
+    "desc": "Throttle stuck open",
+    "action": "Limp mode",
+    "causes": [
+      "Throttle motor failure",
+      "Carbon buildup",
+      "Wiring fault"
+    ]
+  },
+  "P2112": {
+    "desc": "Throttle stuck closed",
+    "action": "Limp mode",
+    "causes": [
+      "Throttle motor failure",
+      "Carbon buildup",
+      "Wiring fault"
+    ]
+  },
+  "P2135": {
+    "desc": "TP sensor 1/2 correlation",
+    "action": "Limp mode, cruise inhibited",
+    "causes": [
+      "TP sensor failure",
+      "Wiring fault between dual TPS signals",
+      "Throttle adaptations needed after battery disconnect"
+    ]
+  },
+  "P0300": {
+    "desc": "Random/multiple cylinder misfire",
+    "action": "Catalyst damage possible",
+    "causes": [
+      "Vacuum leak (affects all cylinders)",
+      "Fuel pressure issue",
+      "Multiple coil failures",
+      "Bad fuel",
+      "Low compression"
+    ]
+  },
+  "P0301": {
+    "desc": "Cylinder 1 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well (valve cover gasket)",
+      "Low compression"
+    ]
+  },
+  "P0302": {
+    "desc": "Cylinder 2 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well",
+      "Low compression"
+    ]
+  },
+  "P0303": {
+    "desc": "Cylinder 3 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well",
+      "Low compression"
+    ]
+  },
+  "P0304": {
+    "desc": "Cylinder 4 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well",
+      "Low compression"
+    ]
+  },
+  "P0305": {
+    "desc": "Cylinder 5 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well",
+      "Low compression"
+    ]
+  },
+  "P0306": {
+    "desc": "Cylinder 6 misfire",
+    "action": "Speed control inhibited",
+    "causes": [
+      "Coil pack failure",
+      "Spark plug fouled/worn",
+      "Injector fault",
+      "Oil in plug well",
+      "Low compression"
+    ]
+  },
+  "P0351": {
+    "desc": "Ignition coil A circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0352": {
+    "desc": "Ignition coil B circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0353": {
+    "desc": "Ignition coil C circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0354": {
+    "desc": "Ignition coil D circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0355": {
+    "desc": "Ignition coil E circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0356": {
+    "desc": "Ignition coil F circuit",
+    "action": "Misfire detection active",
+    "causes": [
+      "Coil pack failure",
+      "Coil connector fault",
+      "ECM driver circuit fault"
+    ]
+  },
+  "P0131": {
+    "desc": "O2 sensor circuit malfunction — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor signal circuit fault",
+      "O2 sensor failure",
+      "Exhaust leak before sensor"
+    ]
+  },
+  "P0132": {
+    "desc": "O2 sensor circuit malfunction — B1S2",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor signal circuit fault",
+      "O2 sensor failure"
+    ]
+  },
+  "P0133": {
+    "desc": "O2 sensor slow response — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor contaminated",
+      "O2 sensor aging",
+      "O2 wiring fault"
+    ]
+  },
+  "P0134": {
+    "desc": "O2 sensor no activity — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor signal open",
+      "O2 sensor supply open",
+      "O2 sensor failure"
+    ]
+  },
+  "P0137": {
+    "desc": "O2 sensor circuit malfunction — B2S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor signal circuit fault",
+      "O2 sensor failure"
+    ]
+  },
+  "P0139": {
+    "desc": "O2 sensor slow response — B2S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor contaminated",
+      "O2 sensor aging",
+      "O2 wiring fault"
+    ]
+  },
+  "P0140": {
+    "desc": "O2 sensor no activity — B2S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 sensor signal open",
+      "O2 sensor supply open",
+      "O2 sensor failure"
+    ]
+  },
+  "P0031": {
+    "desc": "O2 heater circuit low — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 heater wiring fault",
+      "Heater element failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0032": {
+    "desc": "O2 heater circuit high — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 heater shorted to voltage",
+      "Heater element failure"
+    ]
+  },
+  "P0135": {
+    "desc": "O2 heater circuit malfunction — B1S1",
+    "action": "Fuel adaptations inhibited",
+    "causes": [
+      "O2 heater circuit open/short",
+      "Heater element failure"
+    ]
+  },
+  "P0420": {
+    "desc": "Catalyst efficiency below threshold — Bank 1",
+    "action": "Informational",
+    "causes": [
+      "Catalytic converter degraded",
+      "Exhaust leak before cat",
+      "O2 sensor fault",
+      "Engine running rich (fix root cause first!)"
+    ]
+  },
+  "P0430": {
+    "desc": "Catalyst efficiency below threshold — Bank 2",
+    "action": "Informational",
+    "causes": [
+      "Catalytic converter degraded",
+      "Exhaust leak before cat",
+      "O2 sensor fault"
+    ]
+  },
+  "P0010": {
+    "desc": "Camshaft position actuator circuit — Bank 1",
+    "action": "Speed control inhibited",
+    "causes": [
+      "VVT solenoid circuit fault",
+      "VVT solenoid failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0020": {
+    "desc": "Camshaft position actuator circuit — Bank 2",
+    "action": "Speed control inhibited",
+    "causes": [
+      "VVT solenoid circuit fault",
+      "VVT solenoid failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0340": {
+    "desc": "CMP sensor circuit malfunction — Bank 1",
+    "action": "Engine may not start",
+    "causes": [
+      "CMP sensor failure",
+      "CMP wiring fault",
+      "Connector corrosion (coolant leak)"
+    ]
+  },
+  "P0345": {
+    "desc": "CMP sensor circuit malfunction — Bank 2",
+    "action": "Engine may not start",
+    "causes": [
+      "CMP sensor failure",
+      "CMP wiring fault",
+      "Connector corrosion"
+    ]
+  },
+  "P0201": {
+    "desc": "Injector circuit — Cylinder 1",
+    "action": "Fuel cut-off cyl 1",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0202": {
+    "desc": "Injector circuit — Cylinder 2",
+    "action": "Fuel cut-off cyl 2",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0203": {
+    "desc": "Injector circuit — Cylinder 3",
+    "action": "Fuel cut-off cyl 3",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0204": {
+    "desc": "Injector circuit — Cylinder 4",
+    "action": "Fuel cut-off cyl 4",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0205": {
+    "desc": "Injector circuit — Cylinder 5",
+    "action": "Fuel cut-off cyl 5",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0206": {
+    "desc": "Injector circuit — Cylinder 6",
+    "action": "Fuel cut-off cyl 6",
+    "causes": [
+      "Injector circuit open/short",
+      "Injector failure",
+      "ECM driver fault"
+    ]
+  },
+  "P0443": {
+    "desc": "EVAP purge circuit malfunction",
+    "action": "Purge inhibited",
+    "causes": [
+      "Purge valve stuck open",
+      "Purge valve circuit fault",
+      "Purge valve failure"
+    ]
+  },
+  "P0455": {
+    "desc": "EVAP system large leak",
+    "action": "Purge inhibited",
+    "causes": [
+      "Fuel cap loose",
+      "EVAP hose cracked",
+      "Purge valve fault",
+      "Charcoal canister"
+    ]
+  },
+  "P0401": {
+    "desc": "EGR flow insufficient",
+    "action": "EGR function limited",
+    "causes": [
+      "EGR valve carbon buildup",
+      "EGR vacuum line fault",
+      "EGR passages blocked"
+    ]
+  },
+  "P0706": {
+    "desc": "Transmission range sensor circuit",
+    "action": "Limp mode possible",
+    "causes": [
+      "Range sensor failure",
+      "Wiring fault",
+      "J-gate switch fault"
+    ]
+  },
+  "P0712": {
+    "desc": "Transmission fluid temp sensor low",
+    "action": "Default temp used",
+    "causes": [
+      "Temp sensor failure",
+      "Wiring fault"
+    ]
+  },
+  "P0750": {
+    "desc": "Shift Solenoid A malfunction",
+    "action": "Limp mode (3rd gear)",
+    "causes": [
+      "Solenoid failure",
+      "Solenoid circuit fault",
+      "Dirty ATF",
+      "Connector corrosion"
+    ]
+  },
+  "P0755": {
+    "desc": "Shift Solenoid B malfunction",
+    "action": "Limp mode",
+    "causes": [
+      "Solenoid failure",
+      "Solenoid circuit fault",
+      "Dirty ATF"
+    ]
+  },
+  "P0760": {
+    "desc": "Shift Solenoid C malfunction — MOST COMMON",
+    "action": "Limp mode (3rd gear)",
+    "causes": [
+      "Solenoid C failure (controls 2-4 shifts)",
+      "Connector corrosion",
+      "Dirty ATF"
+    ]
+  },
+  "P0765": {
+    "desc": "Shift Solenoid D malfunction",
+    "action": "Limp mode",
+    "causes": [
+      "Solenoid failure",
+      "Solenoid circuit fault",
+      "Dirty ATF"
+    ]
+  },
+  "P0770": {
+    "desc": "Shift Solenoid E malfunction",
+    "action": "Limp mode",
+    "causes": [
+      "Solenoid failure",
+      "Solenoid circuit fault"
+    ]
+  },
+  "P0500": {
+    "desc": "Vehicle speed sensor malfunction",
+    "action": "Cruise inhibited",
+    "causes": [
+      "VSS failure",
+      "VSS wiring fault",
+      "ABS module communication fault"
+    ]
+  },
+  "P1235": {
+    "desc": "Fuel pump control circuit",
+    "action": "Engine may stall",
+    "causes": [
+      "Fuel pump relay fault",
+      "Fuel pump wiring",
+      "Fuel pump failure"
+    ]
+  },
+  "U0121": {
+    "desc": "Lost communication with ABS module",
+    "action": "ABS/TC/DSC disabled",
+    "causes": [
+      "ABS module failure",
+      "CAN bus wiring fault",
+      "Module power supply fault"
+    ]
+  }
+}

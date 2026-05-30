@@ -1,0 +1,743 @@
+[
+  {
+    "title": "Thermostat Housing Failure (Plastic)",
+    "symptoms": [
+      "Coolant loss with no visible leak",
+      "Temperature gauge swings",
+      "Overheating then cooling repeatedly",
+      "Sweet smell from engine bay",
+      "Coolant pooling in the V between cam covers"
+    ],
+    "cause": "The plastic thermostat housing behind the timing cover develops hairline cracks. This is the #1 most common X-Type fault. The housing sits between the V of the engine and is subjected to constant heat cycling. In Australian conditions the plastic degrades faster due to higher ambient temperatures.",
+    "fix": "Replace with aluminium aftermarket housing ($40-70 AUD from eBay/Sparesbox). The plastic OEM part will fail again. Requires removing the intake manifold for access. Budget 3-4 hours. Replace thermostat and O-ring seals at the same time.",
+    "parts": [
+      "Thermostat housing (aluminium aftermarket)",
+      "Thermostat (88°C)",
+      "New O-ring seals",
+      "Coolant 7.5L OAT"
+    ],
+    "difficulty": "Medium — need to remove intake manifold",
+    "cost": "$60-120 AUD parts, $300-500 AUD if mechanic does it",
+    "related_dtcs": [
+      "P0125 (ECT insufficient for closed loop)",
+      "P0116/P0117/P0118 (ECT sensor)"
+    ],
+    "tags": [
+      "coolant",
+      "overheating",
+      "thermostat",
+      "leak",
+      "temperature",
+      "p0125",
+      "p0116",
+      "p0117",
+      "p0118",
+      "housing",
+      "plastic",
+      "aluminium"
+    ]
+  },
+  {
+    "title": "Coil Pack Failure (COP)",
+    "symptoms": [
+      "Misfire at idle or under load",
+      "Rough running",
+      "Check engine light",
+      "P0301-P0306 codes",
+      "Loss of power",
+      "Hesitation on acceleration",
+      "Misfire worse in damp weather or under high load/RPM",
+      "Cruise control disabled (\"Cruise Unavailable\")"
+    ],
+    "cause": "The COP (coil-on-plug) coils on the AJ-V6 degrade over time due to heat and vibration. They develop internal cracks in the insulation, causing intermittent spark failure. Often worse in damp weather. Oil in plug wells from valve cover gasket failure DRAMATICALLY accelerates coil death — oil conducts electricity and causes secondary voltage breakdown. The coil cannot generate enough voltage to fire the plug under high load (above 3000 RPM) but may work fine at idle.",
+    "fix": "FIRST check for oil in plug wells — if present, the valve cover gasket must be replaced BEFORE replacing coils, or the new coils will fail. Swap the suspect coil to a different cylinder — if the misfire code follows the coil, replace it. Recommended: replace all 6 at once with new plugs. Use Motorcraft or equivalent quality.",
+    "diagnostic_test": "Swap coil from misfiring cylinder to a known-good cylinder. Clear codes. If misfire follows the coil → bad coil. If misfire stays on original cylinder → check plug, compression, injector.",
+    "parts": [
+      "6x coil packs (Motorcraft DG513 or equivalent)",
+      "6x spark plugs (AGSF-32PM or NGK ITR6F-13, gapped 1.3mm)"
+    ],
+    "difficulty": "Easy — 30 minutes for all 6",
+    "cost": "$90-180 AUD for 6 coils + plugs",
+    "related_dtcs": [
+      "P0300 (random misfire)",
+      "P0301-P0306 (cylinder specific)",
+      "P0351-P0356 (coil circuit fault)"
+    ],
+    "tags": [
+      "misfire",
+      "coil",
+      "spark",
+      "rough",
+      "hesitation",
+      "p0300",
+      "p0301",
+      "p0302",
+      "p0303",
+      "p0304",
+      "p0305",
+      "p0306",
+      "p0351",
+      "p0352",
+      "p0353",
+      "p0354",
+      "p0355",
+      "p0356",
+      "cruise",
+      "unavailable",
+      "oil",
+      "plug well"
+    ]
+  },
+  {
+    "title": "Valve Cover Gasket Failure (Oil in Plug Wells)",
+    "symptoms": [
+      "Oil visible in spark plug wells",
+      "Misfire codes (P0301-P0306)",
+      "Oil smell from engine bay",
+      "Coil packs failing repeatedly",
+      "Smoke from coil area on startup"
+    ],
+    "cause": "The rubber valve cover gaskets degrade from heat cycling (typically 80,000-150,000 km). Oil seeps past the spark plug tube seals into the wells. This is the ROOT CAUSE of most coil pack failures on the AJ-V6. In Australian heat, gaskets may fail earlier. Both banks should be inspected.",
+    "fix": "Remove intake manifold and accessories for access. Remove 6 bolts per valve cover. Clean gasket surfaces thoroughly. Install new gasket set with light silicone at corners. Torque cover bolts to 3.6-5.5 Nm in cross pattern. Allow 24hr cure before starting. After gasket replacement, dry out plug wells with compressed air, clean or replace coils, and install fresh plugs.",
+    "parts": [
+      "Valve cover gasket set (both banks)",
+      "Spark plug tube seals",
+      "Silicone gasket maker (sparingly)",
+      "New spark plugs and coils if contaminated"
+    ],
+    "difficulty": "Medium — 3-4 hours, intake manifold removal required",
+    "cost": "$60-120 AUD for gasket set, $400-600 if done by a mechanic",
+    "related_dtcs": [
+      "P0301-P0306 (misfires from oil-fouled coils)"
+    ],
+    "tags": [
+      "valve cover",
+      "gasket",
+      "oil",
+      "plug well",
+      "seal",
+      "misfire",
+      "coil",
+      "leak",
+      "smoke",
+      "p0301",
+      "p0302",
+      "p0303",
+      "p0304",
+      "p0305",
+      "p0306"
+    ]
+  },
+  {
+    "title": "Vacuum Leak — PCV Hose, IMT Valve, Brake Booster",
+    "symptoms": [
+      "High idle",
+      "Lean fuel trims (STFT positive >5%)",
+      "Hissing from engine bay",
+      "P0171/P0174 codes (system too lean)",
+      "Rough idle that smooths out with RPM",
+      "Difficult cold starts",
+      "Cruise control disabled"
+    ],
+    "cause": "Multiple vacuum leak sources on the AJ-V6:\n1. PCV hose — splits from heat/age at the connection points\n2. IMT valve O-ring — original nitrile rubber degrades from fuel vapours and heat. Viton (FKM) replacement lasts 2-3x longer.\n3. Brake booster hose — large hose at rear of intake manifold, splits cause hard pedal too.\n4. Intake manifold runner gaskets — require manifold removal to replace.\n5. Plastic vacuum routing clips become brittle and break, letting hoses move and crack.",
+    "fix": "Smoke test the intake system to locate leaks. Common points in order of likelihood: 1) PCV hose and valve (Bank 1 cover), 2) IMT valve O-ring (RH side of manifold — replace with Viton), 3) Brake booster hose (large hose at manifold rear), 4) Small vacuum lines at throttle body, 5) Intake runner gaskets (manifold off job).",
+    "viton_upgrade": "The IMT valve O-ring should ALWAYS be upgraded to Viton (FKM) fluorocarbon rubber. Standard nitrile has poor resistance to fuel vapours and crankcase gases. Viton is rated -20°C to +200°C vs nitrile -40°C to +120°C.",
+    "parts": [
+      "PCV valve and hose",
+      "IMT valve O-ring (Viton/FKM)",
+      "Brake booster vacuum hose",
+      "Vacuum hose assortment",
+      "Hose clamps"
+    ],
+    "difficulty": "Easy (hoses) to Medium (IMT O-ring, manifold gaskets)",
+    "cost": "$15-100 AUD parts depending on scope",
+    "related_dtcs": [
+      "P0171 (Bank 1 lean)",
+      "P0174 (Bank 2 lean)"
+    ],
+    "tags": [
+      "vacuum",
+      "leak",
+      "idle",
+      "lean",
+      "hiss",
+      "p0171",
+      "p0174",
+      "stft",
+      "ltft",
+      "intake",
+      "gasket",
+      "pcv",
+      "imt",
+      "viton",
+      "brake booster",
+      "hose"
+    ]
+  },
+  {
+    "title": "Throttle Body Carbon Buildup / Electronic Throttle Failure",
+    "symptoms": [
+      "Rough idle",
+      "Hesitation from stop",
+      "Idle hunting (RPM bouncing)",
+      "P0507 code",
+      "Limp mode (P2106)",
+      "Stalling at junctions",
+      "P2111/P2112 (throttle stuck open/closed)",
+      "P2135 (TPS correlation)"
+    ],
+    "cause": "The electronic throttle body (drive-by-wire) accumulates carbon deposits on the throttle plate and bore. This causes the plate to stick, and the ECU cannot maintain stable idle. The throttle body motor can also fail internally. After battery disconnect, throttle adaptations must be relearned or P0121/P2135 will set.",
+    "fix": "Remove throttle body (4 bolts). Clean with carb cleaner and a soft cloth — do NOT use a wire brush on the bore. After refitting, perform idle relearn: Key ON 30 seconds (do not start) → Start engine → Let idle 2 min without touching anything → Drive normally 15 min. If motor has failed, replace entire throttle body.",
+    "parts": [
+      "Throttle body gasket",
+      "Carb/throttle body cleaner",
+      "Throttle body assembly (if motor dead)"
+    ],
+    "difficulty": "Easy (cleaning) to Medium (replacement) — 45 min",
+    "cost": "$8-25 AUD cleaning, $200-400 AUD for new throttle body",
+    "related_dtcs": [
+      "P0507 (idle speed high)",
+      "P2106 (throttle actuator control forced limited)",
+      "P2111 (stuck open)",
+      "P2112 (stuck closed)",
+      "P2135 (TPS correlation)",
+      "P0121/P0122/P0123 (TP sensor range)"
+    ],
+    "tags": [
+      "throttle",
+      "idle",
+      "hunting",
+      "stall",
+      "carbon",
+      "p0507",
+      "p2106",
+      "p2111",
+      "p2112",
+      "p2135",
+      "limp",
+      "hesitation",
+      "rough",
+      "p0121"
+    ]
+  },
+  {
+    "title": "MAF Sensor Contamination",
+    "symptoms": [
+      "Poor fuel economy",
+      "Sluggish acceleration",
+      "LTFT positive (lean correction)",
+      "Black smoke on hard acceleration",
+      "P0101/P0102/P0103 codes"
+    ],
+    "cause": "The hot-film MAF sensor element gets coated with oil vapour from the PCV system and road grime. This causes it to underreport airflow, making the ECU think less air is entering than actually is. The ECU commands less fuel → lean → LTFT rises. Under WOT, the ECU goes open-loop rich → black smoke.",
+    "fix": "Remove MAF sensor (2 Torx screws). Spray with dedicated MAF cleaner only (CRC MAF cleaner). Let air dry completely (10+ min). Do NOT touch the hot-film element. Do NOT use carb cleaner, WD-40, or brake cleaner — they leave residue that destroys the element.",
+    "parts": [
+      "CRC MAF cleaner spray (or equivalent MAF-specific cleaner)"
+    ],
+    "difficulty": "Very easy — 15 minutes",
+    "cost": "$10-15 AUD",
+    "related_dtcs": [
+      "P0101 (MAF out of range)",
+      "P0102 (MAF low)",
+      "P0103 (MAF high)"
+    ],
+    "tags": [
+      "maf",
+      "fuel",
+      "economy",
+      "lean",
+      "sluggish",
+      "power",
+      "ltft",
+      "p0101",
+      "p0102",
+      "p0103"
+    ]
+  },
+  {
+    "title": "Alternator Failure / Charging System",
+    "symptoms": [
+      "Battery warning light",
+      "Voltage below 13.5V at cruise",
+      "Dim headlights",
+      "Electrical gremlins",
+      "Battery keeps going flat",
+      "Whining noise from belt area"
+    ],
+    "cause": "The alternator brushes and bearings wear over time. The voltage regulator (internal) can also fail. Often gives warning signs of gradually dropping voltage. Belt tension should be checked first — a loose belt mimics alternator failure. A failed diode causes parasitic drain (battery dies overnight even with good alternator output).",
+    "fix": "Check belt tension and condition first. Test alternator output: should read 13.8-14.4V at 1500+ RPM with headlights on. If low, replace alternator. Test for diode leakage: disconnect alternator B+ wire, check for current flow from battery to alternator with engine off — should be near zero.",
+    "parts": [
+      "Alternator (130A, Bosch or equivalent)",
+      "Drive belt (if worn)"
+    ],
+    "difficulty": "Medium — 1-2 hours",
+    "cost": "$150-250 AUD for alternator",
+    "related_dtcs": [],
+    "tags": [
+      "alternator",
+      "voltage",
+      "battery",
+      "charging",
+      "light",
+      "electrical",
+      "belt",
+      "parasitic",
+      "drain",
+      "whine"
+    ]
+  },
+  {
+    "title": "Jatco JF506E Transmission Solenoid Failure",
+    "symptoms": [
+      "Transmission stuck in 3rd gear (limp mode)",
+      "Harsh shifting",
+      "Delayed gear engagement",
+      "F4 flashing on dash",
+      "Cold-start limp that clears warm",
+      "Check engine light with transmission codes",
+      "Jerky transitions between gears"
+    ],
+    "cause": "The JF506E shift solenoids fail from electromagnetic coil insulation breakdown, corrosion in the plunger mechanism, electrical connector corrosion, or dirty ATF contaminating the valve body. Shift Solenoid C is the most common failure (controls 2-4 shifts). Cold failures that clear when warm = early sign of solenoid deterioration (resistance changes with temperature).",
+    "fix": "Scan for DTCs — P0750/P0755/P0760/P0765 identify which solenoid. Solenoid replacement requires dropping the transmission pan. Replace the solenoid and its O-ring. Always change filter and fluid at the same time. Reset TCM adaptives with diagnostic scanner after repair. Consider replacing all solenoids if one has failed — others are likely degraded.",
+    "parts": [
+      "Shift solenoid (specify A/B/C/D/E)",
+      "Solenoid O-ring",
+      "Transmission filter",
+      "4L Mercon V ATF",
+      "Transmission pan gasket"
+    ],
+    "difficulty": "Medium — 2-3 hours, transmission pan removal",
+    "cost": "$80-200 AUD for solenoid kit + filter + fluid",
+    "related_dtcs": [
+      "P0750 (Solenoid A)",
+      "P0755 (Solenoid B)",
+      "P0760 (Solenoid C — most common)",
+      "P0765 (Solenoid D)",
+      "P0770 (Solenoid E)"
+    ],
+    "tags": [
+      "transmission",
+      "solenoid",
+      "limp",
+      "shift",
+      "harsh",
+      "p0750",
+      "p0755",
+      "p0760",
+      "p0765",
+      "p0770",
+      "jatco",
+      "jf506e",
+      "atf",
+      "gear",
+      "f4"
+    ]
+  },
+  {
+    "title": "PTU (Power Transfer Unit) Failure — AWD",
+    "symptoms": [
+      "Whining noise increasing with speed",
+      "Grinding/chunking noise",
+      "Oil leakage from centre/rear of vehicle",
+      "Vibration through drivetrain",
+      "Vehicle pulling or yawing"
+    ],
+    "cause": "The PTU is the weak point of the X-Type AWD system. It operates in a confined space with limited cooling, causing thermal fluid breakdown. Factory \"sealed for life\" means the fluid was never intended to be changed — but it MUST be. In Australian heat, fluid degrades rapidly. Symptoms progress: slight whining → obvious whining under load → grinding → bearing seizure (catastrophic, potential driveshaft lock-up).",
+    "fix": "Early (whining only): Vacuum-extract old fluid through filler port, refill with fresh 75W-90 synthetic. This captures 70-80% of fluid and can extend life significantly. Late (grinding): PTU replacement required. Available remanufactured or from wreckers.",
+    "service_procedure": "1) Warm PTU with short drive. 2) Locate filler/breather port on top. 3) Insert vacuum pump tubing. 4) Extract old fluid (dark = bad). 5) Refill with 75W-90 synthetic to bottom of filler hole. 6) Service every 50,000 km in Australian conditions.",
+    "parts": [
+      "75W-90 synthetic differential fluid (1.5-2.0L)",
+      "Vacuum pump for extraction"
+    ],
+    "difficulty": "Easy (fluid change) to Hard (replacement)",
+    "cost": "$30-60 AUD fluid change, $800-2000 AUD for PTU replacement",
+    "related_dtcs": [],
+    "tags": [
+      "ptu",
+      "transfer",
+      "awd",
+      "whine",
+      "grinding",
+      "vibration",
+      "differential",
+      "driveshaft",
+      "bearing",
+      "oil",
+      "leak"
+    ]
+  },
+  {
+    "title": "Propshaft Centre Bearing Wear",
+    "symptoms": [
+      "Vibration at 60-100 km/h",
+      "Clunk when changing direction (drive/reverse)",
+      "Humming that increases with speed",
+      "Vibration worse under load"
+    ],
+    "cause": "The two-piece propshaft has a centre support bearing that wears. The rubber mount deteriorates, allowing the shaft to run eccentric. Common on higher-mileage X-Types. The Haldex coupling at the rear can also contribute to vibration if its fluid is old.",
+    "fix": "Replace the centre bearing assembly. This is a press-fit job — the shaft needs removing and the old bearing pressing out. Some workshops replace the whole propshaft. Also change Haldex fluid if it has not been done.",
+    "parts": [
+      "Centre bearing assembly",
+      "Haldex fluid (if due)"
+    ],
+    "difficulty": "Medium-Hard — needs a press",
+    "cost": "$80-130 AUD parts, $250-400 AUD fitted",
+    "related_dtcs": [],
+    "tags": [
+      "vibration",
+      "propshaft",
+      "bearing",
+      "clunk",
+      "hum",
+      "awd",
+      "haldex"
+    ]
+  },
+  {
+    "title": "ABS Module Failure",
+    "symptoms": [
+      "ABS warning light",
+      "Traction control light",
+      "DSC warning",
+      "U0121 code",
+      "No ABS function",
+      "All warning lights on dash"
+    ],
+    "cause": "The ABS module (hydraulic unit + ECU) has internal solder joints that crack from thermal cycling. Sometimes just the ECU portion fails, sometimes the pump motor. The module is located in the engine bay and is exposed to heat and moisture.",
+    "fix": "Specialist repair/rebuild is cost-effective. Australian options include sending to specialist remanufacturers. Full replacement with new/used is very expensive.",
+    "parts": [
+      "ABS module rebuild service"
+    ],
+    "difficulty": "Easy removal (4 brake lines + electrical connector), specialist rebuild",
+    "cost": "$250-450 AUD for rebuild service",
+    "related_dtcs": [
+      "U0121 (lost communication with ABS)",
+      "C1095",
+      "C1185"
+    ],
+    "tags": [
+      "abs",
+      "brakes",
+      "traction",
+      "dsc",
+      "warning",
+      "light",
+      "u0121",
+      "module"
+    ]
+  },
+  {
+    "title": "Rear Subframe Bushes",
+    "symptoms": [
+      "Clunking over bumps from rear",
+      "Vague rear end handling",
+      "Uneven rear tire wear",
+      "Knocking noise on rough roads"
+    ],
+    "cause": "The rear subframe mounting bushes deteriorate with age and Australian conditions (heat accelerates rubber degradation). The rubber tears and allows the subframe to move, causing clunking and poor rear-end geometry.",
+    "fix": "Replace rear subframe bushes. Polybush (polyurethane) replacements last longer than OEM rubber. Requires supporting/lowering the subframe.",
+    "parts": [
+      "4x rear subframe bushes (Polybush recommended)",
+      "New bolts (175 Nm)"
+    ],
+    "difficulty": "Hard — 4-6 hours, need to support subframe",
+    "cost": "$60-130 AUD parts (Polybush), $500-800 AUD fitted",
+    "related_dtcs": [],
+    "tags": [
+      "clunk",
+      "rear",
+      "subframe",
+      "bush",
+      "handling",
+      "knock",
+      "suspension"
+    ]
+  },
+  {
+    "title": "Cooling System — Expansion Tank / Radiator / Water Pump",
+    "symptoms": [
+      "Coolant loss without visible drip",
+      "Sweet smell under bonnet",
+      "Overheating",
+      "Foaming in expansion tank",
+      "Coolant on ground",
+      "Grinding noise from front of engine (water pump)"
+    ],
+    "cause": "Multiple cooling system weak points:\n1. Plastic expansion tank cracks from thermal cycling (80,000-150,000 km)\n2. Radiator develops pinhole leaks at seams\n3. Water pump bearing/seal failure (grinding noise, weep hole drip)\n4. Thermostat housing (see separate entry)\nAustralian heat accelerates all cooling system failures.",
+    "fix": "Pressure test system to identify leak source. Expansion tank is straightforward replacement. Water pump requires timing cover access — budget 2-3 hours. Radiator replacement is 1-2 hours. Always flush system and refill with correct OAT coolant.",
+    "parts": [
+      "Expansion tank",
+      "Water pump",
+      "Radiator",
+      "Coolant (7.5L OAT)"
+    ],
+    "difficulty": "Easy (tank) to Medium (pump/radiator)",
+    "cost": "$50-300 AUD depending on component",
+    "related_dtcs": [
+      "P0125",
+      "P0116-P0118"
+    ],
+    "tags": [
+      "coolant",
+      "overheating",
+      "leak",
+      "radiator",
+      "water pump",
+      "expansion",
+      "tank",
+      "temperature",
+      "steam"
+    ]
+  },
+  {
+    "title": "EGR Valve Carbon Buildup",
+    "symptoms": [
+      "Rough idle",
+      "Hesitation",
+      "P0401 code",
+      "Poor fuel economy",
+      "Slight misfire at low RPM",
+      "Failed emissions test"
+    ],
+    "cause": "The EGR valve and its passages accumulate carbon deposits, preventing proper exhaust gas recirculation. The valve sticks partially open or closed.",
+    "fix": "Remove EGR valve (bolted to intake manifold). Clean valve and passages with carb cleaner and a wire brush. Check vacuum actuator hose for cracks. Replace gasket.",
+    "parts": [
+      "EGR gasket",
+      "Carb cleaner"
+    ],
+    "difficulty": "Easy-Medium — 1 hour",
+    "cost": "$8-25 AUD",
+    "related_dtcs": [
+      "P0401 (EGR flow insufficient)"
+    ],
+    "tags": [
+      "egr",
+      "carbon",
+      "idle",
+      "emissions",
+      "p0401",
+      "rough",
+      "hesitation"
+    ]
+  },
+  {
+    "title": "Camshaft Position Sensor Failure",
+    "symptoms": [
+      "No start / long crank",
+      "P0340/P0345 codes",
+      "Engine cuts out randomly",
+      "Rough running",
+      "Stalling"
+    ],
+    "cause": "The CMP sensors are located behind the timing cover and exposed to heat and oil vapour. The connector can corrode. If the thermostat housing is leaking (common), coolant can reach the CMP connector and cause intermittent failures.",
+    "fix": "Replace the CMP sensor — cheap part, accessible from top of engine. Check connector for green corrosion. Clean with electrical contact cleaner. Fix any thermostat housing leak to prevent recurrence.",
+    "parts": [
+      "Camshaft position sensor (Bank 1 or Bank 2)"
+    ],
+    "difficulty": "Easy — 20 minutes",
+    "cost": "$25-50 AUD",
+    "related_dtcs": [
+      "P0340 (CMP Bank 1)",
+      "P0345 (CMP Bank 2)"
+    ],
+    "tags": [
+      "camshaft",
+      "sensor",
+      "no start",
+      "crank",
+      "stall",
+      "p0340",
+      "p0345",
+      "cut out"
+    ]
+  },
+  {
+    "title": "Fuel Pump Weak / Failing",
+    "symptoms": [
+      "Long crank to start",
+      "Hesitation under hard acceleration",
+      "P1235 code",
+      "Engine cuts out at high load",
+      "Whining from rear"
+    ],
+    "cause": "The in-tank fuel pump wears over time. Running on low fuel accelerates wear (the fuel cools the pump). The fuel pump relay can also fail intermittently.",
+    "fix": "First: check fuel pump relay (engine bay fuse box — swap with identical relay). Listen for pump prime: key to ON, you should hear a 2-second whir from the rear. If no prime sound, check relay and wiring. Pump access is under the rear seat.",
+    "parts": [
+      "Fuel pump assembly (in-tank)",
+      "Fuel pump relay (if faulty)"
+    ],
+    "difficulty": "Medium — rear seat removal, fuel system",
+    "cost": "$120-250 AUD for pump",
+    "related_dtcs": [
+      "P1235 (fuel pump control)"
+    ],
+    "tags": [
+      "fuel",
+      "pump",
+      "start",
+      "hesitation",
+      "p1235",
+      "relay",
+      "stall",
+      "crank"
+    ]
+  },
+  {
+    "title": "O2 Sensor Degradation",
+    "symptoms": [
+      "Poor fuel economy",
+      "Fuel trim drift",
+      "P0131/P0133/P0134/P0137/P0139/P0140 codes",
+      "Slight rich or lean running",
+      "Failed emissions"
+    ],
+    "cause": "Upstream O2 sensors degrade with age and become \"lazy\" — slow to respond to air/fuel changes. This causes inaccurate fuel trim correction. Expected lifespan 120,000-160,000 km.",
+    "fix": "Replace upstream O2 sensors (Bank 1 Sensor 1 and/or Bank 2 Sensor 1). Use OEM-equivalent (Bosch, Denso, NTK). Check exhaust flex joint for leaks first — an exhaust leak before the sensor gives the same symptoms.",
+    "parts": [
+      "O2 sensor upstream (Bank 1 and/or Bank 2)"
+    ],
+    "difficulty": "Easy — 30 minutes per sensor (penetrating oil helps)",
+    "cost": "$50-100 AUD per sensor",
+    "related_dtcs": [
+      "P0131-P0140 (O2 sensor circuits)",
+      "P0133/P0139 (slow response)"
+    ],
+    "tags": [
+      "o2",
+      "oxygen",
+      "sensor",
+      "fuel",
+      "economy",
+      "emissions",
+      "trim",
+      "p0131",
+      "p0133",
+      "p0134",
+      "p0137",
+      "p0139",
+      "p0140",
+      "lambda"
+    ]
+  },
+  {
+    "title": "EVAP Purge Valve Stuck Open",
+    "symptoms": [
+      "Rich running at idle",
+      "Fuel smell",
+      "STFT negative (rich correction)",
+      "P0443 code",
+      "Hard start when hot",
+      "Rough idle after refuelling"
+    ],
+    "cause": "The EVAP purge valve on the firewall side of the engine bay can stick open, allowing fuel vapour to flood the intake at idle.",
+    "fix": "Locate purge valve (firewall, small solenoid with vacuum hoses). Test: apply 12V — should click. Blow through it — should only flow when energised. If it flows freely without power, it is stuck open. Replace.",
+    "parts": [
+      "EVAP purge valve solenoid"
+    ],
+    "difficulty": "Easy — 20 minutes",
+    "cost": "$30-60 AUD",
+    "related_dtcs": [
+      "P0443 (EVAP purge circuit)",
+      "P0455 (EVAP large leak)"
+    ],
+    "tags": [
+      "purge",
+      "evap",
+      "rich",
+      "fuel",
+      "smell",
+      "p0443",
+      "p0455",
+      "vapour",
+      "idle"
+    ]
+  },
+  {
+    "title": "Catalytic Converter Degradation",
+    "symptoms": [
+      "P0420/P0430 codes",
+      "Rotten egg smell",
+      "Reduced power at high RPM",
+      "Rattling from underneath",
+      "Failed emissions"
+    ],
+    "cause": "The catalytic converter substrate breaks down, especially if the engine has been running rich (from bad coils, leaking injectors). The X-Type has 2 pre-cats and 1 main cat. Rattling = substrate has broken apart inside.",
+    "fix": "FIX THE ROOT CAUSE FIRST (misfires, fuel trim issues). Running rich kills cats. Clear codes and retest after root cause repair. If cat is genuinely failed, aftermarket replacement cats available. Pre-cats are welded to manifolds.",
+    "parts": [
+      "Catalytic converter (main or pre-cat)"
+    ],
+    "difficulty": "Medium-Hard — exhaust work",
+    "cost": "$300-600 AUD parts + fitting",
+    "related_dtcs": [
+      "P0420 (Cat efficiency below threshold B1)",
+      "P0430 (Cat efficiency below threshold B2)"
+    ],
+    "tags": [
+      "cat",
+      "catalyst",
+      "emissions",
+      "p0420",
+      "p0430",
+      "exhaust",
+      "rattle",
+      "smell",
+      "egg"
+    ]
+  },
+  {
+    "title": "GEM Module Failure (Electrical Gremlins)",
+    "symptoms": [
+      "Windows not working (one or all)",
+      "Central locking unresponsive",
+      "Interior lights stay on",
+      "Battery drains overnight",
+      "Dashboard warning lights randomly illuminated"
+    ],
+    "cause": "The General Electronic Module (GEM) controls body electrics and can fail to enter sleep mode, causing parasitic drain. Internal circuit board failures cause loss of window, lock, or lighting functions. Located behind instrument panel, RH side.",
+    "fix": "Diagnose parasitic draw first (disconnect fuses one at a time, measure current). If GEM is the culprit, replacement requires programming — not a simple swap. Some specialists can repair circuit boards.",
+    "parts": [
+      "GEM module (requires programming to vehicle)"
+    ],
+    "difficulty": "Hard — specialist programming required",
+    "cost": "$400-1200 AUD including programming",
+    "related_dtcs": [],
+    "tags": [
+      "gem",
+      "module",
+      "window",
+      "lock",
+      "light",
+      "parasitic",
+      "drain",
+      "battery",
+      "electrical",
+      "gremlin"
+    ]
+  },
+  {
+    "title": "Window Regulator Failure",
+    "symptoms": [
+      "Window moves slowly or not at all",
+      "Grinding noise during operation",
+      "Window switch unresponsive",
+      "Window drops into door"
+    ],
+    "cause": "Electric motor burnout, mechanical regulator cable breakage, or motor gear stripping. Common on all X-Type doors after 100,000+ km.",
+    "fix": "Replace full window regulator/motor assembly. Door card removal required. Mark glass position before removing.",
+    "parts": [
+      "Window regulator assembly with motor"
+    ],
+    "difficulty": "Medium — 2-3 hours per window",
+    "cost": "$150-350 AUD per window",
+    "related_dtcs": [],
+    "tags": [
+      "window",
+      "regulator",
+      "motor",
+      "grinding",
+      "stuck",
+      "slow",
+      "door"
+    ]
+  }
+]
