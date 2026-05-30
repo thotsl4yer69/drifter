@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — Session Reporter (Tier 3)
-End-of-drive narrative reporter. Combines the existing session_analyst data
-(SQLite) with v2 telemetry windows, trip stats, safety events, and KB notes
-to produce a human-readable report (markdown + JSON). Distinct from
+End-of-drive narrative reporter. Combines session_analyst data (SQLite)
+with v2 telemetry windows, trip stats, safety events, and KB notes to
+produce a human-readable report (markdown + JSON). Distinct from
 session_analyst.py which targets diagnostic JSON for tooling — this one
 targets the driver and posts a summary the dashboard can read.
 UNCAGED TECHNOLOGY — EST 1991
@@ -20,7 +20,7 @@ from typing import List, Optional
 
 import paho.mqtt.client as mqtt
 
-import llm_client_v2
+import llm_client
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     REPORTS_DIR, VEHICLE, VEHICLE_YEAR,
@@ -33,7 +33,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Rolling per-session collectors
 _safety_events: List[dict] = []
 _trip_events: List[dict] = []
 _diagnoses: List[dict] = []
@@ -59,10 +58,12 @@ def _summary_packet(session: dict) -> str:
         f"  Min voltage: {session.get('min_voltage', '?')}V",
     ]
     if _last_trip:
+        cost = _last_trip.get('cost', _last_trip.get('cost_gbp', '?'))
+        cur = _last_trip.get('currency', 'AUD')
         parts.append(
             f"  Fuel used: {_last_trip.get('fuel_l', '?')} L "
             f"({_last_trip.get('avg_l_per_100km', '?')} L/100km, "
-            f"£{_last_trip.get('cost_gbp', '?')})"
+            f"{cost} {cur})"
         )
     if _safety_events:
         parts.append("")
@@ -100,7 +101,7 @@ def _build_report(session: dict) -> dict:
     narrative = ""
     backend = "static"
     try:
-        result = llm_client_v2.query(packet, REPORT_SYSTEM, max_tokens=600, cache=False)
+        result = llm_client.query(packet, REPORT_SYSTEM, max_tokens=600, cache=False)
         narrative = result.get('text', '').strip()
         backend = result.get('backend', 'llm')
     except Exception as e:
@@ -144,13 +145,15 @@ def _handle_session_end(client: mqtt.Client, session: dict) -> None:
     log.info(f"Building report for session {session.get('session_id')}")
     report = _build_report(session)
     _persist(report)
-    client.publish(TOPICS['session_report'], json.dumps(report), retain=True)
+    # Not retained: full reports are already persisted under REPORTS_DIR.
+    # A retained MQTT copy means a fresh subscriber sees the prior drive's
+    # report as if it were current.
+    client.publish(TOPICS['session_report'], json.dumps(report))
     client.publish(TOPICS['session_summary'], json.dumps({
         'session_id': report['session_id'],
         'narrative': report['narrative'],
         'ts': report['ts'],
     }))
-    # Reset per-session collectors
     with _lock:
         _safety_events.clear()
         _diagnoses.clear()
