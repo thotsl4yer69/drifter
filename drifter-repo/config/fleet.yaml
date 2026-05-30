@@ -1,0 +1,35 @@
+# MZ1312 DRIFTER — Fleet Server config
+# Deployed to /opt/drifter/fleet.yaml. Edit and restart drifter-fleet.
+
+# REST + WebSocket bind
+host: 0.0.0.0
+port: 8420
+
+# SQLite storage path (overrides default)
+db_path: /opt/drifter/data/fleet.db
+
+# JWT TTL in seconds (24h = 86400)
+jwt_ttl: 86400
+
+# Vehicle considered offline if heartbeat older than this (seconds)
+heartbeat_timeout: 90
+
+# Auth: list of users with bcrypt'd password hashes. MVP also allows
+# the dev-only /api/auth/login that issues tokens to any caller — wire
+# this up before exposing to the network.
+users:
+  - username: admin
+    role: admin
+    # password_hash: $2b$12$...
+  - username: viewer
+    role: viewer
+
+# Optional retention / pruning
+telemetry_retention_hours: 168    # 7 days
+prune_interval_minutes: 60
+
+# Optional remote sync (push aggregates to a parent Sentient Core)
+remote_sync:
+  enabled: false
+  host: sentient.local
+  port: 1883

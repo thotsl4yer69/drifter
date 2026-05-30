@@ -1,0 +1,32 @@
+# MZ1312 DRIFTER — Mesh config
+# Deployed to /opt/drifter/mesh.yaml. Used by mesh_bridge.py.
+
+# Topics to forward in both directions across the bridge.
+forward_topics:
+  - drifter/fleet/#
+  - drifter/mesh/#
+  - drifter/safety/alert
+  - drifter/crash/event
+  - drifter/crash/sos
+  - drifter/session/summary
+
+# Remote brokers this node bridges to. Add one entry per Sentient Core
+# or peer drifter you want to mesh with.
+remotes:
+  - name: sentient-core
+    host: sentient.local
+    port: 1883
+    username: sentient
+    # password: ""
+
+  # - name: drifter-garage
+  #   host: 192.168.1.51
+  #   port: 1883
+
+# Discovery service config (used by mesh_discovery.py)
+discovery:
+  interval_seconds: 30
+  service_name: _drifter._tcp.local.
+
+# Topology aging — drop nodes that haven't heartbeated within this window
+node_ttl_seconds: 180

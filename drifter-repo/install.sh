@@ -4,6 +4,7 @@
 # UNCAGED TECHNOLOGY — EST 1991
 # ============================================
 # Usage: sudo ./install.sh
+# Idempotent: safe to re-run; will not clobber user-edited /opt/drifter/*.yaml
 # ============================================
 
 set -e
@@ -39,7 +40,7 @@ banner
 # ── Preflight ──
 if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./install.sh"; fi
 
-TOTAL=12
+TOTAL=13
 
 # ── 1. System Update ──
 step 1 "Updating system packages"
@@ -52,6 +53,7 @@ step 2 "Installing core dependencies"
 apt-get install -y -qq \
     python3-pip \
     python3-venv \
+    python3-dev \
     can-utils \
     mosquitto-clients \
     network-manager \
@@ -62,8 +64,15 @@ apt-get install -y -qq \
     rsync \
     librtlsdr-dev \
     rtl-sdr \
-    slcand 2>/dev/null
-ok "Core packages installed"
+    slcand \
+    ffmpeg \
+    v4l-utils \
+    libgl1 \
+    libglib2.0-0 \
+    bluez \
+    gpsd \
+    gpsd-clients 2>/dev/null
+ok "Core packages installed (incl. ffmpeg, v4l-utils, bluez, gpsd)"
 
 # Install rtl_433 (433 MHz signal decoder)
 if command -v rtl_433 &>/dev/null; then
@@ -145,13 +154,12 @@ fi
 
 # Pull the mechanic model
 if command -v ollama &>/dev/null; then
-    step 5 "Pulling LLM model (llama3.2:3b)"
-    ollama pull llama3.2:3b 2>/dev/null && ok "LLM model ready" || \
+    ollama pull llama3.2:3b 2>/dev/null && ok "LLM model llama3.2:3b ready" || \
         warn "Could not pull LLM model — run 'ollama pull llama3.2:3b' manually"
 fi
 
 # ── 6. Python Environment ──
-step 5 "Setting up Python environment"
+step 6 "Setting up Python environment"
 mkdir -p ${DRIFTER_DIR}
 python3 -m venv ${DRIFTER_DIR}/venv
 source ${DRIFTER_DIR}/venv/bin/activate
@@ -165,26 +173,96 @@ pip install --quiet \
     pyyaml \
     pyserial \
     spotipy \
-    smbus2
-ok "Python venv ready at ${DRIFTER_DIR}/venv"
+    smbus2 \
+    python-dotenv \
+    zeroconf \
+    opencv-python-headless \
+    numpy
+ok "Python venv ready at ${DRIFTER_DIR}/venv (with v2/v2.1 deps)"
 
-# ── 6. Deploy Application ──
-step 6 "Deploying DRIFTER application"
+# ── 7. Deploy Application ──
+step 7 "Deploying DRIFTER application"
 
-# Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py llm_client_v2.py telemetry_batcher.py safety_engine.py ai_diagnostics.py session_reporter.py vehicle_id.py adaptive_thresholds.py vivi_v2.py vivi_memory.py vehicle_kb.py vehicle_learn.py spotify_bridge.py nav_engine.py trip_computer.py crash_detect.py driver_assist.py sentry_mode.py comms_bridge.py obd_bridge.py vision_engine.py alpr_engine.py dashcam.py forward_collision.py fleet_server.py mesh_discovery.py mesh_coordinator.py mesh_bridge.py replay_engine.py session_recorder.py fuzz_engine.py can_sniffer.py can_decoder_ai.py dbc_generator.py vivi_discord.py home_bridge.py presence_detect.py satellite_manager.py"
+# Source files — every .py we ship to /opt/drifter/
+# v1 core + v2 + v2.1 modules (kept alphabetical-ish per band)
+SRC_FILES="\
+adaptive_thresholds.py \
+ai_diagnostics.py \
+alert_engine.py \
+alpr_engine.py \
+anomaly_monitor.py \
+calibrate.py \
+can_bridge.py \
+can_decoder_ai.py \
+can_sniffer.py \
+comms_bridge.py \
+config.py \
+crash_detect.py \
+dashcam.py \
+db.py \
+dbc_generator.py \
+driver_assist.py \
+fleet_server.py \
+forward_collision.py \
+fuzz_engine.py \
+home_bridge.py \
+home_sync.py \
+llm_client.py \
+llm_client_v2.py \
+llm_mechanic.py \
+logger.py \
+mechanic.py \
+mesh_bridge.py \
+mesh_coordinator.py \
+mesh_discovery.py \
+nav_engine.py \
+obd_bridge.py \
+presence_detect.py \
+realdash_bridge.py \
+replay_engine.py \
+rf_monitor.py \
+safety_engine.py \
+satellite_manager.py \
+sentry_mode.py \
+session_analyst.py \
+session_recorder.py \
+session_reporter.py \
+spotify_bridge.py \
+status.py \
+telemetry_batcher.py \
+trip_computer.py \
+vehicle_id.py \
+vehicle_kb.py \
+vehicle_learn.py \
+vision_engine.py \
+vivi.py \
+vivi_discord.py \
+vivi_memory.py \
+vivi_v2.py \
+voice_alerts.py \
+watchdog.py \
+web_dashboard.py"
+
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
-        chmod +x "${DRIFTER_DIR}/${f}"
+    else
+        warn "Missing source file: src/${f}"
     fi
 done
 ok "Python services deployed to ${DRIFTER_DIR}"
 
-# Screen HUD
-cp "${REPO_DIR}/src/screen_dash.html" "${DRIFTER_DIR}/"
+# HTML dashboards (screen HUD + v2.1 dashboards)
+HTML_FILES="screen_dash.html fleet_dashboard.html mesh_dashboard.html mqtt_registry.html mz1312_portal.html vivi_avatar.html"
+for h in $HTML_FILES; do
+    if [ -f "${REPO_DIR}/src/${h}" ]; then
+        cp "${REPO_DIR}/src/${h}" "${DRIFTER_DIR}/"
+    fi
+done
+ok "HTML dashboards deployed (screen + fleet + mesh + mqtt-registry + portal + vivi)"
+
+# Screen HUD launcher
 cp "${REPO_DIR}/src/start-hud.sh" "${DRIFTER_DIR}/" 2>/dev/null && chmod +x "${DRIFTER_DIR}/start-hud.sh"
-ok "Screen HUD deployed"
 
 # Framebuffer mirror (SPI LCD support)
 if [ -f "${REPO_DIR}/src/fbmirror.c" ]; then
@@ -195,11 +273,13 @@ fi
 
 # RealDash config
 mkdir -p "${DRIFTER_DIR}/realdash"
-cp "${REPO_DIR}/realdash/drifter_channels.xml" "${DRIFTER_DIR}/realdash/"
-ok "RealDash channel map deployed"
+if [ -f "${REPO_DIR}/realdash/drifter_channels.xml" ]; then
+    cp "${REPO_DIR}/realdash/drifter_channels.xml" "${DRIFTER_DIR}/realdash/"
+    ok "RealDash channel map deployed"
+fi
 
-# v1 + v2 YAML configs (don't overwrite if already customised)
-V2_CONFIGS="vivi.yaml spotify.yaml nav.yaml safety.yaml vision.yaml obd.yaml"
+# v1 + v2 + v2.1 YAML configs (don't overwrite if already customised)
+V2_CONFIGS="vivi.yaml spotify.yaml nav.yaml safety.yaml vision.yaml obd.yaml fleet.yaml mesh.yaml replay.yaml home.yaml discord.yaml crash.yaml"
 for cfg in $V2_CONFIGS; do
     if [ ! -f "${DRIFTER_DIR}/${cfg}" ]; then
         if [ -f "${REPO_DIR}/config/${cfg}" ]; then
@@ -224,29 +304,84 @@ if [ -d "${REPO_DIR}/vehicles" ]; then
     ok "vehicle profiles deployed"
 fi
 
-# Speed-camera + tile data
-mkdir -p "${DRIFTER_DIR}/data" "${DRIFTER_DIR}/data/tiles"
+# Vivi avatar assets
+if [ -d "${REPO_DIR}/assets" ]; then
+    mkdir -p "${DRIFTER_DIR}/assets"
+    cp -r "${REPO_DIR}/assets/." "${DRIFTER_DIR}/assets/" 2>/dev/null
+    ok "assets deployed (vivi avatar, etc.)"
+fi
+
+# Data files — speed cameras + DTC database + tile cache
+mkdir -p "${DRIFTER_DIR}/data" "${DRIFTER_DIR}/data/tiles" "${DRIFTER_DIR}/data/dbc"
 if [ -f "${REPO_DIR}/data/speed_cameras_vic.json" ]; then
     cp "${REPO_DIR}/data/speed_cameras_vic.json" "${DRIFTER_DIR}/data/"
     ok "speed_cameras_vic.json deployed"
 fi
+if [ -f "${REPO_DIR}/data/dtc_database.json" ]; then
+    cp "${REPO_DIR}/data/dtc_database.json" "${DRIFTER_DIR}/data/"
+    ok "dtc_database.json deployed"
+fi
 
-# v2 workspace dirs
-mkdir -p "${DRIFTER_DIR}/memory" "${DRIFTER_DIR}/kb" "${DRIFTER_DIR}/sentry" \
-         "${DRIFTER_DIR}/dashcam" "${DRIFTER_DIR}/vision-models"
-ok "v2 workspace directories created"
+# v2 + v2.1 workspace dirs (replays, recordings, dbc output, kb, memory, sentry, dashcam, vision-models)
+mkdir -p "${DRIFTER_DIR}/memory" \
+         "${DRIFTER_DIR}/kb" \
+         "${DRIFTER_DIR}/sentry" \
+         "${DRIFTER_DIR}/dashcam" \
+         "${DRIFTER_DIR}/vision-models" \
+         "${DRIFTER_DIR}/replays" \
+         "${DRIFTER_DIR}/recordings" \
+         "${DRIFTER_DIR}/reports"
+ok "v2 / v2.1 workspace directories created"
 
 # Log & session directories
 mkdir -p ${DRIFTER_DIR}/logs/sessions
 ok "Log directories created"
 
-# Analyst data directories and API key placeholder
-mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
-touch ${DRIFTER_DIR}/.env
-ok "Analyst data directories created"
+# .env file for API keys (read by config.py via python-dotenv)
+if [ ! -f "${DRIFTER_DIR}/.env" ]; then
+    cat > "${DRIFTER_DIR}/.env" << 'EOF'
+# MZ1312 DRIFTER — API keys & host overrides
+# Loaded by config.py at startup via python-dotenv.
+# Restart drifter services after editing.
 
-# ── 7. CAN Interface Setup ──
-step 7 "Configuring CAN interface"
+# LLM providers
+GROQ_API_KEY=
+ANTHROPIC_API_KEY=
+
+# Discord bot token (or set in /opt/drifter/discord.yaml)
+DISCORD_BOT_TOKEN=
+
+# Home network MQTT (Sentient Core nanob)
+NANOB_HOST=192.168.1.159
+NANOB_PORT=1883
+NANOB_USER=sentient
+NANOB_PASS=
+
+# Local MQTT broker
+MQTT_HOST=localhost
+MQTT_PORT=1883
+EOF
+    chmod 600 "${DRIFTER_DIR}/.env"
+    ok ".env scaffold created (chmod 600) — edit to add API keys"
+else
+    ok ".env already present — not overwriting"
+fi
+
+# Fleet JWT secret (generate once, never overwrite)
+if [ ! -f "${DRIFTER_DIR}/.fleet_jwt_secret" ]; then
+    head -c 48 /dev/urandom | base64 > "${DRIFTER_DIR}/.fleet_jwt_secret"
+    chmod 600 "${DRIFTER_DIR}/.fleet_jwt_secret"
+    ok "Fleet JWT secret generated"
+else
+    ok "Fleet JWT secret already present"
+fi
+
+# Ownership — drifter services run as root (CAN/SPI/GPIO access), so /opt/drifter stays root-owned.
+chown -R root:root "${DRIFTER_DIR}"
+chmod 750 "${DRIFTER_DIR}"
+
+# ── 8. CAN Interface Setup ──
+step 8 "Configuring CAN interface"
 
 cp "${REPO_DIR}/config/setup-can.sh" /usr/local/bin/drifter-setup-can
 chmod +x /usr/local/bin/drifter-setup-can
@@ -268,8 +403,8 @@ else
     warn "Boot config not found at $BOOT_CFG — add entries manually (see config/boot-config.txt)"
 fi
 
-# ── 8. Wi-Fi Hotspot ──
-step 8 "Configuring Wi-Fi hotspot"
+# ── 9. Wi-Fi Hotspot ──
+step 9 "Configuring Wi-Fi hotspot"
 
 # Remove existing if present
 nmcli con show "MZ1312_DRIFTER" &>/dev/null && nmcli con delete "MZ1312_DRIFTER" &>/dev/null
@@ -290,8 +425,8 @@ nmcli con add type wifi \
 
 ok "Hotspot: MZ1312_DRIFTER / uncaged1312 / 10.42.0.1"
 
-# ── 9. systemd Services ──
-step 9 "Installing systemd services"
+# ── 10. systemd Services ──
+step 10 "Installing systemd services"
 
 # NanoMQ config
 if [ -d /etc/nanomq ]; then
@@ -307,25 +442,67 @@ done
 
 systemctl daemon-reload
 
-# Enable all services
-# Disable superseded reactive LLM service
+# Disable superseded reactive LLM service (replaced by drifter-analyst)
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst drifter-batcher drifter-safety drifter-aidiag drifter-reporter drifter-vehicleid drifter-thresholds drifter-kb drifter-learn drifter-spotify drifter-nav drifter-trip drifter-crash drifter-assist drifter-sentry drifter-comms drifter-obdbridge drifter-vision drifter-dashcam drifter-alpr drifter-fcw drifter-fleet drifter-mesh drifter-replay drifter-discord drifter-home drifter-satellite"
+# Enable all services — must mirror config.py SERVICES list
+SERVICES="\
+drifter-canbridge \
+drifter-alerts \
+drifter-dashboard \
+drifter-logger \
+drifter-voice \
+drifter-vivi \
+drifter-hotspot \
+drifter-homesync \
+drifter-watchdog \
+drifter-realdash \
+drifter-rf \
+drifter-fbmirror \
+drifter-anomaly \
+drifter-analyst \
+drifter-batcher \
+drifter-safety \
+drifter-aidiag \
+drifter-reporter \
+drifter-vehicleid \
+drifter-thresholds \
+drifter-kb \
+drifter-learn \
+drifter-spotify \
+drifter-nav \
+drifter-trip \
+drifter-crash \
+drifter-assist \
+drifter-sentry \
+drifter-comms \
+drifter-obdbridge \
+drifter-vision \
+drifter-dashcam \
+drifter-alpr \
+drifter-fcw \
+drifter-fleet \
+drifter-mesh \
+drifter-replay \
+drifter-discord \
+drifter-home \
+drifter-satellite"
+
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
-else
-    # Mosquitto is already enabled
-    true
 fi
 
 for svc in $SERVICES; do
-    systemctl enable "$svc" 2>/dev/null
-    ok "Enabled: $svc"
+    if [ -f "/etc/systemd/system/${svc}.service" ]; then
+        systemctl enable "$svc" 2>/dev/null
+        ok "Enabled: $svc"
+    else
+        warn "Missing service file: ${svc}.service"
+    fi
 done
 
-# ── 10. RTL-SDR Blacklist ──
-step 10 "Configuring RTL-SDR"
+# ── 11. RTL-SDR Blacklist ──
+step 11 "Configuring RTL-SDR"
 
 # Blacklist the DVB-T kernel driver so rtl-sdr can use the device
 if [ ! -f /etc/modprobe.d/blacklist-rtlsdr.conf ]; then
@@ -340,8 +517,22 @@ else
     ok "RTL-SDR blacklist already configured"
 fi
 
-# ── 11. Initial Calibration Hint ──
-step 11 "Post-install calibration"
+# ── 12. Verification ──
+step 12 "Verifying installation"
+
+# Quick sanity check — config.py imports cleanly inside the venv
+if ${DRIFTER_DIR}/venv/bin/python3 -c "import sys; sys.path.insert(0, '${DRIFTER_DIR}'); import config; print('TOPICS:', len(config.TOPICS), 'SERVICES:', len(config.SERVICES))" 2>/dev/null; then
+    ok "config.py imports cleanly"
+else
+    warn "config.py import check failed — inspect ${DRIFTER_DIR}/config.py"
+fi
+
+# Service count check
+ENABLED_COUNT=$(systemctl list-unit-files 'drifter-*' --state=enabled --no-legend 2>/dev/null | wc -l)
+ok "${ENABLED_COUNT} drifter services enabled"
+
+# ── 13. Initial Calibration Hint ──
+step 13 "Post-install calibration"
 echo -e "  After first warm-up drive, run calibration to learn baselines:"
 echo -e "  ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
 ok "Calibration tool ready"
@@ -361,7 +552,8 @@ echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
 echo -e "     (or MQTT → ${CYAN}10.42.0.1:1883${NC})"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
 echo -e "  4. Screw OBD-II pigtail into USB2CANFD terminals"
-echo -e "  5. After first warm-up: ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
+echo -e "  5. Edit ${CYAN}/opt/drifter/.env${NC} for API keys + NANOB_HOST"
+echo -e "  6. After first warm-up: ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
 echo ""
 echo -e "  Check status: ${CYAN}python3 ${DRIFTER_DIR}/status.py${NC}"
 echo -e "  Service logs: ${CYAN}journalctl -u drifter-alerts -f${NC}"

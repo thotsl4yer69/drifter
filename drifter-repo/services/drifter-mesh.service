@@ -1,0 +1,21 @@
+[Unit]
+Description=MZ1312 DRIFTER Mesh (discovery + coordinator + bridge)
+After=nanomq.service network.target
+Wants=nanomq.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+# Runs discovery in foreground; coordinator + bridge are launched separately
+# (or wire up a tiny supervisor). Default ships with discovery on for simplicity.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/mesh_discovery.py
+ExecStartPost=/bin/sh -c '/opt/drifter/venv/bin/python3 /opt/drifter/mesh_coordinator.py &'
+ExecStartPost=/bin/sh -c '/opt/drifter/venv/bin/python3 /opt/drifter/mesh_bridge.py &'
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

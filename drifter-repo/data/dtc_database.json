@@ -1,0 +1,1622 @@
+{
+  "B1000": {
+    "action": "Reflash or replace module",
+    "cause": "Module internal fault",
+    "desc": "ECU Internal Fault",
+    "severity": "AMBER"
+  },
+  "B1318": {
+    "action": "Test battery and charging system",
+    "cause": "Module sees low battery",
+    "desc": "Battery Voltage Low",
+    "severity": "AMBER"
+  },
+  "B2700": {
+    "action": "Recalibrate compass",
+    "cause": "Compass cal needed",
+    "desc": "Compass Variance/Module Configuration Error",
+    "severity": "INFO"
+  },
+  "C0021": {
+    "action": "Inspect VSS wiring to ABS",
+    "cause": "VSS signal at ABS",
+    "desc": "Vehicle Speed Information Circuit",
+    "severity": "AMBER"
+  },
+  "C0035": {
+    "action": "Inspect sensor and tone ring",
+    "cause": "WSS LF",
+    "desc": "Left Front Wheel Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "C0040": {
+    "action": "Inspect sensor and tone ring",
+    "cause": "WSS RF",
+    "desc": "Right Front Wheel Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "C0045": {
+    "action": "Inspect sensor and tone ring",
+    "cause": "WSS LR",
+    "desc": "Left Rear Wheel Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "C0050": {
+    "action": "Inspect sensor and tone ring",
+    "cause": "WSS RR",
+    "desc": "Right Rear Wheel Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "C0061": {
+    "action": "Replace HCU/ABS module",
+    "cause": "ABS solenoid LF",
+    "desc": "Left Front ABS Solenoid Circuit",
+    "severity": "AMBER"
+  },
+  "C0062": {
+    "action": "Replace HCU/ABS module",
+    "cause": "ABS solenoid RF",
+    "desc": "Right Front ABS Solenoid Circuit",
+    "severity": "AMBER"
+  },
+  "C0110": {
+    "action": "Replace ABS pump",
+    "cause": "ABS pump motor",
+    "desc": "Pump Motor Circuit",
+    "severity": "AMBER"
+  },
+  "C0265": {
+    "action": "Replace ABS module relay",
+    "cause": "ABS relay",
+    "desc": "EBCM Relay Circuit",
+    "severity": "AMBER"
+  },
+  "P0001": {
+    "action": "Inspect FVR connector; replace regulator",
+    "cause": "FVR wiring open or driver fault",
+    "desc": "Fuel Volume Regulator Control Circuit/Open",
+    "severity": "AMBER"
+  },
+  "P0002": {
+    "action": "Verify supply pressure; replace regulator",
+    "cause": "Out-of-range feedback",
+    "desc": "Fuel Volume Regulator Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0003": {
+    "action": "Repair short, replace regulator",
+    "cause": "Shorted to ground",
+    "desc": "Fuel Volume Regulator Circuit Low",
+    "severity": "AMBER"
+  },
+  "P0004": {
+    "action": "Inspect harness; replace regulator",
+    "cause": "Open or shorted high",
+    "desc": "Fuel Volume Regulator Circuit High",
+    "severity": "AMBER"
+  },
+  "P0005": {
+    "action": "Check fuse and harness; replace valve",
+    "cause": "Wiring open",
+    "desc": "Fuel Shutoff Valve Control Circuit/Open",
+    "severity": "RED"
+  },
+  "P0006": {
+    "action": "Repair short; replace valve",
+    "cause": "Shorted low",
+    "desc": "Fuel Shutoff Valve Circuit Low",
+    "severity": "RED"
+  },
+  "P0007": {
+    "action": "Repair short; replace valve",
+    "cause": "Shorted high",
+    "desc": "Fuel Shutoff Valve Circuit High",
+    "severity": "RED"
+  },
+  "P0008": {
+    "action": "Inspect timing chain Bank 1",
+    "cause": "Cam/crank misalignment",
+    "desc": "Engine Position System Performance Bank 1",
+    "severity": "RED"
+  },
+  "P0009": {
+    "action": "Inspect timing chain Bank 2",
+    "cause": "Cam/crank misalignment B2",
+    "desc": "Engine Position System Performance Bank 2",
+    "severity": "RED"
+  },
+  "P0010": {
+    "action": "Inspect solenoid and oil flow",
+    "cause": "VVT/VCT solenoid B1",
+    "desc": "A Camshaft Position Actuator Circuit Bank 1",
+    "severity": "AMBER"
+  },
+  "P0011": {
+    "action": "Replace VCT solenoid; check oil",
+    "cause": "Stuck VVT B1",
+    "desc": "A Camshaft Position Timing Over-Advanced Bank 1",
+    "severity": "AMBER"
+  },
+  "P0012": {
+    "action": "Replace VCT solenoid",
+    "cause": "Stuck VVT B1",
+    "desc": "A Camshaft Position Timing Over-Retarded Bank 1",
+    "severity": "AMBER"
+  },
+  "P0013": {
+    "action": "Replace solenoid",
+    "cause": "VVT solenoid B",
+    "desc": "B Camshaft Position Actuator Circuit Bank 1",
+    "severity": "AMBER"
+  },
+  "P0014": {
+    "action": "Replace solenoid",
+    "cause": "Stuck VVT B",
+    "desc": "B Camshaft Position Timing Over-Advanced Bank 1",
+    "severity": "AMBER"
+  },
+  "P0015": {
+    "action": "Replace solenoid",
+    "cause": "Stuck VVT B",
+    "desc": "B Camshaft Position Timing Over-Retarded Bank 1",
+    "severity": "AMBER"
+  },
+  "P0016": {
+    "action": "Inspect timing chain and tensioners",
+    "cause": "Timing chain stretched",
+    "desc": "Crankshaft - Camshaft Correlation B1S A",
+    "severity": "RED"
+  },
+  "P0017": {
+    "action": "Inspect timing chain",
+    "cause": "Timing chain B1B",
+    "desc": "Crank - Cam Correlation B1S B",
+    "severity": "RED"
+  },
+  "P0018": {
+    "action": "Inspect timing chain",
+    "cause": "Timing chain B2A",
+    "desc": "Crank - Cam Correlation B2S A",
+    "severity": "RED"
+  },
+  "P0019": {
+    "action": "Inspect timing chain",
+    "cause": "Timing chain B2B",
+    "desc": "Crank - Cam Correlation B2S B",
+    "severity": "RED"
+  },
+  "P0020": {
+    "action": "Inspect solenoid; check oil flow",
+    "cause": "VCT solenoid B2",
+    "desc": "A Camshaft Position Actuator Circuit Bank 2",
+    "severity": "AMBER"
+  },
+  "P0021": {
+    "action": "Replace VCT solenoid",
+    "cause": "Stuck VVT B2",
+    "desc": "A Camshaft Position Timing Over-Advanced Bank 2",
+    "severity": "AMBER"
+  },
+  "P0022": {
+    "action": "Replace VCT solenoid",
+    "cause": "Stuck VVT B2",
+    "desc": "A Camshaft Position Timing Over-Retarded Bank 2",
+    "severity": "AMBER"
+  },
+  "P0030": {
+    "action": "Inspect heater wiring; replace sensor",
+    "cause": "O2 heater control",
+    "desc": "HO2S Heater Control Circuit B1S1",
+    "severity": "AMBER"
+  },
+  "P0031": {
+    "action": "Repair short; replace sensor",
+    "cause": "Heater shorted low",
+    "desc": "HO2S Heater Control Circuit Low B1S1",
+    "severity": "AMBER"
+  },
+  "P0032": {
+    "action": "Repair short; replace sensor",
+    "cause": "Heater shorted high",
+    "desc": "HO2S Heater Control Circuit High B1S1",
+    "severity": "AMBER"
+  },
+  "P0036": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "O2 heater downstream",
+    "desc": "HO2S Heater Control Circuit B1S2",
+    "severity": "AMBER"
+  },
+  "P0050": {
+    "action": "Inspect heater; replace sensor",
+    "cause": "O2 heater B2",
+    "desc": "HO2S Heater Control Circuit B2S1",
+    "severity": "AMBER"
+  },
+  "P0053": {
+    "action": "Replace sensor",
+    "cause": "Heater out of range",
+    "desc": "HO2S Heater Resistance B1S1",
+    "severity": "AMBER"
+  },
+  "P0054": {
+    "action": "Replace sensor",
+    "cause": "Heater out of range",
+    "desc": "HO2S Heater Resistance B1S2",
+    "severity": "AMBER"
+  },
+  "P0068": {
+    "action": "Clean MAF and TB; check for leaks",
+    "cause": "Cross-sensor mismatch",
+    "desc": "MAP/MAF - Throttle Position Correlation",
+    "severity": "AMBER"
+  },
+  "P0087": {
+    "action": "Replace fuel filter; test pump",
+    "cause": "Failing pump or restricted filter",
+    "desc": "Fuel Rail/System Pressure Too Low",
+    "severity": "RED"
+  },
+  "P0088": {
+    "action": "Inspect FPR and return line",
+    "cause": "Stuck regulator",
+    "desc": "Fuel Rail/System Pressure Too High",
+    "severity": "AMBER"
+  },
+  "P0089": {
+    "action": "Replace fuel pressure regulator",
+    "cause": "FPR drift",
+    "desc": "Fuel Pressure Regulator Performance",
+    "severity": "AMBER"
+  },
+  "P0091": {
+    "action": "Inspect harness; replace regulator",
+    "cause": "FPR control shorted low",
+    "desc": "Fuel Pressure Regulator 1 Circuit Low",
+    "severity": "AMBER"
+  },
+  "P0092": {
+    "action": "Inspect harness; replace regulator",
+    "cause": "FPR control shorted high",
+    "desc": "Fuel Pressure Regulator 1 Circuit High",
+    "severity": "AMBER"
+  },
+  "P0100": {
+    "action": "Inspect MAF connector; clean or replace",
+    "cause": "MAF wiring/sensor failure",
+    "desc": "MAF Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0101": {
+    "action": "Clean MAF; check intake leaks",
+    "cause": "Inconsistent with TPS/MAP",
+    "desc": "MAF Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0102": {
+    "action": "Check 5V and ground; replace",
+    "cause": "Signal below expected",
+    "desc": "MAF Circuit Low Input",
+    "severity": "AMBER"
+  },
+  "P0103": {
+    "action": "Check ground; replace MAF",
+    "cause": "Signal above expected",
+    "desc": "MAF Circuit High Input",
+    "severity": "AMBER"
+  },
+  "P0105": {
+    "action": "Check vacuum line; replace sensor",
+    "cause": "MAP sensor wiring",
+    "desc": "MAP Circuit Malfunction",
+    "severity": "AMBER"
+  },
+  "P0106": {
+    "action": "Inspect vacuum hose",
+    "cause": "Implausible reading",
+    "desc": "MAP Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0107": {
+    "action": "Check 5V supply and signal wire",
+    "cause": "Shorted low",
+    "desc": "MAP Circuit Low Input",
+    "severity": "AMBER"
+  },
+  "P0108": {
+    "action": "Inspect vacuum line; replace sensor",
+    "cause": "Open or shorted high",
+    "desc": "MAP Circuit High Input",
+    "severity": "AMBER"
+  },
+  "P0110": {
+    "action": "Check connector; replace sensor",
+    "cause": "Intake air temp circuit",
+    "desc": "IAT Sensor Circuit",
+    "severity": "INFO"
+  },
+  "P0111": {
+    "action": "Replace IAT sensor",
+    "cause": "IAT drift",
+    "desc": "IAT Range/Performance",
+    "severity": "INFO"
+  },
+  "P0112": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Shorted to ground",
+    "desc": "IAT Circuit Low Input",
+    "severity": "INFO"
+  },
+  "P0113": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Open circuit",
+    "desc": "IAT Circuit High Input",
+    "severity": "INFO"
+  },
+  "P0115": {
+    "action": "Check connector and wiring",
+    "cause": "Coolant temp circuit",
+    "desc": "ECT Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0116": {
+    "action": "Replace ECT; check thermostat",
+    "cause": "Reading slow or stuck",
+    "desc": "ECT Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0117": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Shorted to ground",
+    "desc": "ECT Circuit Low Input",
+    "severity": "AMBER"
+  },
+  "P0118": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Open circuit",
+    "desc": "ECT Circuit High Input",
+    "severity": "AMBER"
+  },
+  "P0120": {
+    "action": "Inspect TPS; replace TB",
+    "cause": "Throttle position sensor",
+    "desc": "TPS Circuit Malfunction",
+    "severity": "RED"
+  },
+  "P0121": {
+    "action": "Clean TB; replace TPS",
+    "cause": "Reading inconsistent",
+    "desc": "TPS Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0122": {
+    "action": "Inspect harness; replace TPS",
+    "cause": "Shorted low",
+    "desc": "TPS Circuit Low Input",
+    "severity": "RED"
+  },
+  "P0123": {
+    "action": "Inspect harness; replace TPS",
+    "cause": "Open or shorted high",
+    "desc": "TPS Circuit High Input",
+    "severity": "RED"
+  },
+  "P0125": {
+    "action": "Replace thermostat",
+    "cause": "Engine not warming up",
+    "desc": "Insufficient Coolant Temp for Closed Loop",
+    "severity": "AMBER"
+  },
+  "P0128": {
+    "action": "Replace thermostat",
+    "cause": "Stuck-open thermostat",
+    "desc": "Coolant Temp Below Regulating Temp",
+    "severity": "AMBER"
+  },
+  "P0130": {
+    "action": "Check heater; replace sensor",
+    "cause": "O2 wiring or sensor",
+    "desc": "O2 Sensor Circuit B1S1",
+    "severity": "AMBER"
+  },
+  "P0131": {
+    "action": "Check exhaust leaks; replace sensor",
+    "cause": "Lean or sensor degraded",
+    "desc": "O2 Low Voltage B1S1",
+    "severity": "AMBER"
+  },
+  "P0132": {
+    "action": "Check fuel pressure; replace sensor",
+    "cause": "Rich or shorted sensor",
+    "desc": "O2 High Voltage B1S1",
+    "severity": "AMBER"
+  },
+  "P0133": {
+    "action": "Replace upstream O2",
+    "cause": "Aging O2 sensor",
+    "desc": "O2 Slow Response B1S1",
+    "severity": "AMBER"
+  },
+  "P0134": {
+    "action": "Check heater fuse; replace sensor",
+    "cause": "Heater failure",
+    "desc": "O2 No Activity B1S1",
+    "severity": "AMBER"
+  },
+  "P0135": {
+    "action": "Replace O2 sensor",
+    "cause": "Heater element open",
+    "desc": "O2 Heater Circuit B1S1",
+    "severity": "AMBER"
+  },
+  "P0136": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Downstream O2",
+    "desc": "O2 Sensor Circuit B1S2",
+    "severity": "AMBER"
+  },
+  "P0137": {
+    "action": "Inspect exhaust; replace sensor",
+    "cause": "Downstream lean",
+    "desc": "O2 Low Voltage B1S2",
+    "severity": "AMBER"
+  },
+  "P0138": {
+    "action": "Replace sensor",
+    "cause": "Downstream rich/short",
+    "desc": "O2 High Voltage B1S2",
+    "severity": "AMBER"
+  },
+  "P0139": {
+    "action": "Replace sensor",
+    "cause": "Aging downstream",
+    "desc": "O2 Slow Response B1S2",
+    "severity": "AMBER"
+  },
+  "P0140": {
+    "action": "Replace sensor",
+    "cause": "Heater failure",
+    "desc": "O2 No Activity B1S2",
+    "severity": "AMBER"
+  },
+  "P0141": {
+    "action": "Replace sensor",
+    "cause": "Heater open",
+    "desc": "O2 Heater Circuit B1S2",
+    "severity": "AMBER"
+  },
+  "P0150": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "B2 upstream",
+    "desc": "O2 Sensor Circuit B2S1",
+    "severity": "AMBER"
+  },
+  "P0151": {
+    "action": "Inspect exhaust; replace sensor",
+    "cause": "B2 lean",
+    "desc": "O2 Low Voltage B2S1",
+    "severity": "AMBER"
+  },
+  "P0152": {
+    "action": "Replace sensor",
+    "cause": "B2 rich/short",
+    "desc": "O2 High Voltage B2S1",
+    "severity": "AMBER"
+  },
+  "P0153": {
+    "action": "Replace sensor",
+    "cause": "B2 aging",
+    "desc": "O2 Slow Response B2S1",
+    "severity": "AMBER"
+  },
+  "P0154": {
+    "action": "Replace sensor",
+    "cause": "B2 heater failure",
+    "desc": "O2 No Activity B2S1",
+    "severity": "AMBER"
+  },
+  "P0155": {
+    "action": "Replace sensor",
+    "cause": "B2 heater open",
+    "desc": "O2 Heater Circuit B2S1",
+    "severity": "AMBER"
+  },
+  "P0156": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "B2 downstream",
+    "desc": "O2 Sensor Circuit B2S2",
+    "severity": "AMBER"
+  },
+  "P0157": {
+    "action": "Inspect exhaust; replace sensor",
+    "cause": "B2 downstream lean",
+    "desc": "O2 Low Voltage B2S2",
+    "severity": "AMBER"
+  },
+  "P0158": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream rich/short",
+    "desc": "O2 High Voltage B2S2",
+    "severity": "AMBER"
+  },
+  "P0159": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream aging",
+    "desc": "O2 Slow Response B2S2",
+    "severity": "AMBER"
+  },
+  "P0160": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream heater",
+    "desc": "O2 No Activity B2S2",
+    "severity": "AMBER"
+  },
+  "P0161": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream heater open",
+    "desc": "O2 Heater Circuit B2S2",
+    "severity": "AMBER"
+  },
+  "P0170": {
+    "action": "Smoke test intake; check fuel pressure",
+    "cause": "B1 trim out of range",
+    "desc": "Fuel Trim Malfunction Bank 1",
+    "severity": "AMBER"
+  },
+  "P0171": {
+    "action": "Smoke test intake; clean MAF",
+    "cause": "Vacuum leak, MAF, or fuel delivery",
+    "desc": "System Too Lean Bank 1",
+    "severity": "AMBER"
+  },
+  "P0172": {
+    "action": "Test injectors and purge valve",
+    "cause": "Leaking injector or stuck purge",
+    "desc": "System Too Rich Bank 1",
+    "severity": "AMBER"
+  },
+  "P0173": {
+    "action": "Smoke test B2 intake",
+    "cause": "B2 trim",
+    "desc": "Fuel Trim Malfunction Bank 2",
+    "severity": "AMBER"
+  },
+  "P0174": {
+    "action": "Smoke test B2 intake",
+    "cause": "B2 vacuum leak",
+    "desc": "System Too Lean Bank 2",
+    "severity": "AMBER"
+  },
+  "P0175": {
+    "action": "Inspect injectors and purge",
+    "cause": "B2 leaking injector",
+    "desc": "System Too Rich Bank 2",
+    "severity": "AMBER"
+  },
+  "P0190": {
+    "action": "Check connector; replace sensor",
+    "cause": "FRP wiring",
+    "desc": "Fuel Rail Pressure Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0191": {
+    "action": "Verify pressure mechanically",
+    "cause": "FRP drift",
+    "desc": "Fuel Rail Pressure Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0192": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Shorted low",
+    "desc": "Fuel Rail Pressure Low Input",
+    "severity": "AMBER"
+  },
+  "P0193": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Shorted high",
+    "desc": "Fuel Rail Pressure High Input",
+    "severity": "AMBER"
+  },
+  "P0201": {
+    "action": "Test injector 1 resistance; inspect harness",
+    "cause": "Injector 1 driver or wiring fault",
+    "desc": "Cylinder 1 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0202": {
+    "action": "Test injector 2 resistance; inspect harness",
+    "cause": "Injector 2 driver or wiring fault",
+    "desc": "Cylinder 2 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0203": {
+    "action": "Test injector 3 resistance; inspect harness",
+    "cause": "Injector 3 driver or wiring fault",
+    "desc": "Cylinder 3 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0204": {
+    "action": "Test injector 4 resistance; inspect harness",
+    "cause": "Injector 4 driver or wiring fault",
+    "desc": "Cylinder 4 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0205": {
+    "action": "Test injector 5 resistance; inspect harness",
+    "cause": "Injector 5 driver or wiring fault",
+    "desc": "Cylinder 5 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0206": {
+    "action": "Test injector 6 resistance; inspect harness",
+    "cause": "Injector 6 driver or wiring fault",
+    "desc": "Cylinder 6 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0207": {
+    "action": "Test injector 7 resistance; inspect harness",
+    "cause": "Injector 7 driver or wiring fault",
+    "desc": "Cylinder 7 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0208": {
+    "action": "Test injector 8 resistance; inspect harness",
+    "cause": "Injector 8 driver or wiring fault",
+    "desc": "Cylinder 8 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0209": {
+    "action": "Test injector 9 resistance; inspect harness",
+    "cause": "Injector 9 driver or wiring fault",
+    "desc": "Cylinder 9 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0210": {
+    "action": "Test injector 10 resistance; inspect harness",
+    "cause": "Injector 10 driver or wiring fault",
+    "desc": "Cylinder 10 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0211": {
+    "action": "Test injector 11 resistance; inspect harness",
+    "cause": "Injector 11 driver or wiring fault",
+    "desc": "Cylinder 11 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0212": {
+    "action": "Test injector 12 resistance; inspect harness",
+    "cause": "Injector 12 driver or wiring fault",
+    "desc": "Cylinder 12 Injector Circuit",
+    "severity": "AMBER"
+  },
+  "P0234": {
+    "action": "Inspect wastegate; check vacuum",
+    "cause": "Wastegate stuck closed",
+    "desc": "Turbo/Supercharger Overboost",
+    "severity": "RED"
+  },
+  "P0235": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "Boost sensor wiring",
+    "desc": "Turbo/Supercharger Boost Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0236": {
+    "action": "Replace boost sensor",
+    "cause": "Boost sensor drift",
+    "desc": "Turbo/Supercharger Boost Sensor Range",
+    "severity": "AMBER"
+  },
+  "P0237": {
+    "action": "Replace sensor",
+    "cause": "Sensor shorted low",
+    "desc": "Turbo/Supercharger Boost Sensor A Low",
+    "severity": "AMBER"
+  },
+  "P0238": {
+    "action": "Replace sensor",
+    "cause": "Sensor shorted high",
+    "desc": "Turbo/Supercharger Boost Sensor A High",
+    "severity": "AMBER"
+  },
+  "P0299": {
+    "action": "Inspect boost system for leaks",
+    "cause": "Boost leak or wastegate",
+    "desc": "Turbo/Supercharger Underboost",
+    "severity": "AMBER"
+  },
+  "P0300": {
+    "action": "Check plugs and coils; smoke-test intake",
+    "cause": "Coils, plugs, vacuum leak, or fuel",
+    "desc": "Random/Multiple Cylinder Misfire",
+    "severity": "AMBER"
+  },
+  "P0301": {
+    "action": "Swap coil 1 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 1",
+    "desc": "Cylinder 1 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0302": {
+    "action": "Swap coil 2 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 2",
+    "desc": "Cylinder 2 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0303": {
+    "action": "Swap coil 3 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 3",
+    "desc": "Cylinder 3 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0304": {
+    "action": "Swap coil 4 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 4",
+    "desc": "Cylinder 4 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0305": {
+    "action": "Swap coil 5 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 5",
+    "desc": "Cylinder 5 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0306": {
+    "action": "Swap coil 6 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 6",
+    "desc": "Cylinder 6 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0307": {
+    "action": "Swap coil 7 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 7",
+    "desc": "Cylinder 7 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0308": {
+    "action": "Swap coil 8 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 8",
+    "desc": "Cylinder 8 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0309": {
+    "action": "Swap coil 9 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 9",
+    "desc": "Cylinder 9 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0310": {
+    "action": "Swap coil 10 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 10",
+    "desc": "Cylinder 10 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0311": {
+    "action": "Swap coil 11 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 11",
+    "desc": "Cylinder 11 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0312": {
+    "action": "Swap coil 12 with another cylinder and retest",
+    "cause": "Coil, plug, injector, or compression on cyl 12",
+    "desc": "Cylinder 12 Misfire Detected",
+    "severity": "AMBER"
+  },
+  "P0320": {
+    "action": "Inspect crank sensor",
+    "cause": "CKP signal issue",
+    "desc": "Ignition/Distributor Engine Speed Input Circuit",
+    "severity": "RED"
+  },
+  "P0325": {
+    "action": "Check connector; replace sensor",
+    "cause": "Knock sensor wiring",
+    "desc": "Knock Sensor Circuit Bank 1",
+    "severity": "AMBER"
+  },
+  "P0330": {
+    "action": "Check connector; replace sensor",
+    "cause": "Knock sensor B2",
+    "desc": "Knock Sensor Circuit Bank 2",
+    "severity": "AMBER"
+  },
+  "P0335": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "CKP failure",
+    "desc": "Crankshaft Position Sensor Circuit",
+    "severity": "RED"
+  },
+  "P0336": {
+    "action": "Inspect tone ring; replace sensor",
+    "cause": "CKP intermittent",
+    "desc": "CKP Sensor Range/Performance",
+    "severity": "RED"
+  },
+  "P0340": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "CMP B1 failure",
+    "desc": "Camshaft Position Sensor Circuit Bank 1",
+    "severity": "RED"
+  },
+  "P0345": {
+    "action": "Inspect connector; replace sensor",
+    "cause": "CMP B2 failure",
+    "desc": "Camshaft Position Sensor Circuit Bank 2",
+    "severity": "RED"
+  },
+  "P0351": {
+    "action": "Replace coil 1",
+    "cause": "Coil 1 driver fault",
+    "desc": "Ignition Coil A Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0352": {
+    "action": "Replace coil 2",
+    "cause": "Coil 2 driver fault",
+    "desc": "Ignition Coil B Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0353": {
+    "action": "Replace coil 3",
+    "cause": "Coil 3 driver fault",
+    "desc": "Ignition Coil C Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0354": {
+    "action": "Replace coil 4",
+    "cause": "Coil 4 driver fault",
+    "desc": "Ignition Coil D Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0355": {
+    "action": "Replace coil 5",
+    "cause": "Coil 5 driver fault",
+    "desc": "Ignition Coil E Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0356": {
+    "action": "Replace coil 6",
+    "cause": "Coil 6 driver fault",
+    "desc": "Ignition Coil F Primary/Secondary Circuit",
+    "severity": "AMBER"
+  },
+  "P0400": {
+    "action": "Clean EGR passages and valve",
+    "cause": "EGR insufficient flow",
+    "desc": "EGR Flow Malfunction",
+    "severity": "AMBER"
+  },
+  "P0401": {
+    "action": "Clean EGR valve and ports",
+    "cause": "Carbon buildup or stuck valve",
+    "desc": "EGR Flow Insufficient",
+    "severity": "AMBER"
+  },
+  "P0402": {
+    "action": "Inspect EGR valve and gasket",
+    "cause": "Stuck-open EGR or vacuum leak",
+    "desc": "EGR Flow Excessive",
+    "severity": "AMBER"
+  },
+  "P0411": {
+    "action": "Replace check valve",
+    "cause": "Air pump or check valve",
+    "desc": "Secondary Air Injection Incorrect Flow",
+    "severity": "AMBER"
+  },
+  "P0420": {
+    "action": "Fix fuel/ignition first",
+    "cause": "Cat degraded or O2 lazy",
+    "desc": "Catalyst Efficiency Below Threshold Bank 1",
+    "severity": "AMBER"
+  },
+  "P0421": {
+    "action": "Inspect pre-cat condition",
+    "cause": "Pre-cat degraded",
+    "desc": "Warm-up Catalyst Efficiency B1",
+    "severity": "AMBER"
+  },
+  "P0430": {
+    "action": "Fix upstream; test cat",
+    "cause": "B2 cat degraded",
+    "desc": "Catalyst Efficiency Below Threshold Bank 2",
+    "severity": "AMBER"
+  },
+  "P0440": {
+    "action": "Inspect EVAP hoses and gas cap",
+    "cause": "EVAP general fault",
+    "desc": "EVAP System Malfunction",
+    "severity": "INFO"
+  },
+  "P0441": {
+    "action": "Test purge valve operation",
+    "cause": "Purge valve or hose",
+    "desc": "EVAP Incorrect Purge Flow",
+    "severity": "INFO"
+  },
+  "P0442": {
+    "action": "Tighten gas cap; smoke test EVAP",
+    "cause": "Loose gas cap or small leak",
+    "desc": "EVAP Small Leak Detected",
+    "severity": "INFO"
+  },
+  "P0443": {
+    "action": "Test and replace valve",
+    "cause": "Purge valve solenoid",
+    "desc": "EVAP Purge Control Valve Circuit",
+    "severity": "AMBER"
+  },
+  "P0446": {
+    "action": "Test vent valve",
+    "cause": "Vent valve fault",
+    "desc": "EVAP Vent Control Circuit",
+    "severity": "INFO"
+  },
+  "P0455": {
+    "action": "Tighten/replace gas cap",
+    "cause": "Loose gas cap or major leak",
+    "desc": "EVAP Large Leak Detected",
+    "severity": "INFO"
+  },
+  "P0456": {
+    "action": "Replace gas cap; smoke test EVAP",
+    "cause": "Pinhole or cap seal",
+    "desc": "EVAP Very Small Leak",
+    "severity": "INFO"
+  },
+  "P0457": {
+    "action": "Tighten gas cap and clear code",
+    "cause": "Gas cap not seated",
+    "desc": "EVAP Leak \u2014 Fuel Cap Loose/Off",
+    "severity": "INFO"
+  },
+  "P0480": {
+    "action": "Test fan relay; replace fan",
+    "cause": "Fan relay/wiring",
+    "desc": "Cooling Fan 1 Control Circuit",
+    "severity": "AMBER"
+  },
+  "P0481": {
+    "action": "Test fan relay; replace fan",
+    "cause": "Fan relay/wiring",
+    "desc": "Cooling Fan 2 Control Circuit",
+    "severity": "AMBER"
+  },
+  "P0490": {
+    "action": "Inspect harness; replace valve",
+    "cause": "EGR shorted high",
+    "desc": "EGR A Control Circuit High",
+    "severity": "AMBER"
+  },
+  "P0496": {
+    "action": "Replace purge valve",
+    "cause": "Purge valve leaking",
+    "desc": "EVAP Flow During Non-Purge",
+    "severity": "INFO"
+  },
+  "P0497": {
+    "action": "Inspect EVAP canister and lines",
+    "cause": "Vent restriction",
+    "desc": "EVAP Flow Low During Non-Purge",
+    "severity": "INFO"
+  },
+  "P0498": {
+    "action": "Replace vent valve",
+    "cause": "Vent shorted low",
+    "desc": "EVAP Vent Valve Control Low",
+    "severity": "INFO"
+  },
+  "P0499": {
+    "action": "Replace vent valve",
+    "cause": "Vent shorted high",
+    "desc": "EVAP Vent Valve Control High",
+    "severity": "INFO"
+  },
+  "P0500": {
+    "action": "Inspect VSS harness",
+    "cause": "VSS wiring or sensor",
+    "desc": "Vehicle Speed Sensor Malfunction",
+    "severity": "AMBER"
+  },
+  "P0501": {
+    "action": "Inspect ring gear; replace sensor",
+    "cause": "VSS intermittent",
+    "desc": "VSS Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0505": {
+    "action": "Clean IAC; replace if sticking",
+    "cause": "IAC valve failure",
+    "desc": "Idle Air Control System",
+    "severity": "AMBER"
+  },
+  "P0506": {
+    "action": "Clean throttle body",
+    "cause": "Vacuum leak or IAC dirty",
+    "desc": "IAC RPM Lower Than Expected",
+    "severity": "AMBER"
+  },
+  "P0507": {
+    "action": "Clean throttle body; idle relearn",
+    "cause": "Vacuum leak or stuck IAC",
+    "desc": "IAC RPM Higher Than Expected",
+    "severity": "AMBER"
+  },
+  "P0521": {
+    "action": "Replace sensor; verify pressure",
+    "cause": "Oil pressure sensor drift",
+    "desc": "Engine Oil Pressure Sensor Range",
+    "severity": "AMBER"
+  },
+  "P0522": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Sensor shorted low",
+    "desc": "Engine Oil Pressure Sensor Low",
+    "severity": "AMBER"
+  },
+  "P0523": {
+    "action": "Inspect harness; replace sensor",
+    "cause": "Sensor shorted high",
+    "desc": "Engine Oil Pressure Sensor High",
+    "severity": "AMBER"
+  },
+  "P0524": {
+    "action": "Check oil level; verify pressure",
+    "cause": "Low oil pressure",
+    "desc": "Engine Oil Pressure Too Low",
+    "severity": "RED"
+  },
+  "P0532": {
+    "action": "Recharge system; check leaks",
+    "cause": "A/C pressure low",
+    "desc": "A/C Refrigerant Pressure Sensor Low",
+    "severity": "INFO"
+  },
+  "P0533": {
+    "action": "Inspect condenser; check overcharge",
+    "cause": "A/C pressure high",
+    "desc": "A/C Refrigerant Pressure Sensor High",
+    "severity": "INFO"
+  },
+  "P0562": {
+    "action": "Test alternator output and battery",
+    "cause": "Alternator/battery low",
+    "desc": "System Voltage Low",
+    "severity": "AMBER"
+  },
+  "P0563": {
+    "action": "Replace alternator/regulator",
+    "cause": "Regulator failure",
+    "desc": "System Voltage High",
+    "severity": "AMBER"
+  },
+  "P0571": {
+    "action": "Replace brake switch",
+    "cause": "Brake switch faulty",
+    "desc": "Brake Switch A Circuit",
+    "severity": "AMBER"
+  },
+  "P0600": {
+    "action": "Check ground straps; PCM reflash",
+    "cause": "Internal PCM communication",
+    "desc": "Serial Communication Link",
+    "severity": "AMBER"
+  },
+  "P0601": {
+    "action": "PCM reflash or replace",
+    "cause": "PCM ROM corruption",
+    "desc": "Internal Control Module Memory Checksum",
+    "severity": "RED"
+  },
+  "P0602": {
+    "action": "Reflash PCM",
+    "cause": "PCM not programmed",
+    "desc": "Control Module Programming Error",
+    "severity": "RED"
+  },
+  "P0603": {
+    "action": "Check battery; replace PCM",
+    "cause": "PCM keep-alive memory",
+    "desc": "Internal Control Module KAM Error",
+    "severity": "RED"
+  },
+  "P0604": {
+    "action": "Replace PCM",
+    "cause": "PCM RAM fault",
+    "desc": "Internal Control Module RAM Error",
+    "severity": "RED"
+  },
+  "P0605": {
+    "action": "Reflash or replace PCM",
+    "cause": "PCM ROM fault",
+    "desc": "Internal Control Module ROM Error",
+    "severity": "RED"
+  },
+  "P0606": {
+    "action": "Replace PCM",
+    "cause": "PCM internal",
+    "desc": "PCM Processor Fault",
+    "severity": "RED"
+  },
+  "P0641": {
+    "action": "Inspect sensor harness for short",
+    "cause": "5V reference shorted",
+    "desc": "Sensor Reference Voltage A Circuit",
+    "severity": "AMBER"
+  },
+  "P0700": {
+    "action": "Scan TCM for sub-codes",
+    "cause": "TCM has set a code",
+    "desc": "Transmission Control System Malfunction",
+    "severity": "AMBER"
+  },
+  "P0705": {
+    "action": "Inspect range sensor",
+    "cause": "Range sensor fault",
+    "desc": "TR Sensor Circuit (PRNDL Input)",
+    "severity": "AMBER"
+  },
+  "P0711": {
+    "action": "Replace TFT sensor",
+    "cause": "Trans fluid temp drift",
+    "desc": "TFT Sensor Range/Performance",
+    "severity": "AMBER"
+  },
+  "P0715": {
+    "action": "Inspect connector",
+    "cause": "Input shaft speed sensor",
+    "desc": "Input/Turbine Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0720": {
+    "action": "Inspect connector",
+    "cause": "Output shaft speed sensor",
+    "desc": "Output Speed Sensor Circuit",
+    "severity": "AMBER"
+  },
+  "P0730": {
+    "action": "Service trans; check fluid",
+    "cause": "Slipping or solenoid fault",
+    "desc": "Incorrect Gear Ratio",
+    "severity": "RED"
+  },
+  "P0740": {
+    "action": "Test TCC solenoid",
+    "cause": "TCC solenoid",
+    "desc": "Torque Converter Clutch Circuit",
+    "severity": "AMBER"
+  },
+  "P0741": {
+    "action": "Test TCC; service trans",
+    "cause": "TCC not engaging",
+    "desc": "TCC Circuit Performance/Stuck Off",
+    "severity": "AMBER"
+  },
+  "P0750": {
+    "action": "Replace solenoid",
+    "cause": "Shift solenoid 1",
+    "desc": "Shift Solenoid A Malfunction",
+    "severity": "AMBER"
+  },
+  "P0755": {
+    "action": "Replace solenoid",
+    "cause": "Shift solenoid 2",
+    "desc": "Shift Solenoid B Malfunction",
+    "severity": "AMBER"
+  },
+  "P0850": {
+    "action": "Inspect PNP switch; replace",
+    "cause": "PNP switch fault",
+    "desc": "Park/Neutral Switch Input",
+    "severity": "AMBER"
+  },
+  "P0867": {
+    "action": "Service transmission",
+    "cause": "Trans pressure fault",
+    "desc": "Transmission Fluid Pressure",
+    "severity": "AMBER"
+  },
+  "P1000": {
+    "action": "Complete a drive cycle",
+    "cause": "Monitors not run since clear",
+    "desc": "OBD-II Monitor Readiness Incomplete",
+    "severity": "INFO"
+  },
+  "P1100": {
+    "action": "Inspect MAF harness",
+    "cause": "MAF intermittent",
+    "desc": "MAF Sensor Intermittent",
+    "severity": "AMBER"
+  },
+  "P1101": {
+    "action": "Clean MAF; replace if drifted",
+    "cause": "MAF calibration",
+    "desc": "MAF Sensor Out of Self-Test Range",
+    "severity": "AMBER"
+  },
+  "P1112": {
+    "action": "Inspect wiring; replace sensor",
+    "cause": "IAT intermittent",
+    "desc": "IAT Sensor Intermittent",
+    "severity": "INFO"
+  },
+  "P1116": {
+    "action": "Replace ECT sensor",
+    "cause": "ECT drift",
+    "desc": "ECT Sensor Out of Range",
+    "severity": "AMBER"
+  },
+  "P1121": {
+    "action": "Clean TB and MAF; inspect intake",
+    "cause": "TPS/MAF mismatch",
+    "desc": "TPS Inconsistent with MAF",
+    "severity": "AMBER"
+  },
+  "P1130": {
+    "action": "Replace sensor",
+    "cause": "O2 stuck/lazy",
+    "desc": "O2 Lack of Switching B1S1",
+    "severity": "AMBER"
+  },
+  "P1131": {
+    "action": "Fix vacuum leaks; replace sensor",
+    "cause": "O2 stuck lean",
+    "desc": "O2 Stuck Lean B1S1",
+    "severity": "AMBER"
+  },
+  "P1132": {
+    "action": "Check fuel pressure; replace sensor",
+    "cause": "O2 stuck rich",
+    "desc": "O2 Stuck Rich B1S1",
+    "severity": "AMBER"
+  },
+  "P1133": {
+    "action": "Replace upstream O2 B1",
+    "cause": "O2 lazy",
+    "desc": "O2 Insufficient Switching B1S1",
+    "severity": "AMBER"
+  },
+  "P1150": {
+    "action": "Replace sensor",
+    "cause": "B2 stuck/lazy",
+    "desc": "O2 Lack of Switching B2S1",
+    "severity": "AMBER"
+  },
+  "P1151": {
+    "action": "Fix vacuum leaks; replace sensor",
+    "cause": "B2 stuck lean",
+    "desc": "O2 Stuck Lean B2S1",
+    "severity": "AMBER"
+  },
+  "P1152": {
+    "action": "Check fuel pressure; replace sensor",
+    "cause": "B2 stuck rich",
+    "desc": "O2 Stuck Rich B2S1",
+    "severity": "AMBER"
+  },
+  "P1153": {
+    "action": "Replace upstream O2 B2",
+    "cause": "O2 lazy",
+    "desc": "O2 Insufficient Switching B2S1",
+    "severity": "AMBER"
+  },
+  "P1235": {
+    "action": "Test pump relay; check pressure",
+    "cause": "Fuel pump driver/wiring",
+    "desc": "Fuel Pump Control Out of Range",
+    "severity": "RED"
+  },
+  "P1336": {
+    "action": "Run CKP variation relearn",
+    "cause": "Crank relearn required",
+    "desc": "CKP Sensor Variation Not Learned",
+    "severity": "INFO"
+  },
+  "P1399": {
+    "action": "Inspect coils/plugs; vacuum leak",
+    "cause": "Multiple misfire",
+    "desc": "Random Misfire",
+    "severity": "AMBER"
+  },
+  "P1400": {
+    "action": "Inspect EGR DPFE sensor",
+    "cause": "EGR pressure sensor",
+    "desc": "DPFE Sensor Circuit Low Voltage",
+    "severity": "AMBER"
+  },
+  "P1450": {
+    "action": "Inspect EVAP lines and canister",
+    "cause": "EVAP blockage",
+    "desc": "Unable to Bleed Up Fuel Tank Vacuum",
+    "severity": "INFO"
+  },
+  "P1518": {
+    "action": "Test IMRC actuator",
+    "cause": "Intake manifold runner control",
+    "desc": "IMRC Stuck Open",
+    "severity": "AMBER"
+  },
+  "P1519": {
+    "action": "Test IMRC actuator",
+    "cause": "IMRC stuck closed",
+    "desc": "IMRC Stuck Closed",
+    "severity": "AMBER"
+  },
+  "P1633": {
+    "action": "Test battery; check KAM fuse",
+    "cause": "Battery disconnect/voltage",
+    "desc": "KAM Voltage Too Low",
+    "severity": "INFO"
+  },
+  "P2004": {
+    "action": "Test actuator; replace",
+    "cause": "IMRC actuator B1",
+    "desc": "IMRC Stuck Open Bank 1",
+    "severity": "AMBER"
+  },
+  "P2005": {
+    "action": "Test actuator; replace",
+    "cause": "IMRC actuator B2",
+    "desc": "IMRC Stuck Open Bank 2",
+    "severity": "AMBER"
+  },
+  "P2008": {
+    "action": "Inspect connector; replace solenoid",
+    "cause": "IMRC wiring",
+    "desc": "IMRC Control Circuit Open Bank 1",
+    "severity": "AMBER"
+  },
+  "P2009": {
+    "action": "Repair short; replace solenoid",
+    "cause": "IMRC shorted low",
+    "desc": "IMRC Control Circuit Low Bank 1",
+    "severity": "AMBER"
+  },
+  "P2010": {
+    "action": "Repair short; replace solenoid",
+    "cause": "IMRC shorted high",
+    "desc": "IMRC Control Circuit High Bank 1",
+    "severity": "AMBER"
+  },
+  "P2096": {
+    "action": "Check exhaust leak; verify cat",
+    "cause": "Lean post-cat",
+    "desc": "Post Catalyst Fuel Trim Too Lean B1",
+    "severity": "AMBER"
+  },
+  "P2097": {
+    "action": "Inspect upstream O2",
+    "cause": "Rich post-cat",
+    "desc": "Post Catalyst Fuel Trim Too Rich B1",
+    "severity": "AMBER"
+  },
+  "P2098": {
+    "action": "Check B2 exhaust",
+    "cause": "B2 lean post-cat",
+    "desc": "Post Catalyst Fuel Trim Too Lean B2",
+    "severity": "AMBER"
+  },
+  "P2099": {
+    "action": "Inspect B2 upstream O2",
+    "cause": "B2 rich post-cat",
+    "desc": "Post Catalyst Fuel Trim Too Rich B2",
+    "severity": "AMBER"
+  },
+  "P2100": {
+    "action": "Replace throttle body",
+    "cause": "Throttle motor open",
+    "desc": "Throttle Actuator Control Motor Circuit Open",
+    "severity": "RED"
+  },
+  "P2101": {
+    "action": "Clean and relearn TB",
+    "cause": "Throttle motor performance",
+    "desc": "Throttle Actuator Performance",
+    "severity": "RED"
+  },
+  "P2106": {
+    "action": "Read all codes; fix root cause",
+    "cause": "Limp mode triggered",
+    "desc": "Throttle Actuator Forced Limited Power",
+    "severity": "RED"
+  },
+  "P2111": {
+    "action": "Clean throttle body; relearn",
+    "cause": "Carbon buildup",
+    "desc": "Throttle Actuator Stuck Open",
+    "severity": "RED"
+  },
+  "P2112": {
+    "action": "Clean or replace throttle body",
+    "cause": "Throttle plate jammed",
+    "desc": "Throttle Actuator Stuck Closed",
+    "severity": "RED"
+  },
+  "P2122": {
+    "action": "Replace pedal assembly",
+    "cause": "APP1 shorted low",
+    "desc": "APP Sensor 1 Circuit Low",
+    "severity": "RED"
+  },
+  "P2123": {
+    "action": "Replace pedal assembly",
+    "cause": "APP1 shorted high",
+    "desc": "APP Sensor 1 Circuit High",
+    "severity": "RED"
+  },
+  "P2127": {
+    "action": "Replace pedal assembly",
+    "cause": "APP2 shorted low",
+    "desc": "APP Sensor 2 Circuit Low",
+    "severity": "RED"
+  },
+  "P2128": {
+    "action": "Replace pedal assembly",
+    "cause": "APP2 shorted high",
+    "desc": "APP Sensor 2 Circuit High",
+    "severity": "RED"
+  },
+  "P2135": {
+    "action": "Inspect TPS connector; replace TB",
+    "cause": "TPS A/B disagreement",
+    "desc": "TPS Correlation",
+    "severity": "RED"
+  },
+  "P2138": {
+    "action": "Replace pedal assembly",
+    "cause": "Accelerator pedal sensors disagree",
+    "desc": "APP Sensor Correlation",
+    "severity": "RED"
+  },
+  "P2195": {
+    "action": "Replace sensor",
+    "cause": "Upstream stuck lean",
+    "desc": "O2 Signal Biased/Stuck Lean B1S1",
+    "severity": "AMBER"
+  },
+  "P2196": {
+    "action": "Replace sensor",
+    "cause": "Upstream stuck rich",
+    "desc": "O2 Signal Biased/Stuck Rich B1S1",
+    "severity": "AMBER"
+  },
+  "P2197": {
+    "action": "Replace sensor",
+    "cause": "Upstream B2 stuck lean",
+    "desc": "O2 Signal Biased/Stuck Lean B2S1",
+    "severity": "AMBER"
+  },
+  "P2198": {
+    "action": "Replace sensor",
+    "cause": "Upstream B2 stuck rich",
+    "desc": "O2 Signal Biased/Stuck Rich B2S1",
+    "severity": "AMBER"
+  },
+  "P2270": {
+    "action": "Replace sensor",
+    "cause": "Downstream O2 stuck lean",
+    "desc": "O2 Stuck Lean B1S2",
+    "severity": "AMBER"
+  },
+  "P2271": {
+    "action": "Replace sensor",
+    "cause": "Downstream stuck rich",
+    "desc": "O2 Stuck Rich B1S2",
+    "severity": "AMBER"
+  },
+  "P2272": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream stuck lean",
+    "desc": "O2 Stuck Lean B2S2",
+    "severity": "AMBER"
+  },
+  "P2273": {
+    "action": "Replace sensor",
+    "cause": "B2 downstream stuck rich",
+    "desc": "O2 Stuck Rich B2S2",
+    "severity": "AMBER"
+  },
+  "P2402": {
+    "action": "Replace LDP",
+    "cause": "LDP shorted low",
+    "desc": "EVAP Leak Detection Pump Control Low",
+    "severity": "INFO"
+  },
+  "P2403": {
+    "action": "Replace LDP",
+    "cause": "LDP shorted high",
+    "desc": "EVAP Leak Detection Pump Control High",
+    "severity": "INFO"
+  },
+  "P2440": {
+    "action": "Replace AIR valve",
+    "cause": "AIR valve B1 stuck open",
+    "desc": "Secondary AIR Switching Valve Stuck Open B1",
+    "severity": "AMBER"
+  },
+  "P2441": {
+    "action": "Replace AIR valve",
+    "cause": "AIR valve B1 stuck closed",
+    "desc": "Secondary AIR Switching Valve Stuck Closed B1",
+    "severity": "AMBER"
+  },
+  "P2700": {
+    "action": "Service trans; check fluid",
+    "cause": "Slipping clutch element",
+    "desc": "Trans Friction Element A Apply Time Range",
+    "severity": "RED"
+  },
+  "U0001": {
+    "action": "Inspect CAN wiring; check 60 ohm termination",
+    "cause": "CAN bus general fault",
+    "desc": "High Speed CAN Communication Bus",
+    "severity": "RED"
+  },
+  "U0073": {
+    "action": "Diagnose CAN wiring",
+    "cause": "CAN bus off",
+    "desc": "Control Module Communication Bus A Off",
+    "severity": "RED"
+  },
+  "U0100": {
+    "action": "Check ECM power/ground; CAN integrity",
+    "cause": "ECM offline",
+    "desc": "Lost Communication with ECM/PCM",
+    "severity": "RED"
+  },
+  "U0101": {
+    "action": "Check TCM fuse and CAN",
+    "cause": "TCM offline",
+    "desc": "Lost Communication with TCM",
+    "severity": "RED"
+  },
+  "U0121": {
+    "action": "Check ABS fuse; rebuild module",
+    "cause": "ABS module offline",
+    "desc": "Lost Communication with ABS",
+    "severity": "AMBER"
+  },
+  "U0140": {
+    "action": "Check BCM connectors",
+    "cause": "Body control module offline",
+    "desc": "Lost Communication with BCM",
+    "severity": "AMBER"
+  },
+  "U0146": {
+    "action": "Check gateway power and CAN",
+    "cause": "Gateway module offline",
+    "desc": "Lost Communication with Gateway A",
+    "severity": "RED"
+  },
+  "U0151": {
+    "action": "Check SRS power; airbag warning likely",
+    "cause": "SRS module offline",
+    "desc": "Lost Communication with Restraints Control",
+    "severity": "RED"
+  },
+  "U0155": {
+    "action": "Check IPC connector and CAN",
+    "cause": "Instrument cluster offline",
+    "desc": "Lost Communication with IPC",
+    "severity": "AMBER"
+  },
+  "U0184": {
+    "action": "Check head-unit CAN/MOST",
+    "cause": "Radio offline",
+    "desc": "Lost Communication with Radio",
+    "severity": "INFO"
+  },
+  "U0214": {
+    "action": "Check RKE module",
+    "cause": "RKE module offline",
+    "desc": "Lost Communication with Remote Keyless Entry",
+    "severity": "INFO"
+  },
+  "U0235": {
+    "action": "Check cruise module",
+    "cause": "Cruise module offline",
+    "desc": "Lost Communication with Cruise Control",
+    "severity": "INFO"
+  }
+}
