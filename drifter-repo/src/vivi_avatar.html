@@ -224,7 +224,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ── Config ────────────────────────────────────────────────────────────
 const WS_URL = `ws://${location.hostname || 'localhost'}:8081`;
-const GLB_URL = '/assets/vivi_avatar.glb';
+// Try absolute (dashboard server), then relative (preview / standalone open).
+const GLB_CANDIDATES = [
+  '/assets/vivi_avatar.glb',
+  '../assets/vivi_avatar.glb',
+  './assets/vivi_avatar.glb',
+  'assets/vivi_avatar.glb',
+];
 const TOPICS = {
   RESPONSE: 'drifter/vivi/response',
   STATUS:   'drifter/vivi/status',
@@ -408,44 +414,121 @@ function setMorph(ref, value) {
 }
 
 // ── Load model ───────────────────────────────────────────────────────
-log('LOADING VIVI MODEL...');
-const loader = new GLTFLoader();
-loader.load(GLB_URL, (gltf) => {
-  const model = gltf.scene;
-  state.model = model;
-  applyMaterials(model);
+async function probeCandidate(url) {
+  // Ranged GET — fetch a tiny prefix and check the glTF magic so we can
+  // distinguish "real GLB" from "HTML 404 page returned with 200 OK".
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1023' }, cache: 'no-store' });
+    if (!r.ok && r.status !== 206) return null;
+    const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.startsWith('text/html')) return null;
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength >= 4) {
+      const m = new Uint8Array(buf, 0, 4);
+      // 'glTF' = 0x67, 0x6C, 0x54, 0x46
+      if (m[0] === 0x67 && m[1] === 0x6C && m[2] === 0x54 && m[3] === 0x46) return url;
+    }
+    const len = parseInt(r.headers.get('Content-Length') || '0', 10);
+    if (len > 100000) return url;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
 
-  // Auto-center & scale
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  const targetH = 1.7;
-  const scale = size.y > 0 ? targetH / size.y : 1.0;
-  model.scale.setScalar(scale);
-  const newBox = new THREE.Box3().setFromObject(model);
-  const center = newBox.getCenter(new THREE.Vector3());
-  model.position.x -= center.x;
-  model.position.z -= center.z;
-  model.position.y -= newBox.min.y;
+async function findGlb() {
+  for (const url of GLB_CANDIDATES) {
+    log(`PROBING ${url}`);
+    const ok = await probeCandidate(url);
+    if (ok) return ok;
+  }
+  return null;
+}
 
-  scene.add(model);
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
 
-  if (gltf.animations && gltf.animations.length) {
-    state.mixer = new THREE.AnimationMixer(model);
-    state.mixer.clipAction(gltf.animations[0]).play();
+(async () => {
+  log('SEARCHING FOR MODEL FILE...');
+  const url = await findGlb();
+  if (!url) {
+    bootProg.style.color = 'var(--red)';
+    bootProg.innerHTML = `<div>MODEL NOT FOUND</div>
+      <div style="font-size:9px;color:#a55;margin-top:8px">Tried: ${GLB_CANDIDATES.join(' / ')}</div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">Start the dashboard: <code>python src/web_dashboard.py</code></div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">then open http://localhost:8080/avatar</div>`;
+    setTimeout(() => {
+      document.getElementById('boot').classList.add('fade');
+      enterDemoMode();
+    }, 4000);
+    return;
   }
 
-  log('LINK ESTABLISHED');
-  setTimeout(() => document.getElementById('boot').classList.add('fade'), 600);
-  connectWS();
-}, (xhr) => {
-  if (xhr.total) {
-    const pct = Math.round((xhr.loaded / xhr.total) * 100);
-    log(`LOADING MODEL... ${pct}%`);
-  }
-}, (err) => {
-  console.error(err);
-  log('MODEL LOAD FAILED — CHECK /assets/vivi_avatar.glb');
-});
+  log(`LOADING ${url}`);
+  const loader = new GLTFLoader();
+  // Visible heartbeat — proves we are not stuck, even when Content-Length is absent.
+  let dots = 0;
+  const t0 = performance.now();
+  const heartbeat = setInterval(() => {
+    if (bootProg.dataset.done) return;
+    const sec = ((performance.now() - t0) / 1000).toFixed(0);
+    dots = (dots + 1) % 4;
+    bootProg.textContent = `LOADING ${url}  [${sec}s${'.'.repeat(dots)}]`;
+  }, 500);
+
+  loader.load(url, (gltf) => {
+    bootProg.dataset.done = '1';
+    clearInterval(heartbeat);
+    const model = gltf.scene;
+    state.model = model;
+    applyMaterials(model);
+
+    // Auto-center & scale
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const targetH = 1.7;
+    const scale = size.y > 0 ? targetH / size.y : 1.0;
+    model.scale.setScalar(scale);
+    const newBox = new THREE.Box3().setFromObject(model);
+    const center = newBox.getCenter(new THREE.Vector3());
+    model.position.x -= center.x;
+    model.position.z -= center.z;
+    model.position.y -= newBox.min.y;
+
+    scene.add(model);
+
+    if (gltf.animations && gltf.animations.length) {
+      state.mixer = new THREE.AnimationMixer(model);
+      state.mixer.clipAction(gltf.animations[0]).play();
+    }
+
+    log('LINK ESTABLISHED');
+    setTimeout(() => document.getElementById('boot').classList.add('fade'), 600);
+    connectWS();
+  }, (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      bootProg.textContent = `LOADING ${pct}%  (${fmtBytes(xhr.loaded)} / ${fmtBytes(xhr.total)})`;
+    } else if (xhr.loaded) {
+      bootProg.textContent = `LOADING ${fmtBytes(xhr.loaded)}...`;
+    }
+  }, (err) => {
+    bootProg.dataset.done = '1';
+    clearInterval(heartbeat);
+    console.error('GLTF load failed:', err);
+    bootProg.style.color = 'var(--red)';
+    bootProg.innerHTML = `<div>MODEL LOAD FAILED</div>
+      <div style="font-size:9px;color:#a55;margin-top:6px">${url}</div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">${(err && err.message) || 'see browser console'}</div>`;
+    setTimeout(() => {
+      document.getElementById('boot').classList.add('fade');
+      enterDemoMode();
+    }, 4000);
+  });
+})();
 
 // ── Idle animation rig ────────────────────────────────────────────────
 const clock = new THREE.Clock();
