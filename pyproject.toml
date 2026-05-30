@@ -36,6 +36,7 @@ dependencies = [
     "psutil>=5.9",        # src/watchdog.py — system health metrics
     "requests>=2.31",     # src/llm_client*.py, comms_bridge, driver_assist
     "python-can>=4.0",    # src/can_bridge.py + tests/test_can_bridge.py
+    "aiohttp>=3.9",       # src/feeds.py — sys.exit(1) at import if missing
 ]
 
 [project.optional-dependencies]
