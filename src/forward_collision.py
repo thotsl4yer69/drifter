@@ -13,13 +13,15 @@ import logging
 import signal
 import time
 from collections import deque
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    FCW_TTC_WARN, FCW_TTC_CRIT, VISION_INPUT_H,
+    FCW_TTC_CRIT,
+    FCW_TTC_WARN,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -35,7 +37,7 @@ REF_VEHICLE_HEIGHT_M = 1.5
 FOCAL_PX = 600.0
 
 
-def _estimate_distance_m(bbox: dict) -> Optional[float]:
+def _estimate_distance_m(bbox: dict) -> float | None:
     height_px = bbox.get('height') or (bbox.get('y2', 0) - bbox.get('y1', 0))
     if not height_px or height_px <= 0:
         return None
@@ -50,7 +52,7 @@ class FCWState:
         self.warn_active: bool = False
 
 
-def _evaluate(state: FCWState) -> Optional[dict]:
+def _evaluate(state: FCWState) -> dict | None:
     if not state.distance_hist or state.speed_kph <= 5:
         return None
     distance = state.distance_hist[-1]

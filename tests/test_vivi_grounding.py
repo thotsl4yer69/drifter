@@ -23,7 +23,6 @@ from vivi_grounding import (
     validate,
 )
 
-
 # ── Hallucination interception ─────────────────────────────────────
 
 @pytest.mark.parametrize('response', [

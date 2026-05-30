@@ -14,14 +14,16 @@ import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    PRESENCE_SCAN_INTERVAL, PRESENCE_DEPARTURE_GRACE,
+    MQTT_HOST,
+    MQTT_PORT,
+    PRESENCE_DEPARTURE_GRACE,
     PRESENCE_KNOWN_DEVICES_FILE,
+    PRESENCE_SCAN_INTERVAL,
+    TOPICS,
 )
 
 logging.basicConfig(

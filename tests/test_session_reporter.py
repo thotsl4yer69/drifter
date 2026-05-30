@@ -1,14 +1,12 @@
 # tests/test_session_reporter.py
 """Smoke tests for session_reporter: report generation with mocked LLM."""
-import sys
 import json
+import sys
 import time
+
 sys.path.insert(0, 'src')
 
-import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
-
+from unittest.mock import patch
 
 SESSION = {
     'session_id': 'test-sess-001',

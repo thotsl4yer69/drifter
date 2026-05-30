@@ -13,13 +13,16 @@ import math
 import signal
 import time
 from collections import defaultdict, deque
-from typing import Dict, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    TELEMETRY_WINDOW_SECONDS, TELEMETRY_PUBLISH_HZ, TELEMETRY_KEEP_SAMPLES,
+    MQTT_HOST,
+    MQTT_PORT,
+    TELEMETRY_KEEP_SAMPLES,
+    TELEMETRY_PUBLISH_HZ,
+    TELEMETRY_WINDOW_SECONDS,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -36,10 +39,10 @@ METRIC_KEYS = (
 )
 
 # Reverse map: topic string -> metric key
-_TOPIC_TO_KEY: Dict[str, str] = {TOPICS[k]: k for k in METRIC_KEYS if k in TOPICS}
+_TOPIC_TO_KEY: dict[str, str] = {TOPICS[k]: k for k in METRIC_KEYS if k in TOPICS}
 
 # Rolling buffers per metric: (timestamp, value)
-_buffers: Dict[str, deque] = defaultdict(lambda: deque(maxlen=TELEMETRY_KEEP_SAMPLES))
+_buffers: dict[str, deque] = defaultdict(lambda: deque(maxlen=TELEMETRY_KEEP_SAMPLES))
 
 
 def _record(topic: str, payload: bytes) -> None:
@@ -60,7 +63,7 @@ def _record(topic: str, payload: bytes) -> None:
         return
 
 
-def _window_stats(samples: list) -> Optional[dict]:
+def _window_stats(samples: list) -> dict | None:
     if not samples:
         return None
     values = [v for _, v in samples]
@@ -80,7 +83,7 @@ def _window_stats(samples: list) -> Optional[dict]:
 def build_window(now: float, window_seconds: float = TELEMETRY_WINDOW_SECONDS) -> dict:
     """Compute the current rolling-window summary for every metric."""
     cutoff = now - window_seconds
-    out: Dict[str, dict] = {}
+    out: dict[str, dict] = {}
     for key, buf in _buffers.items():
         recent = [(t, v) for t, v in buf if t >= cutoff]
         stats = _window_stats(recent)

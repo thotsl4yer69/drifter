@@ -12,15 +12,17 @@ import json
 import logging
 import signal
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    VEHICLES_DIR, VEHICLE_PROFILE_FILE, VEHICLE_DEFAULTS,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    VEHICLE_DEFAULTS,
+    VEHICLE_PROFILE_FILE,
+    VEHICLES_DIR,
     VIN_DETECT_RETRIES,
 )
 
@@ -58,10 +60,11 @@ def _valid_vin(s: str) -> bool:
     return all(c in VIN_RE_CHARS for c in s.upper())
 
 
-def detect_vin_from_obd(retries: int = VIN_DETECT_RETRIES) -> Optional[str]:
+def detect_vin_from_obd(retries: int = VIN_DETECT_RETRIES) -> str | None:
     """Query VIN via python-can. Returns None if no CAN bus or no response."""
     try:
         import can
+
         from config import CAN_BITRATE, OBD_REQUEST_ID
     except ImportError:
         log.warning("python-can not available — cannot read VIN over CAN")
@@ -116,7 +119,7 @@ def detect_vin_from_obd(retries: int = VIN_DETECT_RETRIES) -> Optional[str]:
     return None
 
 
-def load_profile(vin: str) -> Optional[dict]:
+def load_profile(vin: str) -> dict | None:
     """Load vehicles/<vin>.yaml or vehicles/<vin>.json if present."""
     if not vin:
         return None
@@ -135,7 +138,7 @@ def load_profile(vin: str) -> Optional[dict]:
     return None
 
 
-def generate_profile(vin: str) -> Optional[dict]:
+def generate_profile(vin: str) -> dict | None:
     """Ask the LLM cascade to decode a VIN. Cached on disk afterwards."""
     log.info(f"No local profile for {vin} — asking AI to decode")
     try:
@@ -170,7 +173,7 @@ def write_active_profile(profile: dict) -> None:
         log.warning(f"Could not write active profile: {e}")
 
 
-def resolve_profile(vin: Optional[str]) -> dict:
+def resolve_profile(vin: str | None) -> dict:
     """Try local YAML, then AI, finally fall back to defaults."""
     base = dict(VEHICLE_DEFAULTS)
     if vin:
@@ -185,7 +188,7 @@ def resolve_profile(vin: Optional[str]) -> dict:
     return base
 
 
-def _publish(client: mqtt.Client, vin: Optional[str], profile: dict) -> None:
+def _publish(client: mqtt.Client, vin: str | None, profile: dict) -> None:
     client.publish(TOPICS['vehicle_id'], json.dumps({
         'vin': vin, 'ts': time.time(),
     }), retain=True)

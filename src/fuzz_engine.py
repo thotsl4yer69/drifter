@@ -14,13 +14,15 @@ import random
 import signal
 import threading
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    FUZZ_DEFAULT_HZ, FUZZ_DEFAULT_RANGES,
+    FUZZ_DEFAULT_HZ,
+    FUZZ_DEFAULT_RANGES,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(

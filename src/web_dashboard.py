@@ -34,20 +34,18 @@ import threading
 import time
 from pathlib import Path
 
-import paho.mqtt.client as mqtt
-
 try:
     import websockets
     HAS_WEBSOCKETS = True
 except ImportError:
     HAS_WEBSOCKETS = False
 
-from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
 from http.server import ThreadingHTTPServer
 
 import web_dashboard_state as state
-from web_dashboard_handlers import DashboardHandler
+from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
 from web_dashboard_audio import generate_audio_wav
+from web_dashboard_handlers import DashboardHandler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -186,7 +184,7 @@ async def ws_handler(websocket):
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=1.0)
                 await websocket.send(msg)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 try:
                     await websocket.ping()
                 except Exception:

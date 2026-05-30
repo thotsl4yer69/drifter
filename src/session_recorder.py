@@ -15,13 +15,16 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    RECORDER_DIR, RECORDER_SEGMENT_SECONDS, RECORDER_MAX_GB,
+    MQTT_HOST,
+    MQTT_PORT,
+    RECORDER_DIR,
+    RECORDER_MAX_GB,
+    RECORDER_SEGMENT_SECONDS,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -55,7 +58,7 @@ def _open_segment() -> Path:
     return path
 
 
-def _close_segment() -> Optional[Path]:
+def _close_segment() -> Path | None:
     fh = _state.get('fh')
     if fh is None:
         return None

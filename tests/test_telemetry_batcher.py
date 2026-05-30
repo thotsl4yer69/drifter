@@ -2,6 +2,7 @@
 """Smoke tests for telemetry_batcher: rolling window stats."""
 import sys
 import time
+
 sys.path.insert(0, 'src')
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 def _fresh_batcher():
     """Import batcher with empty module-level buffers."""
     import importlib
+
     import telemetry_batcher
     importlib.reload(telemetry_batcher)
     return telemetry_batcher

@@ -13,9 +13,8 @@ import logging
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Iterator, List, Optional
 
 from config import DRIFTER_DIR, VIVI2_HISTORY_TURNS, VIVI2_MEMORY_MAX_ENTRIES
 
@@ -137,7 +136,7 @@ def append_turn(session_id: str, role: str, content: str) -> None:
         log.warning(f"append_turn failed: {e}")
 
 
-def history(session_id: Optional[str] = None, n: int = VIVI2_HISTORY_TURNS) -> List[dict]:
+def history(session_id: str | None = None, n: int = VIVI2_HISTORY_TURNS) -> list[dict]:
     n = max(1, int(n))
     try:
         with _lock, _conn() as conn:
@@ -155,7 +154,7 @@ def history(session_id: Optional[str] = None, n: int = VIVI2_HISTORY_TURNS) -> L
         return []
 
 
-def remember(content: str, tag: str = "", meta: Optional[dict] = None) -> Optional[int]:
+def remember(content: str, tag: str = "", meta: dict | None = None) -> int | None:
     content = (content or "").strip()
     if not content:
         return None
@@ -194,7 +193,7 @@ def remember(content: str, tag: str = "", meta: Optional[dict] = None) -> Option
         return None
 
 
-def recall(query: Optional[str] = None, tag: Optional[str] = None, n: int = 8) -> List[dict]:
+def recall(query: str | None = None, tag: str | None = None, n: int = 8) -> list[dict]:
     n = max(1, int(n))
     try:
         with _lock, _conn() as conn:

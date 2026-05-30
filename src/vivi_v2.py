@@ -19,19 +19,26 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
 import vivi_memory
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, PIPER_MODEL, PIPER_MODEL_DIR,
-    VEHICLE, VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE,
-    VIVI2_HISTORY_TURNS, VIVI2_STREAMING, VIVI2_PROACTIVE_COOLDOWN_S,
+    LEVEL_AMBER,
+    LEVEL_RED,
+    MQTT_HOST,
+    MQTT_PORT,
+    PIPER_MODEL,
+    PIPER_MODEL_DIR,
+    TOPICS,
+    VEHICLE_ENGINE,
+    VEHICLE_MODEL,
+    VEHICLE_YEAR,
+    VIVI2_HISTORY_TURNS,
     VIVI2_PERSONALITY_FILE,
-    LEVEL_AMBER, LEVEL_RED,
+    VIVI2_PROACTIVE_COOLDOWN_S,
+    VIVI2_STREAMING,
 )
 
 logging.basicConfig(
@@ -83,9 +90,9 @@ _telemetry: dict = {}
 _safety_alert: dict = {}
 _active_dtcs: list = []
 _proactive_last: dict = {}
-_mqtt_client: Optional[mqtt.Client] = None
-_personality_cache: Optional[str] = None
-_aplay_available: Optional[bool] = None
+_mqtt_client: mqtt.Client | None = None
+_personality_cache: str | None = None
+_aplay_available: bool | None = None
 
 
 def _load_personality() -> str:

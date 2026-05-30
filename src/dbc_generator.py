@@ -14,12 +14,14 @@ import signal
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS, DBC_OUTPUT_DIR,
+    DBC_OUTPUT_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(

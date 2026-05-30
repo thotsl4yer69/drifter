@@ -13,13 +13,16 @@ import json
 import logging
 import signal
 import time
-from typing import Callable, Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    OBD_SERIAL_DEV, OBD_SERIAL_BAUD, OBD_POLL_HZ,
+    MQTT_HOST,
+    MQTT_PORT,
+    OBD_POLL_HZ,
+    OBD_SERIAL_BAUD,
+    OBD_SERIAL_DEV,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -59,7 +62,7 @@ PID_DEFS = {
 }
 
 
-def _open_elm() -> Optional[object]:
+def _open_elm() -> object | None:
     try:
         import serial
     except ImportError:
@@ -87,7 +90,7 @@ def _open_elm() -> Optional[object]:
     return ser
 
 
-def _query_pid(ser, pid: str) -> Optional[list]:
+def _query_pid(ser, pid: str) -> list | None:
     try:
         ser.reset_input_buffer()
         ser.write(f"{pid}\r".encode())

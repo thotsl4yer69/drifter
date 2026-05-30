@@ -13,16 +13,19 @@ UNCAGED TECHNOLOGY — EST 1991
 import json
 import logging
 import signal
-import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    SENTRY_DIR, SENTRY_ACCEL_TRIGGER_G, SENTRY_CLIP_SECONDS, SENTRY_MAX_CLIPS,
+    MQTT_HOST,
+    MQTT_PORT,
+    SENTRY_ACCEL_TRIGGER_G,
+    SENTRY_CLIP_SECONDS,
+    SENTRY_DIR,
+    SENTRY_MAX_CLIPS,
+    TOPICS,
 )
 
 logging.basicConfig(

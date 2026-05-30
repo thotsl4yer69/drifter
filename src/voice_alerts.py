@@ -7,16 +7,25 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
+import logging
 import signal
 import subprocess
-import logging
-import os
 import threading
+import time
 from pathlib import Path
-import paho.mqtt.client as mqtt
-from config import (MQTT_HOST, MQTT_PORT, TOPICS, VOICE_COOLDOWN, PIPER_MODEL, DRIFTER_DIR,
-                   VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE, make_mqtt_client)
+
+from config import (
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    PIPER_MODEL,
+    TOPICS,
+    VEHICLE_ENGINE,
+    VEHICLE_MODEL,
+    VEHICLE_YEAR,
+    VOICE_COOLDOWN,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,

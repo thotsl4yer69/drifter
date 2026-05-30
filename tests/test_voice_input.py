@@ -6,8 +6,9 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 import voice_input
 

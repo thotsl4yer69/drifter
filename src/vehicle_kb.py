@@ -14,15 +14,16 @@ import signal
 import sqlite3
 import threading
 import time
-from pathlib import Path
-from typing import List, Optional
 
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    KB_DIR, VEHICLE_PROFILE_FILE,
+    KB_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    VEHICLE_PROFILE_FILE,
 )
 
 logging.basicConfig(
@@ -83,7 +84,7 @@ def _load_profile() -> dict:
         return {}
 
 
-def lookup(vin: str, topic: str, question: str) -> Optional[dict]:
+def lookup(vin: str, topic: str, question: str) -> dict | None:
     """Find a cached entry that matches the question. Returns None if missing."""
     with _lock, _connect() as conn:
         row = conn.execute(

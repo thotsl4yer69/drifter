@@ -15,7 +15,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ _MAX_FIX_AGE_SEC = 120.0
 _cache: dict = {'ts': 0.0, 'fix': None}
 
 
-def current_fix(max_age_sec: float = _MAX_FIX_AGE_SEC) -> Optional[dict]:
+def current_fix(max_age_sec: float = _MAX_FIX_AGE_SEC) -> dict | None:
     """Return the latest GPS fix, or None when no fresh fix is available.
 
     Shape (when present):
@@ -50,7 +49,7 @@ def current_fix(max_age_sec: float = _MAX_FIX_AGE_SEC) -> Optional[dict]:
     return fix
 
 
-def _read_fix(max_age_sec: float, now: float) -> Optional[dict]:
+def _read_fix(max_age_sec: float, now: float) -> dict | None:
     try:
         j = json.loads(GPS_STATE_PATH.read_text())
     except (FileNotFoundError, json.JSONDecodeError, OSError):

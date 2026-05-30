@@ -14,13 +14,15 @@ import signal
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    REPLAY_DIR, REPLAY_DEFAULT_SPEED,
+    MQTT_HOST,
+    MQTT_PORT,
+    REPLAY_DEFAULT_SPEED,
+    REPLAY_DIR,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -34,7 +36,7 @@ log = logging.getLogger(__name__)
 def _open(path: Path):
     if str(path).endswith('.gz'):
         return gzip.open(path, 'rt')
-    return open(path, 'r')
+    return open(path)
 
 
 def _list_sessions() -> list[dict]:
@@ -58,7 +60,7 @@ def _replay_session(client: mqtt.Client, path: Path, speed: float, stop_event: t
     }))
 
     base_real = time.time()
-    base_session: Optional[float] = None
+    base_session: float | None = None
     count = 0
     last_progress = 0.0
 
@@ -119,7 +121,7 @@ def main() -> None:
 
     running = [True]
     stop_event = threading.Event()
-    worker: list[Optional[threading.Thread]] = [None]
+    worker: list[threading.Thread | None] = [None]
 
     def _handle_signal(sig, frame):
         running[0] = False

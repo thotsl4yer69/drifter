@@ -13,7 +13,6 @@ import signal
 import threading
 import time
 from collections import deque
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 

@@ -7,10 +7,10 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import struct
+
 import pytest
 
 import realdash_bridge as rb
-
 
 REALDASH_HEADER = bytes([0x44, 0x33, 0x22, 0x11])
 
@@ -151,7 +151,7 @@ class TestRPMEncoding:
         rb.latest['coolant'] = 90.0
         frame = rb.pack_engine_frame()
         coolant_raw = struct.unpack_from('>h', frame, 10)[0]
-        assert coolant_raw == int((90 + 40) * 10)
+        assert coolant_raw == ((90 + 40) * 10)
 
 
 class TestExtraEngineEncoding:

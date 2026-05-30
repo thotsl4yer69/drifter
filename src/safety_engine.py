@@ -24,16 +24,21 @@ import socket
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    LEVEL_INFO, LEVEL_AMBER, LEVEL_RED, LEVEL_NAMES,
+    LEVEL_AMBER,
+    LEVEL_INFO,
+    LEVEL_NAMES,
+    LEVEL_RED,
+    MQTT_HOST,
+    MQTT_PORT,
     REDLINE_RPM,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -72,8 +77,8 @@ SAFETY_QOS = 1
 class SafetyState:
     speed_hist: deque = field(default_factory=lambda: deque(maxlen=30))
     rpm_hist: deque = field(default_factory=lambda: deque(maxlen=30))
-    coolant: Optional[float] = None
-    voltage: Optional[float] = None
+    coolant: float | None = None
+    voltage: float | None = None
     crash_active: bool = False
     crash_ts: float = 0.0
     fcw_active: bool = False
@@ -145,7 +150,7 @@ def rule_overspeed(s: SafetyState):
     return None
 
 
-def _rate(hist: deque) -> Optional[float]:
+def _rate(hist: deque) -> float | None:
     if len(hist) < 2:
         return None
     return hist[-1] - hist[-2]
@@ -223,7 +228,7 @@ def rule_fatigue(s: SafetyState):
 
 
 # Order matters for ties — first wins at equal level. Crash/FCW first.
-ALL_RULES: list[Callable[[SafetyState], Optional[tuple]]] = [
+ALL_RULES: list[Callable[[SafetyState], tuple | None]] = [
     rule_crash,
     rule_fcw,
     rule_coolant_overheat,
@@ -238,7 +243,7 @@ ALL_RULES: list[Callable[[SafetyState], Optional[tuple]]] = [
 
 # ── Ingestion ──
 
-def _safe_float(v) -> Optional[float]:
+def _safe_float(v) -> float | None:
     if v is None:
         return None
     try:

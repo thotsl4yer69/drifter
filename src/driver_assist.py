@@ -13,20 +13,22 @@ UNCAGED TECHNOLOGY — EST 1991
 import json
 import logging
 import signal
-import threading
 import time
 from collections import deque
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 import requests
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, DRIVER_SCORE_WINDOW_KM,
-    FATIGUE_DRIVE_HOURS, FATIGUE_NIGHT_HOURS, WEATHER_API_HOST,
+    DRIFTER_DIR,
+    DRIVER_SCORE_WINDOW_KM,
+    FATIGUE_DRIVE_HOURS,
+    FATIGUE_NIGHT_HOURS,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WEATHER_API_HOST,
 )
 
 logging.basicConfig(
@@ -53,14 +55,14 @@ class AssistState:
         self.events: deque = deque(maxlen=200)
         self.distance_km: float = 0.0
         self.score: int = 100
-        self.last_pos: Optional[tuple] = None
+        self.last_pos: tuple | None = None
         self.last_speed: float = 0.0
-        self.drive_start: Optional[float] = None
+        self.drive_start: float | None = None
         self.fatigue_active: bool = False
         self.weather: dict = {}
 
 
-def _is_night(now: Optional[datetime] = None) -> bool:
+def _is_night(now: datetime | None = None) -> bool:
     now = now or datetime.now()
     return now.hour >= 22 or now.hour < 6
 
@@ -109,7 +111,7 @@ def _fetch_weather(lat: float, lon: float) -> dict:
         return {}
 
 
-def _check_fatigue(state: AssistState) -> Optional[str]:
+def _check_fatigue(state: AssistState) -> str | None:
     if state.drive_start is None:
         return None
     hours = (time.time() - state.drive_start) / 3600.0
@@ -148,7 +150,6 @@ def main() -> None:
                     if state.drive_start is None and s > 5:
                         state.drive_start = time.time()
                     if state.last_speed > 0:
-                        dt = max(0.5, time.time() - (state.events[-1]['ts'] if state.events else time.time() - 1))
                         # Rolling distance for window scoring
                         state.distance_km += (s / 3600.0) * 1.0
                         delta = state.last_speed - s

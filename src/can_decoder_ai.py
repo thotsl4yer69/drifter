@@ -12,13 +12,14 @@ import logging
 import signal
 import threading
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
     CAN_AI_MIN_SAMPLES,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -34,7 +35,7 @@ _id_samples: dict[str, list[dict]] = {}
 _id_known: dict[str, dict] = {}
 
 
-def _query_llm(arb_id: str, samples: list[dict]) -> Optional[dict]:
+def _query_llm(arb_id: str, samples: list[dict]) -> dict | None:
     try:
         from llm_client_v2 import query_json
     except ImportError:

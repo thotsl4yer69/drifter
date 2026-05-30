@@ -12,16 +12,21 @@ import logging
 import signal
 import threading
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, SPOTIFY_REDIRECT_URI, SPOTIFY_SCOPES,
-    SPOTIFY_TOKEN_FILE, SPOTIFY_DEVICE_NAME,
-    SPOTIFY_DUCK_LEVEL, SPOTIFY_DUCK_FADE_MS, SPOTIFY_MOODS,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    SPOTIFY_DEVICE_NAME,
+    SPOTIFY_DUCK_FADE_MS,
+    SPOTIFY_DUCK_LEVEL,
+    SPOTIFY_MOODS,
+    SPOTIFY_REDIRECT_URI,
+    SPOTIFY_SCOPES,
+    SPOTIFY_TOKEN_FILE,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -95,7 +100,7 @@ def _ensure_token(auth) -> bool:
         return False
 
 
-def _resolve_device(sp, name: str) -> Optional[str]:
+def _resolve_device(sp, name: str) -> str | None:
     try:
         for dev in sp.devices().get('devices', []):
             if dev.get('name') == name or dev.get('id') == name:
@@ -105,7 +110,7 @@ def _resolve_device(sp, name: str) -> Optional[str]:
     return None
 
 
-def _current_volume(sp) -> Optional[int]:
+def _current_volume(sp) -> int | None:
     try:
         cur = sp.current_playback()
         if cur and cur.get('device'):
@@ -115,7 +120,7 @@ def _current_volume(sp) -> Optional[int]:
     return None
 
 
-def _retry_after_seconds(exc) -> Optional[float]:
+def _retry_after_seconds(exc) -> float | None:
     """Pull a Retry-After value from a spotipy SpotifyException (429), if present."""
     headers = getattr(exc, 'headers', None) or {}
     val = headers.get('Retry-After') or headers.get('retry-after')
@@ -156,16 +161,16 @@ class DuckController:
         self.fade_ms = max(50, fade_ms)
         self._lock = threading.Lock()
         self._fade_token = 0
-        self._pre_duck_volume: Optional[int] = None
+        self._pre_duck_volume: int | None = None
         self._ducked = False
 
-    def _set_volume(self, level: int, device_id: Optional[str]) -> None:
+    def _set_volume(self, level: int, device_id: str | None) -> None:
         try:
             _call_with_429(self.sp.volume, max(0, min(100, level)), device_id=device_id)
         except Exception as e:
             log.debug(f"volume set failed: {e}")
 
-    def _fade(self, target: int, device_id: Optional[str], token: int) -> None:
+    def _fade(self, target: int, device_id: str | None, token: int) -> None:
         start = _current_volume(self.sp)
         if start is None:
             self._set_volume(target, device_id)
@@ -180,7 +185,7 @@ class DuckController:
             self._set_volume(level, device_id)
             time.sleep(step_sleep)
 
-    def duck(self, device_id: Optional[str]) -> None:
+    def duck(self, device_id: str | None) -> None:
         with self._lock:
             self._fade_token += 1
             token = self._fade_token
@@ -191,7 +196,7 @@ class DuckController:
                          args=(self.duck_level, device_id, token),
                          daemon=True).start()
 
-    def unduck(self, device_id: Optional[str]) -> None:
+    def unduck(self, device_id: str | None) -> None:
         with self._lock:
             self._fade_token += 1
             token = self._fade_token

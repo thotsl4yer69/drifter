@@ -31,10 +31,13 @@ from config import (
     VEHICLE_MODEL,
     VEHICLE_YEAR,
 )
-# kb_search and get_advice_for_alert are exposed at module scope so that
+
+# kb_search and get_advice_for_alert are exposed at module scope so
 # tests can patch them. The corpus/kb fallback was removed in commit
-# 8f51911, but the module-level bindings stay for test seams.
-from mechanic import get_advice_for_alert, search as kb_search  # noqa: F401
+# 8f51911, but the module-level bindings stay for test seams. Imported
+# on separate lines so ruff's per-line noqa hugs the right symbol.
+from mechanic import get_advice_for_alert  # noqa: F401
+from mechanic import search as kb_search  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,

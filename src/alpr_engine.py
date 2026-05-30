@@ -15,13 +15,15 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import List, Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, ALPR_MIN_CONFIDENCE,
+    ALPR_MIN_CONFIDENCE,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -47,7 +49,7 @@ def _load_config() -> dict:
         return {}
 
 
-def _read_plate_easyocr(image) -> List[dict]:
+def _read_plate_easyocr(image) -> list[dict]:
     try:
         import easyocr
     except ImportError:
@@ -68,7 +70,7 @@ def _read_plate_easyocr(image) -> List[dict]:
     return out
 
 
-def _read_plate_openalpr(image_path: Path) -> List[dict]:
+def _read_plate_openalpr(image_path: Path) -> list[dict]:
     import subprocess
     try:
         proc = subprocess.run(
@@ -118,8 +120,8 @@ def _handle_object_payload(client: mqtt.Client, payload: dict) -> None:
         except Exception:
             continue
         try:
-            import numpy as np
             import cv2
+            import numpy as np
             arr = np.frombuffer(data, dtype=np.uint8)
             img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         except Exception:

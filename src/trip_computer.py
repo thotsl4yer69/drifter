@@ -12,16 +12,19 @@ import json
 import logging
 import signal
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, TRIP_FUEL_PRICE_GBP_PER_L, TRIP_FUEL_TANK_LITRES,
-    TRIP_AVG_CONSUMPTION_L_PER_100KM, TRIP_SESSION_GAP_MIN,
+    DRIFTER_DIR,
     FUEL_TYPE,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    TRIP_AVG_CONSUMPTION_L_PER_100KM,
+    TRIP_FUEL_PRICE_GBP_PER_L,
+    TRIP_FUEL_TANK_LITRES,
+    TRIP_SESSION_GAP_MIN,
 )
 
 logging.basicConfig(
@@ -55,17 +58,17 @@ MAF_STALE_SEC = 5.0        # don't report cur_l/100 from stale MAF
 
 class TripState:
     def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float) -> None:
-        self.start_ts: Optional[float] = None
-        self.last_ts: Optional[float] = None
+        self.start_ts: float | None = None
+        self.last_ts: float | None = None
         self.distance_km: float = 0.0
         self.fuel_l: float = 0.0
         self.last_speed_kph: float = 0.0
-        self.last_maf_gps: Optional[float] = None
-        self.last_maf_ts: Optional[float] = None
+        self.last_maf_gps: float | None = None
+        self.last_maf_ts: float | None = None
         self.fuel_price = fuel_price
         self.tank_l = tank_l
         self.avg_l_per_100km = avg_l_per_100
-        self.idle_since: Optional[float] = None
+        self.idle_since: float | None = None
         self.idle_warned: bool = False
         self.events: list = []
 
@@ -73,7 +76,7 @@ class TripState:
         log.info(f"Trip reset (was {self.distance_km:.1f} km, {self.fuel_l:.2f} L)")
         self.__init__(self.fuel_price, self.tank_l, self.avg_l_per_100km)
 
-    def tick(self, ts: float, speed_kph: Optional[float], maf_gps: Optional[float]) -> None:
+    def tick(self, ts: float, speed_kph: float | None, maf_gps: float | None) -> None:
         if self.start_ts is None:
             self.start_ts = ts
             self.last_ts = ts

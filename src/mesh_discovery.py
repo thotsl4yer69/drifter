@@ -11,13 +11,15 @@ import logging
 import signal
 import socket
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    MESH_SERVICE_NAME, MESH_DISCOVERY_INTERVAL,
+    MESH_DISCOVERY_INTERVAL,
+    MESH_SERVICE_NAME,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -90,7 +92,7 @@ class DiscoveryListener:
 def main() -> None:
     log.info("DRIFTER Mesh Discovery starting...")
     try:
-        from zeroconf import Zeroconf, ServiceBrowser, ServiceInfo
+        from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
     except ImportError:
         log.error("zeroconf not installed — install: pip install zeroconf")
         return

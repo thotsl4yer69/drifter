@@ -8,21 +8,24 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import re
-import time
-import signal
 import logging
+import re
+import signal
 import subprocess
 import threading
-from pathlib import Path
+import time
 from collections import OrderedDict
 
-import paho.mqtt.client as mqtt
-
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    WARDRIVE_LOG_DIR, WIFI_SCAN_INTERVAL,
-    BT_SCAN_INTERVAL, BT_SCAN_DURATION, make_mqtt_client,)
+    BT_SCAN_DURATION,
+    BT_SCAN_INTERVAL,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WARDRIVE_LOG_DIR,
+    WIFI_SCAN_INTERVAL,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,

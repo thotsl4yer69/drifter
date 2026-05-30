@@ -10,19 +10,21 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
-import math
 import signal
 import time
 from collections import defaultdict, deque
-from pathlib import Path
-from typing import Dict, Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, THRESHOLDS, WARMUP_COOLANT_THRESHOLD,
-    ADAPTIVE_LEARN_MIN_SAMPLES, ADAPTIVE_LEARN_SESSIONS, ADAPTIVE_DRIFT_LIMIT,
+    ADAPTIVE_DRIFT_LIMIT,
+    ADAPTIVE_LEARN_MIN_SAMPLES,
+    ADAPTIVE_LEARN_SESSIONS,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WARMUP_COOLANT_THRESHOLD,
 )
 
 logging.basicConfig(
@@ -58,7 +60,7 @@ DEFAULT_BASELINES = {
 
 class Learner:
     def __init__(self) -> None:
-        self.samples: Dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
+        self.samples: dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
         self.session_count = 0
         self.baselines = dict(DEFAULT_BASELINES)
         self.current_coolant = 0.0
@@ -104,7 +106,7 @@ class Learner:
             return
         self.samples[key].append(value)
 
-    def end_session(self) -> Dict[str, float]:
+    def end_session(self) -> dict[str, float]:
         """At session end, update baselines if we collected enough."""
         updated = False
         for key, baseline_key in LEARNED_KEYS.items():

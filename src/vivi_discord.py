@@ -14,14 +14,15 @@ import os
 import signal
 import threading
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, DISCORD_COMMAND_PREFIX,
+    DISCORD_COMMAND_PREFIX,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -52,7 +53,7 @@ class DiscordBridge:
         self.alert_channel_id = int(cfg.get('alert_channel_id', 0) or 0)
         self.command_channel_id = int(cfg.get('command_channel_id', 0) or 0)
         self.bot = None
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.loop: asyncio.AbstractEventLoop | None = None
         self._pending: dict[str, asyncio.Future] = {}
 
     async def _start_bot(self) -> None:
@@ -116,7 +117,7 @@ class DiscordBridge:
         }))
         try:
             return await asyncio.wait_for(fut, timeout=20)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return "Vivi timed out."
         finally:
             self._pending.pop(req_id, None)
@@ -165,9 +166,7 @@ def main() -> None:
             return
         if not isinstance(data, dict):
             return
-        if msg.topic == TOPICS['alert_message']:
-            bridge.push_alert(data)
-        elif msg.topic == TOPICS['safety_alert']:
+        if msg.topic == TOPICS['alert_message'] or msg.topic == TOPICS['safety_alert']:
             bridge.push_alert(data)
         elif msg.topic == TOPICS['vivi2_response']:
             bridge.on_vivi_response(data)

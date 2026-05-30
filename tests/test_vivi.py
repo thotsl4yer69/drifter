@@ -3,11 +3,8 @@
 MZ1312 DRIFTER — Vivi Voice Assistant Tests
 UNCAGED TECHNOLOGY — EST 1991
 """
-import pytest
 import json
-import sys
-import time
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, patch
 
 # conftest.py inserts src/ into sys.path
 
@@ -66,6 +63,7 @@ def test_system_prompt_personality():
 def test_mqtt_client_id_convention():
     """MQTT client_id must follow drifter-<name> convention."""
     import inspect
+
     import vivi
     src = inspect.getsource(vivi.main)
     assert 'drifter-vivi' in src
@@ -87,7 +85,9 @@ def test_ask_vivi_calls_ollama(monkeypatch):
 
 def test_ask_vivi_passes_context_to_ollama(monkeypatch):
     """ask_vivi should inject fresh telemetry into the Ollama prompt."""
-    import vivi, time as _t
+    import time as _t
+
+    import vivi
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 780, 'coolant': 95})
     monkeypatch.setattr(vivi, '_telemetry_ts', _t.time())  # fresh
     monkeypatch.setattr(vivi, '_mqtt_client', None)
@@ -111,8 +111,8 @@ def test_ask_vivi_offline_does_not_quote_kb_or_corpus(monkeypatch):
     fallback now refuses outright. Both corpus and kb_search are
     stubbed to return content; the assertion is that NONE of it
     leaks into the returned text."""
-    import vivi
     import corpus as _corpus
+    import vivi
     monkeypatch.setattr(vivi, '_telemetry', {})
     monkeypatch.setattr(vivi, '_mqtt_client', None)
     # Even when both lookup paths have something to say...
@@ -120,12 +120,11 @@ def test_ask_vivi_offline_does_not_quote_kb_or_corpus(monkeypatch):
         {'content': 'normal_range 85-100°C cold: below 80°C',
          'source': 'manual'},
     ])
-    with patch('vivi._query_ollama', return_value=None):
-        with patch('vivi.kb_search', return_value=[{
-            'title': 'Coil Pack Failure',
-            'fix': 'Swap coil pack to another cylinder and retest.',
-        }]):
-            result = vivi.ask_vivi("rough idle misfire")
+    with patch('vivi._query_ollama', return_value=None), patch('vivi.kb_search', return_value=[{
+        'title': 'Coil Pack Failure',
+        'fix': 'Swap coil pack to another cylinder and retest.',
+    }]):
+        result = vivi.ask_vivi("rough idle misfire")
     # ...the fallback must refuse, not quote them.
     assert 'LLM offline' in result
     for leaked in ['Coil Pack', 'normal_range', '85-100', 'Swap coil',
@@ -148,7 +147,9 @@ def test_ask_vivi_message_when_nothing_available(monkeypatch):
 
 def test_build_context_includes_fresh_telemetry(monkeypatch):
     """Live telemetry block appears when _telemetry_ts is recent."""
-    import vivi, time as _t
+    import time as _t
+
+    import vivi
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 820, 'coolant': 93, 'voltage': 14.1})
     monkeypatch.setattr(vivi, '_telemetry_ts', _t.time())
     ctx = vivi._build_context("anything")
@@ -162,7 +163,9 @@ def test_build_context_marks_stale_telemetry_no_data(monkeypatch):
     into the prompt. Phase 5.3 grounding fix: emit NO DATA tags
     instead of dropping the block silently — the model needs to SEE
     the absence so it can't invent a fresh reading."""
-    import vivi, time as _t
+    import time as _t
+
+    import vivi
     monkeypatch.setattr(vivi, '_telemetry', {'rpm': 820})
     monkeypatch.setattr(vivi, '_telemetry_ts', _t.time() - 60)
     ctx = vivi._build_context("anything")
@@ -182,8 +185,10 @@ def test_build_context_includes_driver_name(monkeypatch):
 
 def test_build_context_includes_recent_alerts(monkeypatch):
     """Alerts from drifter/alert/message in the last 5min show up in context."""
-    import vivi, time as _t
+    import time as _t
     from collections import deque
+
+    import vivi
     fake_alerts = deque([(
         _t.time() - 30, 3, 'Coolant 110°C — pull over'
     )], maxlen=3)
@@ -198,8 +203,9 @@ def test_build_context_emits_telemetry_block_when_no_data(monkeypatch):
     """No telemetry, no alerts → context still emits the Live telemetry
     block with NO DATA per sensor. Phase 5.3 grounding fix: the model
     must see the absence rather than have to infer it."""
-    import vivi
     from collections import deque
+
+    import vivi
     monkeypatch.setattr(vivi, '_telemetry', {})
     monkeypatch.setattr(vivi, '_recent_alerts', deque(maxlen=3))
     ctx = vivi._build_context("hello")
@@ -213,8 +219,9 @@ def test_build_context_emits_telemetry_block_when_no_data(monkeypatch):
 
 def test_transcribe_returns_none_on_empty_output(monkeypatch):
     """transcribe should return None when Whisper produces empty text."""
-    import vivi
     import numpy as np
+
+    import vivi
     mock_model = MagicMock()
     mock_model.transcribe.return_value = (iter([]), MagicMock())
     with patch('vivi._get_whisper', return_value=mock_model):
@@ -225,8 +232,9 @@ def test_transcribe_returns_none_on_empty_output(monkeypatch):
 
 def test_transcribe_returns_text(monkeypatch):
     """transcribe should return concatenated segment text."""
-    import vivi
     import numpy as np
+
+    import vivi
     seg = MagicMock()
     seg.text = "why is my idle rough"
     mock_model = MagicMock()
@@ -256,10 +264,11 @@ def test_speak_calls_piper(monkeypatch):
 
 def test_speak_publishes_wav(monkeypatch):
     """speak() must publish WAV payload to TOPICS['audio_wav']."""
+    import tempfile
+    from pathlib import Path
+
     import vivi
     from config import TOPICS
-    from pathlib import Path
-    import tempfile, os
 
     mock_client = MagicMock()
     monkeypatch.setattr(vivi, '_mqtt_client', mock_client)

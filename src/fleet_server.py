@@ -9,21 +9,25 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
-import os
 import secrets
 import signal
 import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    FLEET_API_HOST, FLEET_API_PORT, FLEET_DB_PATH,
-    FLEET_HEARTBEAT_TIMEOUT, FLEET_JWT_TTL, FLEET_JWT_SECRET_FILE,
+    FLEET_API_HOST,
+    FLEET_API_PORT,
+    FLEET_DB_PATH,
+    FLEET_HEARTBEAT_TIMEOUT,
+    FLEET_JWT_SECRET_FILE,
+    FLEET_JWT_TTL,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -91,8 +95,8 @@ def _init_db() -> sqlite3.Connection:
 def _jwt_encode(payload: dict, secret: str) -> str:
     """Tiny dependency-free HS256 JWT encoder."""
     import base64
-    import hmac
     import hashlib
+    import hmac
 
     header = {"alg": "HS256", "typ": "JWT"}
 
@@ -106,10 +110,10 @@ def _jwt_encode(payload: dict, secret: str) -> str:
     return f"{h}.{p}.{b64(sig)}"
 
 
-def _jwt_decode(token: str, secret: str) -> Optional[dict]:
+def _jwt_decode(token: str, secret: str) -> dict | None:
     import base64
-    import hmac
     import hashlib
+    import hmac
 
     try:
         h, p, s = token.split('.')

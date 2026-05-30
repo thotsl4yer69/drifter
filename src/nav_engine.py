@@ -17,20 +17,26 @@ import operator
 import signal
 import threading
 import time
-from pathlib import Path
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 import paho.mqtt.client as mqtt
 import requests
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, SPEED_CAMERAS_FILE,
-    NAV_GPS_DEVICE, NAV_GPS_BAUD,
-    NAV_CAMERA_WARN_METERS, NAV_CAMERA_BEARING_TOLERANCE_DEG,
-    NAV_REROUTE_OFF_THRESHOLD, NAV_OSRM_HOST,
-    NAV_ROUTE_CACHE_DIR, NAV_ROUTE_CACHE_TTL_HOURS,
-    NAV_GEOFENCES_FILE, NAV_STATUS_PUBLISH_SEC,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    NAV_CAMERA_BEARING_TOLERANCE_DEG,
+    NAV_CAMERA_WARN_METERS,
+    NAV_GEOFENCES_FILE,
+    NAV_GPS_BAUD,
+    NAV_GPS_DEVICE,
+    NAV_OSRM_HOST,
+    NAV_ROUTE_CACHE_DIR,
+    NAV_ROUTE_CACHE_TTL_HOURS,
+    NAV_STATUS_PUBLISH_SEC,
+    SPEED_CAMERAS_FILE,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -136,7 +142,7 @@ def _load_geofences() -> list:
     return fences
 
 
-def _parse_nmea_gga(line: str) -> Optional[dict]:
+def _parse_nmea_gga(line: str) -> dict | None:
     parts = line.strip().split(',')
     if len(parts) < 10 or not parts[0].endswith('GGA'):
         return None
@@ -167,7 +173,7 @@ def _parse_nmea_gga(line: str) -> Optional[dict]:
         return None
 
 
-def _parse_nmea_rmc(line: str) -> Optional[dict]:
+def _parse_nmea_rmc(line: str) -> dict | None:
     parts = line.strip().split(',')
     if len(parts) < 10 or not parts[0].endswith('RMC'):
         return None
@@ -187,20 +193,20 @@ def _parse_nmea_rmc(line: str) -> Optional[dict]:
 
 class NavState:
     def __init__(self) -> None:
-        self.lat: Optional[float] = None
-        self.lon: Optional[float] = None
+        self.lat: float | None = None
+        self.lon: float | None = None
         self.speed_kph: float = 0.0
         self.bearing: float = 0.0
         self.fix: int = 0
         self.sats: int = 0
         self.last_fix_ts: float = 0.0
-        self.last_camera_id: Optional[str] = None
+        self.last_camera_id: str | None = None
         self.last_camera_ts: float = 0.0
-        self.route_target: Optional[tuple] = None
+        self.route_target: tuple | None = None
         self.inside_fences: set = set()
 
 
-def _nearest_camera(state: NavState, cameras: Iterable[dict]) -> Optional[tuple]:
+def _nearest_camera(state: NavState, cameras: Iterable[dict]) -> tuple | None:
     if state.lat is None:
         return None
     best = None
@@ -285,7 +291,7 @@ def _route_cache_key(origin: tuple, destination: tuple) -> str:
     return hashlib.sha1(json.dumps(quant).encode()).hexdigest()[:16]
 
 
-def _route_from_cache(key: str) -> Optional[dict]:
+def _route_from_cache(key: str) -> dict | None:
     path = NAV_ROUTE_CACHE_DIR / f"{key}.json"
     if not path.exists():
         return None
@@ -306,7 +312,7 @@ def _route_to_cache(key: str, route: dict) -> None:
         log.debug(f"route cache write failed: {e}")
 
 
-def _request_route(origin: tuple, destination: tuple) -> Optional[dict]:
+def _request_route(origin: tuple, destination: tuple) -> dict | None:
     key = _route_cache_key(origin, destination)
     cached = _route_from_cache(key)
     if cached:

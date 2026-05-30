@@ -12,16 +12,25 @@ import json
 import logging
 import threading
 import time
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 import requests
 
 from config import (
-    GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL,
-    ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
-    OLLAMA_HOST, OLLAMA_PORT, OLLAMA_MODEL,
-    LLM_CASCADE_ORDER, LLM_CLAUDE_TIMEOUT, LLM_GROQ_TIMEOUT, LLM_OLLAMA_TIMEOUT,
-    LLM_CACHE_TTL, LLM_MAX_RETRIES,
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    GROQ_MODEL,
+    LLM_CACHE_TTL,
+    LLM_CASCADE_ORDER,
+    LLM_CLAUDE_TIMEOUT,
+    LLM_GROQ_TIMEOUT,
+    LLM_MAX_RETRIES,
+    LLM_OLLAMA_TIMEOUT,
+    OLLAMA_HOST,
+    OLLAMA_MODEL,
+    OLLAMA_PORT,
 )
 
 logging.basicConfig(
@@ -116,7 +125,7 @@ def _cache_key(prompt: str, system: str) -> str:
     return h.hexdigest()
 
 
-def _cache_get(key: str) -> Optional[dict]:
+def _cache_get(key: str) -> dict | None:
     with _cache_lock:
         entry = _cache.get(key)
         if not entry:
@@ -266,7 +275,7 @@ def query(
     system: str = "",
     max_tokens: int = 800,
     cache: bool = True,
-    order: Optional[Iterable[str]] = None,
+    order: Iterable[str] | None = None,
 ) -> dict:
     """Query the cascade. Returns dict with text, model, backend, tokens."""
     if order is None:
@@ -277,7 +286,7 @@ def query(
             log.info(f"Cache hit ({cached.get('backend')})")
             return {**cached, 'cached': True}
 
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for name in order:
         fn = _BACKEND_FN.get(name)
         if fn is None or not _backend_ok(name):

@@ -13,13 +13,16 @@ import signal
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    CAN_BITRATE, CAN_SNIFF_BUFFER, CAN_SNIFF_SUMMARY_HZ,
+    CAN_BITRATE,
+    CAN_SNIFF_BUFFER,
+    CAN_SNIFF_SUMMARY_HZ,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(

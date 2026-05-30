@@ -13,15 +13,17 @@ import logging
 import signal
 import threading
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 import requests
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, COMMS_MODEM_DEV, COMMS_NOTIFY_BACKENDS,
+    COMMS_MODEM_DEV,
+    COMMS_NOTIFY_BACKENDS,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -45,7 +47,7 @@ def _load_config() -> dict:
         return {}
 
 
-def _open_modem(dev: str) -> Optional[object]:
+def _open_modem(dev: str) -> object | None:
     try:
         import serial
     except ImportError:

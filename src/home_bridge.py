@@ -10,16 +10,17 @@ UNCAGED TECHNOLOGY — EST 1991
 import json
 import logging
 import signal
-import threading
 import time
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, HOME_BRIDGE_PREFIX, HOME_BRIDGE_DISCOVERY,
+    DRIFTER_DIR,
+    HOME_BRIDGE_DISCOVERY,
+    HOME_BRIDGE_PREFIX,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -166,7 +167,7 @@ def main() -> None:
     if not running[0]:
         return
 
-    subs = [(t, 0) for t in sensor_topic_map.keys()]
+    subs = [(t, 0) for t in sensor_topic_map]
     subs.append((f"{HOME_BRIDGE_PREFIX}/{vin}/command", 1))
     client.subscribe(subs)
     client.loop_start()

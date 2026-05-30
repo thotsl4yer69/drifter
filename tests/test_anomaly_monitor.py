@@ -1,12 +1,14 @@
 # tests/test_anomaly_monitor.py
-import pytest
 import json
 import sys
+
+import pytest
+
 sys.path.insert(0, 'src')
 
 import config
 import db
-from anomaly_monitor import SensorWindow, AnomalyMonitor, MONITORED_SENSORS
+from anomaly_monitor import MONITORED_SENSORS, AnomalyMonitor, SensorWindow
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +111,6 @@ def test_check_sensor_rejects_non_finite_value():
 
 def test_float_coercion_in_on_message(monkeypatch):
     """Non-numeric MQTT values must be silently dropped (no exception)."""
-    import json
     monitor = AnomalyMonitor()
     monitor.current_session_id = "TEST"
 

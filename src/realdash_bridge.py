@@ -11,15 +11,14 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
-import signal
-import struct
-import socket
-import threading
 import logging
-import paho.mqtt.client as mqtt
+import signal
+import socket
+import struct
+import threading
+import time
 
-from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, LEVEL_NAMES, TOPICS, make_mqtt_client
+from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, make_mqtt_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -414,7 +413,7 @@ def tcp_server():
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             t = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
             t.start()
-        except socket.timeout:
+        except TimeoutError:
             continue
         except OSError:
             if running:

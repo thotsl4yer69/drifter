@@ -21,8 +21,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from config import TOPICS
-
 # Topic prefix used by every owning service.
 HW_TOPIC_PREFIX = 'drifter/hw'
 
@@ -93,7 +91,7 @@ def probe_gps() -> dict[str, Any]:
             while time.time() < deadline:
                 try:
                     chunk = s.recv(4096)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 if not chunk:
                     break

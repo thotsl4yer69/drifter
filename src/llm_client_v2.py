@@ -23,15 +23,22 @@ import random
 import re
 import threading
 import time
-from typing import Callable, Iterable, Optional
+from collections.abc import Callable, Iterable
 
 import requests
 
 from config import (
-    GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL,
-    ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
-    LLM_CASCADE_ORDER, LLM_CLAUDE_TIMEOUT, LLM_GROQ_TIMEOUT, LLM_OLLAMA_TIMEOUT,
-    LLM_CACHE_TTL, LLM_MAX_RETRIES,
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    GROQ_MODEL,
+    LLM_CACHE_TTL,
+    LLM_CASCADE_ORDER,
+    LLM_CLAUDE_TIMEOUT,
+    LLM_GROQ_TIMEOUT,
+    LLM_MAX_RETRIES,
+    LLM_OLLAMA_TIMEOUT,
 )
 
 logging.basicConfig(
@@ -91,7 +98,7 @@ def _cache_key(prompt: str, system: str, max_tokens: int) -> str:
     return h.hexdigest()
 
 
-def _cache_get(key: str) -> Optional[dict]:
+def _cache_get(key: str) -> dict | None:
     with _cache_lock:
         entry = _cache.get(key)
         if not entry:
@@ -155,7 +162,7 @@ def health() -> dict:
         return {k: dict(v) for k, v in _health.items()}
 
 
-def reset_cooldown(name: Optional[str] = None) -> None:
+def reset_cooldown(name: str | None = None) -> None:
     """Force a backend (or all) out of cooldown — useful for manual recovery."""
     with _health_lock:
         if name is None:
@@ -318,7 +325,7 @@ def query(
             log.info(f"Cache hit ({cached.get('backend', '?')})")
             return {**cached, 'cached': True}
 
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     tried_any = False
 
     for name in order:
@@ -358,7 +365,7 @@ def stream(
     prompt: str,
     system: str = "",
     max_tokens: int = 800,
-    on_token: Optional[Callable[[str], None]] = None,
+    on_token: Callable[[str], None] | None = None,
 ) -> dict:
     """Streaming variant — Claude SSE first, fall back to non-streaming on failure.
 
@@ -379,7 +386,7 @@ def _stream_claude(
     prompt: str,
     system: str,
     max_tokens: int,
-    on_token: Optional[Callable[[str], None]],
+    on_token: Callable[[str], None] | None,
 ) -> dict:
     with _session.post(
         "https://api.anthropic.com/v1/messages",

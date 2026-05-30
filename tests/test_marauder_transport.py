@@ -1,7 +1,8 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import marauder_transport as mt
 

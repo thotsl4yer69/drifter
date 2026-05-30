@@ -42,7 +42,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import aiohttp
@@ -55,7 +55,6 @@ except ImportError:
     LET = None  # we degrade gracefully if lxml is missing — BOM warnings then 0
 
 import paho.mqtt.client as mqtt
-
 
 # ── Config ─────────────────────────────────────────────────────────
 
@@ -167,7 +166,7 @@ def stable_id_from(*parts: Any) -> str:
 
 # ── EMV ────────────────────────────────────────────────────────────
 
-def parse_emv_geometry(feature: dict) -> tuple[Optional[float], Optional[float]]:
+def parse_emv_geometry(feature: dict) -> tuple[float | None, float | None]:
     """EMV publishes a mix of geometries: GeoJSON Point, GeoJSON Polygon
     (we use the first ring's first vertex), and flat lat/lon properties."""
     g = feature.get('geometry') or {}
@@ -189,7 +188,7 @@ def parse_emv_geometry(feature: dict) -> tuple[Optional[float], Optional[float]]
     return (None, None)
 
 
-def normalise_emv(feature: dict, ox: float, oy: float, radius: float) -> Optional[dict]:
+def normalise_emv(feature: dict, ox: float, oy: float, radius: float) -> dict | None:
     lat, lon = parse_emv_geometry(feature)
     if lat is None or lon is None:
         return None
@@ -241,7 +240,7 @@ INTERESTING_PREFIXES = ('VHPOL', 'POLAIR', 'RESCU', 'HEMS', 'LIFE')
 INTERESTING_SQUAWKS = {'7700', '7600', '7500'}
 
 
-def shape_aircraft(a: dict, ox: float, oy: float) -> Optional[dict]:
+def shape_aircraft(a: dict, ox: float, oy: float) -> dict | None:
     lat, lon = a.get('lat'), a.get('lon')
     try:
         if lat is None or lon is None:
@@ -275,7 +274,7 @@ def shape_aircraft(a: dict, ox: float, oy: float) -> Optional[dict]:
     }
 
 
-def read_local_readsb() -> tuple[Optional[list[dict]], Optional[float]]:
+def read_local_readsb() -> tuple[list[dict] | None, float | None]:
     """Return (raw aircraft list, mtime) or (None, None) if stale/missing."""
     try:
         st = READSB_PATH.stat()
@@ -301,7 +300,7 @@ out center tags;
 """.strip()
 
 
-def shape_poi(elem: dict, ox: float, oy: float) -> Optional[dict]:
+def shape_poi(elem: dict, ox: float, oy: float) -> dict | None:
     if elem.get('type') == 'way':
         c = elem.get('center') or {}
         lat, lon = c.get('lat'), c.get('lon')
@@ -359,8 +358,8 @@ def parse_bom_warnings(xml_bytes: bytes) -> list[dict]:
 
 class Feeds:
     def __init__(self) -> None:
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.mqtt: Optional[mqtt.Client] = None
+        self.session: aiohttp.ClientSession | None = None
+        self.mqtt: mqtt.Client | None = None
         self.stop_event = asyncio.Event()
 
         # Cached per-source state.
@@ -375,25 +374,25 @@ class Feeds:
 
     # ── HTTP ────────────────────────────────────────────────────────
 
-    async def _get_json(self, url: str, *, ua: str = UA, **kw) -> Optional[dict]:
+    async def _get_json(self, url: str, *, ua: str = UA, **kw) -> dict | None:
         try:
             async with self.session.get(url, headers={'User-Agent': ua}, **kw) as r:
                 if r.status != 200:
                     log.warning('%s → HTTP %s', url[:80], r.status)
                     return None
                 return await r.json(content_type=None)
-        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as e:
+        except (TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as e:
             log.warning('%s → %s', url[:80], e)
             return None
 
-    async def _get_bytes(self, url: str, *, ua: str = UA, **kw) -> Optional[bytes]:
+    async def _get_bytes(self, url: str, *, ua: str = UA, **kw) -> bytes | None:
         try:
             async with self.session.get(url, headers={'User-Agent': ua}, **kw) as r:
                 if r.status != 200:
                     log.warning('%s → HTTP %s', url[:80], r.status)
                     return None
                 return await r.read()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             log.warning('%s → %s', url[:80], e)
             return None
 
@@ -451,7 +450,7 @@ class Feeds:
     async def loop_bom_radar(self) -> None:
         while not self.stop_event.is_set():
             blob = await self._get_bytes(BOM_RADAR_URL)
-            if blob and blob[:4] in (b'GIF8', b'GIF9') or (blob and blob[:6].startswith(b'GIF8')):
+            if (blob and blob[:4] in (b'GIF8', b'GIF9')) or (blob and blob[:6].startswith(b'GIF8')):
                 atomic_write_bytes(RADAR_PATH, blob)
                 meta = {
                     'ts': time.time(), 'path': str(RADAR_PATH),
@@ -557,8 +556,7 @@ class Feeds:
                             [asyncio.create_task(self.stop_event.wait())], timeout=3600)
                         continue
                     j = await r.json(content_type=None)
-            except (aiohttp.ClientError, asyncio.TimeoutError,
-                    json.JSONDecodeError) as e:
+            except (TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as e:
                 log.warning('overpass → %s', e)
                 await asyncio.wait(
                     [asyncio.create_task(self.stop_event.wait())], timeout=3600)

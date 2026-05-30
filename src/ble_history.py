@@ -18,7 +18,6 @@ import string
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 SCHEMA_VERSION = 1
 DEFAULT_DB = Path("/opt/drifter/state/ble_history.db")
@@ -74,7 +73,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 # ── drive_id derivation ───────────────────────────────────────────
 
-def _gen_drive_id(now: Optional[float] = None) -> str:
+def _gen_drive_id(now: float | None = None) -> str:
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     t = time.localtime(now) if now is not None else time.localtime()
     return time.strftime("drive-%Y%m%d-%H%M%S-", t) + suffix
@@ -82,7 +81,7 @@ def _gen_drive_id(now: Optional[float] = None) -> str:
 
 def current_drive_id(state_path: Path = DEFAULT_DRIVE_FILE,
                      idle_seconds: float = DRIVE_IDLE_SECONDS,
-                     now: Optional[float] = None) -> str:
+                     now: float | None = None) -> str:
     """Return the active drive_id, minting a new one if the file is
     missing or stale. Stale = file mtime older than idle_seconds.
     Locked so two threads can't race on the mint path."""
@@ -109,7 +108,7 @@ def current_drive_id(state_path: Path = DEFAULT_DRIVE_FILE,
 
 
 def touch_drive_id(state_path: Path = DEFAULT_DRIVE_FILE,
-                   now: Optional[float] = None,
+                   now: float | None = None,
                    debounce: float = DRIVE_TOUCH_DEBOUNCE) -> None:
     """Refresh the drive-id file mtime so the next current_drive_id call
     sees it as still-active. Debounced — at most once per `debounce`
@@ -157,10 +156,10 @@ def insert_detection(conn: sqlite3.Connection, det: dict) -> None:
 
 
 def query_history(conn: sqlite3.Connection,
-                  since: Optional[float] = None,
-                  until: Optional[float] = None,
-                  target: Optional[str] = None,
-                  drive_id: Optional[str] = None,
+                  since: float | None = None,
+                  until: float | None = None,
+                  target: str | None = None,
+                  drive_id: str | None = None,
                   limit: int = 200) -> list[dict]:
     """Filterable history read. Returns most-recent-first.
 
@@ -238,7 +237,7 @@ def count(conn: sqlite3.Connection) -> int:
 
 # ── Export formats (CLI + tests) ──────────────────────────────────
 
-def parse_relative(spec: str, now: Optional[float] = None) -> float:
+def parse_relative(spec: str, now: float | None = None) -> float:
     """Parse '24h', '7d', '30m', '90s' or an ISO date 'YYYY-MM-DD' into
     a unix timestamp. Used by `drifter-ble-export --since` / --until."""
     now = now if now is not None else time.time()

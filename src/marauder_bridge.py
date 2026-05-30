@@ -102,10 +102,10 @@ class PendingConfirms:
 import json
 
 import marauder_allowlist as ma
-from marauder_features import passive as passive_feat
 from marauder_features import active_wifi as aw_feat
 from marauder_features import ble as ble_feat
 from marauder_features import evilportal as portal_feat
+from marauder_features import passive as passive_feat
 
 
 class Bridge:

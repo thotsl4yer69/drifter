@@ -7,20 +7,25 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import math
-import time
-import signal
 import logging
+import math
+import signal
+import time
 from collections import deque
-from typing import Optional, List
-
-import paho.mqtt.client as mqtt
 
 import db
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    ANOMALY_ROLLING_WINDOW, ANOMALY_WARN_Z, ANOMALY_HIGH_Z, ANOMALY_CRITICAL_Z,
-    ANOMALY_IDLE_RPM_STDDEV, WARMUP_COOLANT_THRESHOLD, make_mqtt_client,)
+    ANOMALY_CRITICAL_Z,
+    ANOMALY_HIGH_Z,
+    ANOMALY_IDLE_RPM_STDDEV,
+    ANOMALY_ROLLING_WINDOW,
+    ANOMALY_WARN_Z,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WARMUP_COOLANT_THRESHOLD,
+    make_mqtt_client,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANOMALY] %(message)s',
                     datefmt='%H:%M:%S')
@@ -56,7 +61,7 @@ class SensorWindow:
     # 0.5 covers typical noise floors for %, °C, RPM (×10), voltage (×10), etc.
     _STD_FLOOR = 0.5
 
-    def check(self, value: float) -> Optional[dict]:
+    def check(self, value: float) -> dict | None:
         """Return anomaly dict if value is anomalous, else None."""
         if len(self.window) < self.MIN_READINGS:
             return None
@@ -95,7 +100,7 @@ class AnomalyMonitor:
     def __init__(self):
         self.windows = {name: SensorWindow() for name in MONITORED_SENSORS}
         self.rpm_idle_window = deque(maxlen=10)  # for instability check
-        self.current_session_id: Optional[str] = None
+        self.current_session_id: str | None = None
         self.current_coolant: float = 0.0
         self.current_speed: float = 0.0
         self.current_snapshot: dict = {}
@@ -111,7 +116,7 @@ class AnomalyMonitor:
         self.client.on_message = self._on_message
 
     def _should_publish_alert(self, sensor_name: str, z_score: float,
-                              now: Optional[float] = None):
+                              now: float | None = None):
         """Return (publish: bool, summary: Optional[dict]).
 
         - publish=True if this is a fresh alert or an escalation.
@@ -247,13 +252,13 @@ class AnomalyMonitor:
         except Exception as e:
             log.warning(f"Message error: {e}")
 
-    def _topic_to_sensor(self, topic: str) -> Optional[str]:
+    def _topic_to_sensor(self, topic: str) -> str | None:
         for name, t in MONITORED_SENSORS.items():
             if topic == t:
                 return name
         return None
 
-    def _check_sensor(self, sensor_name: str, value: float) -> List[dict]:
+    def _check_sensor(self, sensor_name: str, value: float) -> list[dict]:
         """Check a single sensor value. Returns list of anomaly events (0 or 1)."""
         if not self.current_session_id:
             return []
@@ -278,7 +283,7 @@ class AnomalyMonitor:
             'context_json': json.dumps(context),
         }]
 
-    def _check_rpm_instability(self) -> List[dict]:
+    def _check_rpm_instability(self) -> list[dict]:
         """Detect RPM instability at idle (stddev > threshold)."""
         if len(self.rpm_idle_window) < 5 or not self.current_session_id:
             return []

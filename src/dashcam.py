@@ -13,16 +13,18 @@ import os
 import shutil
 import signal
 import subprocess
-import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DASHCAM_DIR, DASHCAM_SEGMENT_SECONDS, DASHCAM_MAX_GB,
+    DASHCAM_DIR,
+    DASHCAM_MAX_GB,
+    DASHCAM_SEGMENT_SECONDS,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -66,7 +68,7 @@ def _ffmpeg_running() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
-def _start_ffmpeg(device: str, out_pattern: str) -> Optional[subprocess.Popen]:
+def _start_ffmpeg(device: str, out_pattern: str) -> subprocess.Popen | None:
     if not _ffmpeg_running():
         log.warning("ffmpeg not installed — dashcam disabled")
         return None
@@ -90,7 +92,7 @@ def _start_ffmpeg(device: str, out_pattern: str) -> Optional[subprocess.Popen]:
         return None
 
 
-def _tag_latest_segment(reason: str) -> Optional[Path]:
+def _tag_latest_segment(reason: str) -> Path | None:
     files = sorted(DASHCAM_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
     if not files:
         return None

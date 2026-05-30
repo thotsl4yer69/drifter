@@ -27,15 +27,19 @@ import signal
 import socket
 import threading
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    XTYPE_DTC_LOOKUP, VEHICLE, VEHICLE_YEAR, VEHICLE_ENGINE,
     LEVEL_AMBER,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    VEHICLE,
+    VEHICLE_ENGINE,
+    VEHICLE_YEAR,
+    XTYPE_DTC_LOOKUP,
 )
 
 logging.basicConfig(
@@ -73,18 +77,18 @@ _request_queue: "queue.Queue[tuple[str, bool]]" = queue.Queue(maxsize=4)
 _worker_running = threading.Event()
 
 SYSTEM_PROMPT = (
-    "You are the in-vehicle diagnostic specialist for a {vehicle}. "
+    f"You are the in-vehicle diagnostic specialist for a {VEHICLE}. "
     "You receive a 60s telemetry window plus any DTCs and the safety event that "
     "triggered the request. Respond with JSON only — no prose around it.\n\n"
     "Schema:\n"
-    "{{\n"
-    '  "primary_suspect": {{"diagnosis": str, "confidence": int 0-100, '
-    '"evidence": str, "confirm_with": str}},\n'
-    '  "secondary_suspects": [{{"diagnosis": str, "confidence": int, "evidence": str}}],\n'
+    "{\n"
+    '  "primary_suspect": {"diagnosis": str, "confidence": int 0-100, '
+    '"evidence": str, "confirm_with": str},\n'
+    '  "secondary_suspects": [{"diagnosis": str, "confidence": int, "evidence": str}],\n'
     '  "watch_items": [str], "action_items": [str], "safety_critical": bool, "safety_note": str\n'
-    "}}\n"
+    "}\n"
     "Cite specific telemetry values. Lead with safety-critical issues."
-).format(vehicle=VEHICLE)
+)
 
 
 def _budget_check_and_account(estimated_tokens: int, manual: bool) -> bool:

@@ -14,21 +14,29 @@ import subprocess
 import time
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-from config import (
-    load_settings, save_settings, validate_settings_payload,
-    SETTINGS_SCHEMA, SETTINGS_SECTIONS, XTYPE_DTC_LOOKUP, SERVICES,
-    MODES, MODE_STATE_PATH, DEFAULT_MODE, TOPICS,
-)
-from corpus import corpus_search, dtc_lookup
-from ble_map_html import BLE_MAP_HTML
 import ble_history
 import ble_persistence
-from web_dashboard_hardware import check_hardware
 import web_dashboard_state as state
+from ble_map_html import BLE_MAP_HTML
+from config import (
+    DEFAULT_MODE,
+    MODE_STATE_PATH,
+    MODES,
+    SERVICES,
+    SETTINGS_SCHEMA,
+    SETTINGS_SECTIONS,
+    TOPICS,
+    XTYPE_DTC_LOOKUP,
+    load_settings,
+    save_settings,
+    validate_settings_payload,
+)
+from corpus import corpus_search, dtc_lookup
+from web_dashboard_hardware import check_hardware
 
 log = logging.getLogger(__name__)
 
@@ -203,8 +211,9 @@ _RF_COMMANDS = {
 MECHANIC_HISTORY_TURNS = 10
 MECHANIC_HISTORY_CHAR_BUDGET = 8000
 
-from collections import deque as _deque
 import threading as _threading
+from collections import deque as _deque
+
 _mechanic_history: _deque = _deque(maxlen=MECHANIC_HISTORY_TURNS)
 _mechanic_history_lock = _threading.Lock()
 
@@ -350,8 +359,8 @@ def _snapshot_airspace() -> dict:
 def _airspace_poller() -> None:
     """Background loop — fetch tar1090's aircraft.json, refresh the cache,
     and republish to drifter/airspace/aircraft so the WS fan-out picks it up."""
-    import urllib.request
     import urllib.error
+    import urllib.request
     while True:
         payload = None
         try:
@@ -1682,7 +1691,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # the model still reads a static-spec range out of the KB
             # and reports it as a live reading.
             try:
-                from vivi_grounding import validate, no_data_from_state
+                from vivi_grounding import no_data_from_state, validate
                 no_data = no_data_from_state(state.latest_state,
                                               _query_telemetry_keys())
                 text, intercepted = validate(text, no_data)
@@ -1741,8 +1750,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     except Exception as e:
                         log.debug("history append (stream) failed: %s", e)
                     try:
-                        from vivi_grounding import (
-                            validate, no_data_from_state)
+                        from vivi_grounding import no_data_from_state, validate
                         full = ''.join(buffered)
                         no_data = no_data_from_state(
                             state.latest_state, _query_telemetry_keys())

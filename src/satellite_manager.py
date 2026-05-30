@@ -14,13 +14,15 @@ import signal
 import socket
 import threading
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    SATELLITE_DISCOVERY_PORT, SATELLITE_HEARTBEAT_TIMEOUT,
+    MQTT_HOST,
+    MQTT_PORT,
+    SATELLITE_DISCOVERY_PORT,
+    SATELLITE_HEARTBEAT_TIMEOUT,
+    TOPICS,
 )
 
 logging.basicConfig(
@@ -87,7 +89,7 @@ def _udp_loop(client: mqtt.Client, running: list) -> None:
     while running[0]:
         try:
             data, addr = sock.recvfrom(2048)
-        except socket.timeout:
+        except TimeoutError:
             continue
         except Exception as e:
             log.warning(f"recv error: {e}")

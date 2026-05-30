@@ -10,20 +10,24 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
-import os
 import signal
 import threading
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, VISION_MODEL_DIR, VISION_YOLO_MODEL,
-    VISION_INPUT_W, VISION_INPUT_H, VISION_CONFIDENCE,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
     VISION_CLASSES_OF_INTEREST,
+    VISION_CONFIDENCE,
+    VISION_INPUT_H,
+    VISION_INPUT_W,
+    VISION_MODEL_DIR,
+    VISION_YOLO_MODEL,
 )
 
 logging.basicConfig(
@@ -56,7 +60,10 @@ class HailoYolo:
 
     def __init__(self, model_path: Path) -> None:
         from hailo_platform import (  # type: ignore[import]
-            VDevice, HEF, InputVStreamParams, OutputVStreamParams,
+            HEF,
+            InputVStreamParams,
+            OutputVStreamParams,
+            VDevice,
         )
         self.hef = HEF(str(model_path))
         self.vdevice = VDevice()

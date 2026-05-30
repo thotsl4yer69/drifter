@@ -12,7 +12,6 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +54,7 @@ mqtt_client = None
 # The asyncio loop running the WebSocket servers.  Set in web_dashboard.main()
 # so the MQTT callback thread can call loop.call_soon_threadsafe() to
 # enqueue broadcasts without touching asyncio internals directly.
-_ws_loop: Optional[asyncio.AbstractEventLoop] = None
+_ws_loop: asyncio.AbstractEventLoop | None = None
 
 
 def set_ws_loop(loop: asyncio.AbstractEventLoop) -> None:

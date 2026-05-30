@@ -16,15 +16,18 @@ import signal
 import threading
 import time
 from collections import deque
-from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, CRASH_ACCEL_G_THRESHOLD, CRASH_DECEL_KPH_PER_S,
-    CRASH_AIRBAG_GRACE_SEC, CRASH_SOS_NUMBER,
+    CRASH_ACCEL_G_THRESHOLD,
+    CRASH_AIRBAG_GRACE_SEC,
+    CRASH_DECEL_KPH_PER_S,
+    CRASH_SOS_NUMBER,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 logging.basicConfig(

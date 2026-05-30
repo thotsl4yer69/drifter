@@ -5,9 +5,9 @@ All shared constants, thresholds, and paths in one place.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import os
 import json
 import logging
+import os
 from pathlib import Path
 
 import paho.mqtt.client as _mqtt
@@ -201,7 +201,7 @@ def load_settings() -> dict:
     settings = dict(SETTINGS_DEFAULTS)
     try:
         if SETTINGS_FILE.exists():
-            with open(SETTINGS_FILE, 'r') as f:
+            with open(SETTINGS_FILE) as f:
                 saved = json.load(f)
             settings.update(saved)
     except Exception as e:
@@ -1186,6 +1186,7 @@ SPOTIFY_TOKEN_FILE = DRIFTER_DIR / ".spotify_token.json"
 STROKE_MM = 79.5
 THERMOSTAT_FULL_C = 97      # Fully open
 VEHICLES_DIR = DRIFTER_DIR / "vehicles"
+VEHICLE_MAKE = "Jaguar"
 VEHICLE_DEFAULTS = {
     "make": VEHICLE_MAKE,
     "model": VEHICLE_MODEL,
@@ -1198,7 +1199,6 @@ VEHICLE_DEFAULTS = {
     "tire_pressure_front": TIRE_PRESSURE_FRONT,
     "tire_pressure_rear": TIRE_PRESSURE_REAR,
 }
-VEHICLE_MAKE = "Jaguar"
 VEHICLE_PROFILE_FILE = DRIFTER_DIR / "vehicle.yaml"
 VIN_DETECT_RETRIES = 3
 VIN_DETECT_TIMEOUT = 2.0
