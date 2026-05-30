@@ -106,6 +106,63 @@ ANTHROPIC_API_KEY=sk-ant-...
 GROQ_API_KEY=gsk_...
 ```
 
+## v2.1 Features — Fleet, Mesh, Integrations
+
+DRIFTER v2.1 promotes a single node into a fleet-aware mesh peer with full record/replay and external integrations.
+
+### Fleet management
+- `fleet_server.py`: Flask + WebSocket REST API on `:8420`, JWT auth, SQLite-backed vehicle registry. Live multi-vehicle map at `fleet_dashboard.html` (Leaflet + OSM).
+- Vehicles auto-register via `drifter/fleet/register`; offline once `FLEET_HEARTBEAT_TIMEOUT` expires.
+- Issue remote commands per-VIN via `POST /api/vehicles/<vin>/command`.
+
+### Mesh networking
+- `mesh_discovery.py`: mDNS / zeroconf auto-discovery of Sentient Core + peer drifter nodes.
+- `mesh_coordinator.py`: ages out stale peers, publishes a coherent topology snapshot.
+- `mesh_bridge.py`: MQTT-to-MQTT bridge with loop-prevention marker — forward fleet/mesh/safety topics across brokers.
+- `mesh_dashboard.html`: D3 force-graph topology view.
+
+### Record / replay
+- `session_recorder.py`: captures every MQTT topic to rolling gzip JSONL segments (5 min default), pruned to `RECORDER_MAX_GB`.
+- `replay_engine.py`: plays back any captured session at configurable speed via `drifter/replay/command`.
+- `fuzz_engine.py`: synthetic telemetry generator for bench-testing the rest of the stack with no real ECU attached.
+
+### CAN reverse engineering
+- `can_sniffer.py`: raw socketcan capture with rolling buffer + per-ID summary stats.
+- `can_decoder_ai.py`: asks the LLM cascade what each unknown arbitration ID is encoding.
+- `dbc_generator.py`: emits a Vector `.dbc` file from observed traffic for SavvyCAN / BusMaster.
+
+### Discord bot
+- `vivi_discord.py`: discord.py 2.x bot with `/vivi`, `/status` slash commands. Pushes alerts to a channel and routes text queries to Vivi v2 via MQTT round-trip.
+
+### Home Assistant bridge
+- `home_bridge.py`: bidirectional MQTT bridge that publishes vehicle telemetry as HA discovery sensors + exposes drifter commands as HA buttons.
+
+### Presence detection
+- `presence_detect.py`: ARP-based arrival / departure of known devices (phone, ESP32 satellite) — useful for "unlock car when phone arrives" automations.
+
+### Satellite manager
+- `satellite_manager.py`: UDP-broadcast discovery for ESP32 satellite nodes (remote sensors, tire-pressure, etc.); tracks online state and forwards their telemetry onto MQTT.
+
+### Web portal
+`mz1312_portal.html` is a single-page sidebar nav that unifies the dashboard, vivi avatar, fleet map, mesh graph, and MQTT topic registry.
+
+### Quick install for v2.1
+```bash
+sudo ./scripts/install-fleet.sh      # fleet server + dashboard
+sudo ./scripts/install-mesh.sh       # discovery + coordinator + bridge
+sudo ./scripts/install-discord.sh    # discord.py + drifter-discord
+# home / replay / satellite ship enabled by default in install.sh
+```
+
+### Docker compose
+```bash
+docker compose up -d                            # mosquitto + drifter + fleet + recorder
+docker compose --profile mesh up -d             # add mesh coordinator (host networking for mDNS)
+docker compose --profile replay up -d           # add replay engine
+docker compose --profile satellite up -d        # add satellite manager (UDP :8421)
+docker compose --profile home --profile discord up -d
+```
+
 ## Hardware
 
 | Component | What You Need |

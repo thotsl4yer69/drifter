@@ -133,6 +133,34 @@ sudo ./install.sh && sudo reboot
 | `dashcam.py` | ffmpeg segmented recording | `dashcam_status`, `dashcam_clip` |
 | `forward_collision.py` | time-to-collision warnings | `fcw_warning`, `fcw_status` |
 
+## v2.1 Module Reference (fleet / mesh / replay / integrations)
+
+| Module | Role | MQTT keys |
+|--------|------|-----------|
+| `fleet_server.py` | Flask+WS fleet API, JWT auth, SQLite registry (`:8420`) | `fleet_register`, `fleet_heartbeat`, `fleet_telemetry`, `fleet_alert`, `fleet_command` |
+| `mesh_discovery.py` | mDNS / zeroconf peer discovery | `mesh_announce`, `mesh_node` |
+| `mesh_coordinator.py` | topology tracker, ages stale peers | `mesh_topology`, `mesh_status` |
+| `mesh_bridge.py` | MQTT-to-MQTT bridge with loop guard | `mesh_bridge` |
+| `replay_engine.py` | replay recorded sessions at N× speed | `replay_command`, `replay_status`, `replay_progress` |
+| `session_recorder.py` | capture all MQTT to gzip JSONL segments | `recorder_command`, `recorder_status`, `recorder_session` |
+| `fuzz_engine.py` | synthetic telemetry generator | `fuzz_command`, `fuzz_status` |
+| `can_sniffer.py` | raw CAN capture + summary stats | `can_sniff_frame`, `can_sniff_summary`, `can_sniff_status` |
+| `can_decoder_ai.py` | LLM-cascade signal identification | `can_decode_request`, `can_decode_response` |
+| `dbc_generator.py` | emit Vector `.dbc` from observed traffic | `can_dbc_generated` |
+| `vivi_discord.py` | discord.py 2.x bot, `/vivi`+`/status` slash | `discord_inbound`, `discord_outbound`, `discord_status` |
+| `home_bridge.py` | Home Assistant discovery bridge | `home_event`, `home_command`, `home_status` |
+| `presence_detect.py` | ARP-based arrival/departure tracking | `presence_event`, `presence_status` |
+| `satellite_manager.py` | UDP-discovery ESP32 satellites (`:8421/udp`) | `satellite_announce`, `satellite_telemetry`, `satellite_command`, `satellite_status` |
+
+v2.1 introduces six additional systemd units (`drifter-fleet`, `drifter-mesh`, `drifter-replay`, `drifter-discord`, `drifter-home`, `drifter-satellite`) — keep these in sync with the `SERVICES` list in `config.py` and the `SERVICES` block in `install.sh`. Configs live in `config/{fleet,mesh,replay,discord,home}.yaml`. Optional install scripts: `scripts/install-{fleet,mesh,discord}.sh`.
+
+### v2.1 design conventions
+- Fleet API uses dependency-free JWT (HS256, see `_jwt_encode`/`_jwt_decode` in `fleet_server.py`) — the secret is auto-generated and stored at `/opt/drifter/.fleet_jwt_secret` (0600). Replace the placeholder login with real auth before exposing externally.
+- Mesh bridge tags forwarded messages with `__mesh_origin__` to prevent infinite loops. Strip the marker locally if a subscriber needs the raw payload.
+- Recorder captures `drifter/#` by default but the bus is wildcard-noisy — narrow `topic_filter` in `replay.yaml` for long captures.
+- Replay never publishes topics listed in `replay.block_topics` (default: `crash/sos`, `comms/sms`) so playback can't fire real notifications.
+- Satellite discovery uses UDP :8421 — open only on trusted L2 segments. ESP32 firmware must send `{"kind":"announce", "id":..., "type":..., "caps":[...]}` on first contact.
+
 ## API Keys (v2)
 
 `/opt/drifter/.env` is sourced by systemd via `EnvironmentFile=-/opt/drifter/.env`:
