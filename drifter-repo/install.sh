@@ -172,7 +172,7 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 step 6 "Deploying DRIFTER application"
 
 # Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py llm_client_v2.py telemetry_batcher.py safety_engine.py ai_diagnostics.py session_reporter.py vehicle_id.py adaptive_thresholds.py vivi_v2.py vivi_memory.py vehicle_kb.py vehicle_learn.py spotify_bridge.py nav_engine.py trip_computer.py crash_detect.py driver_assist.py sentry_mode.py comms_bridge.py obd_bridge.py vision_engine.py alpr_engine.py dashcam.py forward_collision.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py web_dashboard.py mechanic.py llm_mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py vivi.py llm_client_v2.py telemetry_batcher.py safety_engine.py ai_diagnostics.py session_reporter.py vehicle_id.py adaptive_thresholds.py vivi_v2.py vivi_memory.py vehicle_kb.py vehicle_learn.py spotify_bridge.py nav_engine.py trip_computer.py crash_detect.py driver_assist.py sentry_mode.py comms_bridge.py obd_bridge.py vision_engine.py alpr_engine.py dashcam.py forward_collision.py fleet_server.py mesh_discovery.py mesh_coordinator.py mesh_bridge.py replay_engine.py session_recorder.py fuzz_engine.py can_sniffer.py can_decoder_ai.py dbc_generator.py vivi_discord.py home_bridge.py presence_detect.py satellite_manager.py"
 for f in $SRC_FILES; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
@@ -311,7 +311,7 @@ systemctl daemon-reload
 # Disable superseded reactive LLM service
 systemctl disable --now drifter-llm 2>/dev/null || true
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst drifter-batcher drifter-safety drifter-aidiag drifter-reporter drifter-vehicleid drifter-thresholds drifter-kb drifter-learn drifter-spotify drifter-nav drifter-trip drifter-crash drifter-assist drifter-sentry drifter-comms drifter-obdbridge drifter-vision drifter-dashcam drifter-alpr drifter-fcw"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-fbmirror drifter-anomaly drifter-analyst drifter-batcher drifter-safety drifter-aidiag drifter-reporter drifter-vehicleid drifter-thresholds drifter-kb drifter-learn drifter-spotify drifter-nav drifter-trip drifter-crash drifter-assist drifter-sentry drifter-comms drifter-obdbridge drifter-vision drifter-dashcam drifter-alpr drifter-fcw drifter-fleet drifter-mesh drifter-replay drifter-discord drifter-home drifter-satellite"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else
