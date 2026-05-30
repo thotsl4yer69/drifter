@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — AI Diagnostics (Tier 2)
+
 On-demand Claude-backed diagnosis. Triggers when:
   - a safety alert reaches AMBER+,
   - an active DTC appears,
   - or a Vivi/UI client asks for "diagnose now".
+
 Pulls a fresh window from telemetry_batcher, looks up X-Type DTC context,
 and asks the LLM cascade for a structured diagnosis. Result is published
 back on TOPICS['ai_diag_response'].
+
+Threading model: MQTT thread (paho loop) handles inbound messages and
+schedules diagnoses on a single worker thread via a 1-slot queue. We do
+not spawn an unbounded number of threads — one in-flight diagnosis at a
+time, with a cooldown and a daily token budget cap.
+
 UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
 import logging
+import os
+import queue
 import signal
+import socket
 import threading
 import time
 from typing import Optional
@@ -24,6 +35,7 @@ import llm_client_v2
 from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     XTYPE_DTC_LOOKUP, VEHICLE, VEHICLE_YEAR, VEHICLE_ENGINE,
+    LEVEL_AMBER,
 )
 
 logging.basicConfig(
@@ -33,15 +45,32 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── State ──
+# ── Tunables ──
+MIN_INTERVAL_S = 20.0           # min seconds between non-manual diagnoses
+MAX_PROMPT_CHARS = 12000        # cap prompt size before LLM call
+MAX_RESPONSE_TOKENS = 900       # per-call ceiling
+DAILY_TOKEN_BUDGET = 200_000    # soft cap — log warning above, refuse new auto requests
+DEDUP_WINDOW_S = 60             # ignore identical (reason, dtc-fingerprint) within window
+
+# ── Shared state (guarded by _state_lock) ──
+_state_lock = threading.RLock()
 _last_window: dict = {}
 _active_dtcs: list = []
 _pending_dtcs: list = []
 _last_alert: dict = {}
-_inflight = False
-_inflight_lock = threading.Lock()
-_last_response_ts = 0.0
-MIN_INTERVAL_S = 20.0
+_mqtt_connected = False
+
+# Token usage tracking — per UTC day
+_tokens_used = 0
+_tokens_day = time.gmtime().tm_yday
+
+# Dedup cache: {fingerprint: ts}
+_recent_fingerprints: dict[str, float] = {}
+
+# Single-slot queue — newest pending request wins. A worker thread pulls
+# from this. Manual requests skip cooldown but still queue.
+_request_queue: "queue.Queue[tuple[str, bool]]" = queue.Queue(maxsize=4)
+_worker_running = threading.Event()
 
 SYSTEM_PROMPT = (
     "You are the in-vehicle diagnostic specialist for a {vehicle}. "
@@ -58,23 +87,103 @@ SYSTEM_PROMPT = (
 ).format(vehicle=VEHICLE)
 
 
-def _build_prompt(reason: str) -> str:
-    metrics = _last_window.get('metrics', {})
-    metrics_lines = [
-        f"  {k}: mean={v['mean']} min={v['min']} max={v['max']} stddev={v['stddev']} last={v['last']}"
-        for k, v in sorted(metrics.items())
-    ]
+def _budget_check_and_account(estimated_tokens: int, manual: bool) -> bool:
+    """Roll the daily token counter and decide whether to proceed.
 
-    dtc_lines = []
-    for code in _active_dtcs[:5]:
+    Manual requests are always allowed (we don't refuse a user asking).
+    Automatic requests refuse once the daily cap is exceeded.
+    Returns True if the request may proceed.
+    """
+    global _tokens_used, _tokens_day
+    with _state_lock:
+        today = time.gmtime().tm_yday
+        if today != _tokens_day:
+            _tokens_day = today
+            _tokens_used = 0
+        if not manual and _tokens_used + estimated_tokens > DAILY_TOKEN_BUDGET:
+            log.warning(
+                f"Daily token budget reached "
+                f"({_tokens_used}/{DAILY_TOKEN_BUDGET}) — skipping auto diagnosis"
+            )
+            return False
+    return True
+
+
+def _account_tokens(tokens: int) -> None:
+    global _tokens_used
+    if not tokens:
+        return
+    with _state_lock:
+        _tokens_used += int(tokens)
+
+
+def _dtc_fingerprint() -> str:
+    """Stable signature of the current DTC + alert set for dedup."""
+    with _state_lock:
+        return "|".join([
+            ",".join(sorted(_active_dtcs)),
+            ",".join(sorted(_pending_dtcs)),
+            str(_last_alert.get('key', '')),
+        ])
+
+
+def _is_duplicate(reason: str) -> bool:
+    """Suppress repeat work — same reason + DTC fingerprint within window."""
+    fp = f"{reason}::{_dtc_fingerprint()}"
+    now = time.time()
+    with _state_lock:
+        # GC old entries
+        stale = [k for k, ts in _recent_fingerprints.items()
+                 if now - ts > DEDUP_WINDOW_S]
+        for k in stale:
+            _recent_fingerprints.pop(k, None)
+        last = _recent_fingerprints.get(fp)
+        if last is not None and now - last < DEDUP_WINDOW_S:
+            return True
+        _recent_fingerprints[fp] = now
+    return False
+
+
+def _build_prompt(reason: str) -> str:
+    """Build the user-prompt portion (snapshot + DTCs + alert).
+
+    Holds the lock briefly to snapshot state, then renders outside the lock.
+    """
+    with _state_lock:
+        window = dict(_last_window) if isinstance(_last_window, dict) else {}
+        active = list(_active_dtcs)
+        pending = list(_pending_dtcs)
+        alert = dict(_last_alert) if isinstance(_last_alert, dict) else {}
+
+    metrics = window.get('metrics') or {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    metrics_lines = []
+    for k in sorted(metrics):
+        v = metrics[k]
+        if not isinstance(v, dict):
+            continue
+        metrics_lines.append(
+            f"  {k}: mean={v.get('mean')} min={v.get('min')} "
+            f"max={v.get('max')} stddev={v.get('stddev')} last={v.get('last')}"
+        )
+
+    dtc_lines: list[str] = []
+    for code in active[:5]:
         info = XTYPE_DTC_LOOKUP.get(code)
         if info:
-            dtc_lines.append(f"  {code} ({info['severity']}): {info['desc']} — {info['cause'][:120]}")
+            cause = (info.get('cause') or '')[:120]
+            dtc_lines.append(
+                f"  {code} ({info.get('severity', '?')}): {info.get('desc', '?')} — {cause}"
+            )
         else:
             dtc_lines.append(f"  {code}: (no X-Type lookup)")
-    for code in _pending_dtcs[:3]:
+    for code in pending[:3]:
         info = XTYPE_DTC_LOOKUP.get(code)
-        dtc_lines.append(f"  PENDING {code}: {info['desc'] if info else '(unknown)'}")
+        dtc_lines.append(
+            f"  PENDING {code}: {info.get('desc', '(unknown)') if info else '(unknown)'}"
+        )
 
     parts = [
         f"VEHICLE: {VEHICLE_YEAR} {VEHICLE} ({VEHICLE_ENGINE})",
@@ -87,94 +196,205 @@ def _build_prompt(reason: str) -> str:
         parts.append("")
         parts.append("DIAGNOSTIC CODES:")
         parts.extend(dtc_lines)
-    if _last_alert:
+    if alert:
+        msg = str(alert.get('message', ''))[:300]
         parts.append("")
-        parts.append(f"TRIGGERING ALERT: {_last_alert.get('message', '')[:300]}")
-    return '\n'.join(parts)
+        parts.append(f"TRIGGERING ALERT: {msg}")
+
+    text = '\n'.join(parts)
+    if len(text) > MAX_PROMPT_CHARS:
+        text = text[:MAX_PROMPT_CHARS] + "\n... [truncated]"
+    return text
 
 
-def _run_diagnosis(client: mqtt.Client, reason: str) -> None:
-    global _inflight, _last_response_ts
-    with _inflight_lock:
-        if _inflight:
-            log.info("Diagnosis already in flight — skipping")
-            return
-        if time.time() - _last_response_ts < MIN_INTERVAL_S:
-            log.info("Diagnosis cooldown active — skipping")
-            return
-        _inflight = True
-    client.publish(TOPICS['ai_diag_status'], json.dumps({
-        'state': 'running',
-        'reason': reason,
-        'ts': time.time(),
-    }))
+def _run_diagnosis(client: mqtt.Client, reason: str, manual: bool) -> None:
+    """Execute one diagnosis end-to-end. Publishes status + response."""
+    # Rough token estimate: ~1 token per 4 chars for prompt + headroom for response.
+    estimated = (len(SYSTEM_PROMPT) + MAX_PROMPT_CHARS) // 4 + MAX_RESPONSE_TOKENS
+    if not _budget_check_and_account(estimated, manual):
+        try:
+            client.publish(TOPICS['ai_diag_status'], json.dumps({
+                'state': 'budget_exceeded',
+                'reason': reason,
+                'ts': time.time(),
+            }))
+        except Exception:
+            pass
+        return
+
+    try:
+        client.publish(TOPICS['ai_diag_status'], json.dumps({
+            'state': 'running',
+            'reason': reason,
+            'ts': time.time(),
+        }))
+    except Exception as e:
+        log.warning(f"status publish failed: {e}")
+
     try:
         prompt = _build_prompt(reason)
-        result = llm_client_v2.query_json(prompt, SYSTEM_PROMPT, max_tokens=900)
+        result = llm_client_v2.query_json(
+            prompt, SYSTEM_PROMPT, max_tokens=MAX_RESPONSE_TOKENS
+        )
+        _account_tokens(int(result.get('tokens') or 0))
+
+        diagnosis = result.get('json')
+        if diagnosis is not None and not isinstance(diagnosis, dict):
+            diagnosis = None
+
         payload = {
             'reason': reason,
+            'manual': manual,
             'ts': time.time(),
             'model': result.get('model'),
             'backend': result.get('backend'),
             'tokens': result.get('tokens'),
+            'cached': result.get('cached', False),
             'parse_error': result.get('parse_error'),
-            'diagnosis': result.get('json'),
+            'diagnosis': diagnosis,
             'raw': result.get('text') if result.get('parse_error') else None,
         }
-        client.publish(TOPICS['ai_diag_response'], json.dumps(payload), retain=True)
-        _last_response_ts = time.time()
-        if payload['diagnosis']:
-            primary = payload['diagnosis'].get('primary_suspect', {})
-            log.info(f"Diagnosis: {primary.get('diagnosis', '?')} "
-                     f"({primary.get('confidence', '?')}%)")
+        try:
+            client.publish(TOPICS['ai_diag_response'],
+                           json.dumps(payload), retain=True)
+        except Exception as e:
+            log.error(f"response publish failed: {e}")
+
+        if diagnosis:
+            primary = diagnosis.get('primary_suspect') or {}
+            log.info(
+                f"Diagnosis: {primary.get('diagnosis', '?')} "
+                f"({primary.get('confidence', '?')}%) "
+                f"[{payload['backend']}, {payload['tokens']} tok]"
+            )
         else:
             log.warning("LLM response did not parse as JSON")
     except Exception as e:
         log.error(f"Diagnosis failed: {e}")
-        client.publish(TOPICS['ai_diag_response'], json.dumps({
-            'error': str(e),
-            'reason': reason,
-            'ts': time.time(),
-        }))
+        try:
+            client.publish(TOPICS['ai_diag_response'], json.dumps({
+                'error': str(e)[:300],
+                'reason': reason,
+                'ts': time.time(),
+            }))
+        except Exception:
+            pass
     finally:
-        with _inflight_lock:
-            _inflight = False
-        client.publish(TOPICS['ai_diag_status'], json.dumps({
-            'state': 'idle',
-            'ts': time.time(),
-        }))
+        try:
+            client.publish(TOPICS['ai_diag_status'], json.dumps({
+                'state': 'idle',
+                'ts': time.time(),
+            }))
+        except Exception:
+            pass
+
+
+def _worker_loop(client: mqtt.Client) -> None:
+    """Pull requests off the queue one at a time and run them sequentially."""
+    last_auto_run = 0.0
+    while _worker_running.is_set():
+        try:
+            reason, manual = _request_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        now = time.time()
+        if not manual and now - last_auto_run < MIN_INTERVAL_S:
+            log.info("Cooldown active — dropping auto diagnosis request")
+            continue
+        if _is_duplicate(reason):
+            log.info(f"Dedup hit — skipping repeat diagnosis: {reason[:60]}")
+            continue
+        try:
+            _run_diagnosis(client, reason, manual)
+        except Exception as e:
+            log.error(f"worker loop crashed: {e}")
+        if not manual:
+            last_auto_run = time.time()
+
+
+def _enqueue(reason: str, manual: bool) -> None:
+    """Non-blocking enqueue — drop new if queue is full."""
+    try:
+        _request_queue.put_nowait((reason, manual))
+    except queue.Full:
+        log.info("Diagnosis queue full — dropping request")
 
 
 def on_message(client, userdata, msg) -> None:
     global _last_window, _active_dtcs, _pending_dtcs, _last_alert
     try:
         data = json.loads(msg.payload)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
         return
 
     topic = msg.topic
     if topic == TOPICS['telemetry_window']:
         if isinstance(data, dict):
-            _last_window = data
-    elif topic == TOPICS['dtc']:
-        _active_dtcs = data.get('stored', []) or []
-        _pending_dtcs = data.get('pending', []) or []
+            with _state_lock:
+                _last_window = data
+        return
+
+    if topic == TOPICS['dtc'] and isinstance(data, dict):
+        stored = data.get('stored') or []
+        pending = data.get('pending') or []
+        if not isinstance(stored, list):
+            stored = []
+        if not isinstance(pending, list):
+            pending = []
+        with _state_lock:
+            _active_dtcs = [str(c) for c in stored][:20]
+            _pending_dtcs = [str(c) for c in pending][:20]
         if _active_dtcs:
-            threading.Thread(
-                target=_run_diagnosis, args=(client, f"DTC: {','.join(_active_dtcs[:3])}"),
-                daemon=True).start()
-    elif topic == TOPICS['alert_message']:
-        if isinstance(data, dict):
+            _enqueue(f"DTC: {','.join(_active_dtcs[:3])}", manual=False)
+        return
+
+    if topic == TOPICS['alert_message'] and isinstance(data, dict):
+        with _state_lock:
             _last_alert = data
-            level = data.get('level', 0)
-            if level >= 2:  # AMBER or RED
-                threading.Thread(
-                    target=_run_diagnosis,
-                    args=(client, f"alert: {data.get('message', '')[:80]}"),
-                    daemon=True).start()
-    elif topic == TOPICS['ai_diag_request']:
-        reason = "manual" if not isinstance(data, dict) else data.get('reason', 'manual')
-        threading.Thread(target=_run_diagnosis, args=(client, reason), daemon=True).start()
+        try:
+            level = int(data.get('level', 0))
+        except (TypeError, ValueError):
+            level = 0
+        if level >= LEVEL_AMBER:
+            msg_text = str(data.get('message', ''))[:80]
+            _enqueue(f"alert: {msg_text}", manual=False)
+        return
+
+    if topic == TOPICS['ai_diag_request']:
+        if isinstance(data, dict):
+            reason = str(data.get('reason', 'manual'))[:120]
+        else:
+            reason = 'manual'
+        _enqueue(reason, manual=True)
+
+
+def on_connect(client, userdata, flags, rc) -> None:
+    global _mqtt_connected
+    if rc != 0:
+        log.warning(f"MQTT connect failed rc={rc}")
+        return
+    with _state_lock:
+        _mqtt_connected = True
+    client.subscribe([
+        (TOPICS['telemetry_window'], 0),
+        (TOPICS['dtc'], 1),
+        (TOPICS['alert_message'], 1),
+        (TOPICS['ai_diag_request'], 1),
+    ])
+    log.info("MQTT connected — subscriptions active")
+
+
+def on_disconnect(client, userdata, rc) -> None:
+    global _mqtt_connected
+    with _state_lock:
+        _mqtt_connected = False
+    if rc != 0:
+        log.warning(f"MQTT disconnected unexpectedly rc={rc} — paho will reconnect")
+
+
+def _make_client_id() -> str:
+    return f"drifter-aidiag-{socket.gethostname()}-{os.getpid()}"
 
 
 def main() -> None:
@@ -189,8 +409,24 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-aidiag")
+    try:
+        client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION1,  # type: ignore[attr-defined]
+            client_id=_make_client_id(),
+        )
+    except AttributeError:
+        client = mqtt.Client(client_id=_make_client_id())
+
     client.on_message = on_message
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+
+    client.will_set(
+        TOPICS['ai_diag_status'],
+        json.dumps({'state': 'offline', 'ts': time.time()}),
+        qos=0,
+        retain=True,
+    )
 
     connected = False
     while not connected and running:
@@ -204,23 +440,41 @@ def main() -> None:
     if not running:
         return
 
-    client.subscribe([
-        (TOPICS['telemetry_window'], 0),
-        (TOPICS['dtc'], 0),
-        (TOPICS['alert_message'], 0),
-        (TOPICS['ai_diag_request'], 0),
-    ])
     client.loop_start()
-    client.publish(TOPICS['ai_diag_status'], json.dumps({
-        'state': 'idle', 'ts': time.time(),
-    }), retain=True)
+
+    _worker_running.set()
+    worker = threading.Thread(
+        target=_worker_loop, args=(client,), name="aidiag-worker", daemon=True
+    )
+    worker.start()
+
+    try:
+        client.publish(TOPICS['ai_diag_status'], json.dumps({
+            'state': 'idle', 'ts': time.time(),
+        }), retain=True)
+    except Exception as e:
+        log.warning(f"initial status publish failed: {e}")
     log.info("AI Diagnostics LIVE")
 
     while running:
         time.sleep(0.5)
 
+    log.info("Stopping worker...")
+    _worker_running.clear()
+    worker.join(timeout=5)
+
+    try:
+        client.publish(TOPICS['ai_diag_status'], json.dumps({
+            'state': 'offline', 'ts': time.time(),
+        }), retain=True)
+    except Exception:
+        pass
+
     client.loop_stop()
-    client.disconnect()
+    try:
+        client.disconnect()
+    except Exception:
+        pass
     log.info("AI Diagnostics stopped")
 
 
