@@ -575,6 +575,56 @@ TOPICS = {
     'dashcam_clip': 'drifter/vision/dashcam/clip',
     'fcw_warning': 'drifter/vision/fcw/warning',
     'fcw_status': 'drifter/vision/fcw/status',
+
+    # ═══════════════════════════════════════════════════════════════
+    #  v2.1 TOPICS — fleet / mesh / replay / can-ai / integrations
+    # ═══════════════════════════════════════════════════════════════
+    # Fleet management
+    'fleet_register': 'drifter/fleet/register',
+    'fleet_heartbeat': 'drifter/fleet/heartbeat',
+    'fleet_telemetry': 'drifter/fleet/telemetry',
+    'fleet_alert': 'drifter/fleet/alert',
+    'fleet_command': 'drifter/fleet/command',
+    'fleet_status': 'drifter/fleet/status',
+    # Mesh networking
+    'mesh_announce': 'drifter/mesh/announce',
+    'mesh_topology': 'drifter/mesh/topology',
+    'mesh_node': 'drifter/mesh/node',
+    'mesh_bridge': 'drifter/mesh/bridge',
+    'mesh_status': 'drifter/mesh/status',
+    # Replay / recorder
+    'replay_command': 'drifter/replay/command',
+    'replay_status': 'drifter/replay/status',
+    'replay_progress': 'drifter/replay/progress',
+    'recorder_command': 'drifter/recorder/command',
+    'recorder_status': 'drifter/recorder/status',
+    'recorder_session': 'drifter/recorder/session',
+    # Fuzz
+    'fuzz_command': 'drifter/fuzz/command',
+    'fuzz_status': 'drifter/fuzz/status',
+    # CAN sniffer / decoder / DBC
+    'can_sniff_frame': 'drifter/can/sniff/frame',
+    'can_sniff_summary': 'drifter/can/sniff/summary',
+    'can_sniff_status': 'drifter/can/sniff/status',
+    'can_decode_request': 'drifter/can/decode/request',
+    'can_decode_response': 'drifter/can/decode/response',
+    'can_dbc_generated': 'drifter/can/dbc/generated',
+    # Vivi Discord
+    'discord_inbound': 'drifter/discord/inbound',
+    'discord_outbound': 'drifter/discord/outbound',
+    'discord_status': 'drifter/discord/status',
+    # Home Assistant bridge
+    'home_event': 'drifter/home/event',
+    'home_command': 'drifter/home/command',
+    'home_status': 'drifter/home/status',
+    # Presence detection
+    'presence_event': 'drifter/presence/event',
+    'presence_status': 'drifter/presence/status',
+    # Satellite (ESP32) nodes
+    'satellite_announce': 'drifter/satellite/announce',
+    'satellite_telemetry': 'drifter/satellite/telemetry',
+    'satellite_command': 'drifter/satellite/command',
+    'satellite_status': 'drifter/satellite/status',
 }
 
 # ── LLM Analyst ──
@@ -636,7 +686,71 @@ SERVICES = [
     "drifter-alpr",
     "drifter-fcw",
     # drifter-llm removed — superseded by drifter-analyst
+    # v2.1 fleet / mesh / integrations
+    "drifter-fleet",
+    "drifter-mesh",
+    "drifter-replay",
+    "drifter-discord",
+    "drifter-home",
+    "drifter-satellite",
 ]
+
+# ═══════════════════════════════════════════════════════════════════
+#  v2.1 Constants — fleet / mesh / replay / integrations
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Fleet Server ──
+FLEET_API_HOST = "0.0.0.0"
+FLEET_API_PORT = 8420
+FLEET_DB_PATH = DRIFTER_DIR / "data" / "fleet.db"
+FLEET_HEARTBEAT_TIMEOUT = 90       # seconds — node considered offline
+FLEET_JWT_TTL = 86400              # 24h tokens
+FLEET_JWT_SECRET_FILE = DRIFTER_DIR / ".fleet_jwt_secret"
+
+# ── Mesh / Discovery ──
+MESH_SERVICE_NAME = "_drifter._tcp.local."
+MESH_DISCOVERY_INTERVAL = 30
+MESH_NODE_TTL = 180
+MESH_BRIDGE_QOS = 1
+
+# ── Replay / Recorder ──
+REPLAY_DIR = DRIFTER_DIR / "replays"
+RECORDER_DIR = DRIFTER_DIR / "recordings"
+RECORDER_SEGMENT_SECONDS = 300     # 5-minute JSONL segments
+RECORDER_MAX_GB = 10
+REPLAY_DEFAULT_SPEED = 1.0
+
+# ── Fuzz Engine ──
+FUZZ_DEFAULT_HZ = 10
+FUZZ_DEFAULT_RANGES = {
+    'rpm': (650, 6500),
+    'speed': (0, 220),
+    'coolant': (60, 110),
+    'voltage': (11.5, 14.8),
+}
+
+# ── CAN Sniffer / AI Decoder ──
+CAN_SNIFF_BUFFER = 5000
+CAN_SNIFF_SUMMARY_HZ = 1
+CAN_AI_MIN_SAMPLES = 200           # frames per ID before AI inference
+DBC_OUTPUT_DIR = DRIFTER_DIR / "data" / "dbc"
+
+# ── Discord Bot ──
+DISCORD_COMMAND_PREFIX = "!vivi"
+DISCORD_INTENTS = ("messages", "guilds", "message_content")
+
+# ── Home Assistant Bridge ──
+HOME_BRIDGE_PREFIX = "homeassistant/drifter"
+HOME_BRIDGE_DISCOVERY = True
+
+# ── Presence Detection ──
+PRESENCE_SCAN_INTERVAL = 30
+PRESENCE_DEPARTURE_GRACE = 120     # seconds offline before "departed"
+PRESENCE_KNOWN_DEVICES_FILE = DRIFTER_DIR / "data" / "presence_devices.json"
+
+# ── Satellite Manager ──
+SATELLITE_DISCOVERY_PORT = 8421
+SATELLITE_HEARTBEAT_TIMEOUT = 60
 
 # ═══════════════════════════════════════════════════════════════════
 #  v2 Constants
