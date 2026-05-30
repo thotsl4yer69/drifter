@@ -444,7 +444,7 @@ loader.load(GLB_URL, (gltf) => {
   }
 }, (err) => {
   console.error(err);
-  log('MODEL LOAD FAILED &mdash; CHECK /assets/vivi_avatar.glb');
+  log('MODEL LOAD FAILED — CHECK /assets/vivi_avatar.glb');
 });
 
 // ── Idle animation rig ────────────────────────────────────────────────
@@ -569,6 +569,7 @@ function connectWS() {
     state.ws = new WebSocket(WS_URL);
   } catch (e) {
     enterDemoMode();
+    setTimeout(connectWS, 3000);
     return;
   }
   state.ws.onopen = () => {

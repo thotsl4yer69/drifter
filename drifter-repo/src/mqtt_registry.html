@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MZ1312 DRIFTER — MQTT Registry</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #11141b; --line: #1f2530; --fg: #e6e9ef;
+    --muted: #8a95a6; --accent: #7aa2ff; --green: #5ce6a1; --amber: #f3a73f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: 'IBM Plex Mono', monospace; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line);
+           display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 14px; letter-spacing: 2px; }
+  header h1 .brand { color: var(--accent); }
+  .controls { padding: 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
+  input, select { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+                  padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 13px; }
+  input { flex: 1; min-width: 200px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 16px; background: var(--panel);
+       font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+       position: sticky; top: 0; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; vertical-align: top; }
+  tr:hover { background: var(--panel); }
+  .ns { color: var(--accent); font-weight: 600; }
+  .key { color: var(--green); }
+  .topic { font-family: inherit; }
+  .badge { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+           background: var(--panel); color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .scroll { overflow-y: auto; height: calc(100vh - 130px); }
+  .pub { background: rgba(92,230,161,0.12); color: var(--green); }
+  .sub { background: rgba(243,167,63,0.12); color: var(--amber); }
+  .live { background: rgba(122,162,255,0.12); color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="brand">MZ1312</span> DRIFTER — MQTT REGISTRY</h1>
+  <span class="badge" id="count">0 topics</span>
+</header>
+<div class="controls">
+  <input id="search" placeholder="filter by key, topic, namespace…">
+  <select id="ns"><option value="">All namespaces</option></select>
+  <select id="dir">
+    <option value="">All directions</option>
+    <option value="pub">Publishers</option>
+    <option value="sub">Subscribers</option>
+  </select>
+</div>
+<div class="scroll">
+  <table>
+    <thead>
+      <tr><th>Namespace</th><th>Key</th><th>Topic</th><th>Producers</th><th>Consumers</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+// Editable inventory — keep in sync with src/config.py:TOPICS.
+const REGISTRY = [
+  // engine
+  ['engine','rpm','drifter/engine/rpm',['can_bridge','obd_bridge','fuzz_engine'],['alert_engine','telemetry_batcher','realdash_bridge','web_dashboard']],
+  ['engine','coolant','drifter/engine/coolant',['can_bridge','obd_bridge'],['alert_engine','safety_engine','telemetry_batcher']],
+  ['engine','stft1','drifter/engine/stft1',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','stft2','drifter/engine/stft2',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','ltft1','drifter/engine/ltft1',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','ltft2','drifter/engine/ltft2',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','load','drifter/engine/load',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','throttle','drifter/engine/throttle',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','iat','drifter/engine/iat',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['engine','maf','drifter/engine/maf',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  ['vehicle','speed','drifter/vehicle/speed',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher','realdash_bridge']],
+  ['power','voltage','drifter/power/voltage',['can_bridge','obd_bridge'],['alert_engine','telemetry_batcher']],
+  // alerts
+  ['alert','level','drifter/alert/level',['alert_engine'],['voice_alerts','web_dashboard']],
+  ['alert','message','drifter/alert/message',['alert_engine','safety_engine'],['voice_alerts','web_dashboard','vivi_discord']],
+  // diagnostics
+  ['diag','dtc','drifter/diag/dtc',['can_bridge','obd_bridge'],['mechanic','llm_mechanic','session_reporter']],
+  ['diag/ai','request','drifter/diag/ai/request',['safety_engine','session_reporter'],['ai_diagnostics']],
+  ['diag/ai','response','drifter/diag/ai/response',['ai_diagnostics'],['vivi_v2','session_reporter']],
+  // safety
+  ['safety','alert','drifter/safety/alert',['safety_engine'],['vivi_v2','comms_bridge','vivi_discord']],
+  ['safety','status','drifter/safety/status',['safety_engine'],['web_dashboard']],
+  // session
+  ['session','report','drifter/session/report',['session_reporter'],['vivi_v2']],
+  ['session','summary','drifter/session/summary',['session_reporter'],['web_dashboard']],
+  // telemetry batcher
+  ['telemetry','window','drifter/telemetry/window',['telemetry_batcher'],['safety_engine','ai_diagnostics']],
+  ['telemetry','stats','drifter/telemetry/stats',['telemetry_batcher'],['session_reporter','web_dashboard']],
+  // vivi v2
+  ['vivi2','query','drifter/vivi2/query',['vivi_discord','web_dashboard'],['vivi_v2']],
+  ['vivi2','response','drifter/vivi2/response',['vivi_v2'],['vivi_discord','web_dashboard']],
+  ['vivi2','status','drifter/vivi2/status',['vivi_v2'],['web_dashboard']],
+  // navigation
+  ['nav','position','drifter/nav/position',['nav_engine'],['web_dashboard','trip_computer']],
+  ['nav','route','drifter/nav/route',['nav_engine'],['web_dashboard']],
+  ['nav','camera','drifter/nav/camera',['nav_engine'],['voice_alerts']],
+  // trip
+  ['trip','stats','drifter/trip/stats',['trip_computer'],['web_dashboard']],
+  // crash
+  ['crash','event','drifter/crash/event',['crash_detect'],['comms_bridge','vivi_v2']],
+  ['crash','sos','drifter/crash/sos',['crash_detect'],['comms_bridge']],
+  // comms
+  ['comms','sms','drifter/comms/sms',['vivi_v2','crash_detect'],['comms_bridge']],
+  ['comms','notify','drifter/comms/notify',['alert_engine','session_reporter'],['comms_bridge','vivi_discord']],
+  // fleet
+  ['fleet','register','drifter/fleet/register',['can_bridge'],['fleet_server']],
+  ['fleet','heartbeat','drifter/fleet/heartbeat',['watchdog'],['fleet_server']],
+  ['fleet','telemetry','drifter/fleet/telemetry',['telemetry_batcher'],['fleet_server']],
+  ['fleet','alert','drifter/fleet/alert',['alert_engine','safety_engine'],['fleet_server']],
+  ['fleet','command','drifter/fleet/command',['fleet_server'],['can_bridge','watchdog']],
+  // mesh
+  ['mesh','announce','drifter/mesh/announce',['mesh_discovery'],['mesh_coordinator']],
+  ['mesh','topology','drifter/mesh/topology',['mesh_coordinator'],['mesh_dashboard','mesh_bridge']],
+  ['mesh','node','drifter/mesh/node',['mesh_discovery'],['mesh_coordinator']],
+  ['mesh','bridge','drifter/mesh/bridge',['mesh_bridge'],['web_dashboard']],
+  // replay
+  ['replay','command','drifter/replay/command',['web_dashboard'],['replay_engine']],
+  ['replay','status','drifter/replay/status',['replay_engine'],['web_dashboard']],
+  ['replay','progress','drifter/replay/progress',['replay_engine'],['web_dashboard']],
+  ['recorder','command','drifter/recorder/command',['web_dashboard'],['session_recorder']],
+  ['recorder','status','drifter/recorder/status',['session_recorder'],['web_dashboard']],
+  ['recorder','session','drifter/recorder/session',['session_recorder'],['session_reporter']],
+  // fuzz
+  ['fuzz','command','drifter/fuzz/command',['web_dashboard'],['fuzz_engine']],
+  ['fuzz','status','drifter/fuzz/status',['fuzz_engine'],['web_dashboard']],
+  // can sniffer / ai / dbc
+  ['can/sniff','frame','drifter/can/sniff/frame',['can_sniffer'],['web_dashboard']],
+  ['can/sniff','summary','drifter/can/sniff/summary',['can_sniffer'],['can_decoder_ai','dbc_generator']],
+  ['can/decode','request','drifter/can/decode/request',['web_dashboard'],['can_decoder_ai']],
+  ['can/decode','response','drifter/can/decode/response',['can_decoder_ai'],['dbc_generator','web_dashboard']],
+  ['can/dbc','generated','drifter/can/dbc/generated',['dbc_generator'],['web_dashboard']],
+  // discord
+  ['discord','inbound','drifter/discord/inbound',['vivi_discord'],['vivi_v2']],
+  ['discord','outbound','drifter/discord/outbound',['session_reporter'],['vivi_discord']],
+  // home
+  ['home','event','drifter/home/event',['home_bridge'],['vivi_v2']],
+  ['home','command','drifter/home/command',['home_bridge'],['can_bridge','sentry_mode']],
+  // presence
+  ['presence','event','drifter/presence/event',['presence_detect'],['vivi_v2','sentry_mode']],
+  // satellite
+  ['satellite','announce','drifter/satellite/announce',['satellite_manager'],['web_dashboard']],
+  ['satellite','telemetry','drifter/satellite/telemetry',['satellite_manager'],['rf_monitor','telemetry_batcher']],
+];
+
+const nsSet = new Set(REGISTRY.map(r => r[0]));
+const nsSel = document.getElementById('ns');
+[...nsSet].sort().forEach(ns => {
+  const o = document.createElement('option'); o.value = ns; o.textContent = ns; nsSel.appendChild(o);
+});
+
+function render() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const ns = nsSel.value;
+  const dir = document.getElementById('dir').value;
+  const rows = REGISTRY.filter(r => {
+    if (ns && r[0] !== ns) return false;
+    if (q && !`${r[0]} ${r[1]} ${r[2]}`.toLowerCase().includes(q)) return false;
+    if (dir === 'pub' && r[3].length === 0) return false;
+    if (dir === 'sub' && r[4].length === 0) return false;
+    return true;
+  });
+  document.getElementById('rows').innerHTML = rows.map(r => `
+    <tr>
+      <td><span class="ns">${r[0]}</span></td>
+      <td><span class="key">${r[1]}</span></td>
+      <td class="topic">${r[2]}</td>
+      <td>${r[3].map(p => `<span class="badge pub">${p}</span>`).join(' ') || '<span class="badge">—</span>'}</td>
+      <td>${r[4].map(c => `<span class="badge sub">${c}</span>`).join(' ') || '<span class="badge">—</span>'}</td>
+    </tr>`).join('');
+  document.getElementById('count').textContent = `${rows.length} / ${REGISTRY.length} topics`;
+}
+
+document.getElementById('search').addEventListener('input', render);
+nsSel.addEventListener('change', render);
+document.getElementById('dir').addEventListener('change', render);
+render();
+</script>
+</body>
+</html>

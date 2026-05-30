@@ -851,12 +851,24 @@ function updateStatusUI() {
     sa.style.borderColor = 'var(--border)';
   }
 
-  // DTCs
+  // DTCs — render via textContent because codes come from untrusted MQTT input
   const dtcEl = document.getElementById('dtc-list');
-  let html = '';
-  S.dtcStored.forEach(c => { html += '<span class="dtc-code">' + c + '</span> '; });
-  S.dtcPending.forEach(c => { html += '<span class="dtc-code pending">' + c + '</span> '; });
-  dtcEl.innerHTML = html || '<span class="dtc-none">NO CODES</span>';
+  dtcEl.innerHTML = '';
+  const allCodes = S.dtcStored.map(c => [c, false]).concat(S.dtcPending.map(c => [c, true]));
+  if (!allCodes.length) {
+    const none = document.createElement('span');
+    none.className = 'dtc-none';
+    none.textContent = 'NO CODES';
+    dtcEl.appendChild(none);
+  } else {
+    for (const [code, pending] of allCodes) {
+      const span = document.createElement('span');
+      span.className = pending ? 'dtc-code pending' : 'dtc-code';
+      span.textContent = String(code);
+      dtcEl.appendChild(span);
+      dtcEl.appendChild(document.createTextNode(' '));
+    }
+  }
 
   // System
   setEl('sv-cpu', S.cpuTemp > 0 ? Math.round(S.cpuTemp) + '\u00B0C' : '--');

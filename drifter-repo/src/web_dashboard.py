@@ -56,6 +56,16 @@ REPO_DIR = SRC_DIR.parent
 AVATAR_HTML_PATH = SRC_DIR / "vivi_avatar.html"
 ASSETS_DIRS = [REPO_DIR / "assets", DRIFTER_DIR / "assets"]
 
+# Static HTML pages served from disk (portal + sub-dashboards).
+# Search both the repo src dir (dev) and /opt/drifter (prod install).
+HTML_PAGE_DIRS = [SRC_DIR, DRIFTER_DIR / "src", DRIFTER_DIR]
+STATIC_PAGES = {
+    '/portal': 'mz1312_portal.html',
+    '/fleet': 'fleet_dashboard.html',
+    '/mesh': 'mesh_dashboard.html',
+    '/mqtt-registry': 'mqtt_registry.html',
+}
+
 # MIME types for static asset serving
 ASSET_MIME = {
     '.glb': 'model/gltf-binary',
@@ -78,6 +88,7 @@ latest_report = {}
 mqtt_client = None
 ws_clients = set()
 audio_ws_clients = set()
+event_loop = None  # asyncio loop ref captured at startup, used by MQTT thread callbacks
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -215,12 +226,16 @@ def on_message(client, userdata, msg):
         latest_state[key] = data
         latest_state['_last_update'] = time.time()
 
-        # Broadcast to WebSocket clients
-        ws_msg = json.dumps({'topic': topic, 'data': data, 'ts': time.time()})
-        asyncio.get_event_loop().call_soon_threadsafe(
-            _broadcast_sync, ws_msg
-        )
-    except (json.JSONDecodeError, RuntimeError):
+        # Broadcast to WebSocket clients via the asyncio loop running ws_handler.
+        # MQTT callbacks run in paho's thread; asyncio.get_event_loop() from a
+        # non-loop thread is broken on Python 3.10+, so use the captured ref.
+        if event_loop is not None:
+            ws_msg = json.dumps({'topic': topic, 'data': data, 'ts': time.time()})
+            try:
+                event_loop.call_soon_threadsafe(_broadcast_sync, ws_msg)
+            except RuntimeError:
+                pass
+    except json.JSONDecodeError:
         pass
 
 
@@ -758,10 +773,19 @@ function handleMessage(msg){
   // DTCs
   else if(topic.endsWith('/dtc')){
     const el = document.getElementById('dtc-list');
-    let html = '';
-    (data.stored||[]).forEach(c=>{html+=`<span class="dtc-code">${c}</span>`});
-    (data.pending||[]).forEach(c=>{html+=`<span class="dtc-code dtc-pending">${c}</span>`});
-    el.innerHTML = html || '<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    el.innerHTML = '';
+    const codes = (data.stored||[]).map(c=>[c,false]).concat((data.pending||[]).map(c=>[c,true]));
+    if(!codes.length){
+      el.innerHTML = '<span style="color:var(--ok);font-size:11px">No DTCs</span>';
+    } else {
+      // MQTT payloads are untrusted — render code text via textContent to block XSS
+      for(const [code, pending] of codes){
+        const span = document.createElement('span');
+        span.className = pending ? 'dtc-code dtc-pending' : 'dtc-code';
+        span.textContent = String(code);
+        el.appendChild(span);
+      }
+    }
   }
   // TPMS
   else if(topic.includes('/rf/tpms/') && !topic.endsWith('/snapshot')){
@@ -1201,12 +1225,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
 
-        if parsed.path in ('/', '/index.html'):
+        if parsed.path in ('/', '/index.html', '/dashboard'):
             self._serve_html(DASHBOARD_HTML)
         elif parsed.path == '/mechanic':
             self._serve_html(MECHANIC_HTML)
-        elif parsed.path == '/avatar':
+        elif parsed.path in ('/avatar', '/vivi-avatar'):
             self._serve_file(AVATAR_HTML_PATH, 'text/html; charset=utf-8')
+        elif parsed.path in STATIC_PAGES:
+            self._serve_static_page(STATIC_PAGES[parsed.path])
         elif parsed.path.startswith('/assets/'):
             self._serve_asset(parsed.path[len('/assets/'):])
         elif parsed.path == '/api/state':
@@ -1257,15 +1283,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception:
                 self._serve_json([])
         elif parsed.path in ('/screen', '/screen.html'):
-            screen_path = Path('/opt/drifter/screen_dash.html')
-            if screen_path.exists():
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/html; charset=utf-8')
-                self.send_header('Cache-Control', 'no-cache')
-                self.end_headers()
-                self.wfile.write(screen_path.read_bytes())
-            else:
-                self.send_error(404, 'Screen dashboard not found')
+            self._serve_static_page('screen_dash.html', not_found='Screen dashboard not found')
         elif parsed.path == '/realdash.xml':
             xml_path = Path('/opt/drifter/drifter_channels.xml')
             if xml_path.exists():
@@ -1318,6 +1336,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         self.wfile.write(html.encode())
+
+    def _serve_static_page(self, filename: str, not_found: str = None):
+        """Serve a static HTML page, searching repo-src and /opt/drifter locations."""
+        for base in HTML_PAGE_DIRS:
+            path = base / filename
+            if path.exists() and path.is_file():
+                self._serve_file(path, 'text/html; charset=utf-8')
+                return
+        self.send_error(404, not_found or f'{filename} not found')
 
     def _serve_file(self, path: Path, content_type: str):
         if not path.exists() or not path.is_file():
@@ -1381,8 +1408,9 @@ async def ws_handler(websocket):
     ws_clients.add(queue)
     log.info(f"Dashboard client connected ({len(ws_clients)} total)")
     try:
-        # Send current state snapshot
-        for key, data in latest_state.items():
+        # Send current state snapshot. Copy items to a list — latest_state is
+        # mutated by the MQTT thread, and iterating live would raise RuntimeError.
+        for key, data in list(latest_state.items()):
             if key.startswith('_'):
                 continue
             topic = 'drifter/' + key.replace('_', '/')
@@ -1412,12 +1440,16 @@ async def audio_ws_handler(websocket):
     audio_ws_clients.add(websocket)
     log.info(f"Audio client connected ({len(audio_ws_clients)} total)")
     try:
-        while running:
-            await asyncio.sleep(1)
+        # Block until the client disconnects — draining incoming frames so the
+        # library can surface ConnectionClosed promptly. Audio is push-only,
+        # so we don't act on any client messages.
+        async for _ in websocket:
+            pass
     except websockets.ConnectionClosed:
         pass
     finally:
         audio_ws_clients.discard(websocket)
+        log.info(f"Audio client disconnected ({len(audio_ws_clients)} remaining)")
 
 
 async def broadcast_audio(wav_bytes):
@@ -1452,13 +1484,13 @@ def on_alert_message(client, userdata, msg):
                 wav_bytes = base64.b64decode(wav_b64)
                 last_audio_text = data.get('text', '')
                 last_audio_time = time.time()
-                try:
-                    loop = asyncio.get_event_loop()
-                    loop.call_soon_threadsafe(
-                        lambda w=wav_bytes: asyncio.ensure_future(broadcast_audio(w))
-                    )
-                except RuntimeError:
-                    pass
+                if event_loop is not None:
+                    try:
+                        event_loop.call_soon_threadsafe(
+                            lambda w=wav_bytes: asyncio.ensure_future(broadcast_audio(w))
+                        )
+                    except RuntimeError:
+                        pass
             return
 
         # Route 2: Fallback — generate TTS locally if no WAV arrived
@@ -1481,13 +1513,13 @@ def on_alert_message(client, userdata, msg):
         if wav:
             last_audio_text = message
             last_audio_time = now
-            try:
-                loop = asyncio.get_event_loop()
-                loop.call_soon_threadsafe(
-                    lambda w=wav: asyncio.ensure_future(broadcast_audio(w))
-                )
-            except RuntimeError:
-                pass
+            if event_loop is not None:
+                try:
+                    event_loop.call_soon_threadsafe(
+                        lambda w=wav: asyncio.ensure_future(broadcast_audio(w))
+                    )
+                except RuntimeError:
+                    pass
     except Exception as e:
         log.warning(f"Audio alert error: {e}")
 
@@ -1545,8 +1577,10 @@ def main():
     http_thread.start()
 
     # ── Async Event Loop (WebSocket servers) ──
+    global event_loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    event_loop = loop  # MQTT callback threads need this ref to schedule work
 
     async def run_ws_servers():
         async with websockets.serve(ws_handler, '0.0.0.0', WS_PORT):
