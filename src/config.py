@@ -240,6 +240,39 @@ OBD_REQUEST_ID = 0x7DF
 OBD_RESPONSE_BASE = 0x7E8
 OBD_RESPONSE_END = 0x7EF
 
+# CAN FD — native socketcan FD bridge (can_native.py / RDK X5).
+# The X-Type itself is classic CAN (500 kbps), but the RDK X5 + native
+# socketcan stack supports CAN FD with a faster data-phase bitrate. The
+# bridge falls back to classic CAN when the interface or controller does
+# not advertise FD support.
+CAN_FD_ENABLED = os.getenv("CAN_FD_ENABLED", "false").lower() in ("1", "true", "yes")
+CAN_FD_DATA_BITRATE = int(os.getenv("CAN_FD_DATA_BITRATE", "2000000"))  # 2 Mbps data phase
+CAN_NATIVE_CHANNEL = os.getenv("CAN_NATIVE_CHANNEL", "can0")
+
+# ── Platform Detection ──
+# Two supported telemetry nodes share this codebase:
+#   pi5    — Raspberry Pi 5 (8 GB), Kali ARM64, slcan/USB2CANFD adapter
+#   rdkx5  — D-Robotics RDK X5 (Sunrise X5), native socketcan + CAN FD
+# hardware.py owns runtime detection + backend selection; this flag is a
+# cheap, import-safe hint other modules can branch on without importing
+# hardware.py. Override with DRIFTER_PLATFORM for bench/CI.
+def _detect_platform() -> str:
+    forced = os.getenv("DRIFTER_PLATFORM", "").strip().lower()
+    if forced in ("pi5", "rdkx5"):
+        return forced
+    try:
+        model = Path("/proc/device-tree/model").read_text(errors="ignore").lower()
+    except Exception:
+        model = ""
+    if "rdk x5" in model or "sunrise" in model or "x5" in model:
+        return "rdkx5"
+    return "pi5"
+
+
+PLATFORM = _detect_platform()
+IS_RDKX5 = PLATFORM == "rdkx5"
+IS_PI5 = PLATFORM == "pi5"
+
 # ═══════════════════════════════════════════════════════════════════
 #  Vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6 / Duratec)
 # ═══════════════════════════════════════════════════════════════════
@@ -881,6 +914,24 @@ TOPICS = {
     'vivi2_response': 'drifter/vivi2/response',
     'vivi2_status': 'drifter/vivi2/status',
     'vivi2_stream': 'drifter/vivi2/stream',
+
+    # ── RDK X5 port — native CAN FD bridge + toolkit (can_native.py) ──
+    # The bridge republishes the same per-PID metric topics as can_bridge.py
+    # (rpm/coolant/…/snapshot/dtc/system_status above); these are the
+    # native-bridge-specific control + status + toolkit-output channels.
+    'can_native_status': 'drifter/can/native/status',
+    'can_native_command': 'drifter/can/native/command',
+    'can_native_frame': 'drifter/can/native/frame',
+    'can_native_fuzz': 'drifter/can/native/fuzz',
+    'can_native_replay': 'drifter/can/native/replay',
+
+    # ── Counter-surveillance (ghost_protocol.py) ──
+    'ghost_status': 'drifter/ghost/status',
+    'ghost_alert': 'drifter/ghost/alert',
+    'ghost_tracker': 'drifter/ghost/tracker',     # AirTag / Tile / SmartTag follower
+    'ghost_stingray': 'drifter/ghost/stingray',   # IMSI-catcher / cell anomaly
+    'ghost_alpr': 'drifter/ghost/alpr',           # ALPR camera awareness
+    'ghost_rf': 'drifter/ghost/rf',               # anomalous RF / surveillance band
 }
 
 # ── LLM v2 cascade config ──
