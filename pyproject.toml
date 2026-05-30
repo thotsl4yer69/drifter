@@ -33,6 +33,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "aiofiles>=23.2",
     "tenacity>=8.2",
+    "psutil>=5.9",        # src/watchdog.py — system health metrics
+    "requests>=2.31",     # src/llm_client*.py, comms_bridge, driver_assist
+    "python-can>=4.0",    # src/can_bridge.py + tests/test_can_bridge.py
 ]
 
 [project.optional-dependencies]
