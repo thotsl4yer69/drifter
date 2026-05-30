@@ -1,0 +1,72 @@
+services:
+  drifter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mz1312/drifter:latest
+    container_name: drifter
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DRIFTER_CONFIG: /var/lib/drifter/config/drifter.yaml
+      DRIFTER_LOG_LEVEL: info
+      DRIFTER_MQTT_HOST: mosquitto
+      DRIFTER_MQTT_PORT: "1883"
+    volumes:
+      - drifter-data:/var/lib/drifter/data
+      - ./config:/var/lib/drifter/config:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: drifter-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./services/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    networks:
+      - drifter-net
+
+  realdash-bridge:
+    build:
+      context: ./realdash
+      dockerfile: Dockerfile
+    image: mz1312/drifter-realdash:latest
+    container_name: drifter-realdash
+    restart: unless-stopped
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      SERIAL_PORT: /dev/ttyUSB0
+      SERIAL_BAUD: "115200"
+    depends_on:
+      - mosquitto
+    networks:
+      - drifter-net
+    profiles:
+      - realdash
+
+volumes:
+  drifter-data:
+  mosquitto-data:
+  mosquitto-log:
+
+networks:
+  drifter-net:
+    driver: bridge
