@@ -49,6 +49,10 @@ def _afr() -> float:
     return DIESEL_AFR if FUEL_TYPE == 'diesel' else AFR_STOICH
 
 
+MAX_TICK_DT_SEC = 5.0      # ignore distance/fuel attribution across stalls > 5s
+MAF_STALE_SEC = 5.0        # don't report cur_l/100 from stale MAF
+
+
 class TripState:
     def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float) -> None:
         self.start_ts: Optional[float] = None
@@ -57,10 +61,12 @@ class TripState:
         self.fuel_l: float = 0.0
         self.last_speed_kph: float = 0.0
         self.last_maf_gps: Optional[float] = None
+        self.last_maf_ts: Optional[float] = None
         self.fuel_price = fuel_price
         self.tank_l = tank_l
         self.avg_l_per_100km = avg_l_per_100
         self.idle_since: Optional[float] = None
+        self.idle_warned: bool = False
         self.events: list = []
 
     def reset(self) -> None:
@@ -71,7 +77,8 @@ class TripState:
         if self.start_ts is None:
             self.start_ts = ts
             self.last_ts = ts
-        dt = max(0.0, ts - (self.last_ts or ts))
+        # Cap dt so a telemetry gap doesn't get attributed as continuous motion.
+        dt = max(0.0, min(ts - self.last_ts, MAX_TICK_DT_SEC))
         self.last_ts = ts
 
         if speed_kph is not None:
@@ -82,25 +89,35 @@ class TripState:
 
         if maf_gps is not None:
             self.last_maf_gps = float(maf_gps)
+            self.last_maf_ts = ts
             # Fuel mass flow = MAF / AFR (g/s). Convert g/s -> L/s -> L
             fuel_g = float(maf_gps) / _afr() * dt
             litres = fuel_g / 1000.0 / _density()
             if 0 < litres < 0.1:
                 self.fuel_l += litres
 
-        # Idle detection
+        # Idle detection: emit long_idle once, then re-arm after movement.
         if speed_kph is not None and float(speed_kph) <= 1.0:
             if self.idle_since is None:
                 self.idle_since = ts
-            elif ts - self.idle_since > TRIP_SESSION_GAP_MIN * 60:
+                self.idle_warned = False
+            elif not self.idle_warned and ts - self.idle_since > TRIP_SESSION_GAP_MIN * 60:
                 self.events.append({'event': 'long_idle', 'ts': ts})
+                self.idle_warned = True
         else:
             self.idle_since = None
+            self.idle_warned = False
 
     def to_dict(self) -> dict:
         elapsed = (self.last_ts - self.start_ts) if self.start_ts else 0.0
         cur_l_per_100 = None
-        if self.last_maf_gps is not None and self.last_speed_kph > 1.0:
+        maf_fresh = (
+            self.last_maf_gps is not None
+            and self.last_maf_ts is not None
+            and self.last_ts is not None
+            and self.last_ts - self.last_maf_ts <= MAF_STALE_SEC
+        )
+        if maf_fresh and self.last_speed_kph > 1.0:
             litres_per_hour = self.last_maf_gps / _afr() * 3600.0 / 1000.0 / _density()
             cur_l_per_100 = round(litres_per_hour / max(self.last_speed_kph, 0.1) * 100.0, 2)
         avg_l_per_100 = None
@@ -111,7 +128,7 @@ class TripState:
             'duration_s': round(elapsed, 1),
             'distance_km': round(self.distance_km, 3),
             'fuel_l': round(self.fuel_l, 3),
-            'avg_l_per_100km': avg_l_per_100 or self.avg_l_per_100km,
+            'avg_l_per_100km': avg_l_per_100 if avg_l_per_100 is not None else self.avg_l_per_100km,
             'cur_l_per_100km': cur_l_per_100,
             'cost_gbp': cost_gbp,
             'fuel_price_per_l': self.fuel_price,
@@ -168,14 +185,17 @@ def main() -> None:
             if data.get('event') == 'start':
                 state.reset()
             elif data.get('event') == 'end':
-                client.publish(TOPICS['trip_stats'], json.dumps(state.to_dict()),
+                summary = state.to_dict()
+                client.publish(TOPICS['trip_stats'], json.dumps(summary),
                                retain=True)
                 client.publish(TOPICS['trip_event'], json.dumps({
                     'event': 'session_end',
                     'session_id': data.get('session_id'),
-                    'final': state.to_dict(),
+                    'final': summary,
                     'ts': time.time(),
                 }))
+                # Clear accumulators so the next session starts at zero even if no 'start' event fires.
+                state.reset()
 
     client.on_message = on_message
 

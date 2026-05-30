@@ -2,14 +2,18 @@
 """
 MZ1312 DRIFTER — Navigation Engine
 Reads NMEA from a USB GPS, publishes position, computes distance to
-known fixed speed cameras (Victoria dataset shipped in data/), and
-optionally requests routes from a public OSRM endpoint when online.
+known fixed speed cameras (Victoria dataset shipped in data/), supports
+offline route caching, geofence enter/exit detection, and optionally
+requests routes from a public OSRM endpoint when online.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import functools
+import hashlib
 import json
 import logging
 import math
+import operator
 import signal
 import threading
 import time
@@ -23,7 +27,10 @@ from config import (
     MQTT_HOST, MQTT_PORT, TOPICS,
     DRIFTER_DIR, SPEED_CAMERAS_FILE,
     NAV_GPS_DEVICE, NAV_GPS_BAUD,
-    NAV_CAMERA_WARN_METERS, NAV_REROUTE_OFF_THRESHOLD, NAV_OSRM_HOST,
+    NAV_CAMERA_WARN_METERS, NAV_CAMERA_BEARING_TOLERANCE_DEG,
+    NAV_REROUTE_OFF_THRESHOLD, NAV_OSRM_HOST,
+    NAV_ROUTE_CACHE_DIR, NAV_ROUTE_CACHE_TTL_HOURS,
+    NAV_GEOFENCES_FILE, NAV_STATUS_PUBLISH_SEC,
 )
 
 logging.basicConfig(
@@ -37,6 +44,9 @@ CONFIG_PATH = DRIFTER_DIR / "nav.yaml"
 
 EARTH_RADIUS_M = 6_371_000.0
 
+GPS_REOPEN_BACKOFF_SEC = 5.0
+ROUTE_CACHE_QUANT_M = 50  # round endpoints to ~50m grid for cache keys
+
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1 = math.radians(lat1)
@@ -45,6 +55,35 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlmb = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
     return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Bearing in degrees (0-360) from point 1 to point 2."""
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    x = math.sin(dl) * math.cos(p2)
+    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(x, y)) + 360.0) % 360.0
+
+
+def bearing_delta(a: float, b: float) -> float:
+    """Smallest absolute angle between two bearings (0-180)."""
+    d = abs((a - b) % 360.0)
+    return d if d <= 180.0 else 360.0 - d
+
+
+def verify_nmea_checksum(line: str) -> bool:
+    """Validate a $...*XX NMEA sentence's XOR checksum."""
+    if not line.startswith('$') or '*' not in line:
+        return False
+    try:
+        body, csum = line[1:].split('*', 1)
+        csum = csum.strip()[:2]
+        x = functools.reduce(operator.xor, (ord(c) for c in body), 0)
+        return f"{x:02X}" == csum.upper()
+    except (ValueError, IndexError):
+        return False
 
 
 def _load_cameras() -> list:
@@ -73,6 +112,30 @@ def _load_cameras() -> list:
     return cameras
 
 
+def _load_geofences() -> list:
+    if not NAV_GEOFENCES_FILE.exists():
+        return []
+    try:
+        data = json.loads(NAV_GEOFENCES_FILE.read_text())
+    except Exception as e:
+        log.warning(f"Geofence load failed: {e}")
+        return []
+    fences = []
+    for f in data.get('fences', []):
+        try:
+            fences.append({
+                'id': str(f['id']),
+                'name': f.get('name', f['id']),
+                'lat': float(f['lat']),
+                'lon': float(f['lon']),
+                'radius_m': float(f.get('radius_m', 100)),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    log.info(f"Loaded {len(fences)} geofences")
+    return fences
+
+
 def _parse_nmea_gga(line: str) -> Optional[dict]:
     parts = line.strip().split(',')
     if len(parts) < 10 or not parts[0].endswith('GGA'):
@@ -82,7 +145,7 @@ def _parse_nmea_gga(line: str) -> Optional[dict]:
         lat_dir = parts[3]
         lon_raw = parts[4]
         lon_dir = parts[5]
-        if not lat_raw or not lon_raw:
+        if not lat_raw or not lon_raw or len(lat_raw) < 4 or len(lon_raw) < 5:
             return None
         lat_deg = int(lat_raw[:2])
         lat_min = float(lat_raw[2:])
@@ -96,7 +159,9 @@ def _parse_nmea_gga(line: str) -> Optional[dict]:
             lon = -lon
         fix = int(parts[6] or 0)
         sats = int(parts[7] or 0)
-        alt = float(parts[9] or 0.0)
+        # parts[9] may carry a checksum suffix on the last field; strip it
+        alt_raw = parts[9].split('*')[0] if parts[9] else '0'
+        alt = float(alt_raw or 0.0)
         return {'lat': lat, 'lon': lon, 'fix': fix, 'sats': sats, 'alt_m': alt}
     except (ValueError, IndexError):
         return None
@@ -107,6 +172,9 @@ def _parse_nmea_rmc(line: str) -> Optional[dict]:
     if len(parts) < 10 or not parts[0].endswith('RMC'):
         return None
     try:
+        status = parts[2]
+        if status and status != 'A':  # 'V' = void / no fix
+            return None
         speed_knots = float(parts[7] or 0.0)
         bearing = float(parts[8] or 0.0)
         return {
@@ -125,9 +193,11 @@ class NavState:
         self.bearing: float = 0.0
         self.fix: int = 0
         self.sats: int = 0
+        self.last_fix_ts: float = 0.0
         self.last_camera_id: Optional[str] = None
         self.last_camera_ts: float = 0.0
         self.route_target: Optional[tuple] = None
+        self.inside_fences: set = set()
 
 
 def _nearest_camera(state: NavState, cameras: Iterable[dict]) -> Optional[tuple]:
@@ -139,6 +209,17 @@ def _nearest_camera(state: NavState, cameras: Iterable[dict]) -> Optional[tuple]
         if best is None or d < best[1]:
             best = (cam, d)
     return best
+
+
+def _camera_in_front(state: NavState, cam: dict) -> bool:
+    """Cheap directional gate: only warn when camera lies within the travel cone.
+
+    Skipped when speed is too low to trust the GPS-derived bearing.
+    """
+    if state.speed_kph < 5.0:
+        return True
+    cam_bearing = initial_bearing(state.lat, state.lon, cam['lat'], cam['lon'])
+    return bearing_delta(state.bearing, cam_bearing) <= NAV_CAMERA_BEARING_TOLERANCE_DEG
 
 
 def _emit_camera_warning(client: mqtt.Client, state: NavState, cam: dict, distance: float) -> None:
@@ -161,7 +242,76 @@ def _emit_camera_warning(client: mqtt.Client, state: NavState, cam: dict, distan
              f"limit={cam.get('limit_kph')}kph current={state.speed_kph}kph")
 
 
+def _check_geofences(client: mqtt.Client, state: NavState, fences: Iterable[dict]) -> None:
+    if state.lat is None:
+        return
+    current = set()
+    for f in fences:
+        d = haversine(state.lat, state.lon, f['lat'], f['lon'])
+        if d <= f['radius_m']:
+            current.add(f['id'])
+    entered = current - state.inside_fences
+    exited = state.inside_fences - current
+    for fid in entered:
+        f = next((x for x in fences if x['id'] == fid), None)
+        if not f:
+            continue
+        client.publish(TOPICS['nav_geofence'], json.dumps({
+            'event': 'enter', 'id': fid, 'name': f['name'],
+            'lat': state.lat, 'lon': state.lon, 'ts': time.time(),
+        }))
+        log.info(f"Geofence ENTER: {f['name']}")
+    for fid in exited:
+        f = next((x for x in fences if x['id'] == fid), None)
+        if not f:
+            continue
+        client.publish(TOPICS['nav_geofence'], json.dumps({
+            'event': 'exit', 'id': fid, 'name': f['name'],
+            'lat': state.lat, 'lon': state.lon, 'ts': time.time(),
+        }))
+        log.info(f"Geofence EXIT: {f['name']}")
+    state.inside_fences = current
+
+
+def _route_cache_key(origin: tuple, destination: tuple) -> str:
+    """Quantise endpoints to ~50m and hash; identical short trips reuse the cache."""
+    step = ROUTE_CACHE_QUANT_M / 111_000.0
+    quant = (
+        round(origin[0] / step) * step,
+        round(origin[1] / step) * step,
+        round(destination[0] / step) * step,
+        round(destination[1] / step) * step,
+    )
+    return hashlib.sha1(json.dumps(quant).encode()).hexdigest()[:16]
+
+
+def _route_from_cache(key: str) -> Optional[dict]:
+    path = NAV_ROUTE_CACHE_DIR / f"{key}.json"
+    if not path.exists():
+        return None
+    try:
+        age_h = (time.time() - path.stat().st_mtime) / 3600.0
+        if age_h > NAV_ROUTE_CACHE_TTL_HOURS:
+            return None
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+def _route_to_cache(key: str, route: dict) -> None:
+    try:
+        NAV_ROUTE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (NAV_ROUTE_CACHE_DIR / f"{key}.json").write_text(json.dumps(route))
+    except Exception as e:
+        log.debug(f"route cache write failed: {e}")
+
+
 def _request_route(origin: tuple, destination: tuple) -> Optional[dict]:
+    key = _route_cache_key(origin, destination)
+    cached = _route_from_cache(key)
+    if cached:
+        log.info(f"Route cache hit ({key})")
+        return cached
     url = (
         f"https://{NAV_OSRM_HOST}/route/v1/driving/"
         f"{origin[1]},{origin[0]};{destination[1]},{destination[0]}"
@@ -170,31 +320,48 @@ def _request_route(origin: tuple, destination: tuple) -> Optional[dict]:
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
+            log.warning(f"OSRM HTTP {resp.status_code}")
             return None
-        return resp.json()
+        data = resp.json()
+        _route_to_cache(key, data)
+        return data
     except Exception as e:
         log.warning(f"OSRM request failed: {e}")
         return None
 
 
-def _gps_loop(state: NavState, running_ref: list) -> None:
-    """Read NMEA from the GPS device. Falls back to stdin lines if unavailable."""
+def _open_serial():
     try:
         import serial
         ser = serial.Serial(NAV_GPS_DEVICE, NAV_GPS_BAUD, timeout=1)
         log.info(f"GPS open: {NAV_GPS_DEVICE} @ {NAV_GPS_BAUD}")
+        return ser
     except Exception as e:
-        log.warning(f"GPS open failed: {e} — running in offline stub mode")
-        ser = None
+        log.warning(f"GPS open failed: {e}")
+        return None
+
+
+def _gps_loop(state: NavState, running_ref: list) -> None:
+    """Read NMEA from the GPS device. Auto-recovers on disconnect."""
+    ser = _open_serial()
+    next_reopen = 0.0
 
     while running_ref[0]:
         try:
-            line: Optional[str] = None
-            if ser:
-                raw = ser.readline().decode('ascii', errors='replace')
-                line = raw.strip() if raw else None
+            if ser is None:
+                now = time.time()
+                if now >= next_reopen:
+                    ser = _open_serial()
+                    next_reopen = now + GPS_REOPEN_BACKOFF_SEC
+                else:
+                    time.sleep(0.5)
+                continue
+
+            raw = ser.readline().decode('ascii', errors='replace')
+            line = raw.strip() if raw else None
             if not line:
-                time.sleep(0.2)
+                continue
+            if not verify_nmea_checksum(line):
                 continue
             gga = _parse_nmea_gga(line)
             if gga and gga.get('fix', 0) > 0:
@@ -202,18 +369,28 @@ def _gps_loop(state: NavState, running_ref: list) -> None:
                 state.lon = gga['lon']
                 state.fix = gga['fix']
                 state.sats = gga['sats']
+                state.last_fix_ts = time.time()
+            elif gga:
+                state.fix = 0
+                state.sats = gga['sats']
             rmc = _parse_nmea_rmc(line)
             if rmc:
                 state.speed_kph = rmc['speed_kph']
                 state.bearing = rmc['bearing']
         except Exception as e:
-            log.debug(f"gps loop: {e}")
-            time.sleep(0.5)
+            log.warning(f"GPS read error, reopening: {e}")
+            try:
+                ser.close()
+            except Exception:
+                pass
+            ser = None
+            next_reopen = time.time() + GPS_REOPEN_BACKOFF_SEC
 
 
 def main() -> None:
     log.info("DRIFTER Navigation starting...")
     cameras = _load_cameras()
+    fences = _load_geofences()
     state = NavState()
 
     running = [True]
@@ -231,6 +408,9 @@ def main() -> None:
             try:
                 req = json.loads(msg.payload)
                 if state.lat is None:
+                    client.publish(TOPICS['nav_alert'], json.dumps({
+                        'event': 'route_error', 'reason': 'no_gps_fix', 'ts': time.time(),
+                    }))
                     return
                 dest = (float(req['lat']), float(req['lon']))
                 route = _request_route((state.lat, state.lon), dest)
@@ -239,11 +419,20 @@ def main() -> None:
                     client.publish(TOPICS['nav_route'], json.dumps({
                         'origin': {'lat': state.lat, 'lon': state.lon},
                         'destination': {'lat': dest[0], 'lon': dest[1]},
-                        'route': route.get('routes', [{}])[0] if route else None,
+                        'route': route.get('routes', [{}])[0],
+                        'ts': time.time(),
+                    }))
+                else:
+                    client.publish(TOPICS['nav_alert'], json.dumps({
+                        'event': 'route_error', 'reason': 'osrm_unavailable',
+                        'destination': {'lat': dest[0], 'lon': dest[1]},
                         'ts': time.time(),
                     }))
             except Exception as e:
                 log.warning(f"route handler: {e}")
+                client.publish(TOPICS['nav_alert'], json.dumps({
+                    'event': 'route_error', 'reason': str(e), 'ts': time.time(),
+                }))
 
     client.on_message = on_message
 
@@ -267,9 +456,21 @@ def main() -> None:
     log.info("Navigation LIVE")
 
     last_pos_pub = 0.0
+    last_status_pub = 0.0
     while running[0]:
         now = time.time()
-        if state.lat is not None and now - last_pos_pub >= 1:
+        fix_age = now - state.last_fix_ts if state.last_fix_ts else None
+        if now - last_status_pub >= NAV_STATUS_PUBLISH_SEC:
+            client.publish(TOPICS['nav_status'], json.dumps({
+                'has_fix': state.fix > 0 and (fix_age is None or fix_age < 5),
+                'fix': state.fix,
+                'sats': state.sats,
+                'fix_age_s': round(fix_age, 1) if fix_age is not None else None,
+                'ts': now,
+            }), retain=True)
+            last_status_pub = now
+
+        if state.lat is not None and state.fix > 0 and now - last_pos_pub >= 1:
             client.publish(TOPICS['nav_position'], json.dumps({
                 'lat': state.lat, 'lon': state.lon,
                 'speed_kph': state.speed_kph,
@@ -283,8 +484,10 @@ def main() -> None:
                 nearest = _nearest_camera(state, cameras)
                 if nearest:
                     cam, dist = nearest
-                    if dist <= NAV_CAMERA_WARN_METERS:
+                    if dist <= NAV_CAMERA_WARN_METERS and _camera_in_front(state, cam):
                         _emit_camera_warning(client, state, cam, dist)
+            if fences:
+                _check_geofences(client, state, fences)
         time.sleep(0.25)
 
     client.loop_stop()

@@ -13,6 +13,18 @@ DRIFTER_DIR = Path("/opt/drifter")
 LOG_DIR = DRIFTER_DIR / "logs"
 CALIBRATION_FILE = DRIFTER_DIR / "calibration.json"
 
+# ── .env loading ──
+# Load /opt/drifter/.env so API keys and host overrides are picked up by
+# os.getenv() further down this file. Falls back silently if python-dotenv
+# isn't installed (dev environments) or the file doesn't exist (first install).
+try:
+    from dotenv import load_dotenv  # type: ignore[import]
+    _ENV_FILE = DRIFTER_DIR / ".env"
+    if _ENV_FILE.exists():
+        load_dotenv(_ENV_FILE)
+except ImportError:
+    pass
+
 # ── v2 Paths ──
 VEHICLES_DIR = DRIFTER_DIR / "vehicles"
 DATA_DIR = DRIFTER_DIR / "data"
@@ -24,8 +36,8 @@ VEHICLE_PROFILE_FILE = DRIFTER_DIR / "vehicle.yaml"
 SPEED_CAMERAS_FILE = DATA_DIR / "speed_cameras_vic.json"
 
 # ── MQTT ──
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
 # ── CAN Bus ──
 CAN_BITRATE = 500000
@@ -38,6 +50,7 @@ OBD_RESPONSE_END = 0x7EF
 # ═══════════════════════════════════════════════════════════════════
 VEHICLE = "2004 Jaguar X-Type 2.5L V6"
 VEHICLE_YEAR = 2004
+VEHICLE_MAKE = "Jaguar"
 VEHICLE_MODEL = "X-Type"
 VEHICLE_ENGINE = "2.5 V6"
 
@@ -410,9 +423,10 @@ CALIBRATION_DEFAULTS = {
 }
 
 # ── Home Network (nanob) ──
-NANOB_HOST = "192.168.1.159"
-NANOB_PORT = 1883
-NANOB_USER = "sentient"
+NANOB_HOST = os.getenv("NANOB_HOST", "192.168.1.159")
+NANOB_PORT = int(os.getenv("NANOB_PORT", "1883"))
+NANOB_USER = os.getenv("NANOB_USER", "sentient")
+NANOB_PASS = os.getenv("NANOB_PASS", "")
 HOME_CHECK_INTERVAL = 30
 
 # ── Voice ──
@@ -537,11 +551,14 @@ TOPICS = {
     'spotify_command': 'drifter/spotify/command',
     'spotify_status': 'drifter/spotify/status',
     'spotify_track': 'drifter/spotify/track',
+    'spotify_duck': 'drifter/spotify/duck',
     # Navigation
     'nav_position': 'drifter/nav/position',
     'nav_route': 'drifter/nav/route',
     'nav_alert': 'drifter/nav/alert',
     'nav_camera': 'drifter/nav/camera',
+    'nav_status': 'drifter/nav/status',
+    'nav_geofence': 'drifter/nav/geofence',
     # Trip computer
     'trip_stats': 'drifter/trip/stats',
     'trip_fuel': 'drifter/trip/fuel',
@@ -786,14 +803,28 @@ SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
 SPOTIFY_SCOPES = "user-modify-playback-state user-read-playback-state user-read-currently-playing streaming"
 SPOTIFY_TOKEN_FILE = DRIFTER_DIR / ".spotify_token.json"
 SPOTIFY_DEVICE_NAME = "DRIFTER"
+SPOTIFY_DUCK_LEVEL = 15             # volume during ducking
+SPOTIFY_DUCK_FADE_MS = 400          # fade duration each direction
+SPOTIFY_MOODS = {                   # default mood → playlist; overridden by spotify.yaml
+    'calm':    'spotify:playlist:37i9dQZF1DWZqd5JICZI0u',
+    'focus':   'spotify:playlist:37i9dQZF1DWZeKCadgRdKQ',
+    'hype':    'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
+    'night':   'spotify:playlist:37i9dQZF1DX4SBhb3fqCJd',
+    'cruise':  'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
+}
 
 # ── Navigation ──
 NAV_TILE_CACHE_DIR = DATA_DIR / "tiles"
+NAV_ROUTE_CACHE_DIR = DATA_DIR / "routes"
+NAV_ROUTE_CACHE_TTL_HOURS = 24 * 7
+NAV_GEOFENCES_FILE = DATA_DIR / "geofences.json"
 NAV_GPS_DEVICE = "/dev/ttyACM0"
 NAV_GPS_BAUD = 9600
 NAV_CAMERA_WARN_METERS = 300
+NAV_CAMERA_BEARING_TOLERANCE_DEG = 60   # camera must be within ±this of travel bearing
 NAV_REROUTE_OFF_THRESHOLD = 50      # m off-route triggers reroute
 NAV_OSRM_HOST = "router.project-osrm.org"
+NAV_STATUS_PUBLISH_SEC = 5
 
 # ── Trip Computer ──
 TRIP_FUEL_PRICE_GBP_PER_L = 1.45    # default — overridden by config
@@ -805,7 +836,7 @@ TRIP_SESSION_GAP_MIN = 10           # minutes idle = new session
 CRASH_ACCEL_G_THRESHOLD = 3.0       # peak g over 100ms = crash
 CRASH_DECEL_KPH_PER_S = 25          # sudden stop ≥25 km/h/s
 CRASH_AIRBAG_GRACE_SEC = 10         # countdown before auto-SOS
-CRASH_SOS_NUMBER = ""               # set via crash.yaml
+CRASH_SOS_NUMBER = ""               # override via crash.yaml -> sos.number
 
 # ── Driver Assist ──
 DRIVER_SCORE_WINDOW_KM = 50
@@ -852,7 +883,8 @@ FCW_TTC_CRIT = 1.2                  # time-to-collision critical (s)
 
 # ── Vehicle profile defaults (overridden by vehicles/<VIN>.yaml) ──
 VEHICLE_DEFAULTS = {
-    "make": VEHICLE_MODEL,
+    "make": VEHICLE_MAKE,
+    "model": VEHICLE_MODEL,
     "year": VEHICLE_YEAR,
     "engine": VEHICLE_ENGINE,
     "fuel_type": FUEL_TYPE,
