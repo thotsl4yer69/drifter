@@ -235,7 +235,14 @@ pip install --quiet \
     psutil \
     websockets \
     requests \
-    numpy
+    numpy \
+    pyserial \
+    pyyaml
+# pyserial: flipper_bridge.py imports `serial` at module load (drifter-flipper
+#   is enabled) and marauder_transport/realdash also need it — without it the
+#   service crash-loops on ModuleNotFoundError. pyyaml: config.py imports `yaml`
+#   and EVERY service imports config, so it must be in the core block (not only
+#   the best-effort voice-deps line below, which may warn-and-skip on failure).
 # Voice input Python deps (must be in venv)
 pip install --quiet vosk pyaudio openwakeword pyyaml 2>/dev/null && ok "Voice input Python deps installed" || \
     warn "Voice input deps failed — run 'pip install vosk pyaudio openwakeword pyyaml' in venv"
@@ -259,15 +266,22 @@ ok "Python venv ready at ${DRIFTER_DIR}/venv"
 # ── 7. Deploy Application ──
 step 7 "Deploying DRIFTER application"
 
-# Source files
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py rfaudio.py wardrive.py web_dashboard.py web_dashboard_state.py web_dashboard_handlers.py web_dashboard_html.py web_dashboard_audio.py web_dashboard_hardware.py hw_probe.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py mode.py opsec_dashboard.py corpus.py ble_passive.py ble_history.py ble_map_html.py ble_identity.py ble_geocluster.py ble_persistence.py gps_publisher.py telemetry_batcher.py trip_computer.py vivi_memory.py adaptive_thresholds.py session_reporter.py hardware.py can_native.py ghost_protocol.py"
-for f in $SRC_FILES; do
-    if [ -f "${REPO_DIR}/src/${f}" ]; then
-        cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
-        chmod +x "${DRIFTER_DIR}/${f}"
+# Source files — deploy the ENTIRE src/ Python tree, not a hand-maintained
+# manifest. A stale manifest is how drifter-vivi (vivi_v2.py), drifter-marauder
+# (marauder_bridge.py + the marauder_features/ package) and drifter-boot-reason
+# (boot_reason.py) shipped enabled-but-undeployed and crash-looped. Copying all
+# of src/*.py is safe: only the services we `systemctl enable` ever run, so the
+# extra modules just sit idle. Subpackages (marauder_features/) come along too.
+cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"
+chmod +x "${DRIFTER_DIR}"/*.py 2>/dev/null || true
+# Local subpackages imported by services (e.g. marauder_bridge -> marauder_features).
+for pkg in marauder_features; do
+    if [ -d "${REPO_DIR}/src/${pkg}" ]; then
+        rm -rf "${DRIFTER_DIR:?}/${pkg}"
+        cp -r "${REPO_DIR}/src/${pkg}" "${DRIFTER_DIR}/${pkg}"
     fi
 done
-ok "Python services deployed to ${DRIFTER_DIR}"
+ok "Python services deployed to ${DRIFTER_DIR} ($(ls "${REPO_DIR}"/src/*.py | wc -l) modules + subpackages)"
 
 # Fleet-contract operator CLI: /usr/local/bin/drifter → /opt/drifter/diagnose.py
 if [ -f "${REPO_DIR}/bin/drifter" ]; then
