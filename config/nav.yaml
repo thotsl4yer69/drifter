@@ -1,0 +1,23 @@
+# MZ1312 DRIFTER — Navigation Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+
+# Serial device + baud for the USB GPS dongle
+gps_device: "/dev/ttyACM0"
+gps_baud: 9600
+
+# Speed-camera proximity warning radius (metres)
+camera_warn_meters: 300
+
+# If GPS drifts more than this off-route, request a new route
+reroute_off_threshold_m: 50
+
+# Public OSRM endpoint (override for self-hosted if desired)
+osrm_host: "router.project-osrm.org"
+
+# Path to the speed-camera dataset (relative to /opt/drifter/)
+# Shipped: data/speed_cameras_vic.json (Victoria, AU fixed cameras)
+speed_cameras_file: "data/speed_cameras_vic.json"
+
+# Tile cache directory for offline maps (optional). Populate with the
+# tile pipeline of your choice; the navigation engine just reads tiles.
+tile_cache_dir: "data/tiles"

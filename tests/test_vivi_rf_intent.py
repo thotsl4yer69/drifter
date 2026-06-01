@@ -12,9 +12,9 @@ to the LLM. These tests pin the regex behaviour:
     bridge HIGH-risk confirmation must come from the cockpit UI
 """
 import sys
-from pathlib import Path
 
 import pytest
+
 sys.path.insert(0, 'src')
 
 # Importing vivi at top level pulls in paho/whisper/etc. The classifier

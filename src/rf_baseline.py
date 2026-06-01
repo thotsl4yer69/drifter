@@ -34,12 +34,9 @@ import signal
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
-import paho.mqtt.client as mqtt
-
-from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 import gps_helper
+from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [RF-BASELINE] %(message)s',
                     datefmt='%H:%M:%S')
@@ -76,7 +73,7 @@ def _bucket_freq(freq_mhz: float) -> float:
     return round(freq_mhz / _FREQ_BUCKET_MHZ) * _FREQ_BUCKET_MHZ
 
 
-def load_baseline(loc_hash: str) -> Optional[dict]:
+def load_baseline(loc_hash: str) -> dict | None:
     path = _baseline_path(loc_hash)
     if not path.exists():
         return None
@@ -106,7 +103,7 @@ def save_baseline(baseline: dict) -> bool:
 
 
 def build_baseline(samples: list, lat: float, lon: float,
-                   captured_ts: Optional[float] = None,
+                   captured_ts: float | None = None,
                    window_s: int = BASELINE_WINDOW_SEC) -> dict:
     """Aggregate per-sample observations into a baseline dict.
 
@@ -186,7 +183,7 @@ class RFBaseline:
         self._capture_started: dict = {}     # loc_hash -> start_ts
         self._loaded_baselines: dict = {}    # loc_hash -> baseline dict
         self._last_gps_check_ts = 0.0
-        self._current_loc_hash: Optional[str] = None
+        self._current_loc_hash: str | None = None
         self._last_published_novel: dict = {}  # (bucket, proto) -> ts (dedupe)
 
         self.client = make_mqtt_client('drifter-rf-baseline')
@@ -248,7 +245,7 @@ class RFBaseline:
                         })
         return out
 
-    def _current_location_hash(self) -> Optional[str]:
+    def _current_location_hash(self) -> str | None:
         now = time.time()
         # Recompute the location hash every 30s; otherwise reuse.
         if self._current_loc_hash is not None and (now - self._last_gps_check_ts) < 30:
@@ -260,7 +257,7 @@ class RFBaseline:
         self._current_loc_hash = _location_hash(fix['lat'], fix['lon'])
         return self._current_loc_hash
 
-    def _get_or_init_baseline(self, loc_hash: str) -> Optional[dict]:
+    def _get_or_init_baseline(self, loc_hash: str) -> dict | None:
         if loc_hash in self._loaded_baselines:
             return self._loaded_baselines[loc_hash]
         b = load_baseline(loc_hash)

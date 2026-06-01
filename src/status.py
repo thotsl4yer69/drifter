@@ -6,15 +6,19 @@ Usage: python3 src/status.py [--json]
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import json
-import time
 import argparse
+import json
 import subprocess
-import paho.mqtt.client as mqtt
+import time
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS, SERVICES as ALL_SERVICES,
-    LEVEL_NAMES, LOG_DIR, CALIBRATION_FILE, make_mqtt_client)
+    CALIBRATION_FILE,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    make_mqtt_client,
+)
+from config import SERVICES as ALL_SERVICES
 
 COLLECT_SECONDS = 2
 

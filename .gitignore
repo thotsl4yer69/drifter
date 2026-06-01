@@ -25,3 +25,7 @@ reports/
 # OMC/superpowers runtime — local agent state, not for the repo
 .omc/
 .superpowers/
+
+# Feature-side additions
+.claude/
+.venv/

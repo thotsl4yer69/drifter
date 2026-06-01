@@ -6,12 +6,10 @@ Run: pytest tests/test_db.py -v
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import time
-import json
 import threading
+import time
+
 import pytest
-from unittest.mock import patch
-from pathlib import Path
 
 import db
 

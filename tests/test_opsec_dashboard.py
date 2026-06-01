@@ -13,12 +13,9 @@ import sys
 import threading
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
-import opsec_dashboard as od  # noqa: E402
-
+import opsec_dashboard as od
 
 # ── MqttCache ──────────────────────────────────────────────────────────
 

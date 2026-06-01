@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from config import MODES, MODE_STATE_PATH, DEFAULT_MODE, SERVICES
+from config import DEFAULT_MODE, MODE_STATE_PATH, MODES, SERVICES
 
 
 def read_mode() -> str:

@@ -6,6 +6,7 @@ loads those constants from src/data/mechanic/*.json. These tests lock in
 the public API so any future data reshuffling still works.
 """
 import sys
+
 sys.path.insert(0, 'src')
 
 import mechanic

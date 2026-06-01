@@ -8,7 +8,6 @@ import pytest
 
 import hw_probe
 
-
 _RESULT_KEYS = {'device', 'connected', 'detail', 'action', 'ts'}
 
 

@@ -1,0 +1,46 @@
+# MZ1312 DRIFTER — RDK X5 Platform Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# D-Robotics RDK X5 (Sunrise X5) telemetry-node overrides. The RDK X5 has
+# an on-board CAN controller (native socketcan) and supports CAN FD, unlike
+# the Pi 5 which typically runs a USB2CANFD/slcan adapter.
+#
+# Deployed to /opt/drifter/rdkx5.yaml by scripts/install-rdkx5.sh. Most
+# values mirror the env vars read in src/config.py (DRIFTER_PLATFORM,
+# CAN_FD_ENABLED, CAN_FD_DATA_BITRATE, CAN_NATIVE_CHANNEL) — set them in
+# /opt/drifter/.env to actually take effect at runtime; this file documents
+# the intended platform profile and is read by hardware.py-aware tooling.
+
+platform: rdkx5
+
+# ── CAN ──
+can:
+  # Native on-board controller — no slcan shim required.
+  backend: native
+  interface: socketcan
+  channel: can0
+  # The X-Type bus itself is classic CAN @ 500 kbps. CAN FD only matters
+  # on benches / future vehicles with an FD-capable bus. Enable per-deploy.
+  fd: false
+  bitrate: 500000          # nominal / arbitration phase
+  data_bitrate: 2000000    # FD data phase (only used when fd: true)
+
+# ── Backend selection hints (consumed by hardware.py) ──
+backends:
+  can: can_native          # use src/can_native.py instead of can_bridge.py
+  bridge_mode: bridge      # can_native.py mode: bridge|sniffer|fuzzer|decoder_ai|replay|dbc_gen
+
+# ── Counter-surveillance (ghost_protocol.py) ──
+ghost:
+  enabled: true
+  follower_min_locations: 3   # distinct ~100m cells before "follower" alert
+  stingray_delta_db: 18.0     # dB over band median that flags an IMSI-catcher
+
+# ── Platform notes ──
+# - Bring CAN up with scripts/setup-can-fd.sh (handles fd on/off).
+# - On first boot run: DRIFTER_PLATFORM=rdkx5 written into /opt/drifter/.env
+#   by install-rdkx5.sh so config.PLATFORM resolves correctly even before
+#   the device-tree probe.
+notes:
+  device_tree_match: "rdk x5"
+  audio_device: plughw:0,0

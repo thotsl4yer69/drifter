@@ -5,14 +5,11 @@ Single source of truth for all persistent analyst data.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import sqlite3
 import logging
+import sqlite3
 import threading
-from pathlib import Path
-from typing import Optional
 
 import config
-from config import DB_PATH, REPORTS_DIR
 
 log = logging.getLogger(__name__)
 
@@ -131,7 +128,7 @@ def get_recent_reports(n: int) -> list:
     return [dict(r) for r in rows]
 
 
-def get_baseline(exclude_session_id: str, n: int = 10) -> Optional[dict]:
+def get_baseline(exclude_session_id: str, n: int = 10) -> dict | None:
     """Return column averages for the last N sessions excluding the current one."""
     conn = _conn()
     rows = conn.execute(

@@ -1,18 +1,31 @@
 # DRIFTER — AI Agent Instructions
 
-Vehicle intelligence system for a **2004 Jaguar X-Type 2.5L V6 (AJ-V6)** on Raspberry Pi 5 (Kali ARM64).  
+Vehicle intelligence system originally built for a **2004 Jaguar X-Type 2.5L V6 (AJ-V6)** on Raspberry Pi 5 (Kali ARM64). v2 generalises it: VIN-driven vehicle profiles, multi-tier diagnostics with a Claude→Groq→Ollama cascade, infotainment, ADAS, and a Hailo Pi5 vision node.
 Brand: **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 
 ## Architecture
 
-**37 Python modules** in `src/`, all flat (no sub-packages), deployed to `/opt/drifter/`.
-Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, and service list.
+**Many Python modules** in `src/` — flat layout, no sub-packages — deployed to `/opt/drifter/`.
+Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, v2 cascade settings, and the canonical `SERVICES` list.
 
-**Data flow**: `can_bridge.py` → MQTT (Mosquitto on `localhost:1883`; NanoMQ supported via `--with-nanomq`) → `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `anomaly_monitor.py` / `session_analyst.py` / `vivi.py`  
-**MQTT topics** use the `TOPICS` dict from config — never hardcode topic strings. Hierarchy: `drifter/{domain}/{metric}`.  
-**RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.  
-**Web Dashboard**: HTTP on port 8080, WebSocket telemetry on 8081, audio on 8082.  
-**LLM Mechanic**: Ollama chat API with tool calling. RAG over `mechanic.py` knowledge base + `field_ops_kb.py`.
+**Data flow (v2)**:
+- Ingest: `can_bridge.py` (primary) or `obd_bridge.py` (ELM327 fallback) → MQTT (Mosquitto on `localhost:1883`; NanoMQ supported via `--with-nanomq`)
+- Aggregation: `telemetry_batcher.py` produces a rolling-window summary
+- Tier 1: `safety_engine.py` (local deterministic safety rules)
+- Tier 2: `ai_diagnostics.py` (Claude via `llm_client_v2.py`)
+- Tier 3: `session_reporter.py` (post-drive markdown narrative)
+- Voice: `vivi_v2.py` ↔ `vivi_memory.py` (streaming Claude with SQLite memory)
+- Vehicle: `vehicle_id.py` resolves VIN → profile in `vehicles/<VIN>.yaml`
+- Learning: `adaptive_thresholds.py`, `vehicle_kb.py`, `vehicle_learn.py`
+- Infotainment: `spotify_bridge.py`, `nav_engine.py`, `trip_computer.py`
+- ADAS / safety: `crash_detect.py`, `driver_assist.py`, `sentry_mode.py`, `comms_bridge.py`
+- Vision (separate Pi5 + Hailo node): `vision_engine.py`, `alpr_engine.py`, `dashcam.py`, `forward_collision.py`
+- Fan-out: `alert_engine.py` / `logger.py` / `voice_alerts.py` / `realdash_bridge.py` / `web_dashboard.py` / `anomaly_monitor.py` / `session_analyst.py`
+
+**MQTT topics** use the `TOPICS` dict from config — never hardcode topic strings. v2 namespaces include `drifter/safety/*`, `drifter/diag/ai/*`, `drifter/session/*`, `drifter/vehicle/*`, `drifter/telemetry/*`, `drifter/thresholds/*`, `drifter/kb/*`, `drifter/learn/*`, `drifter/vivi2/*`, `drifter/spotify/*`, `drifter/nav/*`, `drifter/trip/*`, `drifter/crash/*`, `drifter/driver/*`, `drifter/sentry/*`, `drifter/comms/*`, `drifter/obd/*`, `drifter/vision/*`. Hierarchy: `drifter/{domain}/{metric}`.
+**RealDash**: TCP CAN 0x44 protocol on port 35000. Frames: 4-byte header `[0x44,0x33,0x22,0x11]` + 4-byte LE frame_id + 8-byte data.
+**Web Dashboard**: HTTP on port 8080, WebSocket telemetry on 8081, audio on 8082. The 3D Vivi avatar viewer is served at `/avatar` (GLB at `/assets/vivi_avatar.glb`).
+**LLM cascade** (v2): `llm_client_v2.query()` / `query_json()` / `stream()` — Claude (primary) → Groq → Ollama with prompt cache, retries, and per-backend health tracking. Always prefer this over `llm_client.py` for new code.
 
 ## Code Style
 
@@ -92,12 +105,78 @@ sudo ./install.sh && sudo reboot
 - **No hardcoded MQTT host/port** — always use `MQTT_HOST`, `MQTT_PORT` from config
 - **No class-based services** — flat `main()` + `if __name__ == '__main__': main()` pattern
 - **Signal handlers inside `main()`** — never at module level (prevents import side effects)
-- **17 systemd services** must match `SERVICES` list in config and `services/*.service` files
-- **install.sh** `SRC_FILES` variable must list all `.py` files for deployment
+- **systemd services** in the `SERVICES` list (config.py) must match `services/*.service` files
+- **install.sh** `SRC_FILES` variable must list every `.py` file in `src/` that should be deployed
 - **RealDash XML** frame IDs and conversions must match `realdash_bridge.py` pack functions exactly
 - **DTC codes**: add to `XTYPE_DTC_LOOKUP` in config with `desc`, `cause`, `action`, `severity` keys
 - **TPMS thresholds**: tuned for 205/55R16 at factory 30 PSI (warn 26, crit 20)
-- **README.md**: keep rule count, diagnostic table, and repo structure in sync when adding rules
+- **Vehicle profile** (v2): per-VIN YAML in `vehicles/`. Use `vehicle_id.resolve_profile()` to read at runtime — do not hardcode VEHICLE/VEHICLE_YEAR for behaviour gates
+- **LLM calls** (v2): use `llm_client_v2.query()` / `query_json()` / `stream()` — never reach out to a backend directly
+- **README.md**: keep module/service counts and feature lists in sync when adding modules
+
+## v2 Module Reference
+
+| Module | Role | MQTT keys |
+|--------|------|-----------|
+| `telemetry_batcher.py` | rolling-window stats | `telemetry_window`, `telemetry_stats` |
+| `safety_engine.py` | Tier 1 local safety rules | `safety_alert`, `safety_status` |
+| `ai_diagnostics.py` | Tier 2 Claude diagnoses | `ai_diag_*` |
+| `session_reporter.py` | Tier 3 post-drive narrative | `session_report`, `session_summary` |
+| `llm_client_v2.py` | Claude→Groq→Ollama cascade (library) | — |
+| `vehicle_id.py` | VIN auto-detect + profile resolution | `vehicle_id`, `vehicle_profile` |
+| `adaptive_thresholds.py` | per-vehicle baseline learning | `thresholds_learned`, `thresholds_update` |
+| `vehicle_kb.py` | per-vehicle KB query/store | `kb_query`, `kb_response`, `kb_update` |
+| `vehicle_learn.py` | continuous learning into KB | `learn_event` |
+| `vivi_v2.py` + `vivi_memory.py` | Claude voice brain with persistent memory | `vivi2_*` |
+| `spotify_bridge.py` | Spotify Connect commands | `spotify_*` |
+| `nav_engine.py` | GPS, speed-cameras, OSRM | `nav_*` |
+| `trip_computer.py` | distance/fuel/cost | `trip_*` |
+| `crash_detect.py` | accel+OBD crash detection | `crash_event`, `crash_sos`, `crash_status` |
+| `driver_assist.py` | score / fatigue / weather | `driver_*` |
+| `sentry_mode.py` | parked-car monitor | `sentry_*` |
+| `comms_bridge.py` | SMS + ntfy/Telegram/Discord | `comms_*` |
+| `obd_bridge.py` | ELM327 serial fallback | `obd_status`, `obd_pid` (publishes metric topics) |
+| `vision_engine.py` | YOLO on Hailo (ONNX fallback) | `vision_object`, `vision_status` |
+| `alpr_engine.py` | plate OCR | `alpr_plate` |
+| `dashcam.py` | ffmpeg segmented recording | `dashcam_status`, `dashcam_clip` |
+| `forward_collision.py` | time-to-collision warnings | `fcw_warning`, `fcw_status` |
+
+## v2.1 Module Reference (fleet / mesh / replay / integrations)
+
+| Module | Role | MQTT keys |
+|--------|------|-----------|
+| `fleet_server.py` | Flask+WS fleet API, JWT auth, SQLite registry (`:8420`) | `fleet_register`, `fleet_heartbeat`, `fleet_telemetry`, `fleet_alert`, `fleet_command` |
+| `mesh_discovery.py` | mDNS / zeroconf peer discovery | `mesh_announce`, `mesh_node` |
+| `mesh_coordinator.py` | topology tracker, ages stale peers | `mesh_topology`, `mesh_status` |
+| `mesh_bridge.py` | MQTT-to-MQTT bridge with loop guard | `mesh_bridge` |
+| `replay_engine.py` | replay recorded sessions at N× speed | `replay_command`, `replay_status`, `replay_progress` |
+| `session_recorder.py` | capture all MQTT to gzip JSONL segments | `recorder_command`, `recorder_status`, `recorder_session` |
+| `fuzz_engine.py` | synthetic telemetry generator | `fuzz_command`, `fuzz_status` |
+| `can_sniffer.py` | raw CAN capture + summary stats | `can_sniff_frame`, `can_sniff_summary`, `can_sniff_status` |
+| `can_decoder_ai.py` | LLM-cascade signal identification | `can_decode_request`, `can_decode_response` |
+| `dbc_generator.py` | emit Vector `.dbc` from observed traffic | `can_dbc_generated` |
+| `vivi_discord.py` | discord.py 2.x bot, `/vivi`+`/status` slash | `discord_inbound`, `discord_outbound`, `discord_status` |
+| `home_bridge.py` | Home Assistant discovery bridge | `home_event`, `home_command`, `home_status` |
+| `presence_detect.py` | ARP-based arrival/departure tracking | `presence_event`, `presence_status` |
+| `satellite_manager.py` | UDP-discovery ESP32 satellites (`:8421/udp`) | `satellite_announce`, `satellite_telemetry`, `satellite_command`, `satellite_status` |
+
+v2.1 introduces six additional systemd units (`drifter-fleet`, `drifter-mesh`, `drifter-replay`, `drifter-discord`, `drifter-home`, `drifter-satellite`) — keep these in sync with the `SERVICES` list in `config.py` and the `SERVICES` block in `install.sh`. Configs live in `config/{fleet,mesh,replay,discord,home}.yaml`. Optional install scripts: `scripts/install-{fleet,mesh,discord}.sh`.
+
+### v2.1 design conventions
+- Fleet API uses dependency-free JWT (HS256, see `_jwt_encode`/`_jwt_decode` in `fleet_server.py`) — the secret is auto-generated and stored at `/opt/drifter/.fleet_jwt_secret` (0600). Replace the placeholder login with real auth before exposing externally.
+- Mesh bridge tags forwarded messages with `__mesh_origin__` to prevent infinite loops. Strip the marker locally if a subscriber needs the raw payload.
+- Recorder captures `drifter/#` by default but the bus is wildcard-noisy — narrow `topic_filter` in `replay.yaml` for long captures.
+- Replay never publishes topics listed in `replay.block_topics` (default: `crash/sos`, `comms/sms`) so playback can't fire real notifications.
+- Satellite discovery uses UDP :8421 — open only on trusted L2 segments. ESP32 firmware must send `{"kind":"announce", "id":..., "type":..., "caps":[...]}` on first contact.
+
+## API Keys (v2)
+
+`/opt/drifter/.env` is sourced by systemd via `EnvironmentFile=-/opt/drifter/.env`:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GROQ_API_KEY=gsk_...
+```
+`llm_client_v2` reads both from os.environ; missing keys skip those backends and fall through to the next tier. The cascade survives all-backends-down by raising RuntimeError that v2 services catch and translate to a `level: error` status.
 
 ## Vivi Voice Assistant (`src/vivi.py`)
 

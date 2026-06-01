@@ -16,14 +16,17 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 import paho.mqtt.client as mqtt
 
 import llm_client
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    REPORTS_DIR, VEHICLE, VEHICLE_YEAR,
+    MQTT_HOST,
+    MQTT_PORT,
+    REPORTS_DIR,
+    TOPICS,
+    VEHICLE,
+    VEHICLE_YEAR,
 )
 
 logging.basicConfig(
@@ -33,10 +36,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-_safety_events: List[dict] = []
-_trip_events: List[dict] = []
-_diagnoses: List[dict] = []
-_telemetry_windows: List[dict] = []
+_safety_events: list[dict] = []
+_trip_events: list[dict] = []
+_diagnoses: list[dict] = []
+_telemetry_windows: list[dict] = []
 _last_trip: dict = {}
 _last_session: dict = {}
 _lock = threading.Lock()
@@ -128,7 +131,7 @@ def _build_report(session: dict) -> dict:
     return report
 
 
-def _persist(report: dict) -> Optional[Path]:
+def _persist(report: dict) -> Path | None:
     try:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         out = REPORTS_DIR / f"summary_{report.get('session_id', 'unknown')}.md"

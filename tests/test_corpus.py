@@ -12,7 +12,6 @@ import pytest
 
 import corpus as corpus_mod
 
-
 # Real embeddings (sentence-transformers + torch) are slow to import in CI
 # and not what this layer is testing. We stub _embed with a tiny fake that
 # encodes a string into a 384-dim vector by hashing characters into buckets,

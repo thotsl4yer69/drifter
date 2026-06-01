@@ -39,7 +39,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
@@ -88,7 +87,7 @@ SAVVYCAN_HEADER = (
 )
 
 
-def _detect_can_interface() -> Optional[str]:
+def _detect_can_interface() -> str | None:
     """Return the first usable CAN interface name, or None on a bench Pi.
 
     Mirrors can_bridge.find_can_interface() without importing the bus —
@@ -100,7 +99,7 @@ def _detect_can_interface() -> Optional[str]:
     return None
 
 
-def _hex_int(v) -> Optional[int]:
+def _hex_int(v) -> int | None:
     """Accept ints or hex strings like '0x7E0' / '7E0'. Returns None on failure."""
     if isinstance(v, int):
         return v
@@ -116,7 +115,7 @@ def _hex_int(v) -> Optional[int]:
     return None
 
 
-def _build_cc_args(command: str, interface: str, body: dict) -> Optional[list]:
+def _build_cc_args(command: str, interface: str, body: dict) -> list | None:
     """Translate a command body into a caringcaribou CLI argv vector.
 
     Returns None if the body is malformed for this command — the caller
@@ -179,7 +178,7 @@ def _parse_cc_output(command: str, stdout: str) -> list:
     return rows
 
 
-def _write_savvycan_csv(rows: list) -> Optional[str]:
+def _write_savvycan_csv(rows: list) -> str | None:
     """Persist a fuzz-run row set as a SavvyCAN CSV. Returns the filename.
 
     Each row is the raw cc stdout line — we promote any line that parses as
@@ -214,7 +213,7 @@ def _write_savvycan_csv(rows: list) -> Optional[str]:
     return fname
 
 
-def run_command(command: str, body: dict, interface: Optional[str],
+def run_command(command: str, body: dict, interface: str | None,
                 runner=subprocess.run) -> dict:
     """Execute one command and return a structured response payload.
 

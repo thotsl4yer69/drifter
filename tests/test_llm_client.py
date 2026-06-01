@@ -1,10 +1,12 @@
 # tests/test_llm_client.py
-import pytest
 import json
 import sys
+
+import pytest
+
 sys.path.insert(0, 'src')
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def make_mock_response(status_code, body):
@@ -145,7 +147,7 @@ def test_llm_primary_groq_changes_order():
 
 def test_llm_primary_ollama_is_default():
     """Default cascade order should start with ollama."""
-    from llm_client import query_llm, LLM_CASCADE_ORDER
+    from llm_client import LLM_CASCADE_ORDER, query_llm
     assert LLM_CASCADE_ORDER[0] == 'ollama'
     with patch('llm_client.requests.post') as mock_post:
         mock_post.return_value = make_mock_response(200, OLLAMA_SUCCESS)
@@ -166,8 +168,8 @@ def test_build_system_prompt_contains_vehicle():
 
 def test_stream_chat_ollama_yields_tokens():
     """stream_chat_ollama yields token chunks then a done marker."""
+
     from llm_client import stream_chat_ollama
-    import io
 
     # Simulate Ollama streaming response (NDJSON lines)
     lines = [

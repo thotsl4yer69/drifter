@@ -6,27 +6,38 @@ PTT, wake-word, and always-on modes. MQTT telemetry integration.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import base64
 import json
+import logging
 import re
-import time
 import signal
 import subprocess
-import logging
 import threading
-import base64
+import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, PIPER_MODEL, PIPER_MODEL_DIR,
-    VEHICLE_YEAR, VEHICLE_MODEL, VEHICLE_ENGINE,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    PIPER_MODEL,
+    PIPER_MODEL_DIR,
+    TOPICS,
+    VEHICLE_ENGINE,
+    VEHICLE_MODEL,
+    VEHICLE_YEAR,
 )
-from mechanic import search as kb_search, get_advice_for_alert
+
+# kb_search and get_advice_for_alert are exposed at module scope so
+# tests can patch them. The corpus/kb fallback was removed in commit
+# 8f51911, but the module-level bindings stay for test seams. Imported
+# on separate lines so ruff's per-line noqa hugs the right symbol.
+from mechanic import get_advice_for_alert  # noqa: F401
+from mechanic import search as kb_search  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,7 +134,7 @@ _last_unprompted_ts: float = 0.0
 _unprompted_count: int = 0
 UNPROMPTED_COOLDOWN_SEC = 300.0   # 5 min between unprompted lines
 UNPROMPTED_MAX_PER_SESSION = 3
-_mqtt_client: Optional[mqtt.Client] = None
+_mqtt_client: mqtt.Client | None = None
 _mode = MODE_PTT
 _wake_word = WAKE_WORD
 _driver: dict = dict(DRIVER_DEFAULT)
@@ -251,11 +262,11 @@ def _find_sd_input_device():
     return None
 
 
-def record_audio(max_seconds: float = MAX_RECORD_SECONDS) -> Optional[bytes]:
+def record_audio(max_seconds: float = MAX_RECORD_SECONDS) -> bytes | None:
     """Record from mic until silence or max_seconds. Returns float32 PCM bytes or None."""
     try:
-        import sounddevice as sd
         import numpy as np
+        import sounddevice as sd
     except ImportError:
         log.error("sounddevice/numpy not installed — cannot record audio")
         return None
@@ -300,7 +311,7 @@ def record_audio(max_seconds: float = MAX_RECORD_SECONDS) -> Optional[bytes]:
         return None
 
 
-def transcribe(audio_bytes: bytes) -> Optional[str]:
+def transcribe(audio_bytes: bytes) -> str | None:
     """Transcribe float32 PCM bytes via faster-whisper. Returns text or None."""
     try:
         import numpy as np
@@ -316,7 +327,7 @@ def transcribe(audio_bytes: bytes) -> Optional[str]:
         return None
 
 
-def _query_ollama(prompt: str, system: str, history: Optional[list] = None) -> Optional[str]:
+def _query_ollama(prompt: str, system: str, history: list | None = None) -> str | None:
     """POST to Ollama /api/chat with optional rolling history. Returns reply or None.
     /api/chat preserves prior turns as proper messages — better than stuffing
     history into a single /api/generate prompt because the model can attend to
@@ -416,7 +427,7 @@ def _ensure_session() -> str:
     return _session_id
 
 
-def _format_drive_state() -> Optional[str]:
+def _format_drive_state() -> str | None:
     """Compact one-line drive context — only when telemetry is fresh."""
     if not _telemetry_fresh():
         return None
@@ -437,7 +448,7 @@ def _format_drive_state() -> Optional[str]:
     return ", ".join(bits) if bits else None
 
 
-def _format_recent_ble() -> Optional[str]:
+def _format_recent_ble() -> str | None:
     """One line per BLE target seen in the last BLE_FRESH_SEC. Vivi sees
     only target_label + RSSI + age — no MAC, no identity claim. Persona
     prompt covers the language constraint ('hardware family only')."""
@@ -463,7 +474,7 @@ _persistent_cache: dict = {'ts': 0.0, 'value': None}
 _PERSISTENT_TTL = 60.0
 
 
-def _format_persistent_contacts() -> Optional[str]:
+def _format_persistent_contacts() -> str | None:
     """Phase 4.8 — short Vivi context line summarising persistent
     contacts seen in the last week. Returns None when nothing above
     the weak tier exists, so most turns have no PERSISTENT_CONTACTS
@@ -500,7 +511,7 @@ def _format_persistent_contacts() -> Optional[str]:
     return value
 
 
-def _format_feed_context() -> Optional[str]:
+def _format_feed_context() -> str | None:
     """Read drifter-feeds aggregator output and produce a compact live-
     context block: weather, EMV incidents, BOM warnings, interesting
     aircraft. Empty when the file is missing, stale (>10min), or all
@@ -547,7 +558,7 @@ def _format_feed_context() -> Optional[str]:
     return body[:2000]
 
 
-def _format_recent_alerts() -> Optional[str]:
+def _format_recent_alerts() -> str | None:
     """Last 3 alerts within ALERT_FRESH_SEC, joined into a single line."""
     now = time.time()
     fresh = [(ts, lvl, msg) for ts, lvl, msg in _recent_alerts
@@ -706,7 +717,7 @@ _FORBIDDEN_OPENER_RE = re.compile(
     re.IGNORECASE,
 )
 
-def _log_correction(reason: str, original: str, replaced: Optional[str]) -> None:
+def _log_correction(reason: str, original: str, replaced: str | None) -> None:
     """Append a structured line to vivi-corrections.log so we can tune the
     guardrails over time. Best-effort — never let a logging failure surface."""
     try:
@@ -842,7 +853,7 @@ def ask_vivi(query: str) -> str:
     # a sensor that's currently NO DATA, swap in a canonical "I don't
     # have a current reading" reply.
     try:
-        from vivi_grounding import validate, no_data_from_telemetry
+        from vivi_grounding import no_data_from_telemetry, validate
         no_data = no_data_from_telemetry(_telemetry, _TELEMETRY_KEY_LABELS,
                                            _telemetry_fresh())
         response, intercepted = validate(response, no_data)
@@ -1161,7 +1172,7 @@ def _rf_cmd_id() -> str:
     return f'vivi-{int(time.time() * 1000) % 10**8:08d}'
 
 
-def _classify_rf_intent(query: str) -> Optional[dict]:
+def _classify_rf_intent(query: str) -> dict | None:
     """Return {topic, payload, voice} for a matched RF command, or None.
 
     Pure function. No side effects. Lower-cased input matching.

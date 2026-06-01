@@ -7,23 +7,30 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
+import logging
 import math
 import re
-import struct
 import signal
-import time
-import logging
+import struct
 import subprocess
-import threading
+import time
 from pathlib import Path
+
 import numpy as np
 
-import paho.mqtt.client as mqtt
-
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS, DRIFTER_DIR,
-    VOSK_MODEL_DIR, WAKE_WORD_MODEL, WAKE_WORD_THRESHOLD,
-    PTT_GPIO_PIN, VOICE_SILENCE_TIMEOUT, VOICE_MAX_RECORD, make_mqtt_client,)
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    PTT_GPIO_PIN,
+    TOPICS,
+    VOICE_MAX_RECORD,
+    VOICE_SILENCE_TIMEOUT,
+    VOSK_MODEL_DIR,
+    WAKE_WORD_MODEL,
+    WAKE_WORD_THRESHOLD,
+    make_mqtt_client,
+)
 from hw_probe import probe_microphone, publish_hw_state
 
 logging.basicConfig(
@@ -96,7 +103,8 @@ def beep():
     """Play a short acknowledgment beep via aplay."""
     try:
         # Generate a tiny beep WAV in-memory: 0.15s 880Hz sine
-        import wave, io
+        import io
+        import wave
         duration = 0.15
         n_frames = int(SAMPLE_RATE * duration)
         buf = io.BytesIO()
@@ -339,9 +347,10 @@ def create_wake_word_model():
     """
     global oww_available
     try:
-        from openwakeword.model import Model
-        import openwakeword as _oww
         import os as _os
+
+        import openwakeword as _oww
+        from openwakeword.model import Model
     except ImportError as e:
         log.warning(f"openwakeword not installed: {e}")
         oww_available = False
@@ -489,7 +498,8 @@ def main():
 
     # ── Vosk model ──
     try:
-        from vosk import Model as VoskModel, KaldiRecognizer, SetLogLevel
+        from vosk import KaldiRecognizer, SetLogLevel
+        from vosk import Model as VoskModel
         SetLogLevel(-1)  # suppress Vosk internal logs
     except ImportError:
         log.error("vosk not installed — run: pip install vosk")

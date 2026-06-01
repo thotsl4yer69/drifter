@@ -23,8 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
-import time
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 log = logging.getLogger('drifter.vivi.grounding')
 
@@ -68,7 +67,7 @@ _DISCLAIMER_RE = re.compile(
 
 
 def find_no_data_invention(response: str,
-                            no_data_sensors: Iterable[str]) -> Optional[str]:
+                            no_data_sensors: Iterable[str]) -> str | None:
     """Return the offending sensor label if `response` cites a number for
     one of `no_data_sensors`, else None. The disclaimer regex lets a
     response talk about ranges as long as it also says it can't see the
@@ -99,7 +98,7 @@ def canonical_no_data_reply(sensor: str) -> str:
 
 
 def validate(response: str,
-              no_data_sensors: Iterable[str]) -> tuple[str, Optional[str]]:
+              no_data_sensors: Iterable[str]) -> tuple[str, str | None]:
     """Returns (safe_response, intercepted_sensor_or_None). If the model
     invented a number for a NO DATA sensor, swap the response for a
     canonical no-reading reply and report the offending sensor (so the

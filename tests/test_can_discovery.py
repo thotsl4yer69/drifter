@@ -5,13 +5,9 @@ from __future__ import annotations
 
 import subprocess
 import time
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 import can_discovery as cd
-
 
 # ── _hex_int ──────────────────────────────────────────────────────────
 
@@ -188,6 +184,6 @@ def test_savvycan_csv_skips_rows_without_hex_tokens(tmp_path, monkeypatch):
 def test_allowed_commands_are_exactly_four():
     """The cockpit-side allowlist in web_dashboard_handlers matches this
     set verbatim — any drift would let an unknown command leak through."""
-    assert cd.ALLOWED_COMMANDS == {
+    assert {
         'discover_ecus', 'list_services', 'dump_dids', 'fuzz_range',
-    }
+    } == cd.ALLOWED_COMMANDS

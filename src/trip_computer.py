@@ -12,15 +12,19 @@ import json
 import logging
 import signal
 import time
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, TRIP_FUEL_PRICE_PER_L, TRIP_FUEL_CURRENCY, TRIP_FUEL_TANK_LITRES,
-    TRIP_AVG_CONSUMPTION_L_PER_100KM, TRIP_SESSION_GAP_MIN,
+    DRIFTER_DIR,
     FUEL_TYPE,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    TRIP_AVG_CONSUMPTION_L_PER_100KM,
+    TRIP_FUEL_PRICE_GBP_PER_L,
+    TRIP_FUEL_TANK_LITRES,
+    TRIP_SESSION_GAP_MIN,
 )
 
 logging.basicConfig(
@@ -32,8 +36,10 @@ log = logging.getLogger(__name__)
 
 CONFIG_PATH = DRIFTER_DIR / "trip.yaml"
 
+# AFR for stoichiometric petrol (mass air / mass fuel). Petrol density 0.745 kg/L.
 AFR_STOICH = 14.7
 PETROL_DENSITY_KG_PER_L = 0.745
+# Diesel uses different stoich/density
 DIESEL_AFR = 14.5
 DIESEL_DENSITY_KG_PER_L = 0.832
 
@@ -46,76 +52,88 @@ def _afr() -> float:
     return DIESEL_AFR if FUEL_TYPE == 'diesel' else AFR_STOICH
 
 
+MAX_TICK_DT_SEC = 5.0      # ignore distance/fuel attribution across stalls > 5s
+MAF_STALE_SEC = 5.0        # don't report cur_l/100 from stale MAF
+
+
 class TripState:
-    def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float,
-                 currency: str = 'AUD') -> None:
-        self.start_ts: Optional[float] = None
-        self.last_ts: Optional[float] = None
+    def __init__(self, fuel_price: float, tank_l: float, avg_l_per_100: float) -> None:
+        self.start_ts: float | None = None
+        self.last_ts: float | None = None
         self.distance_km: float = 0.0
         self.fuel_l: float = 0.0
         self.last_speed_kph: float = 0.0
-        self.last_maf_gps: Optional[float] = None
+        self.last_maf_gps: float | None = None
+        self.last_maf_ts: float | None = None
         self.fuel_price = fuel_price
         self.tank_l = tank_l
         self.avg_l_per_100km = avg_l_per_100
-        self.currency = currency
-        self.idle_since: Optional[float] = None
+        self.idle_since: float | None = None
+        self.idle_warned: bool = False
         self.events: list = []
 
     def reset(self) -> None:
         log.info(f"Trip reset (was {self.distance_km:.1f} km, {self.fuel_l:.2f} L)")
-        self.__init__(self.fuel_price, self.tank_l, self.avg_l_per_100km,
-                      self.currency)
+        self.__init__(self.fuel_price, self.tank_l, self.avg_l_per_100km)
 
-    def tick(self, ts: float, speed_kph: Optional[float], maf_gps: Optional[float]) -> None:
+    def tick(self, ts: float, speed_kph: float | None, maf_gps: float | None) -> None:
         if self.start_ts is None:
             self.start_ts = ts
             self.last_ts = ts
-        dt = max(0.0, ts - (self.last_ts or ts))
+        # Cap dt so a telemetry gap doesn't get attributed as continuous motion.
+        dt = max(0.0, min(ts - self.last_ts, MAX_TICK_DT_SEC))
         self.last_ts = ts
 
         if speed_kph is not None:
             self.last_speed_kph = float(speed_kph)
             km = (float(speed_kph) / 3600.0) * dt
-            if km > 0 and km < 1.0:
+            if km > 0 and km < 1.0:  # sanity cap
                 self.distance_km += km
 
         if maf_gps is not None:
             self.last_maf_gps = float(maf_gps)
+            self.last_maf_ts = ts
+            # Fuel mass flow = MAF / AFR (g/s). Convert g/s -> L/s -> L
             fuel_g = float(maf_gps) / _afr() * dt
             litres = fuel_g / 1000.0 / _density()
             if 0 < litres < 0.1:
                 self.fuel_l += litres
 
+        # Idle detection: emit long_idle once, then re-arm after movement.
         if speed_kph is not None and float(speed_kph) <= 1.0:
             if self.idle_since is None:
                 self.idle_since = ts
-            elif ts - self.idle_since > TRIP_SESSION_GAP_MIN * 60:
+                self.idle_warned = False
+            elif not self.idle_warned and ts - self.idle_since > TRIP_SESSION_GAP_MIN * 60:
                 self.events.append({'event': 'long_idle', 'ts': ts})
+                self.idle_warned = True
         else:
             self.idle_since = None
+            self.idle_warned = False
 
     def to_dict(self) -> dict:
-        elapsed = (self.last_ts - self.start_ts) if self.start_ts and self.last_ts else 0.0
+        elapsed = (self.last_ts - self.start_ts) if self.start_ts else 0.0
         cur_l_per_100 = None
-        if self.last_maf_gps is not None and self.last_speed_kph > 1.0:
+        maf_fresh = (
+            self.last_maf_gps is not None
+            and self.last_maf_ts is not None
+            and self.last_ts is not None
+            and self.last_ts - self.last_maf_ts <= MAF_STALE_SEC
+        )
+        if maf_fresh and self.last_speed_kph > 1.0:
             litres_per_hour = self.last_maf_gps / _afr() * 3600.0 / 1000.0 / _density()
             cur_l_per_100 = round(litres_per_hour / max(self.last_speed_kph, 0.1) * 100.0, 2)
         avg_l_per_100 = None
         if self.distance_km > 0.1:
             avg_l_per_100 = round(self.fuel_l / self.distance_km * 100.0, 2)
-        cost = round(self.fuel_l * self.fuel_price, 2)
+        cost_gbp = round(self.fuel_l * self.fuel_price, 2)
         return {
             'duration_s': round(elapsed, 1),
             'distance_km': round(self.distance_km, 3),
             'fuel_l': round(self.fuel_l, 3),
-            'avg_l_per_100km': avg_l_per_100 or self.avg_l_per_100km,
+            'avg_l_per_100km': avg_l_per_100 if avg_l_per_100 is not None else self.avg_l_per_100km,
             'cur_l_per_100km': cur_l_per_100,
-            'cost': cost,
-            'currency': self.currency,
-            # cost_gbp kept as a legacy alias so retained consumers
-            # (session_reporter old snapshots, etc.) don't blow up.
-            'cost_gbp': cost,
+            'cost_gbp': cost_gbp,
             'fuel_price_per_l': self.fuel_price,
             'speed_kph': round(self.last_speed_kph, 1),
             'ts': time.time(),
@@ -136,17 +154,11 @@ def _load_config() -> dict:
 def main() -> None:
     log.info("DRIFTER Trip Computer starting...")
     cfg = _load_config()
-    # fuel_price_per_l is the current-name key; fuel_price_gbp_per_l is
-    # the legacy alias from when the project assumed GBP. Read either.
-    fuel_price = float(cfg.get('fuel_price_per_l',
-                       cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_PER_L)))
-    currency = str(cfg.get('currency', TRIP_FUEL_CURRENCY)).upper()
     state = TripState(
-        fuel_price=fuel_price,
+        fuel_price=float(cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L)),
         tank_l=float(cfg.get('tank_litres', TRIP_FUEL_TANK_LITRES)),
         avg_l_per_100=float(cfg.get('avg_consumption_l_per_100km',
                                     TRIP_AVG_CONSUMPTION_L_PER_100KM)),
-        currency=currency,
     )
 
     running = True
@@ -176,14 +188,17 @@ def main() -> None:
             if data.get('event') == 'start':
                 state.reset()
             elif data.get('event') == 'end':
-                client.publish(TOPICS['trip_stats'], json.dumps(state.to_dict()),
+                summary = state.to_dict()
+                client.publish(TOPICS['trip_stats'], json.dumps(summary),
                                retain=True)
                 client.publish(TOPICS['trip_event'], json.dumps({
                     'event': 'session_end',
                     'session_id': data.get('session_id'),
-                    'final': state.to_dict(),
+                    'final': summary,
                     'ts': time.time(),
                 }))
+                # Clear accumulators so the next session starts at zero even if no 'start' event fires.
+                state.reset()
 
     client.on_message = on_message
 
@@ -204,8 +219,7 @@ def main() -> None:
         (TOPICS['drive_session'], 0),
     ])
     client.loop_start()
-    log.info(f"Trip Computer LIVE — fuel {state.fuel_price} {state.currency}/L, "
-             f"tank {state.tank_l}L")
+    log.info(f"Trip Computer LIVE — fuel £{state.fuel_price}/L, tank {state.tank_l}L")
 
     while running:
         snap = state.to_dict()
@@ -217,9 +231,7 @@ def main() -> None:
             'ts': snap['ts'],
         }))
         client.publish(TOPICS['trip_cost'], json.dumps({
-            'cost': snap['cost'],
-            'currency': snap['currency'],
-            'cost_gbp': snap['cost'],  # legacy alias
+            'cost_gbp': snap['cost_gbp'],
             'fuel_price_per_l': snap['fuel_price_per_l'],
             'ts': snap['ts'],
         }))

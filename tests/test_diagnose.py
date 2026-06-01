@@ -7,20 +7,17 @@ missing devices, etc.) — i.e. the contract surface the fleet
 """
 from __future__ import annotations
 
-import io
 import json
 import socket
 import subprocess
 import sys
 import threading
-from contextlib import contextmanager
 
 import pytest
 
 sys.path.insert(0, 'src')
 
-import diagnose  # noqa: E402
-
+import diagnose
 
 # ── CheckResult ────────────────────────────────────────────────────
 

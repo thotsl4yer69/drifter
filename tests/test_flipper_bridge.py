@@ -2,13 +2,9 @@
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock
 
-import pytest
-
 import flipper_bridge as fb
-
 
 # ── parse_raw_data_line ───────────────────────────────────────────────
 

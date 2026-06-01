@@ -7,21 +7,26 @@ Compresses old logs and manages storage.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import json
-import time
 import gzip
+import json
+import logging
 import shutil
 import signal
-import logging
+import threading
+import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
-from collections import deque
-import threading
-import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, LOG_DIR, TOPICS,
-    BUFFER_FLUSH_INTERVAL, MAX_LOG_SIZE_MB, make_mqtt_client)
+    BUFFER_FLUSH_INTERVAL,
+    LOG_DIR,
+    MAX_LOG_SIZE_MB,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,

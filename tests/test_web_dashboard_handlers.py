@@ -4,6 +4,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
+
 sys.path.insert(0, 'src')
 
 import web_dashboard_handlers as h
@@ -275,7 +276,6 @@ def test_healthz_voicein_stale_heartbeat_marks_hw_pending(monkeypatch):
 
 import io
 import json as _json
-from unittest.mock import MagicMock
 
 
 def _build_post_handler(body: bytes, peer: str = '127.0.0.1'):
@@ -623,6 +623,7 @@ def _settings_post_handler(body_dict, monkeypatch, tmp_path):
     supplied body dict. Returns the stub so the test can inspect
     send_error / _serve_json calls."""
     import json as _json
+
     import config as cfg
     monkeypatch.setattr(cfg, 'SETTINGS_FILE', tmp_path / 'settings.json')
 
@@ -679,7 +680,6 @@ def test_post_settings_passes_through_setup_complete(monkeypatch, tmp_path):
 def test_post_settings_drops_unknown_keys_via_save_settings(monkeypatch, tmp_path):
     # Unknown key passes the schema validator (it doesn't know about
     # it) but save_settings drops it via the SETTINGS_DEFAULTS allowlist.
-    import config as cfg
     _settings_post_handler({'totally_unknown_key': 42},
                            monkeypatch=monkeypatch, tmp_path=tmp_path)
     persisted = (tmp_path / 'settings.json').read_text()
@@ -791,7 +791,7 @@ def test_rf_command_allowlist_matches_rf_monitor_handler():
                 'tpms_harvest_start', 'tpms_harvest_stop',
                 'tpms_assign_corner', 'tpms_clear_assignments',
                 'tpms_delta_capture'}
-    assert h._RF_COMMANDS == expected
+    assert expected == h._RF_COMMANDS
 
 
 # ── /api/rf/command — new commands ────────────────────────────────────
@@ -1127,7 +1127,7 @@ def test_mechanic_history_bounded_by_max_turns(_reset_mech_history):
     assert len(turns) == h.MECHANIC_HISTORY_TURNS
     # Newest preserved, oldest dropped.
     assert turns[-1]['content'] == 'short19'
-    assert all('short0' != t['content'] for t in turns)
+    assert all(t['content'] != 'short0' for t in turns)
 
 
 def test_mechanic_history_char_budget_trims_long_turns(_reset_mech_history):

@@ -40,7 +40,6 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 try:
     from bleak import BleakScanner
@@ -205,7 +204,7 @@ def oui_of(mac: str) -> str:
     return mac.lower().replace(':', '').replace('-', '')[:6]
 
 
-def classify_oui(mac: str) -> Optional[tuple[str, str, str]]:
+def classify_oui(mac: str) -> tuple[str, str, str] | None:
     """Return (target, severity, description) or None for non-target OUIs."""
     o = oui_of(mac)
     for prefix, target, severity, desc in OUI_RULES:
@@ -227,14 +226,14 @@ def serialise_mfr(mfr: dict[int, bytes]) -> str:
     return json.dumps({f'0x{cid:04X}': payload.hex() for cid, payload in mfr.items()})
 
 
-def first_legacy_mfr_hex(mfr: dict[int, bytes]) -> Optional[str]:
+def first_legacy_mfr_hex(mfr: dict[int, bytes]) -> str | None:
     if not mfr:
         return None
     cid = next(iter(mfr))
     return f'0x{cid:04X}'
 
 
-def read_gps() -> tuple[Optional[float], Optional[float]]:
+def read_gps() -> tuple[float | None, float | None]:
     """Read /opt/drifter/state/gps.json. Format: {lat, lon, fix, ts}."""
     try:
         j = json.loads(GPS_PATH.read_text())
@@ -296,7 +295,7 @@ class Bleconv:
             return True
         return False
 
-    def _check_persistent(self, mac: str) -> Optional[dict]:
+    def _check_persistent(self, mac: str) -> dict | None:
         cutoff = time.time() - PERSIST_WINDOW_S
         row = self.conn.execute(
             '''SELECT COUNT(DISTINCT drive_id), MIN(ts), MAX(ts)
@@ -342,7 +341,7 @@ class Bleconv:
         self._seen_macs = set()
         self._stats_started_at = time.time()
 
-    def _process(self, mac_raw: str, rssi: Optional[int], adv) -> None:
+    def _process(self, mac_raw: str, rssi: int | None, adv) -> None:
         mac = normalise_mac(mac_raw)
         self._seen_macs.add(mac)
         cls = classify_oui(mac)
@@ -425,7 +424,7 @@ class Bleconv:
                  MQTT_HOST, MQTT_PORT, DB_PATH, SCAN_SECS, ALERT_COOLDOWN_S,
                  STATS_INTERVAL_S)
 
-        last_hw_state: Optional[bool] = None
+        last_hw_state: bool | None = None
         while not self._stop.is_set():
             probe = probe_bluetooth()
             if not probe['connected']:

@@ -12,7 +12,6 @@ import pytest
 import ble_history as bh
 import ble_persistence as bp
 
-
 # ── fixtures ────────────────────────────────────────────────────────
 
 @pytest.fixture

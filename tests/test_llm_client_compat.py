@@ -2,10 +2,10 @@
 """Smoke tests: verify backward-compat shims query_llm, query_chat, stream_chat_ollama."""
 import json
 import sys
+
 sys.path.insert(0, 'src')
 
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
 
 
 def _make_generate_resp(text="Test response", eval_count=42):

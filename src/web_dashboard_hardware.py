@@ -17,7 +17,7 @@ from __future__ import annotations
 import subprocess
 import time
 
-from hw_probe import probe_all, DEVICES
+from hw_probe import DEVICES, probe_all
 from web_dashboard_state import latest_state
 
 _WATCHED_SERVICES = (

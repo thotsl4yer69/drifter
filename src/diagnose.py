@@ -20,20 +20,30 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 try:
     from config import (
-        SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
-        MODES, MODE_STATE_PATH, DEFAULT_MODE,
+        DEFAULT_MODE,
+        MODE_STATE_PATH,
+        MODES,
+        MQTT_HOST,
+        MQTT_PORT,
+        REALDASH_TCP_PORT,
+        SERVICES,
     )
 except ImportError:
     # Allow running from repo root for dev — point at src/ on sys.path.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from config import (  # type: ignore
-        SERVICES, REALDASH_TCP_PORT, MQTT_HOST, MQTT_PORT,
-        MODES, MODE_STATE_PATH, DEFAULT_MODE,
+        DEFAULT_MODE,
+        MODE_STATE_PATH,
+        MODES,
+        MQTT_HOST,
+        MQTT_PORT,
+        REALDASH_TCP_PORT,
+        SERVICES,
     )
 
 
@@ -61,7 +71,7 @@ else:
 
 
 class CheckResult:
-    __slots__ = ('name', 'ok', 'message', 'fatal')
+    __slots__ = ('fatal', 'message', 'name', 'ok')
 
     def __init__(self, name: str, ok: bool, message: str = '', fatal: bool = True):
         self.name = name
@@ -265,7 +275,7 @@ def check_dashboard_healthz() -> CheckResult:
             while True:
                 try:
                     chunk = s.recv(4096)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 if not chunk:
                     break
@@ -371,7 +381,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     bad = [s for s, st in rows if st != 'active']
     if bad:
         print(f"\n  {RED}{len(bad)} service(s) not active:{NC} {', '.join(bad)}")
-        print(f"  Try: drifter logs <name>    or    drifter restart <name>")
+        print("  Try: drifter logs <name>    or    drifter restart <name>")
         return 1
     print(f"\n  {GREEN}all {len(rows)} services active{NC}")
     return 0
@@ -428,7 +438,7 @@ def cmd_healthz(args: argparse.Namespace) -> int:
             while True:
                 try:
                     chunk = s.recv(8192)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 if not chunk:
                     break

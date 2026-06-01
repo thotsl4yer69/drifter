@@ -7,16 +7,23 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
+import logging
 import signal
 import subprocess
-import logging
+import time
+
 import psutil
-import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, SERVICES, TOPICS,
-    WATCHDOG_INTERVAL, WATCHDOG_MQTT_TIMEOUT, DRIFTER_DIR, make_mqtt_client)
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    SERVICES,
+    TOPICS,
+    WATCHDOG_INTERVAL,
+    WATCHDOG_MQTT_TIMEOUT,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +77,7 @@ def get_system_metrics():
         try:
             with open(temp_file) as f:
                 cpu_temp = int(f.read().strip()) / 1000.0
-        except (IOError, ValueError):
+        except (OSError, ValueError):
             pass
 
         disk = psutil.disk_usage(str(DRIFTER_DIR))
@@ -129,7 +136,7 @@ def check_health(mqtt_client):
     # After an initial grace period, flag topics that have NEVER received a
     # message — that usually means the upstream publisher (canbridge) is dead.
     grace_elapsed = now - WATCHDOG_START_TIME > WATCHDOG_MQTT_TIMEOUT
-    critical_topics = ['drifter/engine/rpm', 'drifter/snapshot']
+    critical_topics = [TOPICS['rpm'], TOPICS['snapshot']]
     for topic in critical_topics:
         last_time = last_mqtt_data.get(topic)
         if last_time is None:

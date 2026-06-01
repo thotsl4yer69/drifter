@@ -7,16 +7,22 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
+import logging
 import signal
 import subprocess
-import logging
-from pathlib import Path
-import paho.mqtt.client as mqtt
+import time
 
 from config import (
-    MQTT_HOST, MQTT_PORT, NANOB_HOST, NANOB_PORT, NANOB_USER,
-    HOME_CHECK_INTERVAL, LOG_DIR, CALIBRATION_FILE, make_mqtt_client)
+    CALIBRATION_FILE,
+    HOME_CHECK_INTERVAL,
+    LOG_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    NANOB_HOST,
+    NANOB_PORT,
+    NANOB_USER,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,7 +88,7 @@ def load_sync_state():
         try:
             with open(SYNC_STATE_FILE) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
     return {'synced_files': [], 'last_sync': 0}
 
@@ -92,7 +98,7 @@ def save_sync_state(state):
     try:
         with open(SYNC_STATE_FILE, 'w') as f:
             json.dump(state, f)
-    except IOError as e:
+    except OSError as e:
         log.warning(f"Failed to save sync state: {e}")
 
 

@@ -1,0 +1,23 @@
+# MZ1312 DRIFTER — Replay / Recorder config
+# Deployed to /opt/drifter/replay.yaml.
+
+# ── Recorder ──
+recorder:
+  enabled_on_startup: false       # set true to auto-record after boot
+  # Subscription wildcard. Default '#' captures everything but you can
+  # narrow it to e.g. `drifter/engine/#` to record only sensor traffic.
+  topic_filter: "#"
+
+  # Rolling-segment behaviour
+  directory: /opt/drifter/recordings
+  segment_seconds: 300            # 5 min per .jsonl.gz
+  max_total_gb: 10                # delete oldest when exceeded
+
+# ── Replay engine ──
+replay:
+  directory: /opt/drifter/replays
+  default_speed: 1.0              # 1.0 = real time, 5.0 = 5× faster
+  # Topics blocked from replay (so e.g. real crash detection doesn't fire)
+  block_topics:
+    - drifter/crash/sos
+    - drifter/comms/sms

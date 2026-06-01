@@ -10,12 +10,10 @@ import io
 import json
 import os
 import time
-from pathlib import Path
 
 import pytest
 
 import ble_history as bh
-
 
 # ── helpers ────────────────────────────────────────────────────────
 

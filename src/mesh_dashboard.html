@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MZ1312 DRIFTER — Mesh</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #11141b;
+    --line: #1f2530;
+    --fg: #e6e9ef;
+    --muted: #8a95a6;
+    --accent: #7aa2ff;
+    --green: #5ce6a1;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: 'IBM Plex Mono', monospace; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line);
+           display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 14px; letter-spacing: 2px; }
+  header h1 .brand { color: var(--accent); }
+  main { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 42px); }
+  #graph { width: 100%; height: 100%; }
+  aside { border-left: 1px solid var(--line); overflow-y: auto; padding: 12px; }
+  aside h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; margin: 16px 0 8px; }
+  .node-entry { padding: 8px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 6px;
+                font-size: 12px; }
+  .badge { font-size: 11px; color: var(--muted); padding: 4px 8px; border: 1px solid var(--line);
+           border-radius: 4px; }
+  .legend { font-size: 11px; color: var(--muted); margin-top: 12px; }
+  .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px;
+                 vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="brand">MZ1312</span> DRIFTER — MESH TOPOLOGY</h1>
+  <span class="badge" id="status">offline</span>
+</header>
+<main>
+  <svg id="graph"></svg>
+  <aside>
+    <h3>Nodes</h3>
+    <div id="nodeList"></div>
+    <div class="legend">
+      <div><span style="background:#5ce6a1"></span> Online &lt;30s</div>
+      <div><span style="background:#f3a73f"></span> Stale 30-120s</div>
+      <div><span style="background:#ff5577"></span> Offline &gt;120s</div>
+    </div>
+  </aside>
+</main>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const svg = d3.select('#graph');
+let width = 0, height = 0;
+function resize() {
+  const rect = svg.node().getBoundingClientRect();
+  width = rect.width; height = rect.height;
+  svg.attr('viewBox', `0 0 ${width} ${height}`);
+}
+window.addEventListener('resize', resize); resize();
+
+const linkLayer = svg.append('g').attr('stroke', '#1f2530').attr('stroke-width', 1);
+const nodeLayer = svg.append('g');
+const labelLayer = svg.append('g').attr('font-size', 11).attr('fill', '#e6e9ef');
+
+let simulation = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.id).distance(140))
+  .force('charge', d3.forceManyBody().strength(-200))
+  .force('center', d3.forceCenter(width/2, height/2))
+  .on('tick', tick);
+
+let nodes = [], links = [];
+
+function colorFor(node) {
+  const age = (Date.now()/1000) - (node.last_seen || 0);
+  if (age < 30) return '#5ce6a1';
+  if (age < 120) return '#f3a73f';
+  return '#ff5577';
+}
+
+function tick() {
+  linkLayer.selectAll('line')
+    .data(links).join('line')
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  nodeLayer.selectAll('circle')
+    .data(nodes).join('circle')
+    .attr('r', d => d.id === 'self' ? 14 : 10)
+    .attr('cx', d => d.x).attr('cy', d => d.y)
+    .attr('fill', colorFor)
+    .attr('stroke', '#7aa2ff').attr('stroke-width', 1);
+  labelLayer.selectAll('text')
+    .data(nodes).join('text')
+    .attr('x', d => d.x + 14).attr('y', d => d.y + 4)
+    .text(d => d.label || d.id);
+}
+
+function update(topology) {
+  const self = { id: 'self', label: 'this node', last_seen: Date.now()/1000 };
+  nodes = [self].concat((topology.nodes || []).map(n => ({
+    id: n.name || n.info?.hostname || Math.random().toString(36).slice(2),
+    label: n.info?.hostname || n.name,
+    last_seen: n.last_seen,
+    ...n,
+  })));
+  links = nodes.filter(n => n.id !== 'self').map(n => ({ source: 'self', target: n.id }));
+  simulation.nodes(nodes);
+  simulation.force('link').links(links);
+  simulation.alpha(0.7).restart();
+  renderList();
+}
+
+function renderList() {
+  document.getElementById('nodeList').innerHTML = nodes
+    .filter(n => n.id !== 'self')
+    .map(n => `<div class="node-entry">
+      <div><strong>${n.label}</strong></div>
+      <div style="color:var(--muted)">${n.info?.ip || ''} · ${n.info?.role || 'peer'}</div>
+      <div style="color:var(--muted)">seen ${new Date((n.last_seen||0)*1000).toLocaleTimeString()}</div>
+    </div>`).join('') || '<div style="color:var(--muted);font-size:12px">no peers</div>';
+}
+
+async function tickFetch() {
+  try {
+    const r = await fetch('/api/mesh/topology');
+    if (!r.ok) throw new Error('http ' + r.status);
+    update(await r.json());
+    document.getElementById('status').textContent = 'live';
+  } catch (e) {
+    document.getElementById('status').textContent = 'offline';
+  }
+}
+
+// Demo data when running stand-alone
+update({ nodes: [
+  { name: 'drifter-vivi', info: { hostname: 'drifter-vivi', ip: '10.42.0.2', role: 'drifter-node' }, last_seen: Date.now()/1000 },
+  { name: 'sentient-core', info: { hostname: 'sentient-core', ip: '192.168.1.10', role: 'controller' }, last_seen: Date.now()/1000 - 25 },
+]});
+setInterval(tickFetch, 5000);
+</script>
+</body>
+</html>

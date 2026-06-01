@@ -27,7 +27,6 @@ import logging
 import os
 import signal
 import time
-from typing import Optional
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -72,7 +71,7 @@ def _is_random_mac(mac: str) -> bool:
     return bool(first & 0x02)
 
 
-def normalize_device(dev: dict) -> Optional[dict]:
+def normalize_device(dev: dict) -> dict | None:
     """Squash a Kismet device record into the DRIFTER schema.
 
     Returns None if the row is unusable (no MAC). Kismet's JSON shape

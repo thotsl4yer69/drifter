@@ -1,6 +1,7 @@
 # tests/test_home_sync.py
 """Regression test for the home_sync topic rewrite."""
 import sys
+
 sys.path.insert(0, 'src')
 
 import home_sync

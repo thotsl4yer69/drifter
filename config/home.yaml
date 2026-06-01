@@ -1,0 +1,47 @@
+# MZ1312 DRIFTER — Home Assistant bridge config
+# Deployed to /opt/drifter/home.yaml.
+
+# Vehicle identifier published into HA discovery (e.g. VIN, plate, nickname)
+vin: SAJDA01N04FK00000
+
+# Home Assistant discovery prefix (default 'homeassistant')
+discovery_prefix: homeassistant
+
+# Optional external MQTT broker — leave blank to use the local drifter broker
+# (the bridge subscribes locally and forwards on the same broker by default).
+remote:
+  enabled: false
+  host: homeassistant.local
+  port: 1883
+  username: ""
+  password: ""
+
+# Sensors published to HA (must match config.PUBLISHED_SENSORS in home_bridge.py)
+sensors:
+  - key: rpm
+    friendly: Engine RPM
+  - key: coolant
+    friendly: Coolant Temp
+    unit: °C
+    device_class: temperature
+  - key: speed
+    friendly: Speed
+    unit: km/h
+    device_class: speed
+  - key: voltage
+    friendly: Battery Voltage
+    unit: V
+    device_class: voltage
+  - key: alert_level
+    friendly: Alert Level
+
+# Buttons exposed back to HA → drifter actions
+buttons:
+  - action: start_recording
+    friendly: Start Recording
+  - action: stop_recording
+    friendly: Stop Recording
+  - action: start_sentry
+    friendly: Start Sentry
+  - action: stop_sentry
+    friendly: Stop Sentry

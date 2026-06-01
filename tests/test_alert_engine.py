@@ -7,44 +7,43 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import time
-import pytest
-from collections import deque
 
-from config import (
-    LEVEL_OK, LEVEL_INFO, LEVEL_AMBER, LEVEL_RED,
-    THRESHOLDS, CALIBRATION_DEFAULTS,
-    WARMUP_COOLANT_THRESHOLD, WARMUP_COOLANT_TARGET,
-)
+import pytest
+
+import alert_engine
 from alert_engine import (
+    ALL_RULES,
     VehicleState,
-    rule_vacuum_leak_bank1,
-    rule_vacuum_leak_both,
-    rule_coolant_critical,
-    rule_running_rich,
-    rule_alternator,
-    rule_idle_instability,
-    rule_overrev,
-    rule_ltft_drift,
-    rule_bank_imbalance,
-    rule_intake_temp,
-    rule_voltage_overcharge,
     rule_active_dtcs,
+    rule_alternator,
+    rule_bank_imbalance,
+    rule_coolant_critical,
+    rule_idle_instability,
+    rule_intake_temp,
+    rule_ltft_drift,
+    rule_overrev,
+    rule_running_rich,
     rule_stalled,
     rule_tpms_low_pressure,
     rule_tpms_rapid_loss,
     rule_tpms_temp,
-    rule_xtype_thermostat,
-    rule_xtype_coil_pack,
-    rule_xtype_maf_degradation,
-    rule_xtype_throttle_body,
-    rule_xtype_cold_start,
+    rule_vacuum_leak_bank1,
+    rule_vacuum_leak_both,
+    rule_voltage_overcharge,
     rule_xtype_alternator_age,
+    rule_xtype_coil_pack,
+    rule_xtype_cold_start,
+    rule_xtype_maf_degradation,
+    rule_xtype_thermostat,
+    rule_xtype_throttle_body,
     rule_xtype_warmup_progress,
-    ALL_RULES,
-    calibration,
 )
-import alert_engine
-
+from config import (
+    LEVEL_AMBER,
+    LEVEL_INFO,
+    LEVEL_RED,
+    WARMUP_COOLANT_TARGET,
+)
 
 # ── Fixtures ──
 

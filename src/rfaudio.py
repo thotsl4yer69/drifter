@@ -34,15 +34,22 @@ import signal
 import subprocess
 import threading
 import time
-from typing import Optional
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client,
     EMERGENCY_AUDIO_BANDS,
-    RFAUDIO_DEFAULT_FREQ_MHZ, RFAUDIO_DEFAULT_MODE, RFAUDIO_DEFAULT_GAIN,
-    RFAUDIO_SAMPLE_RATE, RFAUDIO_OUTPUT_RATE, RFAUDIO_APLAY_DEVICE,
+    MQTT_HOST,
+    MQTT_PORT,
+    RFAUDIO_APLAY_DEVICE,
+    RFAUDIO_DEFAULT_FREQ_MHZ,
+    RFAUDIO_DEFAULT_GAIN,
+    RFAUDIO_DEFAULT_MODE,
+    RFAUDIO_OPEN_RETRIES,
+    RFAUDIO_OPEN_RETRY_BACKOFF_SEC,
+    RFAUDIO_OUTPUT_RATE,
     RFAUDIO_PAUSE_WAIT_SEC,
-    RFAUDIO_OPEN_RETRIES, RFAUDIO_OPEN_RETRY_BACKOFF_SEC,
+    RFAUDIO_SAMPLE_RATE,
+    TOPICS,
+    make_mqtt_client,
 )
 from hw_probe import probe_rtl_sdr, probe_speaker, publish_hw_state
 
@@ -61,11 +68,11 @@ class AudioStream:
     """rtl_fm | aplay subprocess pair. One stream active at a time."""
 
     def __init__(self) -> None:
-        self._rtl: Optional[subprocess.Popen] = None
-        self._aplay: Optional[subprocess.Popen] = None
+        self._rtl: subprocess.Popen | None = None
+        self._aplay: subprocess.Popen | None = None
         self._lock = threading.Lock()
-        self.freq_mhz: Optional[float] = None
-        self.mode: Optional[str] = None
+        self.freq_mhz: float | None = None
+        self.mode: str | None = None
 
     def start(self, freq_mhz: float, mode: str, gain: float) -> bool:
         # Retry usb_claim_interface -6: drifter-rf may still be releasing the SDR.
@@ -174,7 +181,7 @@ _stream = AudioStream()
 _state = 'idle'  # 'idle' | 'playing' | 'scanning'
 
 _RFAUDIO_MODES = {'nfm', 'wfm', 'fm', 'am', 'usb', 'lsb', 'raw'}
-_scan_thread: Optional[threading.Thread] = None
+_scan_thread: threading.Thread | None = None
 _scan_stop = threading.Event()
 
 
@@ -354,7 +361,7 @@ def _handle_command(client, payload: dict) -> None:
     log.warning("unknown action: %r", action)
 
 
-def on_message(client, userdata, msg) -> None:  # noqa: ARG001 — paho callback shape
+def on_message(client, userdata, msg) -> None:
     try:
         payload = json.loads(msg.payload)
     except (json.JSONDecodeError, UnicodeDecodeError):

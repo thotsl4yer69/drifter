@@ -8,23 +8,35 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
+import logging
 import signal
 import subprocess
-import logging
 import threading
+import time
 from collections import deque
 from pathlib import Path
-import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    RTL433_BIN, TPMS_SENSOR_FILE, TPMS_POSITIONS,
-    TPMS_LEARN_TIMEOUT, TPMS_STALE_TIMEOUT,
-    SPECTRUM_SCAN_INTERVAL, SPECTRUM_FREQ_START, SPECTRUM_FREQ_END,
-    EMERGENCY_SCAN_INTERVAL, EMERGENCY_SCAN_DWELL, EMERGENCY_BANDS,
-    ADSB_SCAN_INTERVAL, ADSB_SCAN_DURATION, ADSB_JSON_DIR, DUMP1090_BIN,
-    THRESHOLDS, make_mqtt_client,)
+    ADSB_JSON_DIR,
+    ADSB_SCAN_DURATION,
+    ADSB_SCAN_INTERVAL,
+    DUMP1090_BIN,
+    EMERGENCY_BANDS,
+    EMERGENCY_SCAN_DWELL,
+    EMERGENCY_SCAN_INTERVAL,
+    MQTT_HOST,
+    MQTT_PORT,
+    RTL433_BIN,
+    SPECTRUM_FREQ_END,
+    SPECTRUM_FREQ_START,
+    SPECTRUM_SCAN_INTERVAL,
+    TOPICS,
+    TPMS_LEARN_TIMEOUT,
+    TPMS_POSITIONS,
+    TPMS_SENSOR_FILE,
+    TPMS_STALE_TIMEOUT,
+    make_mqtt_client,
+)
 from hw_probe import probe_rtl_sdr, publish_hw_state
 
 SDR_RESCAN_INTERVAL = 30  # seconds — poll for SDR plug/unplug
@@ -1034,7 +1046,7 @@ def run_adsb_scan(mqtt_client):
             time.sleep(1)
 
     except FileNotFoundError:
-        log.warning(f"dump1090 not found — ADS-B scanning disabled. "
+        log.warning("dump1090 not found — ADS-B scanning disabled. "
                     "Install with: sudo apt install dump1090-fa")
         return
     except Exception as e:

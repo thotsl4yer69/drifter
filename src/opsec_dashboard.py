@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shlex
 import signal
 import subprocess
@@ -35,10 +34,14 @@ from urllib.parse import urlparse
 sys.path.insert(0, '/opt/drifter')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import opsec_marauder_client as marauder_client  # noqa: E402
-
-from config import (  # noqa: E402
-    MODE_STATE_PATH, DEFAULT_MODE, MODES, MQTT_HOST, MQTT_PORT, TOPICS,
+import opsec_marauder_client as marauder_client
+from config import (
+    DEFAULT_MODE,
+    MODE_STATE_PATH,
+    MODES,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
 )
 
 LOG_FORMAT = '%(asctime)s [OPSEC] %(message)s'

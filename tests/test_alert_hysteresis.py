@@ -6,14 +6,14 @@ Run: pytest tests/test_alert_hysteresis.py -v
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import time
 import json
-import pytest
-from unittest.mock import MagicMock, call
-from collections import deque
+import time
+from unittest.mock import MagicMock
 
-from config import LEVEL_OK, LEVEL_INFO, LEVEL_AMBER, LEVEL_RED, LEVEL_NAMES
+import pytest
+
 import alert_engine
+from config import LEVEL_AMBER, LEVEL_OK
 
 
 @pytest.fixture(autouse=True)

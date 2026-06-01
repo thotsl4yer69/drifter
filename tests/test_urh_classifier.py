@@ -10,10 +10,7 @@ import math
 import struct
 from pathlib import Path
 
-import pytest
-
 import urh_classifier as uc
-
 
 # ── _read_iq_complex ──────────────────────────────────────────────────
 

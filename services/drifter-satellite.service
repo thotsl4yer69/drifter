@@ -1,0 +1,17 @@
+[Unit]
+Description=MZ1312 DRIFTER Satellite Manager (ESP32 nodes)
+After=nanomq.service network.target
+Wants=nanomq.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/satellite_manager.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

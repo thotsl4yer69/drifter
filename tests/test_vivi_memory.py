@@ -1,12 +1,12 @@
 # tests/test_vivi_memory.py
 """Smoke tests for vivi_memory using an in-memory SQLite DB."""
 import sys
-import time
+
 sys.path.insert(0, 'src')
 
-import pytest
 from unittest.mock import patch
-from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +83,6 @@ def test_invalid_role_rejected():
 
 def test_facts_pruned_to_max():
     import vivi_memory as vm
-    from unittest.mock import patch
     # Override max to 5 for this test
     with patch.object(vm, 'VIVI2_MEMORY_MAX_ENTRIES', 5):
         # Reload to pick up constant — just call remember manually

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MZ1312 DRIFTER — Fleet</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #11141b;
+    --line: #1f2530;
+    --fg: #e6e9ef;
+    --muted: #8a95a6;
+    --amber: #f3a73f;
+    --red: #ff5577;
+    --green: #5ce6a1;
+    --accent: #7aa2ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: 'IBM Plex Mono', 'Cascadia Mono', Menlo, monospace; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line);
+           display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 14px; letter-spacing: 2px; }
+  header h1 .brand { color: var(--accent); }
+  .badge { font-size: 11px; color: var(--muted); padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; }
+  main { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 42px); }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; }
+  .vehicle { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .vehicle:hover { background: var(--panel); }
+  .vehicle.active { background: var(--panel); border-left: 3px solid var(--accent); }
+  .vehicle .vin { font-size: 11px; color: var(--muted); }
+  .vehicle .label { font-size: 13px; font-weight: 600; margin: 2px 0; }
+  .vehicle .meta { font-size: 11px; color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.online { background: var(--green); }
+  .dot.offline { background: var(--red); }
+  .panel { padding: 16px; overflow-y: auto; }
+  #map { width: 100%; height: 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  .card { background: var(--panel); padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+  .card .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .card .v { font-size: 24px; margin-top: 4px; }
+  .alerts { margin-top: 16px; }
+  .alert { padding: 8px 12px; border-left: 3px solid var(--amber); background: var(--panel);
+           margin-bottom: 6px; font-size: 12px; }
+  .alert.red { border-color: var(--red); }
+  .alert.info { border-color: var(--accent); }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+<header>
+  <h1><span class="brand">MZ1312</span> DRIFTER — FLEET</h1>
+  <span class="badge" id="status">offline</span>
+</header>
+<main>
+  <aside id="vehicleList"></aside>
+  <section class="panel" id="detail">
+    <div class="empty">Select a vehicle</div>
+  </section>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API = location.origin;
+let token = localStorage.getItem('drifter_token') || '';
+let selected = null;
+let map = null;
+let markers = {};
+
+async function login() {
+  const r = await fetch(`${API}/api/auth/login`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: 'fleet', password: 'admin'}),
+  });
+  const j = await r.json();
+  token = j.token;
+  localStorage.setItem('drifter_token', token);
+}
+
+async function fetchVehicles() {
+  const r = await fetch(`${API}/api/vehicles`, {
+    headers: {'Authorization': `Bearer ${token}`},
+  });
+  if (r.status === 401) { await login(); return fetchVehicles(); }
+  return (await r.json()).vehicles || [];
+}
+
+function renderList(vehicles) {
+  const el = document.getElementById('vehicleList');
+  el.innerHTML = vehicles.map(v => `
+    <div class="vehicle ${selected === v.vin ? 'active' : ''}" data-vin="${v.vin}">
+      <div class="vin">${v.vin}</div>
+      <div class="label">${v.label || v.vin}</div>
+      <div class="meta">
+        <span class="dot ${v.online ? 'online' : 'offline'}"></span>
+        ${v.online ? 'online' : 'offline'} · last seen ${new Date((v.last_seen||0)*1000).toLocaleTimeString()}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.vehicle').forEach(node => {
+    node.addEventListener('click', () => selectVehicle(node.dataset.vin, vehicles));
+  });
+  updateMap(vehicles);
+}
+
+function selectVehicle(vin, vehicles) {
+  selected = vin;
+  const v = vehicles.find(x => x.vin === vin);
+  if (!v) return;
+  const t = v.telemetry || {};
+  const alerts = (v.alerts || []).slice(-10).reverse();
+  document.getElementById('detail').innerHTML = `
+    <h2 style="margin-top:0">${v.label || v.vin}</h2>
+    <div id="map"></div>
+    <div class="row">
+      <div class="card"><div class="k">Speed</div><div class="v">${t.speed?.toFixed?.(0) ?? '—'} <span style="font-size:12px">km/h</span></div></div>
+      <div class="card"><div class="k">RPM</div><div class="v">${t.rpm?.toFixed?.(0) ?? '—'}</div></div>
+      <div class="card"><div class="k">Coolant</div><div class="v">${t.coolant?.toFixed?.(0) ?? '—'} <span style="font-size:12px">°C</span></div></div>
+      <div class="card"><div class="k">Voltage</div><div class="v">${t.voltage?.toFixed?.(1) ?? '—'} <span style="font-size:12px">V</span></div></div>
+    </div>
+    <div class="alerts">
+      <h3 style="font-size:12px;color:var(--muted);text-transform:uppercase">Recent Alerts</h3>
+      ${alerts.length ? alerts.map(a => `
+        <div class="alert ${a.level >= 3 ? 'red' : a.level === 2 ? '' : 'info'}">
+          <strong>${new Date(a.ts*1000).toLocaleTimeString()}</strong> · ${a.message}
+        </div>`).join('') : '<div class="empty">No alerts</div>'}
+    </div>`;
+  initMap(v);
+  renderList(vehicles);
+}
+
+function initMap(v) {
+  const t = v.telemetry || {};
+  const lat = t.lat ?? -37.8136, lng = t.lng ?? 144.9631;
+  map = L.map('map', { zoomControl: true }).setView([lat, lng], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
+  L.marker([lat, lng]).addTo(map).bindPopup(v.label || v.vin);
+}
+
+function updateMap(vehicles) { /* placeholder for multi-vehicle map */ }
+
+function openWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/fleet`);
+  ws.onopen = () => document.getElementById('status').textContent = 'live';
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'reconnect…';
+    setTimeout(openWS, 3000);
+  };
+  ws.onmessage = async () => {
+    const vs = await fetchVehicles();
+    renderList(vs);
+    if (selected) selectVehicle(selected, vs);
+  };
+}
+
+async function boot() {
+  if (!token) await login();
+  const vs = await fetchVehicles();
+  renderList(vs);
+  openWS();
+  setInterval(async () => {
+    const vs2 = await fetchVehicles();
+    renderList(vs2);
+  }, 10000);
+}
+boot();
+</script>
+</body>
+</html>

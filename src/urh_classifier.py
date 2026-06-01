@@ -34,7 +34,6 @@ import os
 import struct
 import time
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ IQ_BUFFER_DIR = Path('/opt/drifter/state/iq_buffer')
 
 # Probe URH lazily — the heavy scipy/PyQt import cost should only land
 # when classify() is actually called, not on module import.
-_URH_AVAILABLE: Optional[bool] = None
+_URH_AVAILABLE: bool | None = None
 
 
 def _urh_available() -> bool:
@@ -64,7 +63,7 @@ def _urh_available() -> bool:
     return _URH_AVAILABLE
 
 
-def _read_iq_complex(path: Path) -> Optional[list]:
+def _read_iq_complex(path: Path) -> list | None:
     """Load a .complex / .iq file as a list of (I, Q) float pairs.
 
     Files are interleaved float32 I/Q at the device sample rate. Returns
@@ -166,8 +165,8 @@ def _urh_classify(iq_path: Path, sample_rate: int) -> dict:
     Any import failure here drops us into the heuristic path.
     """
     try:
-        from urh.signalprocessing.Signal import Signal
         from urh.signalprocessing.ProtocolAnalyzer import ProtocolAnalyzer
+        from urh.signalprocessing.Signal import Signal
     except Exception as e:
         log.debug("URH ProtocolAnalyzer unavailable: %s", e)
         return {}
@@ -198,7 +197,7 @@ def _urh_classify(iq_path: Path, sample_rate: int) -> dict:
             'modulation': mod_str,
             'protocol_guess': str(protocol_guess) or 'unknown',
             'confidence': round(confidence, 3),
-            'preamble_type': getattr(signal, 'pause_threshold', '') and 'auto' or '',
+            'preamble_type': (getattr(signal, 'pause_threshold', '') and 'auto') or '',
             'encoding': getattr(signal, 'modulation_type_str', '') or '',
         }
     except Exception as e:

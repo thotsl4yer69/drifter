@@ -33,7 +33,6 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Optional
 
 try:
     import yaml
@@ -168,7 +167,7 @@ class AuditState:
             }
 
 
-def parse_capture_line(line: str) -> Optional[dict]:
+def parse_capture_line(line: str) -> dict | None:
     """Parse a bettercap stdout line announcing a capture.
 
     bettercap log lines look like:
@@ -196,7 +195,7 @@ def parse_capture_line(line: str) -> Optional[dict]:
 
 
 def process_bettercap_line(line: str, allowlist: list[dict],
-                           audit: AuditState) -> Optional[dict]:
+                           audit: AuditState) -> dict | None:
     """Apply allowlist gate to a parsed bettercap line.
 
     Returns the recorded capture dict, or None if the line was either
@@ -286,7 +285,7 @@ def main():
     )
     publisher.start()
 
-    proc: Optional[subprocess.Popen] = None
+    proc: subprocess.Popen | None = None
     try:
         proc = spawn_bettercap(caplet_path)
         assert proc.stdout is not None
