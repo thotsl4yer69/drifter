@@ -2119,9 +2119,120 @@
     .row-split .tile.tab-active.slide-from-right { animation: rowSplitSlideFromRight 180ms ease-out; }
     .row-split .tile.tab-active.slide-from-left  { animation: rowSplitSlideFromLeft  180ms ease-out; }
   }
+
+  /* ── Gear Indicator ─────────────────────────────────────── */
+  .gear-ind {
+    position: absolute; right: 16px; top: 50%;
+    transform: translateY(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 700;
+    color: var(--amber);
+    text-shadow: 0 0 10px rgba(255,174,66,0.45);
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .gauge .val { position: relative; }
+
+  /* ── Shift Light LEDs ───────────────────────────────────── */
+  .shift-lights { display: flex; gap: 5px; padding: 0 16px; justify-content: center; }
+  .shift-led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,174,66,0.08);
+    border: 1px solid rgba(255,174,66,0.15);
+    transition: background 80ms, box-shadow 80ms;
+  }
+  .shift-led.on { background: var(--amber); box-shadow: 0 0 8px rgba(255,174,66,0.6); }
+  .shift-led.on-red { background: var(--red); box-shadow: 0 0 10px rgba(255,107,107,0.7); }
+  .shift-led.flash { animation: shiftFlash 150ms infinite alternate; }
+  @keyframes shiftFlash { from { opacity: 1; } to { opacity: 0.2; } }
+
+  /* ── Peak RPM Marker ────────────────────────────────────── */
+  .peak-marker {
+    position: absolute; top: -8px;
+    width: 0; height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid rgba(255,174,66,0.4);
+    transition: left 280ms;
+    pointer-events: none;
+  }
+
+  /* ── Toast Notifications ────────────────────────────────── */
+  .toast-container {
+    position: fixed; bottom: 60px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 9998;
+    display: flex; flex-direction: column-reverse; gap: 6px;
+    pointer-events: none;
+  }
+  .toast {
+    padding: 8px 16px; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    border: 1px solid var(--glass-stroke-amber);
+    background: var(--glass-bg-strong);
+    color: var(--fg);
+    backdrop-filter: var(--glass-blur);
+    animation: toastIn 200ms ease-out, toastOut 300ms ease-in 2.7s forwards;
+    pointer-events: auto; max-width: 400px;
+  }
+  .toast.amber { border-color: rgba(255,174,66,0.5); }
+  .toast.red { border-color: rgba(255,107,107,0.5); color: var(--red); }
+  .toast.green { border-color: rgba(94,234,212,0.5); color: var(--teal); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-8px); } }
+
+  /* ── Boot Splash Overlay ────────────────────────────────── */
+  .boot-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: var(--bg-0);
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--amber);
+    transition: opacity 400ms;
+  }
+  .boot-overlay.done { opacity: 0; pointer-events: none; }
+  .boot-line {
+    font-size: 12px; letter-spacing: 0.12em; margin: 3px 0;
+    opacity: 0; white-space: pre;
+  }
+  .boot-line.typed { opacity: 1; }
+  .boot-line.ok { color: var(--teal); }
+  .boot-line .cursor { display: inline; animation: bootCursor 0.5s steps(2) infinite; }
+  @keyframes bootCursor { 0% { opacity: 1; } 100% { opacity: 0; } }
+  .boot-brand {
+    font-family: 'Major Mono Display', monospace;
+    font-size: 18px; letter-spacing: 0.3em; margin-bottom: 16px;
+  }
+
+  /* ── Data Staleness Indicator ───────────────────────────── */
+  .gauge.stale .val { opacity: 0.5; transition: opacity 1s; }
+  .gauge.stale-critical .val { opacity: 0.25; }
+  .gauge.stale .live-dot { display: none; }
+
+  /* ── TPMS Pressure Delta ────────────────────────────────── */
+  .tpms-delta {
+    text-align: center; margin-top: 6px; padding: 4px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em;
+    color: var(--fg-dim); border-radius: 4px;
+  }
+  .tpms-delta.warn { color: var(--red); background: rgba(255,107,107,0.06); }
 </style>
 </head>
 <body>
+
+<div class="boot-overlay" id="boot-overlay">
+  <div class="boot-brand">drifter</div>
+  <div class="boot-line" id="bl-0">MZ1312 UNCAGED TECHNOLOGY</div>
+  <div class="boot-line" id="bl-1">2004 JAGUAR X-TYPE · V6 AWD</div>
+  <div class="boot-line" id="bl-2">CAN BUS ........ <span class="ok">OK</span></div>
+  <div class="boot-line" id="bl-3">MQTT ........... <span class="ok">OK</span></div>
+  <div class="boot-line" id="bl-4">SENSORS ........ <span class="ok">OK</span></div>
+  <div class="boot-line" id="bl-5">SYSTEM READY</div>
+</div>
+<div class="toast-container" id="toast-container"></div>
 
 <div class="shell" id="shell">
 
@@ -2245,7 +2356,10 @@
             <div class="tile-label">rpm · crank</div>
             <div class="tile-meta">CAN · 50ms</div>
           </div>
-          <div class="val dim"><span class="num">—</span><span class="unit">×1000</span></div>
+          <div class="shift-lights" id="shift-lights">
+            <div class="shift-led"></div><div class="shift-led"></div><div class="shift-led"></div><div class="shift-led"></div><div class="shift-led"></div>
+          </div>
+          <div class="val dim"><span class="num">—</span><span class="unit">×1000</span><div class="gear-ind mono" id="gear-ind">N</div></div>
           <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none">
             <polyline points="" style="stroke:var(--cyan); stroke-width:1.4"/>
           </svg>
@@ -2470,6 +2584,87 @@
   const CURRENCY_SYMBOLS = { AUD:'$', USD:'$', GBP:'£', EUR:'€', NZD:'$', CAD:'$', JPY:'¥' };
   function currencySymbol(code){ return CURRENCY_SYMBOLS[(code || 'AUD').toUpperCase()] || '$'; }
   function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  // ── Gear Estimation (JF506E 5-speed auto) ──────────────────────
+  const JF506E_RATIOS = [3.857, 2.212, 1.414, 1.000, 0.717];
+  const FINAL_DRIVE = 4.058;
+  const TIRE_CIRC = 1.985;
+  let lastSpeedKph = 0;
+
+  function estimateGear(rpm, speedKph) {
+    if (speedKph < 5 || rpm < 500) return 'N';
+    const wheelRps = (speedKph / 3.6) / TIRE_CIRC;
+    const driveRps = wheelRps * FINAL_DRIVE;
+    const engineRps = rpm / 60;
+    const measured = engineRps / driveRps;
+    let best = 0, bestDiff = Infinity;
+    for (let i = 0; i < JF506E_RATIOS.length; i++) {
+      const diff = Math.abs(JF506E_RATIOS[i] - measured);
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    }
+    return bestDiff < 0.6 ? String(best + 1) : 'N';
+  }
+
+  // ── Shift Lights ───────────────────────────────────────────────
+  function updateShiftLights(rpm) {
+    const leds = document.querySelectorAll('#shift-lights .shift-led');
+    if (!leds.length) return;
+    const lit = Math.max(0, Math.min(5, Math.floor((rpm - 4500) / 400) + 1));
+    leds.forEach((led, i) => {
+      led.classList.toggle('on', i < lit && rpm >= 4500 && i < 3);
+      led.classList.toggle('on-red', i < lit && rpm >= 4500 && i >= 3);
+      led.classList.toggle('flash', i < lit && rpm >= 6200);
+    });
+  }
+
+  // ── Peak RPM ───────────────────────────────────────────────────
+  let peakRpm = 0;
+  function updatePeakMarker(rpm) {
+    if (rpm > peakRpm) peakRpm = rpm;
+    const bar = document.querySelector('#g-rpm .bar');
+    if (!bar) return;
+    let mk = bar.querySelector('.peak-marker');
+    if (!mk) { mk = document.createElement('div'); mk.className = 'peak-marker'; bar.appendChild(mk); }
+    const pct = clamp01(peakRpm / 7000) * 100;
+    mk.style.left = pct + '%';
+  }
+
+  // ── Toast Notifications ────────────────────────────────────────
+  function showToast(message, level) {
+    const c = document.getElementById('toast-container');
+    if (!c) return;
+    const t = document.createElement('div');
+    t.className = 'toast' + (level ? ' ' + level : '');
+    t.textContent = message;
+    c.appendChild(t);
+    setTimeout(() => { if (t.parentNode) t.remove(); }, 3200);
+  }
+  let prevAlertLevel = null;
+
+  // ── Boot Splash ────────────────────────────────────────────────
+  function runBoot() {
+    const overlay = document.getElementById('boot-overlay');
+    if (!overlay) return;
+    const lines = overlay.querySelectorAll('.boot-line');
+    lines.forEach((line, i) => {
+      setTimeout(() => line.classList.add('typed'), 300 + i * 400);
+    });
+    setTimeout(() => overlay.classList.add('done'), 300 + lines.length * 400 + 600);
+    setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 300 + lines.length * 400 + 1200);
+  }
+
+  // ── Data Staleness ─────────────────────────────────────────────
+  const gaugeLastSeen = {};
+  setInterval(() => {
+    const now = Date.now();
+    for (const name of ['coolant', 'voltage', 'rpm', 'speed']) {
+      const tile = document.getElementById(({coolant:'g-coolant',voltage:'g-voltage',rpm:'g-rpm',speed:'g-speed'})[name]);
+      if (!tile) continue;
+      const age = now - (gaugeLastSeen[name] || 0);
+      tile.classList.toggle('stale', age > 10000 && gaugeLastSeen[name] > 0);
+      tile.classList.toggle('stale-critical', age > 30000 && gaugeLastSeen[name] > 0);
+    }
+  }, 5000);
 
   // ── Theme ───────────────────────────────────────────────────────
   const VALID_THEMES = ['uncaged', 'nightrun', 'daylight'];
@@ -2817,6 +3012,25 @@
       spark.setAttribute('points', pts);
       spark.style.stroke = cfg.stroke;
     }
+
+    // Clear staleness on update
+    gaugeLastSeen[name] = Date.now();
+    tile.classList.remove('stale', 'stale-critical');
+
+    // RPM-specific: shift lights, gear indicator, peak marker
+    if (name === 'rpm') {
+      updateShiftLights(value);
+      updatePeakMarker(value);
+      const gearEl = document.getElementById('gear-ind');
+      if (gearEl) gearEl.textContent = estimateGear(value, lastSpeedKph);
+    }
+    if (name === 'speed') {
+      lastSpeedKph = value;
+      const gearEl = document.getElementById('gear-ind');
+      if (gearEl && gaugeBuf.rpm && gaugeBuf.rpm.length) {
+        gearEl.textContent = estimateGear(gaugeBuf.rpm[gaugeBuf.rpm.length - 1], value);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2832,6 +3046,13 @@
     alertsRing.unshift(a);
     while (alertsRing.length > ALERT_RING_MAX) alertsRing.pop();
     renderAlertsTile();
+    // Toast on severity change
+    const lvl = (a.level || a.severity || 'info').toLowerCase();
+    if (prevAlertLevel !== null && lvl !== prevAlertLevel) {
+      const color = lvl === 'critical' ? 'red' : lvl === 'warning' ? 'amber' : 'green';
+      showToast((a.message || 'Alert level changed').substring(0, 80), color);
+    }
+    prevAlertLevel = lvl;
   }
 
   function renderAlertsTile(){
@@ -3847,9 +4068,17 @@
         harvestPanel = `<div class="section-head" style="margin-top:8px"><span>tpms · harvest</span><span class="tag">${ids.length} sensor${ids.length === 1 ? '' : 's'}${harvestActive ? ' · LIVE' : ''}</span></div>${rows}`;
       }
 
+      // Pressure delta across all 4 corners
+      const allPsi = positions.map(p => snap[p] && snap[p].pressure_psi).filter(v => v != null);
+      let deltaHtml = '';
+      if (allPsi.length >= 2) {
+        const delta = Math.max(...allPsi) - Math.min(...allPsi);
+        const warn = delta > 4;
+        deltaHtml = `<div class="tpms-delta${warn ? ' warn' : ''}">SPREAD · ${delta.toFixed(1)} PSI${warn ? ' · CHECK TIRES' : ''}</div>`;
+      }
       return head +
         `<div class="tpms-car">${cornerCell('fl')}${cornerCell('fr')}${cornerCell('rl')}${cornerCell('rr')}</div>` +
-        learnBadge + buttons + harvestPanel;
+        deltaHtml + learnBadge + buttons + harvestPanel;
     },
 
     dtcs(){
@@ -6545,6 +6774,7 @@
   renderTripHero();
   renderViviHistory();
   setTab(activeTab);
+  runBoot();
 
   // First-paint marker — record once the browser has actually rendered.
   requestAnimationFrame(() => {
