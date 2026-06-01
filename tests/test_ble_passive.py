@@ -9,7 +9,6 @@ import json
 import sqlite3
 import sys
 import time
-from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
 
@@ -22,7 +21,6 @@ _bleak_stub.BleakScanner = MagicMock()
 sys.modules.setdefault('bleak', _bleak_stub)
 
 import ble_passive as bp  # noqa: E402 — must come after bleak stub
-
 
 # ── classify_oui ──────────────────────────────────────────────────────
 

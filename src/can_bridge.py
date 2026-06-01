@@ -6,17 +6,23 @@ Supports Mode 01 (live data), Mode 03 (stored DTCs), Mode 07 (pending DTCs).
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import can
 import json
-import time
-import signal
 import logging
-import paho.mqtt.client as mqtt
-from collections import deque
+import signal
+import time
+
+import can
 
 from config import (
-    MQTT_HOST, MQTT_PORT, CAN_BITRATE, TOPICS,
-    OBD_REQUEST_ID, OBD_RESPONSE_BASE, OBD_RESPONSE_END, make_mqtt_client)
+    CAN_BITRATE,
+    MQTT_HOST,
+    MQTT_PORT,
+    OBD_REQUEST_ID,
+    OBD_RESPONSE_BASE,
+    OBD_RESPONSE_END,
+    TOPICS,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,

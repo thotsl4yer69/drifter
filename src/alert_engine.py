@@ -6,24 +6,40 @@ No LLM needed. If/else runs in microseconds.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import json
-import time
-import signal
-import logging
-import threading
 import itertools
+import json
+import logging
+import signal
+import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
-import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, CALIBRATION_FILE,
-    LEVEL_OK, LEVEL_INFO, LEVEL_AMBER, LEVEL_RED, LEVEL_NAMES,
-    THRESHOLDS, CALIBRATION_DEFAULTS, TOPICS, XTYPE_DTC_LOOKUP,
-    WARMUP_COOLANT_THRESHOLD, WARMUP_TIME_MAX, WARMUP_COOLANT_TARGET,
-    THERMOSTAT_OPEN_C, COOLANT_NORMAL_LOW, COOLANT_NORMAL_HIGH,
-    MAF_IDLE_MIN, MAF_IDLE_MAX, IDLE_RPM_WARM_LOW, IDLE_RPM_WARM_HIGH, make_mqtt_client,)
+    CALIBRATION_DEFAULTS,
+    CALIBRATION_FILE,
+    COOLANT_NORMAL_HIGH,
+    COOLANT_NORMAL_LOW,
+    IDLE_RPM_WARM_HIGH,
+    IDLE_RPM_WARM_LOW,
+    LEVEL_AMBER,
+    LEVEL_INFO,
+    LEVEL_NAMES,
+    LEVEL_OK,
+    LEVEL_RED,
+    MAF_IDLE_MAX,
+    MAF_IDLE_MIN,
+    MQTT_HOST,
+    MQTT_PORT,
+    THERMOSTAT_OPEN_C,
+    THRESHOLDS,
+    TOPICS,
+    WARMUP_COOLANT_TARGET,
+    WARMUP_COOLANT_THRESHOLD,
+    WARMUP_TIME_MAX,
+    XTYPE_DTC_LOOKUP,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,

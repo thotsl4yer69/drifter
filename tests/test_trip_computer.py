@@ -2,11 +2,12 @@
 """Smoke tests for trip_computer: distance and fuel accumulation."""
 import sys
 import time
+
 sys.path.insert(0, 'src')
 
 import pytest
-from trip_computer import TripState
 
+from trip_computer import TripState
 
 FUEL_PRICE = 1.55
 TANK_L = 60.0

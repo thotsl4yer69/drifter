@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>VIVI &mdash; DRIFTER</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0500;--card:#140a02;--border:#3a1f00;
+  --text:#ffb866;--dim:#7a4a00;--accent:#ff8c00;
+  --hot:#ffaa33;--ok:#88ff44;--red:#ff3030;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg)}
+body{
+  color:var(--text);
+  font-family:'Courier New',monospace;
+  -webkit-font-smoothing:antialiased;
+  text-shadow:0 0 6px rgba(255,140,0,.45);
+  position:relative;
+}
+#scene{position:fixed;inset:0;z-index:1}
+
+/* CRT scanlines + vignette */
+#crt{
+  position:fixed;inset:0;z-index:10;pointer-events:none;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.18) 3px,
+      rgba(0,0,0,0) 4px
+    ),
+    radial-gradient(ellipse at center,rgba(255,140,0,.04) 0%,rgba(0,0,0,.55) 90%);
+  mix-blend-mode:overlay;
+}
+#crt::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.6) 100%);
+  pointer-events:none;
+}
+
+/* Header */
+.header{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  padding:10px 16px;display:flex;justify-content:space-between;align-items:center;
+  background:linear-gradient(180deg,rgba(20,10,2,.92) 0%,rgba(10,5,0,.6) 80%,transparent 100%);
+  border-bottom:1px solid var(--border);
+}
+.header .brand{font-size:14px;letter-spacing:4px;color:var(--accent);font-weight:bold}
+.header .sub{font-size:9px;color:var(--dim);letter-spacing:2px;margin-top:1px}
+.header .right{font-size:11px;letter-spacing:2px;text-align:right}
+
+.status-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 10px;border:1px solid var(--border);border-radius:12px;
+  font-size:10px;letter-spacing:2px;background:rgba(20,10,2,.7);
+}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#444;box-shadow:0 0 4px currentColor}
+.status-dot.ok{background:var(--ok);color:var(--ok)}
+.status-dot.warn{background:var(--accent);color:var(--accent);animation:pulse 1.4s infinite}
+.status-dot.off{background:#444}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Conversation log */
+#log{
+  position:fixed;left:12px;top:64px;bottom:160px;width:280px;z-index:20;
+  padding:10px;overflow-y:auto;
+  background:rgba(10,5,0,.55);border:1px solid var(--border);border-radius:6px;
+  font-size:11px;line-height:1.45;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+}
+#log::-webkit-scrollbar{width:4px}
+#log::-webkit-scrollbar-thumb{background:var(--border)}
+.msg{margin-bottom:8px;border-left:2px solid var(--border);padding-left:8px}
+.msg.user{border-color:var(--dim);color:var(--dim)}
+.msg.vivi{border-color:var(--accent);color:var(--text)}
+.msg.sys{border-color:#444;color:#666;font-size:10px;font-style:italic}
+.msg .who{font-size:9px;letter-spacing:2px;opacity:.7;margin-bottom:2px}
+
+/* Spotify ticker */
+#spotify{
+  position:fixed;right:12px;top:64px;width:280px;z-index:20;
+  padding:8px 12px;background:rgba(10,5,0,.55);border:1px solid var(--border);border-radius:6px;
+  font-size:10px;color:var(--dim);
+}
+#spotify .label{letter-spacing:2px;color:var(--accent);font-size:9px;margin-bottom:3px}
+#spotify .track{color:var(--text);font-size:11px;font-weight:bold}
+#spotify .artist{color:var(--dim);margin-top:2px}
+
+/* Expressions */
+#expressions{
+  position:fixed;right:12px;top:160px;width:280px;z-index:20;
+  display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
+}
+.expr-btn{
+  padding:8px 4px;font-size:10px;letter-spacing:1px;
+  background:rgba(20,10,2,.7);color:var(--text);
+  border:1px solid var(--border);border-radius:4px;
+  cursor:pointer;font-family:inherit;text-transform:uppercase;
+  transition:all .2s;
+}
+.expr-btn:hover{background:rgba(255,140,0,.15);border-color:var(--accent);color:var(--accent)}
+.expr-btn:active{background:var(--accent);color:#000}
+
+/* Input bar */
+#bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:20;
+  padding:12px 16px;background:linear-gradient(0deg,rgba(20,10,2,.95) 0%,rgba(10,5,0,.6) 100%);
+  border-top:1px solid var(--border);
+  display:flex;gap:8px;align-items:center;
+}
+#text-in{
+  flex:1;padding:10px 14px;
+  background:rgba(0,0,0,.6);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;
+  font-family:inherit;font-size:13px;outline:none;
+  text-shadow:inherit;
+}
+#text-in:focus{border-color:var(--accent);box-shadow:0 0 8px rgba(255,140,0,.3)}
+#text-in::placeholder{color:var(--dim)}
+.btn{
+  padding:10px 16px;background:rgba(20,10,2,.7);color:var(--accent);
+  border:1px solid var(--accent);border-radius:6px;
+  font-family:inherit;font-size:11px;letter-spacing:2px;font-weight:bold;
+  cursor:pointer;text-transform:uppercase;
+  transition:all .15s;
+}
+.btn:hover{background:var(--accent);color:#000}
+.btn.ptt.holding{background:var(--accent);color:#000;box-shadow:0 0 16px var(--accent)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Boot overlay */
+#boot{
+  position:fixed;inset:0;z-index:100;background:#000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Courier New',monospace;color:var(--accent);
+  transition:opacity .8s;
+}
+#boot.fade{opacity:0;pointer-events:none}
+#boot .lg{font-size:28px;letter-spacing:8px;margin-bottom:8px;text-shadow:0 0 12px var(--accent)}
+#boot .sm{font-size:11px;color:var(--dim);letter-spacing:3px}
+#boot .prog{margin-top:24px;font-size:11px;color:var(--accent);min-height:1.4em}
+
+/* Demo banner */
+#demo-banner{
+  position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:25;
+  padding:4px 12px;font-size:10px;letter-spacing:3px;color:var(--accent);
+  background:rgba(20,10,2,.85);border:1px solid var(--accent);border-radius:12px;
+  display:none;
+}
+#demo-banner.show{display:block;animation:pulse 2.5s infinite}
+
+/* Mobile */
+@media (max-width: 768px){
+  #log{width:160px;font-size:10px;bottom:140px}
+  #spotify,#expressions{width:160px}
+  .header .right{font-size:10px}
+}
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+<div id="crt"></div>
+
+<div id="boot">
+  <div class="lg">VIVI</div>
+  <div class="sm">MZ1312 &middot; UNCAGED TECHNOLOGY</div>
+  <div class="prog" id="boot-prog">INITIALISING NEURAL LINK...</div>
+</div>
+
+<div class="header">
+  <div>
+    <div class="brand">VIVI</div>
+    <div class="sub">DRIFTER VOICE INTERFACE</div>
+  </div>
+  <div class="right">
+    <div class="status-pill"><span class="status-dot off" id="dot"></span><span id="conn">OFFLINE</span></div>
+    <div class="sub" style="margin-top:4px" id="state-text">idle</div>
+  </div>
+</div>
+
+<div id="demo-banner">DEMO MODE &middot; LIVE LINK DOWN</div>
+
+<div id="log"></div>
+
+<div id="spotify">
+  <div class="label">NOW PLAYING</div>
+  <div class="track" id="sp-track">&mdash;</div>
+  <div class="artist" id="sp-artist">no source</div>
+</div>
+
+<div id="expressions">
+  <button class="expr-btn" data-expr="neutral">Neutral</button>
+  <button class="expr-btn" data-expr="smile">Smile</button>
+  <button class="expr-btn" data-expr="frown">Frown</button>
+  <button class="expr-btn" data-expr="surprise">Surprise</button>
+  <button class="expr-btn" data-expr="angry">Angry</button>
+  <button class="expr-btn" data-expr="wink">Wink</button>
+</div>
+
+<div id="bar">
+  <button class="btn ptt" id="ptt" title="Hold to talk">PTT</button>
+  <input type="text" id="text-in" placeholder="speak to vivi..." autocomplete="off">
+  <button class="btn" id="send">SEND</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Config ────────────────────────────────────────────────────────────
+const WS_URL = `ws://${location.hostname || 'localhost'}:8081`;
+// Try absolute (dashboard server), then relative (preview / standalone open).
+const GLB_CANDIDATES = [
+  '/assets/vivi_avatar.glb',
+  '../assets/vivi_avatar.glb',
+  './assets/vivi_avatar.glb',
+  'assets/vivi_avatar.glb',
+];
+const TOPICS = {
+  RESPONSE: 'drifter/vivi/response',
+  STATUS:   'drifter/vivi/status',
+  AUDIO:    'drifter/audio/wav',
+  SPOTIFY:  'drifter/spotify/now_playing',
+  QUERY:    'drifter/vivi/query',
+};
+const PALETTE = {
+  hair:   new THREE.Color(0x0e0805),
+  skin:   new THREE.Color(0xf5c9a0),
+  iris:   new THREE.Color(0xff8c00),
+  eyeGlow:new THREE.Color(0xff8c00),
+  outfit: new THREE.Color(0x14080a),
+  trim:   new THREE.Color(0xff8c00),
+};
+
+// ── State ─────────────────────────────────────────────────────────────
+const state = {
+  mixer: null,
+  model: null,
+  bones: {},
+  morphs: {},
+  audioCtx: null,
+  analyser: null,
+  audioActive: false,
+  audioGain: 0,
+  expression: 'neutral',
+  blinkTimer: 0,
+  blinkPhase: 0,
+  swayPhase: 0,
+  breathPhase: 0,
+  expressionDecay: 1,
+  ws: null,
+  connected: false,
+  demoTimer: null,
+  busy: false,
+};
+
+const bootProg = document.getElementById('boot-prog');
+const log = (line) => { bootProg.textContent = line; };
+
+// ── Three.js scene ────────────────────────────────────────────────────
+const container = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0500);
+scene.fog = new THREE.Fog(0x0a0500, 4, 18);
+
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.45, 2.6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.4, 0);
+controls.minDistance = 1.2;
+controls.maxDistance = 5.0;
+controls.enablePan = false;
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minPolarAngle = Math.PI * 0.25;
+controls.maxPolarAngle = Math.PI * 0.6;
+
+// ── Lighting (amber CRT vibe) ─────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x331a05, 0.55));
+
+const key = new THREE.SpotLight(0xff8c00, 8, 12, Math.PI / 5, 0.45, 1.2);
+key.position.set(1.2, 2.6, 1.8);
+key.target.position.set(0, 1.4, 0);
+scene.add(key); scene.add(key.target);
+
+const fill = new THREE.PointLight(0xffaa33, 1.6, 10, 1.4);
+fill.position.set(-1.6, 1.8, 1.2);
+scene.add(fill);
+
+const rim = new THREE.PointLight(0xff5500, 2.2, 8, 1.6);
+rim.position.set(0, 2.0, -1.5);
+scene.add(rim);
+
+const floor = new THREE.PointLight(0x551500, 1.0, 6, 1.8);
+floor.position.set(0, 0.2, 0.8);
+scene.add(floor);
+
+// Floor disc with amber emissive ring
+const ringGeo = new THREE.RingGeometry(0.6, 1.0, 64);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xff8c00, side: THREE.DoubleSide, transparent: true, opacity: 0.15 });
+const ring = new THREE.Mesh(ringGeo, ringMat);
+ring.rotation.x = -Math.PI / 2;
+ring.position.y = 0.01;
+scene.add(ring);
+
+// ── Material assignment ──────────────────────────────────────────────
+function classifyMesh(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('hair') || n.includes('brow') || n.includes('lash')) return 'hair';
+  if (n.includes('iris') || n.includes('pupil')) return 'iris';
+  if (n.includes('eye') || n.includes('cornea') || n.includes('sclera')) return 'eyeGlow';
+  if (n.includes('skin') || n.includes('face') || n.includes('body') || n.includes('head') || n.includes('arm') || n.includes('leg') || n.includes('hand') || n.includes('neck') || n.includes('torso')) return 'skin';
+  if (n.includes('trim') || n.includes('accent') || n.includes('belt') || n.includes('strap') || n.includes('buckle') || n.includes('logo')) return 'trim';
+  if (n.includes('cloth') || n.includes('shirt') || n.includes('jacket') || n.includes('pants') || n.includes('skirt') || n.includes('dress') || n.includes('coat') || n.includes('outfit') || n.includes('boot') || n.includes('shoe')) return 'outfit';
+  return 'outfit';
+}
+
+function makeMaterial(kind) {
+  switch (kind) {
+    case 'hair':
+      return new THREE.MeshStandardMaterial({ color: PALETTE.hair, roughness: 0.42, metalness: 0.08 });
+    case 'skin':
+      return new THREE.MeshStandardMaterial({ color: PALETTE.skin, roughness: 0.62, metalness: 0.02 });
+    case 'iris':
+      return new THREE.MeshStandardMaterial({
+        color: PALETTE.iris, emissive: PALETTE.eyeGlow, emissiveIntensity: 1.4,
+        roughness: 0.25, metalness: 0.0
+      });
+    case 'eyeGlow':
+      return new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: PALETTE.eyeGlow, emissiveIntensity: 0.6,
+        roughness: 0.1, metalness: 0.05
+      });
+    case 'trim':
+      return new THREE.MeshStandardMaterial({
+        color: PALETTE.trim, emissive: PALETTE.trim, emissiveIntensity: 0.8,
+        roughness: 0.35, metalness: 0.6
+      });
+    case 'outfit':
+    default:
+      return new THREE.MeshStandardMaterial({ color: PALETTE.outfit, roughness: 0.78, metalness: 0.12 });
+  }
+}
+
+function applyMaterials(root) {
+  root.traverse((obj) => {
+    if (obj.isMesh) {
+      const kind = classifyMesh(obj.name);
+      obj.material = makeMaterial(kind);
+      obj.material.needsUpdate = true;
+      obj.frustumCulled = false;
+      // Capture morph targets for expressions / lip sync
+      if (obj.morphTargetDictionary && obj.morphTargetInfluences) {
+        for (const [morphName, idx] of Object.entries(obj.morphTargetDictionary)) {
+          state.morphs[morphName.toLowerCase()] = { mesh: obj, index: idx };
+        }
+      }
+    }
+    if (obj.isBone) {
+      state.bones[obj.name.toLowerCase()] = obj;
+    }
+  });
+}
+
+function findBone(...names) {
+  for (const n of names) {
+    const key = n.toLowerCase();
+    if (state.bones[key]) return state.bones[key];
+    for (const [boneName, bone] of Object.entries(state.bones)) {
+      if (boneName.includes(key)) return bone;
+    }
+  }
+  return null;
+}
+
+function findMorph(...names) {
+  for (const n of names) {
+    const key = n.toLowerCase();
+    if (state.morphs[key]) return state.morphs[key];
+    for (const [morphName, ref] of Object.entries(state.morphs)) {
+      if (morphName.includes(key)) return ref;
+    }
+  }
+  return null;
+}
+
+function setMorph(ref, value) {
+  if (!ref) return;
+  ref.mesh.morphTargetInfluences[ref.index] = Math.max(0, Math.min(1, value));
+}
+
+// ── Load model ───────────────────────────────────────────────────────
+async function probeCandidate(url) {
+  // Ranged GET — fetch a tiny prefix and check the glTF magic so we can
+  // distinguish "real GLB" from "HTML 404 page returned with 200 OK".
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1023' }, cache: 'no-store' });
+    if (!r.ok && r.status !== 206) return null;
+    const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.startsWith('text/html')) return null;
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength >= 4) {
+      const m = new Uint8Array(buf, 0, 4);
+      // 'glTF' = 0x67, 0x6C, 0x54, 0x46
+      if (m[0] === 0x67 && m[1] === 0x6C && m[2] === 0x54 && m[3] === 0x46) return url;
+    }
+    const len = parseInt(r.headers.get('Content-Length') || '0', 10);
+    if (len > 100000) return url;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function findGlb() {
+  for (const url of GLB_CANDIDATES) {
+    log(`PROBING ${url}`);
+    const ok = await probeCandidate(url);
+    if (ok) return ok;
+  }
+  return null;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+(async () => {
+  log('SEARCHING FOR MODEL FILE...');
+  const url = await findGlb();
+  if (!url) {
+    bootProg.style.color = 'var(--red)';
+    bootProg.innerHTML = `<div>MODEL NOT FOUND</div>
+      <div style="font-size:9px;color:#a55;margin-top:8px">Tried: ${GLB_CANDIDATES.join(' / ')}</div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">Start the dashboard: <code>python src/web_dashboard.py</code></div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">then open http://localhost:8080/avatar</div>`;
+    setTimeout(() => {
+      document.getElementById('boot').classList.add('fade');
+      enterDemoMode();
+    }, 4000);
+    return;
+  }
+
+  log(`LOADING ${url}`);
+  const loader = new GLTFLoader();
+  // Visible heartbeat — proves we are not stuck, even when Content-Length is absent.
+  let dots = 0;
+  const t0 = performance.now();
+  const heartbeat = setInterval(() => {
+    if (bootProg.dataset.done) return;
+    const sec = ((performance.now() - t0) / 1000).toFixed(0);
+    dots = (dots + 1) % 4;
+    bootProg.textContent = `LOADING ${url}  [${sec}s${'.'.repeat(dots)}]`;
+  }, 500);
+
+  loader.load(url, (gltf) => {
+    bootProg.dataset.done = '1';
+    clearInterval(heartbeat);
+    const model = gltf.scene;
+    state.model = model;
+    applyMaterials(model);
+
+    // Auto-center & scale
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const targetH = 1.7;
+    const scale = size.y > 0 ? targetH / size.y : 1.0;
+    model.scale.setScalar(scale);
+    const newBox = new THREE.Box3().setFromObject(model);
+    const center = newBox.getCenter(new THREE.Vector3());
+    model.position.x -= center.x;
+    model.position.z -= center.z;
+    model.position.y -= newBox.min.y;
+
+    scene.add(model);
+
+    if (gltf.animations && gltf.animations.length) {
+      state.mixer = new THREE.AnimationMixer(model);
+      state.mixer.clipAction(gltf.animations[0]).play();
+    }
+
+    log('LINK ESTABLISHED');
+    setTimeout(() => document.getElementById('boot').classList.add('fade'), 600);
+    connectWS();
+  }, (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      bootProg.textContent = `LOADING ${pct}%  (${fmtBytes(xhr.loaded)} / ${fmtBytes(xhr.total)})`;
+    } else if (xhr.loaded) {
+      bootProg.textContent = `LOADING ${fmtBytes(xhr.loaded)}...`;
+    }
+  }, (err) => {
+    bootProg.dataset.done = '1';
+    clearInterval(heartbeat);
+    console.error('GLTF load failed:', err);
+    bootProg.style.color = 'var(--red)';
+    bootProg.innerHTML = `<div>MODEL LOAD FAILED</div>
+      <div style="font-size:9px;color:#a55;margin-top:6px">${url}</div>
+      <div style="font-size:9px;color:#a55;margin-top:4px">${(err && err.message) || 'see browser console'}</div>`;
+    setTimeout(() => {
+      document.getElementById('boot').classList.add('fade');
+      enterDemoMode();
+    }, 4000);
+  });
+})();
+
+// ── Idle animation rig ────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function applyIdle(dt) {
+  const spine = findBone('spine', 'spine01', 'spine_01', 'chest');
+  const head  = findBone('head', 'head_01');
+  const neck  = findBone('neck');
+  const jaw   = findBone('jaw', 'jaw_01');
+  const eyeL  = findBone('eye_l', 'lefteye', 'eye.l');
+  const eyeR  = findBone('eye_r', 'righteye', 'eye.r');
+
+  state.breathPhase += dt * 1.1;
+  state.swayPhase += dt * 0.45;
+  state.blinkTimer -= dt;
+
+  const breath = Math.sin(state.breathPhase) * 0.018;
+  if (spine) {
+    spine.rotation.x = breath;
+    spine.scale.y = 1.0 + Math.abs(breath) * 0.4;
+  }
+
+  const swayY = Math.sin(state.swayPhase) * 0.025;
+  const swayX = Math.cos(state.swayPhase * 0.7) * 0.012;
+  if (head) {
+    head.rotation.y = swayY;
+    head.rotation.x = swayX + breath * 0.5;
+  } else if (neck) {
+    neck.rotation.y = swayY;
+  }
+
+  // Blinking — random interval, fast closure
+  if (state.blinkTimer <= 0) {
+    state.blinkPhase = 0.18;
+    state.blinkTimer = 2.4 + Math.random() * 3.4;
+  }
+  if (state.blinkPhase > 0) {
+    state.blinkPhase -= dt;
+    const t = Math.max(0, state.blinkPhase / 0.18);
+    const close = 1.0 - Math.abs(t * 2 - 1);
+    const blinkMorph = findMorph('blink', 'eye_close', 'eyes_closed');
+    if (blinkMorph) setMorph(blinkMorph, close);
+    else if (eyeL && eyeR) {
+      eyeL.scale.y = 1 - close * 0.95;
+      eyeR.scale.y = 1 - close * 0.95;
+    }
+  }
+
+  // Jaw / mouth from audio amplitude
+  if (jaw) {
+    jaw.rotation.x = state.audioGain * 0.35;
+  }
+  const mouthMorph = findMorph('mouth_open', 'jaw_open', 'aa', 'mouthopen');
+  if (mouthMorph) setMorph(mouthMorph, state.audioGain * 0.9);
+
+  // Expression decay back to neutral
+  state.expressionDecay = Math.max(0, state.expressionDecay - dt * 0.18);
+  applyExpression(state.expression, state.expressionDecay);
+
+  // Iris glow pulse with state
+  const iris = state.model && state.model.getObjectByProperty
+    ? state.model.getObjectByProperty('userData', {})
+    : null;
+}
+
+function applyExpression(expr, intensity) {
+  const map = {
+    smile:    [['smile', 1], ['mouth_smile', 1], ['happy', 0.8]],
+    frown:    [['frown', 1], ['mouth_frown', 1], ['sad', 0.7]],
+    surprise: [['surprise', 1], ['mouth_open', 0.5], ['brow_up', 1]],
+    angry:    [['angry', 1], ['brow_down', 1], ['frown', 0.4]],
+    wink:     [['wink_l', 1], ['blink_l', 1]],
+    neutral:  [],
+  };
+  // Reset all expression-related morphs
+  for (const key of ['smile','mouth_smile','frown','mouth_frown','happy','sad','surprise','brow_up','angry','brow_down','wink_l','blink_l']) {
+    const ref = findMorph(key);
+    if (ref) setMorph(ref, 0);
+  }
+  const targets = map[expr] || [];
+  for (const [name, amount] of targets) {
+    const ref = findMorph(name);
+    if (ref) setMorph(ref, amount * intensity);
+  }
+}
+
+function setExpression(expr) {
+  state.expression = expr;
+  state.expressionDecay = 1.0;
+}
+
+// ── Animation loop ────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta());
+  if (state.mixer) state.mixer.update(dt);
+
+  // Decay audio gain when no fresh samples
+  if (!state.audioActive) state.audioGain = Math.max(0, state.audioGain - dt * 2.0);
+
+  if (state.model) applyIdle(dt);
+
+  // Floor ring pulse
+  ring.material.opacity = 0.10 + Math.abs(Math.sin(performance.now() * 0.001)) * 0.10
+                              + state.audioGain * 0.3;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── WebSocket / MQTT bridge ──────────────────────────────────────────
+function connectWS() {
+  try {
+    state.ws = new WebSocket(WS_URL);
+  } catch (e) {
+    enterDemoMode();
+    setTimeout(connectWS, 3000);
+    return;
+  }
+  state.ws.onopen = () => {
+    state.connected = true;
+    setConn(true);
+    if (state.demoTimer) { clearInterval(state.demoTimer); state.demoTimer = null; }
+    document.getElementById('demo-banner').classList.remove('show');
+    pushLog('sys', 'SYSTEM', 'Neural link established');
+  };
+  state.ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      handleMQTT(msg);
+    } catch (e) {}
+  };
+  state.ws.onclose = () => {
+    state.connected = false;
+    setConn(false);
+    enterDemoMode();
+    setTimeout(connectWS, 3000);
+  };
+  state.ws.onerror = () => { try { state.ws.close(); } catch (e) {} };
+}
+
+function setConn(ok) {
+  const dot = document.getElementById('dot');
+  const txt = document.getElementById('conn');
+  dot.className = 'status-dot ' + (ok ? 'ok' : 'off');
+  txt.textContent = ok ? 'LIVE' : 'OFFLINE';
+}
+
+function setVoiceState(s) {
+  const el = document.getElementById('state-text');
+  el.textContent = s || 'idle';
+  const dot = document.getElementById('dot');
+  if (!state.connected) return;
+  if (s === 'listening' || s === 'transcribing') {
+    dot.className = 'status-dot warn';
+  } else if (s === 'thinking' || s === 'speaking') {
+    dot.className = 'status-dot warn';
+  } else {
+    dot.className = 'status-dot ok';
+  }
+}
+
+function handleMQTT(msg) {
+  const { topic, data } = msg;
+  if (!topic) return;
+  if (topic === TOPICS.RESPONSE) {
+    const text = (data && (data.response || data.text || data.message)) || '';
+    if (text) {
+      const q = data && data.query;
+      if (q) pushLog('user', 'YOU', q);
+      pushLog('vivi', 'VIVI', text);
+      reactToSentiment(text);
+    }
+  } else if (topic === TOPICS.STATUS) {
+    const s = (data && (data.status || data.state)) || data;
+    setVoiceState(typeof s === 'string' ? s : 'idle');
+  } else if (topic === TOPICS.AUDIO) {
+    const b64 = data && (data.wav_b64 || data.wav);
+    if (b64) playAndAnalyse(b64);
+  } else if (topic === TOPICS.SPOTIFY || topic.startsWith('drifter/spotify/')) {
+    if (data) {
+      document.getElementById('sp-track').textContent = data.track || data.title || data.name || '—';
+      document.getElementById('sp-artist').textContent = data.artist || data.artists || data.album || '';
+    }
+  }
+}
+
+function pushLog(kind, who, text) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'msg ' + kind;
+  div.innerHTML = `<div class="who">${who}</div>${escapeHTML(text)}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  while (log.children.length > 40) log.removeChild(log.firstChild);
+}
+
+function escapeHTML(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function reactToSentiment(text) {
+  const t = String(text).toLowerCase();
+  if (/\b(happy|great|love|nice|cool|haha|awesome|amazing|hell yeah)\b/.test(t)) setExpression('smile');
+  else if (/\b(angry|damn|fuck|hate|annoyed|pissed)\b/.test(t)) setExpression('angry');
+  else if (/\b(sorry|sad|miss|unfortunately|sucks)\b/.test(t)) setExpression('frown');
+  else if (/\b(wow|whoa|really|oh|wait|warning|alert|critical)\b/.test(t)) setExpression('surprise');
+  else if (/[?]$/.test(t.trim())) setExpression('surprise');
+  else setExpression('neutral');
+}
+
+// ── Publish (text input → MQTT via /api/vivi/query) ──────────────────
+function sendQuery(text) {
+  text = (text || '').trim();
+  if (!text || state.busy) return;
+  state.busy = true;
+  pushLog('user', 'YOU', text);
+  fetch('/api/vivi/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: text }),
+  }).catch(() => {
+    pushLog('sys', 'SYSTEM', 'Publish failed — running in demo mode');
+    setTimeout(() => demoReply(text), 600);
+  }).finally(() => {
+    state.busy = false;
+  });
+}
+
+document.getElementById('send').addEventListener('click', () => {
+  const inp = document.getElementById('text-in');
+  sendQuery(inp.value);
+  inp.value = '';
+});
+document.getElementById('text-in').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    sendQuery(e.target.value);
+    e.target.value = '';
+  }
+});
+
+document.querySelectorAll('.expr-btn').forEach((b) => {
+  b.addEventListener('click', () => setExpression(b.dataset.expr));
+});
+
+// PTT — hold to publish a "PTT" status, release to send marker. Real STT is server-side.
+const ptt = document.getElementById('ptt');
+let pttHold = false;
+ptt.addEventListener('mousedown', () => { pttHold = true; ptt.classList.add('holding'); setVoiceState('listening'); });
+ptt.addEventListener('mouseup', () => { if (pttHold) { pttHold = false; ptt.classList.remove('holding'); setVoiceState('idle'); }});
+ptt.addEventListener('mouseleave', () => { if (pttHold) { pttHold = false; ptt.classList.remove('holding'); setVoiceState('idle'); }});
+ptt.addEventListener('touchstart', (e) => { e.preventDefault(); pttHold = true; ptt.classList.add('holding'); setVoiceState('listening'); }, { passive: false });
+ptt.addEventListener('touchend',   (e) => { e.preventDefault(); pttHold = false; ptt.classList.remove('holding'); setVoiceState('idle'); }, { passive: false });
+
+// ── Audio: decode WAV base64 → play + analyse for lip sync ───────────
+async function playAndAnalyse(b64) {
+  try {
+    if (!state.audioCtx) {
+      state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      state.analyser = state.audioCtx.createAnalyser();
+      state.analyser.fftSize = 256;
+      state.analyser.smoothingTimeConstant = 0.7;
+      state.analyser.connect(state.audioCtx.destination);
+    }
+    const bin = atob(b64);
+    const buf = new ArrayBuffer(bin.length);
+    const u8 = new Uint8Array(buf);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const audioBuf = await state.audioCtx.decodeAudioData(buf);
+    const src = state.audioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(state.analyser);
+    state.audioActive = true;
+    setVoiceState('speaking');
+    src.start(0);
+    src.onended = () => {
+      state.audioActive = false;
+      state.audioGain = 0;
+      setVoiceState('idle');
+    };
+    pumpAudioGain();
+  } catch (e) {
+    console.warn('audio decode failed', e);
+  }
+}
+
+function pumpAudioGain() {
+  if (!state.analyser) return;
+  const data = new Uint8Array(state.analyser.frequencyBinCount);
+  const loop = () => {
+    if (!state.audioActive) return;
+    state.analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    // Smooth + scale (RMS rarely exceeds 0.3 for speech)
+    state.audioGain = state.audioGain * 0.4 + Math.min(1, rms * 3.2) * 0.6;
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+// ── Demo mode ────────────────────────────────────────────────────────
+const DEMO_LINES = [
+  { user: 'how is the engine running?', vivi: 'Engine sounds healthy — coolant at 92, trims balanced. Drive easy.' },
+  { user: 'play some tunes', vivi: 'Pulling up your road trip playlist now.' },
+  { user: null, vivi: 'Heads up — TPMS front-right is reading 26 PSI. Bring it to 30 soon.' },
+  { user: 'thanks vivi', vivi: 'Always, driver. Stay sharp out there.' },
+  { user: 'whats my fuel range?', vivi: 'About 340 kilometres on the current tank at your average consumption.' },
+];
+let demoIdx = 0;
+
+function enterDemoMode() {
+  document.getElementById('demo-banner').classList.add('show');
+  if (state.demoTimer) return;
+  state.demoTimer = setInterval(() => {
+    const line = DEMO_LINES[demoIdx % DEMO_LINES.length];
+    demoIdx++;
+    if (line.user) pushLog('user', 'YOU', line.user);
+    setTimeout(() => {
+      pushLog('vivi', 'VIVI', line.vivi);
+      reactToSentiment(line.vivi);
+      // simulate a brief lip-sync burst
+      const burst = setInterval(() => {
+        state.audioGain = 0.3 + Math.random() * 0.4;
+      }, 80);
+      state.audioActive = true;
+      setVoiceState('speaking');
+      setTimeout(() => {
+        clearInterval(burst);
+        state.audioActive = false;
+        setVoiceState('idle');
+      }, 1800);
+    }, 700);
+  }, 9000);
+
+  // Demo Spotify
+  document.getElementById('sp-track').textContent = 'Killing in the Name';
+  document.getElementById('sp-artist').textContent = 'Rage Against the Machine';
+}
+
+function demoReply(query) {
+  pushLog('vivi', 'VIVI', `Heard "${query}". Running offline — no live brain.`);
+  reactToSentiment('neutral');
+}
+
+// Initial state
+setConn(false);
+setVoiceState('idle');
+</script>
+</body>
+</html>

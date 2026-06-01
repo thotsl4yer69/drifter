@@ -1,0 +1,20 @@
+# MZ1312 DRIFTER — Spotify Bridge Configuration
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Create a Spotify Developer app at https://developer.spotify.com/dashboard
+# and paste the client_id / client_secret below. Redirect URI must match the
+# one registered in the app. First run needs a browser to grant scopes;
+# afterwards the token cache at /opt/drifter/.spotify_token.json keeps the
+# session alive.
+
+client_id: ""
+client_secret: ""
+redirect_uri: "http://localhost:8888/callback"
+scopes: "user-modify-playback-state user-read-playback-state user-read-currently-playing streaming"
+
+# Device name displayed under Spotify Connect — must match a librespot /
+# raspotify instance running on this Pi.
+device_name: "DRIFTER"
+
+# Optional default playlist to start on connect — Spotify URI form
+# default_playlist: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"

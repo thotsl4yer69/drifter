@@ -5,9 +5,9 @@ All shared constants, thresholds, and paths in one place.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import os
 import json
 import logging
+import os
 from pathlib import Path
 
 import paho.mqtt.client as _mqtt
@@ -201,7 +201,7 @@ def load_settings() -> dict:
     settings = dict(SETTINGS_DEFAULTS)
     try:
         if SETTINGS_FILE.exists():
-            with open(SETTINGS_FILE, 'r') as f:
+            with open(SETTINGS_FILE) as f:
                 saved = json.load(f)
             settings.update(saved)
     except Exception as e:
@@ -239,6 +239,39 @@ CAN_BITRATE = 500000
 OBD_REQUEST_ID = 0x7DF
 OBD_RESPONSE_BASE = 0x7E8
 OBD_RESPONSE_END = 0x7EF
+
+# CAN FD — native socketcan FD bridge (can_native.py / RDK X5).
+# The X-Type itself is classic CAN (500 kbps), but the RDK X5 + native
+# socketcan stack supports CAN FD with a faster data-phase bitrate. The
+# bridge falls back to classic CAN when the interface or controller does
+# not advertise FD support.
+CAN_FD_ENABLED = os.getenv("CAN_FD_ENABLED", "false").lower() in ("1", "true", "yes")
+CAN_FD_DATA_BITRATE = int(os.getenv("CAN_FD_DATA_BITRATE", "2000000"))  # 2 Mbps data phase
+CAN_NATIVE_CHANNEL = os.getenv("CAN_NATIVE_CHANNEL", "can0")
+
+# ── Platform Detection ──
+# Two supported telemetry nodes share this codebase:
+#   pi5    — Raspberry Pi 5 (8 GB), Kali ARM64, slcan/USB2CANFD adapter
+#   rdkx5  — D-Robotics RDK X5 (Sunrise X5), native socketcan + CAN FD
+# hardware.py owns runtime detection + backend selection; this flag is a
+# cheap, import-safe hint other modules can branch on without importing
+# hardware.py. Override with DRIFTER_PLATFORM for bench/CI.
+def _detect_platform() -> str:
+    forced = os.getenv("DRIFTER_PLATFORM", "").strip().lower()
+    if forced in ("pi5", "rdkx5"):
+        return forced
+    try:
+        model = Path("/proc/device-tree/model").read_text(errors="ignore").lower()
+    except Exception:
+        model = ""
+    if "rdk x5" in model or "sunrise" in model or "x5" in model:
+        return "rdkx5"
+    return "pi5"
+
+
+PLATFORM = _detect_platform()
+IS_RDKX5 = PLATFORM == "rdkx5"
+IS_PI5 = PLATFORM == "pi5"
 
 # ═══════════════════════════════════════════════════════════════════
 #  Vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6 / Duratec)
@@ -741,13 +774,13 @@ TOPICS = {
     # Voice Input
     'voice_transcript': 'drifter/voice/transcript',
     'voice_command': 'drifter/voice/command',
-    'voice_status':  'drifter/voice/status',
-    'hud_navigate':  'drifter/hud/navigate',
+    'voice_status': 'drifter/voice/status',
+    'hud_navigate': 'drifter/hud/navigate',
     # Vivi voice assistant
     'vivi_query': 'drifter/vivi/query',
     'vivi_response': 'drifter/vivi/response',
     'vivi_status': 'drifter/vivi/status',
-    'vivi_control': 'drifter/vivi/control',  # {"action": "reset"} clears history
+    'vivi_control': 'drifter/vivi/control',
     # Audio (shared with voice_alerts)
     'audio_wav': 'drifter/audio/wav',
     # Flipper Zero
@@ -759,47 +792,146 @@ TOPICS = {
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
     # Conversation mode (Vivi ↔ voice_input loop)
-    'voice_listen_now':       'drifter/voice/listen_now',
+    'voice_listen_now': 'drifter/voice/listen_now',
     'vivi_conversation_mode': 'drifter/vivi/conversation_mode',
-    'vivi_say':               'drifter/vivi/say',
-
+    'vivi_say': 'drifter/vivi/say',
     # Phase 5 — cockpit interrupt + voice control of HUD layers
-    'adsb_police':            'drifter/adsb/police',
-    'drone_detection':        'drifter/drone/detection',
-    'hud_map_layer':          'drifter/hud/map/layer',
-
+    'adsb_police': 'drifter/adsb/police',
+    'drone_detection': 'drifter/drone/detection',
+    'hud_map_layer': 'drifter/hud/map/layer',
     # BLE passive scanner (Phase 4.5)
     'ble_detection': 'drifter/ble/detection',
     'ble_raw': 'drifter/ble/raw',
     # GPS (cached by ble_passive for detection geo-tagging)
     'gps_fix': 'drifter/gps/fix',
-
     # v2 — Telemetry Batcher
     'telemetry_window': 'drifter/telemetry/window',
     'telemetry_stats': 'drifter/telemetry/stats',
-
     # v2 — Trip Computer
     'trip_stats': 'drifter/trip/stats',
     'trip_event': 'drifter/trip/event',
     'trip_fuel': 'drifter/trip/fuel',
     'trip_cost': 'drifter/trip/cost',
-
     # v2 — Adaptive Thresholds
     'thresholds_learned': 'drifter/thresholds/learned',
     'thresholds_update': 'drifter/thresholds/update',
-
     # Recon / audit expansion (Agent B)
     'wifi_devices': 'drifter/wifi/devices',
     'ble_devices': 'drifter/ble/devices',
     'wifi_audit': 'drifter/wifi/audit',
     'airspace_aircraft': 'drifter/airspace/aircraft',
     'airspace_aircraft_classified': 'drifter/airspace/aircraft_classified',
-
     # v2 — Session Reporter
     'session_report': 'drifter/session/report',
     'session_summary': 'drifter/session/summary',
     'safety_alert': 'drifter/safety/alert',
     'ai_diag_response': 'drifter/ai/diag/response',
+
+    # ── v2/v2.1 additions (from feature/drifter-v2) ──
+    'ai_diag_request': 'drifter/diag/ai/request',
+    'ai_diag_status': 'drifter/diag/ai/status',
+    'alpr_plate': 'drifter/vision/alpr/plate',
+    'can_dbc_generated': 'drifter/can/dbc/generated',
+    'can_decode_request': 'drifter/can/decode/request',
+    'can_decode_response': 'drifter/can/decode/response',
+    'can_sniff_frame': 'drifter/can/sniff/frame',
+    'can_sniff_status': 'drifter/can/sniff/status',
+    'can_sniff_summary': 'drifter/can/sniff/summary',
+    'comms_inbound': 'drifter/comms/inbound',
+    'comms_notify': 'drifter/comms/notify',
+    'comms_sms': 'drifter/comms/sms',
+    'crash_event': 'drifter/crash/event',
+    'crash_sos': 'drifter/crash/sos',
+    'crash_status': 'drifter/crash/status',
+    'dashcam_clip': 'drifter/vision/dashcam/clip',
+    'dashcam_status': 'drifter/vision/dashcam/status',
+    'discord_inbound': 'drifter/discord/inbound',
+    'discord_outbound': 'drifter/discord/outbound',
+    'discord_status': 'drifter/discord/status',
+    'driver_event': 'drifter/driver/event',
+    'driver_fatigue': 'drifter/driver/fatigue',
+    'driver_score': 'drifter/driver/score',
+    'driver_weather': 'drifter/driver/weather',
+    'fcw_status': 'drifter/vision/fcw/status',
+    'fcw_warning': 'drifter/vision/fcw/warning',
+    'fleet_alert': 'drifter/fleet/alert',
+    'fleet_command': 'drifter/fleet/command',
+    'fleet_heartbeat': 'drifter/fleet/heartbeat',
+    'fleet_register': 'drifter/fleet/register',
+    'fleet_status': 'drifter/fleet/status',
+    'fleet_telemetry': 'drifter/fleet/telemetry',
+    'fuzz_command': 'drifter/fuzz/command',
+    'fuzz_status': 'drifter/fuzz/status',
+    'home_command': 'drifter/home/command',
+    'home_event': 'drifter/home/event',
+    'home_status': 'drifter/home/status',
+    'kb_query': 'drifter/kb/query',
+    'kb_response': 'drifter/kb/response',
+    'kb_update': 'drifter/kb/update',
+    'learn_event': 'drifter/learn/event',
+    'llm_query': 'drifter/llm/query',
+    'llm_response': 'drifter/llm/response',
+    'mesh_announce': 'drifter/mesh/announce',
+    'mesh_bridge': 'drifter/mesh/bridge',
+    'mesh_node': 'drifter/mesh/node',
+    'mesh_status': 'drifter/mesh/status',
+    'mesh_topology': 'drifter/mesh/topology',
+    'nav_alert': 'drifter/nav/alert',
+    'nav_camera': 'drifter/nav/camera',
+    'nav_geofence': 'drifter/nav/geofence',
+    'nav_position': 'drifter/nav/position',
+    'nav_route': 'drifter/nav/route',
+    'nav_status': 'drifter/nav/status',
+    'obd_pid': 'drifter/obd/pid',
+    'obd_status': 'drifter/obd/status',
+    'presence_event': 'drifter/presence/event',
+    'presence_status': 'drifter/presence/status',
+    'recorder_command': 'drifter/recorder/command',
+    'recorder_session': 'drifter/recorder/session',
+    'recorder_status': 'drifter/recorder/status',
+    'replay_command': 'drifter/replay/command',
+    'replay_progress': 'drifter/replay/progress',
+    'replay_status': 'drifter/replay/status',
+    'safety_status': 'drifter/safety/status',
+    'satellite_announce': 'drifter/satellite/announce',
+    'satellite_command': 'drifter/satellite/command',
+    'satellite_status': 'drifter/satellite/status',
+    'satellite_telemetry': 'drifter/satellite/telemetry',
+    'sentry_clip': 'drifter/sentry/clip',
+    'sentry_event': 'drifter/sentry/event',
+    'sentry_status': 'drifter/sentry/status',
+    'spotify_command': 'drifter/spotify/command',
+    'spotify_duck': 'drifter/spotify/duck',
+    'spotify_status': 'drifter/spotify/status',
+    'spotify_track': 'drifter/spotify/track',
+    'vehicle_id': 'drifter/vehicle/id',
+    'vehicle_profile': 'drifter/vehicle/profile',
+    'vision_object': 'drifter/vision/object',
+    'vision_status': 'drifter/vision/status',
+    'vivi2_memory': 'drifter/vivi2/memory',
+    'vivi2_proactive': 'drifter/vivi2/proactive',
+    'vivi2_query': 'drifter/vivi2/query',
+    'vivi2_response': 'drifter/vivi2/response',
+    'vivi2_status': 'drifter/vivi2/status',
+    'vivi2_stream': 'drifter/vivi2/stream',
+
+    # ── RDK X5 port — native CAN FD bridge + toolkit (can_native.py) ──
+    # The bridge republishes the same per-PID metric topics as can_bridge.py
+    # (rpm/coolant/…/snapshot/dtc/system_status above); these are the
+    # native-bridge-specific control + status + toolkit-output channels.
+    'can_native_status': 'drifter/can/native/status',
+    'can_native_command': 'drifter/can/native/command',
+    'can_native_frame': 'drifter/can/native/frame',
+    'can_native_fuzz': 'drifter/can/native/fuzz',
+    'can_native_replay': 'drifter/can/native/replay',
+
+    # ── Counter-surveillance (ghost_protocol.py) ──
+    'ghost_status': 'drifter/ghost/status',
+    'ghost_alert': 'drifter/ghost/alert',
+    'ghost_tracker': 'drifter/ghost/tracker',     # AirTag / Tile / SmartTag follower
+    'ghost_stingray': 'drifter/ghost/stingray',   # IMSI-catcher / cell anomaly
+    'ghost_alpr': 'drifter/ghost/alpr',           # ALPR camera awareness
+    'ghost_rf': 'drifter/ghost/rf',               # anomalous RF / surveillance band
 }
 
 # ── LLM v2 cascade config ──
@@ -997,3 +1129,142 @@ BEACON_SPAM_RANDOM_REFUSE = True
 # Same reasoning for Rick Astley beacon spam. Flip plus add a wildcard
 # `marauder.wifi[].ssid: "*"` allowlist entry to enable.
 BEACON_SPAM_RICKROLL_REFUSE = True
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  v2/v2.1 constants ported from drifter-repo/src/config.py
+# ═══════════════════════════════════════════════════════════════════
+
+ALPR_MIN_CONFIDENCE = 0.55
+BORE_MM = 82.4
+CAN_AI_MIN_SAMPLES = 200           # frames per ID before AI inference
+CAN_SNIFF_BUFFER = 5000
+CAN_SNIFF_SUMMARY_HZ = 1
+COIL_TYPE = "COP"      # Coil-on-plug, 6 individual coils
+COMMS_MODEM_DEV = "/dev/ttyUSB2"
+COMMS_NOTIFY_BACKENDS = ("ntfy", "telegram", "discord")
+COMPRESSION_RATIO = 10.0
+CRASH_ACCEL_G_THRESHOLD = 3.0       # peak g over 100ms = crash
+CRASH_AIRBAG_GRACE_SEC = 10         # countdown before auto-SOS
+CRASH_DECEL_KPH_PER_S = 25          # sudden stop ≥25 km/h/s
+CRASH_SOS_NUMBER = ""               # override via crash.yaml -> sos.number
+CYLINDER_COUNT = 6
+DASHCAM_DIR = DRIFTER_DIR / "dashcam"
+DASHCAM_MAX_GB = 32
+DASHCAM_SEGMENT_SECONDS = 60
+DATA_DIR = DRIFTER_DIR / "data"
+DBC_OUTPUT_DIR = DRIFTER_DIR / "data" / "dbc"
+DISCORD_COMMAND_PREFIX = "!vivi"
+DISCORD_INTENTS = ("messages", "guilds", "message_content")
+DISPLACEMENT_CC = 2495
+DRIVER_SCORE_WINDOW_KM = 50
+ENGINE_CODE = "AJ-V6"
+FAST_IDLE_COLD_MAX = 1400  # Cold-start fast idle ceiling
+FATIGUE_DRIVE_HOURS = 2.0           # hours behind wheel = nudge
+FATIGUE_NIGHT_HOURS = 1.5           # tighter at night
+FCW_TTC_CRIT = 1.2                  # time-to-collision critical (s)
+FCW_TTC_WARN = 2.5                  # time-to-collision warn (s)
+FIRING_ORDER = [1, 4, 2, 5, 3, 6]
+FLEET_API_HOST = "0.0.0.0"
+FLEET_API_PORT = 8420
+FLEET_DB_PATH = DRIFTER_DIR / "data" / "fleet.db"
+FLEET_HEARTBEAT_TIMEOUT = 90       # seconds — node considered offline
+FLEET_JWT_SECRET_FILE = DRIFTER_DIR / ".fleet_jwt_secret"
+FLEET_JWT_TTL = 86400              # 24h tokens
+FUZZ_DEFAULT_HZ = 10
+FUZZ_DEFAULT_RANGES = {
+    'rpm': (650, 6500),
+    'speed': (0, 220),
+    'coolant': (60, 110),
+    'voltage': (11.5, 14.8),
+}
+HOME_BRIDGE_DISCOVERY = True
+HOME_BRIDGE_PREFIX = "homeassistant/drifter"
+KB_DIR = DRIFTER_DIR / "kb"
+MAF_CRUISE_MIN = 8.0   # g/s — cruising 60-70 km/h typical minimum
+MEMORY_DIR = DRIFTER_DIR / "memory"
+MESH_BRIDGE_QOS = 1
+MESH_DISCOVERY_INTERVAL = 30
+MESH_NODE_TTL = 180
+MESH_SERVICE_NAME = "_drifter._tcp.local."
+NANOB_PASS = os.getenv("NANOB_PASS", "")
+NAV_CAMERA_BEARING_TOLERANCE_DEG = 60   # camera must be within ±this of travel bearing
+NAV_CAMERA_WARN_METERS = 300
+NAV_GEOFENCES_FILE = DATA_DIR / "geofences.json"
+NAV_GPS_BAUD = 9600
+NAV_GPS_DEVICE = "/dev/ttyACM0"
+NAV_OSRM_HOST = "router.project-osrm.org"
+NAV_REROUTE_OFF_THRESHOLD = 50      # m off-route triggers reroute
+NAV_ROUTE_CACHE_DIR = DATA_DIR / "routes"
+NAV_ROUTE_CACHE_TTL_HOURS = 24 * 7
+NAV_STATUS_PUBLISH_SEC = 5
+NAV_TILE_CACHE_DIR = DATA_DIR / "tiles"
+OBD_POLL_HZ = 5
+OBD_SERIAL_BAUD = 38400
+OBD_SERIAL_DEV = "/dev/ttyUSB0"
+PEAK_HP = 194          # bhp @ 6800 RPM
+PEAK_TORQUE_NM = 245   # Nm @ 3500 RPM
+PRESENCE_DEPARTURE_GRACE = 120     # seconds offline before "departed"
+PRESENCE_KNOWN_DEVICES_FILE = DRIFTER_DIR / "data" / "presence_devices.json"
+PRESENCE_SCAN_INTERVAL = 30
+RECORDER_DIR = DRIFTER_DIR / "recordings"
+RECORDER_MAX_GB = 10
+RECORDER_SEGMENT_SECONDS = 300     # 5-minute JSONL segments
+REDLINE_RPM = 6500
+REPLAY_DEFAULT_SPEED = 1.0
+REPLAY_DIR = DRIFTER_DIR / "replays"
+SATELLITE_DISCOVERY_PORT = 8421
+SATELLITE_HEARTBEAT_TIMEOUT = 60
+SENTRY_ACCEL_TRIGGER_G = 0.5        # bump threshold
+SENTRY_CLIP_SECONDS = 30
+SENTRY_DIR = DRIFTER_DIR / "sentry"
+SENTRY_MAX_CLIPS = 50
+SPEED_CAMERAS_FILE = DATA_DIR / "speed_cameras_vic.json"
+SPOTIFY_DEVICE_NAME = "DRIFTER"
+SPOTIFY_DUCK_FADE_MS = 400          # fade duration each direction
+SPOTIFY_DUCK_LEVEL = 15             # volume during ducking
+SPOTIFY_MOODS = {                   # default mood → playlist; overridden by spotify.yaml
+    'calm':    'spotify:playlist:37i9dQZF1DWZqd5JICZI0u',
+    'focus':   'spotify:playlist:37i9dQZF1DWZeKCadgRdKQ',
+    'hype':    'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
+    'night':   'spotify:playlist:37i9dQZF1DX4SBhb3fqCJd',
+    'cruise':  'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
+}
+SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
+SPOTIFY_SCOPES = "user-modify-playback-state user-read-playback-state user-read-currently-playing streaming"
+SPOTIFY_TOKEN_FILE = DRIFTER_DIR / ".spotify_token.json"
+STROKE_MM = 79.5
+THERMOSTAT_FULL_C = 97      # Fully open
+VEHICLES_DIR = DRIFTER_DIR / "vehicles"
+VEHICLE_MAKE = "Jaguar"
+VEHICLE_DEFAULTS = {
+    "make": VEHICLE_MAKE,
+    "model": VEHICLE_MODEL,
+    "year": VEHICLE_YEAR,
+    "engine": VEHICLE_ENGINE,
+    "fuel_type": FUEL_TYPE,
+    "tank_litres": TRIP_FUEL_TANK_LITRES,
+    "avg_consumption_l_per_100km": TRIP_AVG_CONSUMPTION_L_PER_100KM,
+    "tire_size": TIRE_SIZE,
+    "tire_pressure_front": TIRE_PRESSURE_FRONT,
+    "tire_pressure_rear": TIRE_PRESSURE_REAR,
+}
+VEHICLE_PROFILE_FILE = DRIFTER_DIR / "vehicle.yaml"
+VIN_DETECT_RETRIES = 3
+VIN_DETECT_TIMEOUT = 2.0
+VIN_OBD_MODE = 0x09
+VIN_OBD_PID = 0x02
+VISION_CLASSES_OF_INTEREST = (
+    "person", "bicycle", "car", "motorcycle", "bus", "truck",
+    "traffic light", "stop sign",
+)
+VISION_CONFIDENCE = 0.35
+VISION_INPUT_H = 640
+VISION_INPUT_W = 640
+VISION_MODEL_DIR = DRIFTER_DIR / "vision-models"
+VISION_YOLO_MODEL = "yolov8s.hef"
+VIVI2_PERSONALITY_FILE = DRIFTER_DIR / "vivi_personality.txt"
+VIVI2_PROACTIVE_COOLDOWN_S = 120
+VIVI2_STREAMING = True
+WEATHER_API_HOST = "api.open-meteo.com"

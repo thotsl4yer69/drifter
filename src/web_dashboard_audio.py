@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import struct
 import subprocess
-from pathlib import Path
 
 from config import DRIFTER_DIR
 

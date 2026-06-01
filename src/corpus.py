@@ -23,8 +23,8 @@ import sqlite3
 import struct
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -251,7 +251,7 @@ def corpus_search(query: str, k: int = 3,
     return scored[:k]
 
 
-def dtc_lookup(code: str) -> Optional[dict]:
+def dtc_lookup(code: str) -> dict | None:
     """Direct lookup by DTC code (e.g. 'P0171'). Falls through to semantic
     search if the code isn't in the dtc/ subdir."""
     code = code.strip().upper()

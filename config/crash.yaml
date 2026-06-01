@@ -1,0 +1,29 @@
+# MZ1312 DRIFTER — Crash detection config
+# Deployed to /opt/drifter/crash.yaml. Edit and restart drifter-crash.
+
+# Hardware
+# Accelerometer used by crash_detect.py. Currently supports MPU6050 (I2C).
+# Leave i2c_bus null to use the default.
+accel:
+  enabled: true
+  type: mpu6050
+  i2c_bus: 1
+  i2c_address: 0x68
+
+# Thresholds — override config.py defaults
+thresholds:
+  # Peak g over a short window that registers as a crash
+  accel_g: 3.0
+  # Sudden deceleration km/h per second
+  decel_kph_per_s: 25
+  # Countdown before auto-SOS fires (cancellable from dashboard/voice)
+  sos_grace_seconds: 10
+
+# SOS destinations
+sos:
+  # Phone number (E.164) for the comms_bridge SMS path. Leave blank to disable SMS.
+  number: ""
+  # Also fire to comms_notify (ntfy/telegram/discord) — controlled by comms.yaml
+  notify: true
+  # Optional fixed location for fall-back if GPS is unavailable
+  fallback_location: ""

@@ -1,0 +1,21 @@
+# MZ1312 DRIFTER — Discord bot config
+# Deployed to /opt/drifter/discord.yaml.
+#
+# Bot token can be set here OR via DISCORD_BOT_TOKEN env var in /opt/drifter/.env.
+# Channel IDs must be the numeric Discord snowflake (enable Developer Mode in
+# Discord settings, right-click the channel → Copy ID).
+
+# Bot identity
+bot_token: ""                     # ← paste your bot token here
+command_prefix: "!vivi"
+
+# Channels
+alert_channel_id: 0               # alerts get pushed here
+command_channel_id: 0             # !vivi commands accepted here (0 = any)
+
+# Permissions
+allowed_user_ids: []              # if set, only these users can run commands
+admin_user_ids: []                # additional admin commands
+
+# Vivi proxy
+vivi_timeout_seconds: 20

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MZ1312 — Portal</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #11141b; --line: #1f2530; --fg: #e6e9ef;
+    --muted: #8a95a6; --accent: #7aa2ff; --red: #ff5577;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: 'IBM Plex Mono', 'Cascadia Mono', Menlo, monospace; }
+  .layout { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
+  nav { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 0; overflow-y: auto; }
+  nav .brand { padding: 8px 20px 20px; font-size: 14px; letter-spacing: 3px;
+               border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  nav .brand strong { color: var(--accent); }
+  nav .section { padding: 6px 20px; font-size: 10px; color: var(--muted);
+                 text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; }
+  nav a { display: block; padding: 8px 20px; color: var(--fg); text-decoration: none;
+          font-size: 13px; border-left: 3px solid transparent; }
+  nav a:hover { background: rgba(122, 162, 255, 0.08); }
+  nav a.active { background: rgba(122, 162, 255, 0.12); border-left-color: var(--accent); }
+  main { display: flex; flex-direction: column; overflow: hidden; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line);
+           display: flex; justify-content: space-between; align-items: center; background: var(--panel); }
+  header h1 { margin: 0; font-size: 13px; letter-spacing: 2px; }
+  .badge { font-size: 11px; color: var(--muted); padding: 4px 8px; border: 1px solid var(--line);
+           border-radius: 4px; }
+  iframe { flex: 1; border: 0; width: 100%; background: var(--bg); }
+  .home { padding: 32px; max-width: 920px; }
+  .home h2 { margin-top: 0; font-size: 18px; letter-spacing: 2px; }
+  .home p { color: var(--muted); line-height: 1.6; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 24px; }
+  .tile { padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+          cursor: pointer; transition: border-color 0.15s; }
+  .tile:hover { border-color: var(--accent); }
+  .tile .k { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .tile .v { font-size: 14px; font-weight: 600; margin: 4px 0; }
+  .tile .d { color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="brand"><strong>MZ1312</strong> PORTAL</div>
+    <a href="#home" data-view="home" class="active">Home</a>
+    <div class="section">Vehicle</div>
+    <a href="#dashboard" data-view="dashboard" data-src="/dashboard">Dashboard</a>
+    <a href="#vivi" data-view="vivi" data-src="/vivi-avatar">Vivi Avatar</a>
+    <div class="section">Fleet</div>
+    <a href="#fleet" data-view="fleet" data-src="/fleet">Fleet Map</a>
+    <a href="#mesh" data-view="mesh" data-src="/mesh">Mesh Topology</a>
+    <div class="section">Telemetry</div>
+    <a href="#mqtt" data-view="mqtt" data-src="/mqtt-registry">MQTT Registry</a>
+    <a href="#realdash" data-view="realdash">RealDash</a>
+    <div class="section">System</div>
+    <a href="#services" data-view="services">Services</a>
+    <a href="#logs" data-view="logs">Logs</a>
+  </nav>
+  <main>
+    <header>
+      <h1 id="title">HOME</h1>
+      <span class="badge" id="status">v2.1</span>
+    </header>
+    <div id="content"></div>
+  </main>
+</div>
+<script>
+const content = document.getElementById('content');
+const title = document.getElementById('title');
+
+const tiles = [
+  { name: 'Dashboard', view: 'dashboard', src: '/dashboard', desc: 'Real-time vehicle HUD' },
+  { name: 'Vivi Avatar', view: 'vivi', src: '/vivi-avatar', desc: '3D voice assistant' },
+  { name: 'Fleet Map', view: 'fleet', src: '/fleet', desc: 'Multi-vehicle overview' },
+  { name: 'Mesh Topology', view: 'mesh', src: '/mesh', desc: 'Network graph' },
+  { name: 'MQTT Registry', view: 'mqtt', src: '/mqtt-registry', desc: 'Topic reference' },
+];
+
+function renderHome() {
+  title.textContent = 'HOME';
+  content.innerHTML = `
+    <div class="home">
+      <h2>UNCAGED TECHNOLOGY — EST 1991</h2>
+      <p>DRIFTER is a fully local vehicle intelligence platform. This portal unifies the
+      dashboards, fleet management, voice avatar, and telemetry tooling shipped with v2.1.</p>
+      <div class="tiles">
+        ${tiles.map(t => `
+          <div class="tile" data-view="${t.view}" data-src="${t.src}">
+            <div class="k">Tool</div>
+            <div class="v">${t.name}</div>
+            <div class="d">${t.desc}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  content.querySelectorAll('.tile').forEach(el => {
+    el.addEventListener('click', () => navigate(el.dataset.view, el.dataset.src));
+  });
+}
+
+function renderIframe(src) {
+  content.innerHTML = `<iframe src="${src}"></iframe>`;
+}
+
+function renderPlaceholder(label) {
+  title.textContent = label.toUpperCase();
+  content.innerHTML = `<div class="home"><h2>${label}</h2><p>Coming soon — backed by the running services.</p></div>`;
+}
+
+function navigate(view, src) {
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.view === view));
+  title.textContent = view.toUpperCase();
+  location.hash = view;
+  if (view === 'home') return renderHome();
+  if (src) return renderIframe(src);
+  renderPlaceholder(view);
+}
+
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    navigate(a.dataset.view, a.dataset.src);
+  });
+});
+
+const initial = location.hash.replace('#', '') || 'home';
+const target = document.querySelector(`nav a[data-view="${initial}"]`);
+if (target) navigate(initial, target.dataset.src); else renderHome();
+</script>
+</body>
+</html>

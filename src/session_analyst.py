@@ -7,22 +7,25 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 
 import json
-import time
-import signal
 import logging
+import signal
 import threading
+import time
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, List, Dict
-
-import paho.mqtt.client as mqtt
 
 import db
 import llm_client
-from mechanic import search as kb_search
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS, LOG_DIR,
-    REPORTS_DIR, ANALYST_BASELINE_SESSIONS, make_mqtt_client,)
+    ANALYST_BASELINE_SESSIONS,
+    LOG_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    REPORTS_DIR,
+    TOPICS,
+    make_mqtt_client,
+)
+from mechanic import search as kb_search
+
 # Note: TOPICS is used in TOPIC_TO_SENSOR below (no hardcoded topic strings)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANALYST] %(message)s',
@@ -44,14 +47,14 @@ TOPIC_TO_SENSOR = {
 }
 
 
-def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> Dict[str, float]:
+def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[str, float]:
     """Read JSONL log and compute per-sensor averages within the session time range.
 
     Uses running sums instead of accumulating all values in memory,
     so this stays O(1) per sensor even for multi-hour drives.
     """
-    sums: Dict[str, float] = {}
-    counts: Dict[str, int] = {}
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
     try:
         with open(log_file) as f:
             for line in f:
@@ -78,15 +81,15 @@ def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> Dict[
 
 def build_context_packet(
     session: dict,
-    anomalies: List[dict],
-    sensor_avgs: Dict[str, float],
-    baseline: Optional[dict],
-    kb_entries: List[str],
+    anomalies: list[dict],
+    sensor_avgs: dict[str, float],
+    baseline: dict | None,
+    kb_entries: list[str],
 ) -> str:
     """Assemble the diagnostic context packet to send to the LLM."""
     lines = [
-        f"VEHICLE: 2004 Jaguar X-Type 2.5L V6 (AJ-V6)",
-        f"",
+        "VEHICLE: 2004 Jaguar X-Type 2.5L V6 (AJ-V6)",
+        "",
         f"SESSION: {session['session_id']}",
         f"  Duration: {int(session.get('duration_seconds', 0) // 60)}m",
         f"  Distance: {session.get('distance_km', 0):.1f} km",
@@ -102,7 +105,7 @@ def build_context_packet(
 
     # Anomaly events
     if anomalies:
-        lines.append(f"")
+        lines.append("")
         lines.append(f"ANOMALY EVENTS ({len(anomalies)} detected):")
         for ev in sorted(anomalies, key=lambda e: e['ts']):
             ctx = json.loads(ev.get('context_json', '{}'))
@@ -116,14 +119,14 @@ def build_context_packet(
         lines.append("ANOMALY EVENTS: None detected")
 
     # Sensor averages
-    lines.append(f"")
+    lines.append("")
     lines.append("SESSION AVERAGES:")
     for sensor, avg in sorted(sensor_avgs.items()):
         lines.append(f"  {sensor}: {avg:.2f}")
 
     # Baseline comparison
     if baseline and baseline.get('session_count', 0) > 0:
-        lines.append(f"")
+        lines.append("")
         lines.append(f"BASELINE ({baseline['session_count']} prior sessions):")
         compare_fields = [
             ('warmup_seconds', 'Warm-up (s)'),
@@ -144,7 +147,7 @@ def build_context_packet(
 
     # KB context
     if kb_entries:
-        lines.append(f"")
+        lines.append("")
         lines.append("RELEVANT X-TYPE KNOWLEDGE:")
         for entry in kb_entries:
             lines.append(entry)
@@ -176,7 +179,7 @@ def parse_report(raw_text: str) -> dict:
         return {'parse_error': True, 'raw_response': raw_text}
 
 
-def run_analysis(session: dict) -> Optional[dict]:
+def run_analysis(session: dict) -> dict | None:
     """Full analysis pipeline for a completed session."""
     session_id = session['session_id']
     log.info(f"Starting analysis for {session_id}")
@@ -269,7 +272,7 @@ class SessionAnalyst:
 
     def __init__(self):
         self.running = True
-        self.last_session: Optional[dict] = None
+        self.last_session: dict | None = None
         db.init_db()
         self.client = make_mqtt_client("drifter-session-analyst")
         self.client.on_message = self._on_message

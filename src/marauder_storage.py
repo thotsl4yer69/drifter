@@ -22,7 +22,7 @@ class SessionWriter:
         self.root = Path(state_root)
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._open_files: dict[str, "object"] = {}  # session_id → file handle
+        self._open_files: dict[str, object] = {}  # session_id → file handle
         self._meta: dict[str, dict] = {}  # session_id → metadata dict
 
     def start(self, *, category: str, mode: str) -> str:

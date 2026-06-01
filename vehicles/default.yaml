@@ -1,0 +1,22 @@
+# MZ1312 DRIFTER — Default Vehicle Profile
+# UNCAGED TECHNOLOGY — EST 1991
+#
+# Used when no VIN-specific file is present in this directory. Override
+# any field; everything not listed falls back to VEHICLE_DEFAULTS in
+# src/config.py.
+
+vin: "unknown"
+make: "Unknown"
+model: "Unknown"
+year: 2000
+engine: "Unknown"
+fuel_type: "petrol"           # petrol | diesel | hybrid | ev
+tank_litres: 60
+avg_consumption_l_per_100km: 9.5
+tire_size: "205/55R16"
+tire_pressure_front: 30       # PSI
+tire_pressure_rear: 30        # PSI
+drivetrain: "FWD"
+transmission: "auto"
+known_issues: []
+source: "default"

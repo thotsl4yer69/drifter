@@ -1,0 +1,58 @@
+# MZ1312 DRIFTER — Vehicle Profile: 2004 Jaguar X-Type 2.5L V6
+# VIN: SAJEA51D44XD39283
+# UNCAGED TECHNOLOGY — EST 1991
+
+vin: "SAJEA51D44XD39283"
+make: "Jaguar"
+model: "X-Type"
+year: 2004
+engine: "AJ-V6 2.5 (Duratec-derived)"
+displacement_cc: 2495
+peak_hp: 194
+peak_torque_nm: 245
+cylinder_count: 6
+firing_order: [1, 4, 2, 5, 3, 6]
+coil_type: "COP"               # 6 individual coil-on-plug coils
+
+fuel_type: "petrol"
+fuel_octane: 95
+tank_litres: 61
+avg_consumption_l_per_100km: 11.0
+
+drivetrain: "AWD"              # Haldex coupling to rear axle
+transmission: "5AT-JF506E"
+oil_capacity_l: 6.5
+coolant_capacity_l: 9.0
+
+tire_size: "205/55R16"
+tire_pressure_front: 30
+tire_pressure_rear: 30
+
+# Behavioural thresholds tuned for this vehicle (overrides config.py
+# THRESHOLDS where present; absence falls back to module defaults).
+thresholds:
+  coolant_amber: 104
+  coolant_red: 108
+  thermostat_oscillation: 8.0
+  maf_idle_low: 2.5
+  idle_rpm_baseline: 720
+
+known_issues:
+  - "Plastic thermostat housing behind timing cover cracks (very common)"
+  - "Coil-on-plug failures, especially Cyl 1/4 (Bank 1 front)"
+  - "MAF hot-film sensor contaminates — drives positive LTFT"
+  - "Carbon buildup in electronic throttle body (P0507, P2111)"
+  - "ABS module internal failure — specialist rebuild £150-200"
+  - "Camshaft Position Sensor connector corrosion (P0340/P0345)"
+  - "EGR passage carbon (P0401) — clean every 60k miles"
+  - "Purge valve sticks open causing rich (P0172/P0175)"
+
+# Service notes Vivi can quote when asked
+service_notes:
+  spark_plugs: "NGK PLZKR6A-11. Change every 60k miles. Gap 1.1 mm."
+  coil_packs: "Bosch 0 221 504 008 or OEM Visteon. Swap to isolate misfire."
+  thermostat: "Always replace the plastic housing as a unit with the stat."
+  oil_grade: "5W-30 fully synthetic, Ford WSS-M2C913-A."
+  coolant: "OAT (orange) — Jaguar specification."
+
+source: "shipped"

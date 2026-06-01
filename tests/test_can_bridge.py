@@ -10,8 +10,7 @@ from unittest.mock import MagicMock
 sys.modules['can'] = MagicMock()
 sys.path.insert(0, 'src')
 
-from can_bridge import decode_dtc, decode_obd_response, PIDS, TWO_BYTE_PIDS
-
+from can_bridge import decode_dtc, decode_obd_response
 
 # ── decode_dtc ──
 

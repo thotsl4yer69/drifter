@@ -2,11 +2,12 @@
 """
 Tests for wardrive.py — parsing logic is exercised without hardware.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from wardrive import parse_nmcli_wifi, parse_hcitool_classic, parse_hcitool_le
-
+from wardrive import parse_hcitool_classic, parse_hcitool_le, parse_nmcli_wifi
 
 # ── parse_nmcli_wifi ──────────────────────────────────────────────
 

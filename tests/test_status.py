@@ -1,6 +1,7 @@
 # tests/test_status.py
 """Regression tests for src/status.py."""
 import sys
+
 sys.path.insert(0, 'src')
 
 import status

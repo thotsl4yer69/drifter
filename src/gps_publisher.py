@@ -22,8 +22,6 @@ import signal
 import socket
 import sys
 import time
-from pathlib import Path
-from typing import Optional
 
 try:
     from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
@@ -51,7 +49,7 @@ def _sig(_signo, _frame):
     _running = False
 
 
-def parse_tpv(line: str) -> Optional[dict]:
+def parse_tpv(line: str) -> dict | None:
     """gpsd publishes one JSON object per line. We only care about TPV
     (time-position-velocity) reports with a 2D-or-better fix."""
     try:
@@ -80,7 +78,7 @@ def parse_tpv(line: str) -> Optional[dict]:
 
 def connect_mqtt():
     client = make_mqtt_client('drifter-gps')
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for attempt in range(1, 11):
         try:
             client.connect(MQTT_HOST, MQTT_PORT, 60)
@@ -130,7 +128,7 @@ def main() -> int:
                     except Exception as e:
                         log.warning(f"publish failed: {e}")
             sock.close()
-        except (ConnectionRefusedError, ConnectionError, OSError, socket.timeout) as e:
+        except (TimeoutError, ConnectionRefusedError, ConnectionError, OSError) as e:
             log.info(f"gpsd unreachable ({e}) — retrying in {backoff}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, RECONNECT_BACKOFF_MAX)

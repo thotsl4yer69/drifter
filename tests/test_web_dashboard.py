@@ -6,10 +6,7 @@ DashboardHandler with just enough plumbing to exercise _read_json_body and
 the DTC validation regex.
 """
 import io
-import json
 import sys
-
-import pytest
 
 sys.path.insert(0, 'src')
 

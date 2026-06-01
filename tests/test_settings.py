@@ -1,7 +1,5 @@
 """Tests for config.load_settings() and save_settings()."""
 import json
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import config

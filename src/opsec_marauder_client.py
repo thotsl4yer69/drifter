@@ -88,9 +88,9 @@ def publish_cmd(mqtt_client, command: str, args: dict | None = None,
 
 import hmac
 import os
+import secrets
 import time as _time
 from pathlib import Path as _Path
-import secrets
 
 _PORTAL_STATE_ROOT = _Path(os.environ.get(
     "MARAUDER_STATE_ROOT", "/opt/drifter/state/marauder"))

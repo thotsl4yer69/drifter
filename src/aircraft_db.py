@@ -20,7 +20,6 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ DEFAULT_DB_PATH = Path('/opt/drifter/state/aircraft_db.sqlite')
 _local = threading.local()
 
 
-def _conn(db_path: Path) -> Optional[sqlite3.Connection]:
+def _conn(db_path: Path) -> sqlite3.Connection | None:
     """Return a thread-local SQLite connection to the OpenSky DB."""
     if not db_path.exists():
         return None
@@ -56,7 +55,7 @@ def _conn(db_path: Path) -> Optional[sqlite3.Connection]:
     return conn
 
 
-def _detect_aircraft_table(conn: sqlite3.Connection) -> Optional[str]:
+def _detect_aircraft_table(conn: sqlite3.Connection) -> str | None:
     """OpenSky's basestation.sqb uses 'Aircraft'; some derivatives use
     'aircraftDatabase' or 'aircraft'. Probe sqlite_master to find it."""
     try:
@@ -72,7 +71,7 @@ def _detect_aircraft_table(conn: sqlite3.Connection) -> Optional[str]:
     return None
 
 
-def lookup(icao_hex: str, db_path: Path = DEFAULT_DB_PATH) -> Optional[dict]:
+def lookup(icao_hex: str, db_path: Path = DEFAULT_DB_PATH) -> dict | None:
     """Return {manufacturer, type, operator, registration, country} or None.
 
     ICAO hex is case-insensitive; OpenSky stores upper-case. Returns None

@@ -34,16 +34,14 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 from __future__ import annotations
 
-from typing import Optional
-
 import ble_geocluster
 import ble_history
 import ble_identity
 
 
 def score_persistent_contacts(conn,
-                              since_ts: Optional[float] = None,
-                              until_ts: Optional[float] = None
+                              since_ts: float | None = None,
+                              until_ts: float | None = None
                               ) -> tuple[list[dict], int]:
     """Return (contacts, noise_excluded). `contacts` is sorted by
     follower_score desc; noise_excluded is how many distinct
@@ -141,7 +139,7 @@ def score_persistent_contacts(conn,
 
 def get_persistent_contact_summary(conn,
                                    window_seconds: float = 7 * 86400,
-                                   now_ts: Optional[float] = None) -> str:
+                                   now_ts: float | None = None) -> str:
     """Short string for Vivi's prompt context. Empty when nothing
     above the weak tier has been seen in the window — Vivi is
     on-demand only in this phase, no proactive comments."""

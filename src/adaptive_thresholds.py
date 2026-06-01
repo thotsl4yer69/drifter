@@ -13,14 +13,18 @@ import logging
 import signal
 import time
 from collections import defaultdict, deque
-from typing import Dict
 
 import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, TOPICS,
-    DRIFTER_DIR, WARMUP_COOLANT_THRESHOLD,
-    ADAPTIVE_LEARN_MIN_SAMPLES, ADAPTIVE_LEARN_SESSIONS, ADAPTIVE_DRIFT_LIMIT,
+    ADAPTIVE_DRIFT_LIMIT,
+    ADAPTIVE_LEARN_MIN_SAMPLES,
+    ADAPTIVE_LEARN_SESSIONS,
+    DRIFTER_DIR,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WARMUP_COOLANT_THRESHOLD,
 )
 
 logging.basicConfig(
@@ -32,6 +36,7 @@ log = logging.getLogger(__name__)
 
 STATE_FILE = DRIFTER_DIR / "adaptive_thresholds.json"
 
+# Sensors we learn baselines for and the THRESHOLDS key whose default they offset.
 LEARNED_KEYS = {
     'stft1': 'stft1_baseline',
     'stft2': 'stft2_baseline',
@@ -55,7 +60,7 @@ DEFAULT_BASELINES = {
 
 class Learner:
     def __init__(self) -> None:
-        self.samples: Dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
+        self.samples: dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
         self.session_count = 0
         self.baselines = dict(DEFAULT_BASELINES)
         self.current_coolant = 0.0
@@ -86,6 +91,7 @@ class Learner:
             log.warning(f"Save failed: {e}")
 
     def _eligible(self) -> bool:
+        # Only learn during warm idle: coolant warm, RPM in idle range, speed zero.
         return (
             self.current_coolant >= WARMUP_COOLANT_THRESHOLD
             and 500 <= self.current_rpm <= 1000
@@ -95,11 +101,13 @@ class Learner:
     def ingest(self, key: str, value: float) -> None:
         if key not in LEARNED_KEYS:
             return
+        # rpm/maf are always eligible at warm idle (matches above gate)
         if not self._eligible():
             return
         self.samples[key].append(value)
 
-    def end_session(self) -> Dict[str, float]:
+    def end_session(self) -> dict[str, float]:
+        """At session end, update baselines if we collected enough."""
         updated = False
         for key, baseline_key in LEARNED_KEYS.items():
             buf = self.samples.get(key)
@@ -108,9 +116,11 @@ class Learner:
             values = list(buf)
             mean = sum(values) / len(values)
             default = DEFAULT_BASELINES[baseline_key]
+            # Cap drift relative to default magnitude (or absolute 1.0 for small defaults)
             scale = max(abs(default), 1.0)
             clip = ADAPTIVE_DRIFT_LIMIT * scale
             mean = max(default - clip, min(default + clip, mean))
+            # Exponential blend so a single session can't dominate
             blend = 0.4 if self.session_count == 0 else 0.2
             self.baselines[baseline_key] = round(
                 (1 - blend) * self.baselines.get(baseline_key, default) + blend * mean,
@@ -219,6 +229,7 @@ def main() -> None:
 
     last_pub = time.time()
     while running:
+        # Re-publish baselines periodically for late subscribers
         if time.time() - last_pub > 60:
             _learner.publish(client)
             last_pub = time.time()

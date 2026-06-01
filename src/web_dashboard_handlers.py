@@ -14,21 +14,29 @@ import subprocess
 import time
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-from config import (
-    load_settings, save_settings, validate_settings_payload,
-    SETTINGS_SCHEMA, SETTINGS_SECTIONS, XTYPE_DTC_LOOKUP, SERVICES,
-    MODES, MODE_STATE_PATH, DEFAULT_MODE, TOPICS,
-)
-from corpus import corpus_search, dtc_lookup
-from ble_map_html import BLE_MAP_HTML
 import ble_history
 import ble_persistence
-from web_dashboard_hardware import check_hardware
 import web_dashboard_state as state
+from ble_map_html import BLE_MAP_HTML
+from config import (
+    DEFAULT_MODE,
+    MODE_STATE_PATH,
+    MODES,
+    SERVICES,
+    SETTINGS_SCHEMA,
+    SETTINGS_SECTIONS,
+    TOPICS,
+    XTYPE_DTC_LOOKUP,
+    load_settings,
+    save_settings,
+    validate_settings_payload,
+)
+from corpus import corpus_search, dtc_lookup
+from web_dashboard_hardware import check_hardware
 
 log = logging.getLogger(__name__)
 
@@ -203,8 +211,9 @@ _RF_COMMANDS = {
 MECHANIC_HISTORY_TURNS = 10
 MECHANIC_HISTORY_CHAR_BUDGET = 8000
 
-from collections import deque as _deque
 import threading as _threading
+from collections import deque as _deque
+
 _mechanic_history: _deque = _deque(maxlen=MECHANIC_HISTORY_TURNS)
 _mechanic_history_lock = _threading.Lock()
 
@@ -350,8 +359,8 @@ def _snapshot_airspace() -> dict:
 def _airspace_poller() -> None:
     """Background loop — fetch tar1090's aircraft.json, refresh the cache,
     and republish to drifter/airspace/aircraft so the WS fan-out picks it up."""
-    import urllib.request
     import urllib.error
+    import urllib.request
     while True:
         payload = None
         try:
@@ -444,6 +453,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path.startswith('/api/can/captures/'):
             self._serve_can_capture_file(parsed.path[len('/api/can/captures/'):])
+            return
+        # Vivi avatar assets — the 3D viewer page fetches its GLB plus any
+        # texture / animation bundles from here. Path-traversal guarded in
+        # _serve_avatar_asset.
+        if parsed.path.startswith('/assets/'):
+            self._serve_avatar_asset(parsed.path[len('/assets/'):])
             return
         # Static files served straight from disk.
         if parsed.path in _STATIC_FILES:
@@ -1096,6 +1111,68 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(f.read_bytes())
 
+    # ─── Vivi avatar viewer (3D Three.js page + GLB assets) ──────────
+    # The viewer is a single HTML file in src/. Its model + textures live
+    # under assets/. In dev the repo sits under the user's home; in
+    # production install.sh drops a copy at /opt/drifter/{src,assets}.
+    def _serve_avatar_page(self, parsed):
+        candidates = [
+            Path(__file__).resolve().parent / 'vivi_avatar.html',
+            Path('/opt/drifter/src/vivi_avatar.html'),
+        ]
+        for p in candidates:
+            if p.exists() and p.is_file():
+                try:
+                    self._serve_html(p.read_text(encoding='utf-8'))
+                except OSError as e:
+                    self.send_error(500, f'avatar read error: {e}')
+                return
+        self.send_error(404, 'vivi_avatar.html not deployed')
+
+    def _serve_avatar_asset(self, rel):
+        # Path-traversal guard: reject empty, absolute, or '..' segments.
+        if not rel or rel.startswith('/') or '..' in rel.split('/'):
+            self.send_error(400, 'bad asset path')
+            return
+        mime = {
+            '.glb':  'model/gltf-binary',
+            '.gltf': 'model/gltf+json',
+            '.bin':  'application/octet-stream',
+            '.png':  'image/png',
+            '.jpg':  'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.webp': 'image/webp',
+            '.wav':  'audio/wav',
+            '.mp3':  'audio/mpeg',
+            '.js':   'application/javascript',
+            '.css':  'text/css',
+            '.json': 'application/json',
+        }
+        bases = [
+            Path(__file__).resolve().parent.parent / 'assets',
+            Path('/opt/drifter/assets'),
+        ]
+        for base in bases:
+            try:
+                base_resolved = base.resolve()
+            except (FileNotFoundError, OSError):
+                continue
+            candidate = (base / rel).resolve()
+            # Stay inside the base after symlink resolution.
+            if not str(candidate).startswith(str(base_resolved)):
+                continue
+            if candidate.exists() and candidate.is_file():
+                ct = mime.get(candidate.suffix.lower(), 'application/octet-stream')
+                data = candidate.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', ct)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'public, max-age=3600')
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        self.send_error(404, f'asset not found: {rel}')
+
     # ─── POST ─────────────────────────────────────────────────────────
     def do_POST(self) -> None:
         if self.path == '/api/analyse':
@@ -1118,6 +1195,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if self.path == '/api/vivi/conversation_mode':
             self._post_vivi_conversation_mode()
+            return
+        if self.path == '/api/vivi/query':
+            self._post_vivi_query()
             return
         if self.path == '/api/flipper/command':
             self._post_flipper_command()
@@ -1565,6 +1645,29 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"status": "triggered"}')
 
+    def _post_vivi_query(self):
+        """Avatar viewer text input → publish on TOPICS['vivi_query'].
+        Drives both vivi.py and vivi_v2.py since both subscribe there."""
+        body = self._read_json_body()
+        if body is None:
+            return
+        query = (body.get('query') or body.get('text') or '').strip()
+        if not query:
+            self.send_error(400, 'query required')
+            return
+        topic = TOPICS.get('vivi_query', 'drifter/vivi/query')
+        payload = json.dumps({'query': query, 'ts': time.time()})
+        try:
+            if state.mqtt_client is None:
+                self.send_error(503, 'mqtt unavailable')
+                return
+            state.mqtt_client.publish(topic, payload)
+        except Exception as e:
+            log.warning("vivi query publish failed: %s", e)
+            self.send_error(503, 'mqtt publish failed')
+            return
+        self._serve_json({'status': 'queued', 'query': query})
+
     def _post_query(self):
         body = self._read_json_body()
         if body is None:
@@ -1588,7 +1691,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # the model still reads a static-spec range out of the KB
             # and reports it as a live reading.
             try:
-                from vivi_grounding import validate, no_data_from_state
+                from vivi_grounding import no_data_from_state, validate
                 no_data = no_data_from_state(state.latest_state,
                                               _query_telemetry_keys())
                 text, intercepted = validate(text, no_data)
@@ -1647,8 +1750,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     except Exception as e:
                         log.debug("history append (stream) failed: %s", e)
                     try:
-                        from vivi_grounding import (
-                            validate, no_data_from_state)
+                        from vivi_grounding import no_data_from_state, validate
                         full = ''.join(buffered)
                         no_data = no_data_from_state(
                             state.latest_state, _query_telemetry_keys())
@@ -1908,4 +2010,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/can/captures':          DashboardHandler._get_can_captures,
     '/api/airspace/aircraft':     DashboardHandler._get_airspace_aircraft,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
+    # Vivi 3D avatar viewer
+    '/avatar':                    DashboardHandler._serve_avatar_page,
+    '/vivi-avatar':               DashboardHandler._serve_avatar_page,
 }

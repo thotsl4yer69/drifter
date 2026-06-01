@@ -7,20 +7,18 @@ Integrates into DRIFTER's MQTT architecture for command/response from Vivi/dashb
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import signal
-import sys
-import time
+import glob
 import json
 import logging
 import re
+import signal
 import threading
-import glob
+import time
 from pathlib import Path
 
 import serial
-import paho.mqtt.client as mqtt
 
-from config import MQTT_HOST, MQTT_PORT, TOPICS, LOG_DIR, make_mqtt_client
+from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
 # Local cache for .sub artifacts. Same dir referenced by web_dashboard_handlers
 # so the API can serve them back without a second config knob.
@@ -344,7 +342,7 @@ class FlipperSerial:
 
             try:
                 self.ser.reset_input_buffer()
-                self.ser.write(f'{command}\r\n'.encode('utf-8'))
+                self.ser.write(f'{command}\r\n'.encode())
 
                 response = b''
                 deadline = time.monotonic() + 10.0

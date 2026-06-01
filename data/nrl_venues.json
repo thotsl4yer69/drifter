@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "name": "NRL venue dataset (DRIFTER seed)",
+    "source": "Public NRL fixture venues — coordinates from OpenStreetMap. Refresh against nrl.com seasonally.",
+    "version": "2026-05-30",
+    "coordinate_system": "WGS84 lat/lng",
+    "fields": ["id", "name", "city", "state", "country", "lat", "lng", "capacity", "team_codes"]
+  },
+  "venues": [
+    {"id": "accor",        "name": "Accor Stadium",                   "city": "Sydney",        "state": "NSW", "country": "AU", "lat": -33.8470, "lng": 151.0623, "capacity": 83500, "team_codes": ["BUL", "SOU", "WTI"]},
+    {"id": "allianz",      "name": "Allianz Stadium",                 "city": "Sydney",        "state": "NSW", "country": "AU", "lat": -33.8896, "lng": 151.2247, "capacity": 42500, "team_codes": ["SYD", "ROO"]},
+    {"id": "leichhardt",   "name": "Leichhardt Oval",                 "city": "Sydney",        "state": "NSW", "country": "AU", "lat": -33.8830, "lng": 151.1561, "capacity": 20000, "team_codes": ["WTI"]},
+    {"id": "campbelltown", "name": "Campbelltown Sports Stadium",     "city": "Campbelltown",  "state": "NSW", "country": "AU", "lat": -34.0606, "lng": 150.8147, "capacity": 20000, "team_codes": ["WTI"]},
+    {"id": "commbank",     "name": "CommBank Stadium",                "city": "Parramatta",    "state": "NSW", "country": "AU", "lat": -33.8073, "lng": 151.0136, "capacity": 30000, "team_codes": ["PAR", "WTI"]},
+    {"id": "belmore",      "name": "Belmore Sports Ground",           "city": "Belmore",       "state": "NSW", "country": "AU", "lat": -33.9192, "lng": 151.0917, "capacity": 18000, "team_codes": ["BUL"]},
+    {"id": "central-coast","name": "Central Coast Stadium",           "city": "Gosford",       "state": "NSW", "country": "AU", "lat": -33.4314, "lng": 151.3403, "capacity": 20000, "team_codes": ["MAN"]},
+    {"id": "industree",    "name": "Industree Group Stadium",         "city": "Gosford",       "state": "NSW", "country": "AU", "lat": -33.4314, "lng": 151.3403, "capacity": 20000, "team_codes": ["MAN"]},
+    {"id": "browne-park",  "name": "Browne Park",                     "city": "Rockhampton",   "state": "QLD", "country": "AU", "lat": -23.3781, "lng": 150.5158, "capacity": 12000, "team_codes": ["DOL"]},
+    {"id": "magic-round",  "name": "Suncorp Stadium",                 "city": "Brisbane",      "state": "QLD", "country": "AU", "lat": -27.4648, "lng": 153.0095, "capacity": 52500, "team_codes": ["BRI", "DOL"]},
+    {"id": "qcb",          "name": "Queensland Country Bank Stadium", "city": "Townsville",    "state": "QLD", "country": "AU", "lat": -19.2589, "lng": 146.8200, "capacity": 25000, "team_codes": ["COW"]},
+    {"id": "cbus",         "name": "Cbus Super Stadium",              "city": "Robina",        "state": "QLD", "country": "AU", "lat": -28.0822, "lng": 153.3700, "capacity": 27400, "team_codes": ["TIT"]},
+    {"id": "kogarah",      "name": "Netstrata Jubilee Stadium",       "city": "Kogarah",       "state": "NSW", "country": "AU", "lat": -33.9656, "lng": 151.1336, "capacity": 21000, "team_codes": ["DRA"]},
+    {"id": "wollongong",   "name": "WIN Stadium",                     "city": "Wollongong",    "state": "NSW", "country": "AU", "lat": -34.4267, "lng": 150.8919, "capacity": 23750, "team_codes": ["DRA"]},
+    {"id": "pointsbet",    "name": "PointsBet Stadium",               "city": "Cronulla",      "state": "NSW", "country": "AU", "lat": -34.0633, "lng": 151.1494, "capacity": 22000, "team_codes": ["CRO"]},
+    {"id": "brookvale",    "name": "4 Pines Park",                    "city": "Brookvale",     "state": "NSW", "country": "AU", "lat": -33.7706, "lng": 151.2806, "capacity": 23000, "team_codes": ["MAN"]},
+    {"id": "panthers",     "name": "BlueBet Stadium",                 "city": "Penrith",       "state": "NSW", "country": "AU", "lat": -33.7625, "lng": 150.6856, "capacity": 22500, "team_codes": ["PEN"]},
+    {"id": "mcdonald",     "name": "McDonald Jones Stadium",          "city": "Newcastle",     "state": "NSW", "country": "AU", "lat": -32.9170, "lng": 151.7286, "capacity": 33000, "team_codes": ["KNI"]},
+    {"id": "go-media",     "name": "Go Media Stadium (Mt Smart)",     "city": "Auckland",      "state": "AUK", "country": "NZ", "lat": -36.9286, "lng": 174.8136, "capacity": 25000, "team_codes": ["WAR"]},
+    {"id": "mcg",          "name": "Melbourne Cricket Ground",        "city": "Melbourne",     "state": "VIC", "country": "AU", "lat": -37.8200, "lng": 144.9836, "capacity": 100024, "team_codes": ["STO"]},
+    {"id": "amistar",      "name": "AAMI Park",                       "city": "Melbourne",     "state": "VIC", "country": "AU", "lat": -37.8250, "lng": 144.9836, "capacity": 30050, "team_codes": ["STO"]},
+    {"id": "canberra",     "name": "GIO Stadium Canberra",            "city": "Canberra",      "state": "ACT", "country": "AU", "lat": -35.2503, "lng": 149.0992, "capacity": 25011, "team_codes": ["RAI"]},
+    {"id": "perth-rect",   "name": "HBF Park",                        "city": "Perth",         "state": "WA",  "country": "AU", "lat": -31.9444, "lng": 115.8694, "capacity": 20500, "team_codes": ["RAI"]},
+    {"id": "optus",        "name": "Optus Stadium",                   "city": "Perth",         "state": "WA",  "country": "AU", "lat": -31.9508, "lng": 115.8889, "capacity": 60000, "team_codes": []},
+    {"id": "adelaide-oval","name": "Adelaide Oval",                   "city": "Adelaide",      "state": "SA",  "country": "AU", "lat": -34.9156, "lng": 138.5961, "capacity": 53583, "team_codes": []},
+    {"id": "bk-park",      "name": "Barlow Park",                     "city": "Cairns",        "state": "QLD", "country": "AU", "lat": -16.9322, "lng": 145.7544, "capacity": 13500, "team_codes": ["COW"]},
+    {"id": "vegas",        "name": "Allegiant Stadium",               "city": "Las Vegas",     "state": "NV",  "country": "US", "lat":  36.0908, "lng": -115.1830, "capacity": 65000, "team_codes": ["NRL-VEGAS"]},
+    {"id": "wembley",      "name": "Wembley Stadium",                 "city": "London",        "state": "GBL", "country": "GB", "lat":  51.5560, "lng":  -0.2796,  "capacity": 90000, "team_codes": []}
+  ]
+}

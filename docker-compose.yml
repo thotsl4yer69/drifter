@@ -1,0 +1,224 @@
+# MZ1312 DRIFTER — full v2.1 stack
+# Brings up the MQTT broker (mosquitto), the core drifter app, fleet server,
+# mesh bridge, recorder/replay, satellite manager, home bridge, and a redis
+# instance available for shared caches.
+# UNCAGED TECHNOLOGY — EST 1991
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: drifter-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./services/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    networks:
+      - drifter-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: drifter-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - drifter-net
+
+  drifter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mz1312/drifter:latest
+    container_name: drifter
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DRIFTER_CONFIG: /var/lib/drifter/config/drifter.yaml
+      DRIFTER_LOG_LEVEL: info
+      DRIFTER_MQTT_HOST: mosquitto
+      DRIFTER_MQTT_PORT: "1883"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - drifter-data:/var/lib/drifter/data
+      - ./config:/var/lib/drifter/config:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - drifter-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  fleet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: mz1312/drifter:latest
+    container_name: drifter-fleet
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/fleet_server.py"]
+    ports:
+      - "8420:8420"
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    volumes:
+      - drifter-data:/var/lib/drifter/data
+      - ./config:/var/lib/drifter/config:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+
+  mesh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: mz1312/drifter:latest
+    container_name: drifter-mesh
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/mesh_coordinator.py"]
+    network_mode: host          # required for mDNS / multicast
+    environment:
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: "1883"
+    depends_on:
+      mosquitto:
+        condition: service_started
+    profiles:
+      - mesh
+
+  recorder:
+    image: mz1312/drifter:latest
+    container_name: drifter-recorder
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/session_recorder.py"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    volumes:
+      - drifter-data:/var/lib/drifter/data
+      - ./recordings:/var/lib/drifter/recordings
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+
+  replay:
+    image: mz1312/drifter:latest
+    container_name: drifter-replay
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/replay_engine.py"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    volumes:
+      - ./recordings:/var/lib/drifter/recordings:ro
+      - ./replays:/var/lib/drifter/replays:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+    profiles:
+      - replay
+
+  satellite:
+    image: mz1312/drifter:latest
+    container_name: drifter-satellite
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/satellite_manager.py"]
+    ports:
+      - "8421:8421/udp"
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+    profiles:
+      - satellite
+
+  home:
+    image: mz1312/drifter:latest
+    container_name: drifter-home
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/home_bridge.py"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+    profiles:
+      - home
+
+  discord:
+    image: mz1312/drifter:latest
+    container_name: drifter-discord
+    restart: unless-stopped
+    command: ["python3", "/opt/drifter/vivi_discord.py"]
+    env_file: .env
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    depends_on:
+      mosquitto:
+        condition: service_started
+    networks:
+      - drifter-net
+    profiles:
+      - discord
+
+  realdash-bridge:
+    build:
+      context: ./realdash
+      dockerfile: Dockerfile
+    image: mz1312/drifter-realdash:latest
+    container_name: drifter-realdash
+    restart: unless-stopped
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      SERIAL_PORT: /dev/ttyUSB0
+      SERIAL_BAUD: "115200"
+    depends_on:
+      - mosquitto
+    networks:
+      - drifter-net
+    profiles:
+      - realdash
+
+volumes:
+  drifter-data:
+  mosquitto-data:
+  mosquitto-log:
+  redis-data:
+
+networks:
+  drifter-net:
+    driver: bridge

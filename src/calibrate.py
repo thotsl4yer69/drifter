@@ -12,18 +12,21 @@ Usage:
 UNCAGED TECHNOLOGY — EST 1991
 """
 
-import json
-import time
-import signal
-import logging
 import argparse
+import json
+import logging
+import signal
+import time
 from collections import deque
-from pathlib import Path
-import paho.mqtt.client as mqtt
 
 from config import (
-    MQTT_HOST, MQTT_PORT, CALIBRATION_FILE, CALIBRATION_DEFAULTS,
-    LEVEL_NAMES, TOPICS, make_mqtt_client)
+    CALIBRATION_DEFAULTS,
+    CALIBRATION_FILE,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    make_mqtt_client,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,7 +156,7 @@ def load_calibration():
         try:
             with open(CALIBRATION_FILE) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
     return dict(CALIBRATION_DEFAULTS)
 
@@ -177,12 +180,12 @@ def print_calibration(cal):
         print(f"  {AMBER}Not calibrated — run: sudo systemctl start drifter-calibrate{NC}")
         return
 
-    print(f"\n  Fuel Trim Baselines:")
+    print("\n  Fuel Trim Baselines:")
     print(f"    STFT Bank 1:  {cal['stft1_baseline']:+.2f}%")
     print(f"    STFT Bank 2:  {cal['stft2_baseline']:+.2f}%")
     print(f"    LTFT Bank 1:  {cal['ltft1_baseline']:+.2f}%")
     print(f"    LTFT Bank 2:  {cal['ltft2_baseline']:+.2f}%")
-    print(f"\n  Engine Baselines:")
+    print("\n  Engine Baselines:")
     print(f"    Idle RPM:     {cal['idle_rpm_baseline']:.0f}")
     print(f"    Voltage:      {cal['voltage_baseline']:.2f}V")
     print(f"    Coolant:      {cal['coolant_normal']:.1f}°C")
@@ -224,12 +227,12 @@ def run_calibration(auto=False):
     if not auto:
         print(f"\n{CYAN}  DRIFTER AUTO-CALIBRATION{NC}")
         print(f"  {'─' * 40}")
-        print(f"  Requirements:")
+        print("  Requirements:")
         print(f"    • Engine running and warmed up (coolant ≥{WARMUP_COOLANT_MIN}°C)")
-        print(f"    • Car in PARK or NEUTRAL")
-        print(f"    • A/C OFF, no electrical loads")
-        print(f"    • Let it idle for ~5 minutes")
-        print(f"\n  Press Ctrl+C to cancel.\n")
+        print("    • Car in PARK or NEUTRAL")
+        print("    • A/C OFF, no electrical loads")
+        print("    • Let it idle for ~5 minutes")
+        print("\n  Press Ctrl+C to cancel.\n")
 
     # Phase 1: Wait for warm-up
     log.info("Waiting for engine warm-up...")

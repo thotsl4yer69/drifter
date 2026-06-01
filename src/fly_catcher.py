@@ -30,7 +30,7 @@ import os
 import signal
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
@@ -53,7 +53,7 @@ TOPIC_OUT = 'drifter/airspace/aircraft_classified'
 running = True
 
 
-def _find_model_file(model_dir: Path) -> Optional[Path]:
+def _find_model_file(model_dir: Path) -> Path | None:
     """Locate the Fly Catcher model file. .tflite first because that's the
     Pi-deployable form (loaded via ai-edge-litert, no full TF runtime).
     Other formats kept for completeness — operator may stage a raw h5 here
@@ -79,12 +79,12 @@ class FlyCatcher:
     def __init__(self, model_dir: Path = MODEL_DIR) -> None:
         self.model_dir = model_dir
         self.model: Any = None
-        self.model_path: Optional[Path] = None
+        self.model_path: Path | None = None
         self.available = False
         # tflite-specific state — used when path.suffix == '.tflite'
-        self._tflite_input_idx: Optional[int] = None
-        self._tflite_output_idx: Optional[int] = None
-        self._tflite_input_shape: Optional[tuple] = None
+        self._tflite_input_idx: int | None = None
+        self._tflite_output_idx: int | None = None
+        self._tflite_input_shape: tuple | None = None
         self._load()
 
     def _load(self) -> None:
@@ -240,7 +240,7 @@ def _aircraft_iter(payload: Any):
     return []
 
 
-def build_alert_message(classified: list[dict]) -> Optional[str]:
+def build_alert_message(classified: list[dict]) -> str | None:
     """Build a level-2 alert line for suspicious tracks, or None."""
     ghosts = [a for a in classified
               if a.get('suspect') and not a.get('unavailable')]

@@ -2,6 +2,7 @@
 """Regression tests for src/watchdog.py."""
 import sys
 import time
+
 import pytest
 
 sys.path.insert(0, 'src')

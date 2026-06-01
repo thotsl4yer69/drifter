@@ -1,11 +1,9 @@
 # tests/test_session_analyst.py
-import pytest
 import json
 import sys
-import time
+
 sys.path.insert(0, 'src')
 
-from unittest.mock import patch, MagicMock
 
 SESSION_PAYLOAD = {
     'event': 'end',

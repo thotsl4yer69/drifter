@@ -1,9 +1,11 @@
 # tests/test_config.py
 """Regression tests for config.make_mqtt_client and related helpers."""
 import sys
+
 sys.path.insert(0, 'src')
 
 import paho.mqtt.client as _mqtt
+
 import config
 
 

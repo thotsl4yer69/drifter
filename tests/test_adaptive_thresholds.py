@@ -1,17 +1,18 @@
 # tests/test_adaptive_thresholds.py
 """Smoke tests for adaptive_thresholds: baseline learning and drift cap."""
 import sys
-import time
+
 sys.path.insert(0, 'src')
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture()
 def fresh_learner():
     """Return a fresh Learner with no persisted state."""
-    from adaptive_thresholds import Learner, DEFAULT_BASELINES
+    from adaptive_thresholds import Learner
     with patch('adaptive_thresholds.STATE_FILE') as mock_path:
         mock_path.exists.return_value = False
         learner = Learner()
@@ -54,7 +55,7 @@ def test_ingest_unknown_key_ignored(fresh_learner):
 
 def test_end_session_respects_drift_cap(fresh_learner):
     """Baseline should not drift beyond ADAPTIVE_DRIFT_LIMIT from default."""
-    from adaptive_thresholds import DEFAULT_BASELINES, LEARNED_KEYS
+    from adaptive_thresholds import DEFAULT_BASELINES
     from config import ADAPTIVE_DRIFT_LIMIT
     _warm_idle_learner(fresh_learner)
     # Feed 100 voltage samples far above default (14.2) — e.g. 99.9V (absurd)
