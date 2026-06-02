@@ -418,8 +418,11 @@
   }
   .awaiting {
     position: absolute; inset: 0; display: grid; place-items: center;
-    background: radial-gradient(ellipse at center, transparent 30%, rgba(10,13,18,0.7) 100%);
-    pointer-events: none; z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(10,13,18,0.78) 100%);
+    /* Above Leaflet's tile/marker panes (z 200-700) and controls (z ~1000)
+       so the card is never buried under the world map. pointer-events:none
+       keeps the map controls beneath it clickable. */
+    pointer-events: none; z-index: 1200;
   }
   .awaiting-card { text-align: center; color: var(--fg); }
   .awaiting-card .glyph {
@@ -2231,8 +2234,6 @@
       <span class="rail-glyph">⊞</span><span class="rail-label">Cock</span></div>
     <div class="rail-btn" data-rail="map" id="rail-map-tab" title="Map — full-bleed">
       <span class="rail-glyph">⌖</span><span class="rail-label">Map</span></div>
-    <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">
-      <span class="rail-glyph">⚙</span><span class="rail-label">Mech</span></div>
     <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">
       <span class="rail-glyph">▤</span><span class="rail-label">HW</span></div>
     <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">
@@ -2253,7 +2254,7 @@
       <div class="awaiting-card">
         <div class="glyph"></div>
         <h2>Awaiting GPS Fix</h2>
-        <p>No live position yet. Allow location in your browser, or wait for the USB GPS dongle to acquire.</p>
+        <p>No live position yet. Plug in the USB GPS dongle, or tap ⌖ to use this device's location — only accepted if accurate to ≤100&nbsp;m. Coarse network/Wi-Fi location is intentionally rejected so the map never shows a fake position.</p>
       </div>
     </div>
     <div class="map-controls" id="map-controls" style="display:none">
@@ -2462,7 +2463,7 @@
         </div>
         <div class="vivi-actions">
           <span class="ghost-btn live" id="btn-talk"><span class="dot"></span>HOLD TO TALK <span class="kbd">SPC</span></span>
-          <span class="ghost-btn" id="btn-mech">ASK MECHANIC <span class="kbd">M</span></span>
+          <span class="ghost-btn" id="btn-mech">ASK VIVI <span class="kbd">M</span></span>
           <span class="ghost-btn conv-toggle" id="btn-conv" role="button" tabindex="0" title="Conversation mode — Vivi keeps listening after each reply">CONV</span>
         </div>
       </div>
@@ -5852,6 +5853,11 @@
     const origin = cache.feeds && cache.feeds.origin;
     if (origin && origin.lat != null && origin.lon != null) _setOrigin(origin.lat, origin.lon);
     else _clearOrigin();
+    // Keep the AWAITING GPS FIX card in sync with live origin so it
+    // auto-hides the moment a real fix lands (and re-shows if lost),
+    // not only when the map tab is (re)opened via setMapMode.
+    const aw = document.getElementById('awaiting-overlay');
+    if (aw) aw.style.display = (mapMode && !(origin && origin.lat != null)) ? '' : 'none';
     const now = Date.now()/1000;
     const snap = cache.aircraft;
     const fresh = snap && snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
@@ -5937,31 +5943,27 @@
   };
 
   function openChat(kind){
+    // Vivi is the single assistant. She answers vehicle-diagnostic
+    // questions (live MQTT state, DTCs, adaptive thresholds, trip) AND
+    // copilot/intel questions (RF, ADS-B, BLE). 'mechanic' is a legacy
+    // alias so older entry points (cockpit chips, ?overlay=mechanic,
+    // the ASK VIVI button) all resolve to the one Vivi overlay.
+    if (kind === 'mechanic') kind = 'vivi';
     const META = {
-      mechanic: {
-        glyph: '⚙', title: 'MECHANIC', channel: 'CH-01',
-        sub: 'diagnostic LLM',
+      vivi: {
+        glyph: '✦', title: 'VIVI', channel: 'CH-01',
+        sub: 'co-pilot · diagnostics + intel',
         prompts: [
           "Any DTCs right now?",
           "What's STFT doing?",
-          "Coolant trend last 5 min?",
-          "Trip cost so far?",
-        ],
-      },
-      vivi: {
-        glyph: '✦', title: 'VIVI', channel: 'CH-02',
-        sub: 'voice assistant',
-        prompts: [
-          "Is rtl_433 scanning?",
-          "Any RF alerts?",
           "Aircraft overhead?",
-          "What can you see right now?",
+          "Any RF alerts?",
         ],
       },
     }[kind] || { glyph: '?', title: kind.toUpperCase(), channel: 'CH-??', sub: '', prompts: [] };
-    const introBullets = (kind === 'mechanic')
-      ? ['Live MQTT vehicle state', 'Adaptive thresholds + last anomalies', 'Recent DTCs and trip summary']
-      : ['Live RF intel + ADS-B', 'Last Vivi voice turns', 'BLE / wardrive context'];
+    const introBullets = ['Live vehicle state · DTCs · thresholds · trip',
+                          'RF intel · ADS-B · BLE / wardrive context',
+                          'Grounded on real telemetry — never invents readings'];
     overlay.open(`
       <div class="overlay-head">
         <div class="overlay-glyph">${META.glyph}</div>
@@ -6801,7 +6803,7 @@
             if (drawerCollapsed) { drawerCollapsed = false;
               document.getElementById('shell').classList.remove('drawer-collapsed');
               localStorage.setItem('drifter.drawer.collapsed','0'); }
-            setTab('sensors');
+            setTab('health');
             break;
           case 'sessions': openSessions(); break;
           case 'settings': openSettings(); break;
