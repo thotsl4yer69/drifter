@@ -5283,26 +5283,43 @@
       out.push(`<div class="section-head"><span>hid · inject</span><span class="tag">drifter-hid · badusb</span></div>`);
 
       // ── Backend selector — NATIVE (Pi) | FLIPPER ──
-      // NATIVE: disabled this stage. We restate the live boot role honestly.
+      // Stage 6: NATIVE becomes SELECTABLE only when /api/hid/status reports
+      // native.ready === true (post `drifter hid enable-native` + reboot). The
+      // UI NEVER edits boot config or flips dr_mode — it only reflects status.
       const drMode = native.dr_mode || 'unknown';
+      const nativeReady = native.ready === true;     // strict: only the backend's truth
+      const nativeDisabled = !nativeReady;
       const flipReady = !!(flip.connected && flip.badusb_ready);
       const flipDisabled = !flipReady;
-      // Force selection onto an enabled backend: NATIVE is never selectable
-      // this stage, so if the persisted choice is native, present flipper.
-      const sel = 'flipper';
+      // Live reason for the NATIVE segment when not ready (e.g. 'native backend
+      // not configured (requires boot profile — stage 6)'), straight from status.
+      const nativeReason = native.reason || (nativeReady
+        ? 'native HID ready (boot profile active)'
+        : 'native backend not configured (requires boot profile)');
+      // Honor the persisted choice, but never present a disabled backend as
+      // selected: if native is the saved pick but isn't ready, fall back to flipper.
+      let sel = (hidBackend === 'native') ? 'native' : 'flipper';
+      if (sel === 'native' && nativeDisabled) sel = 'flipper';
+      const nativeState = nativeReady ? `ready · dr_mode=${esc(drMode)}` : `dr_mode=${esc(drMode)}`;
       const flipState = flip.connected
         ? (flip.badusb_ready ? 'connected · badusb ready' : 'connected · badusb not ready')
         : 'not connected';
       out.push(`<div class="hid-seg">
-        <div class="seg${sel === 'native' ? ' active' : ''}" data-hid-backend="native" aria-disabled="true" role="button" tabindex="-1">
-          NATIVE (Pi)<span class="seg-state">dr_mode=${esc(drMode)}</span>
+        <div class="seg${sel === 'native' ? ' active' : ''}" data-hid-backend="native" aria-disabled="${nativeDisabled ? 'true' : 'false'}" role="button" tabindex="${nativeDisabled ? -1 : 0}">
+          NATIVE (Pi)<span class="seg-state">${esc(nativeState)}</span>
         </div>
         <div class="seg${sel === 'flipper' ? ' active' : ''}" data-hid-backend="flipper" aria-disabled="${flipDisabled ? 'true' : 'false'}" role="button" tabindex="${flipDisabled ? -1 : 0}">
           FLIPPER<span class="seg-state">${esc(flipState)}</span>
         </div>
       </div>`);
-      // Native is always disabled this stage — name the reason (UI never edits boot config).
-      out.push(`<div class="hid-hint warn">NATIVE: requires boot profile — enable in a later step (native HID, stage 6)</div>`);
+      // NATIVE hint: when not ready, restate the live reason + the exact opt-in
+      // path (UI never edits boot config). When ready, restate the USB-C hazard.
+      if (nativeDisabled) {
+        out.push(`<div class="hid-hint warn">NATIVE: ${esc(nativeReason)}</div>`);
+        out.push(`<div class="hid-hint">run: drifter hid enable-native, then reboot (USB-C becomes the typed-into port — also power; see warning)</div>`);
+      } else {
+        out.push(`<div class="hid-hint">NATIVE: Pi USB-C is the typed-into device — cable must reach the target. WARNING: USB-C is also power. Native HID armed at boot.</div>`);
+      }
       if (flipDisabled) {
         out.push(`<div class="hid-hint warn">FLIPPER: connect Flipper Zero (BadUSB) — plug the Flipper's USB into the target, not the Pi</div>`);
       } else {
@@ -5383,13 +5400,19 @@
           <span class="ghost-btn" data-hid-cancel="${esc(armed.id)}" role="button" tabindex="0">CANCEL</span>
         </div>`);
       } else {
-        // Not armed. The single primary ARM button. Disabled unless flipper
-        // ready AND a saved payload is selected (ARM addresses a payload_id).
-        const canArm = flipReady && hidEditorId != null;
-        const armTitle = !flipReady ? ' title="connect Flipper Zero (BadUSB) first"'
-                       : (hidEditorId == null ? ' title="select a saved payload to arm"' : '');
+        // Not armed. The single primary ARM button. ARM posts the SELECTED
+        // backend (native vs flipper) — the ARM→CONFIRM→RUN flow is identical
+        // either way. Disabled unless the selected backend is ready AND a saved
+        // payload is selected (ARM addresses a payload_id).
+        const backendReady = sel === 'native' ? nativeReady : flipReady;
+        const canArm = backendReady && hidEditorId != null;
+        const armTitle = !backendReady
+          ? (sel === 'native'
+              ? ' title="native HID not ready — run drifter hid enable-native + reboot"'
+              : ' title="connect Flipper Zero (BadUSB) first"')
+          : (hidEditorId == null ? ' title="select a saved payload to arm"' : '');
         out.push(`<div class="btn-row">
-          <span class="ghost-btn live" id="hid-arm" data-hid-payload="${esc(hidEditorId || '')}" role="button" tabindex="0" aria-disabled="${canArm ? 'false' : 'true'}"${armTitle}>ARM (FLIPPER)</span>
+          <span class="ghost-btn live" id="hid-arm" data-hid-payload="${esc(hidEditorId || '')}" data-hid-backend-sel="${esc(sel)}" role="button" tabindex="0" aria-disabled="${canArm ? 'false' : 'true'}"${armTitle}>ARM (${sel === 'native' ? 'NATIVE' : 'FLIPPER'})</span>
         </div>`);
         if (hidEditorDirty && hidEditorId != null) {
           out.push(`<div class="hid-hint warn">unsaved edits — SAVE before ARM so the injected payload matches what you see</div>`);
@@ -5704,7 +5727,11 @@
     const st = cache.hidStatus || {};
     const armed = st.armed && st.armed.id;
     const flip = st.flipper || {};
-    const ready = !!(flip.connected && flip.badusb_ready);
+    const nat = st.native || {};
+    // Either backend being ready counts as ready for the tab badge: NATIVE is
+    // ready only when /api/hid/status reports native.ready (post enable-native
+    // + reboot); FLIPPER when connected + badusb enumerated.
+    const ready = !!(nat.ready === true || (flip.connected && flip.badusb_ready));
     const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
               : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
     // Count badge: ARMED (live) > payload count > ready/off.
@@ -6168,7 +6195,8 @@
         cache.hidStatus = data;
         const armed = data.armed && data.armed.id;
         const flip = data.flipper || {};
-        const ready = !!(flip.connected && flip.badusb_ready);
+        const nat = data.native || {};
+        const ready = !!(nat.ready === true || (flip.connected && flip.badusb_ready));
         const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
                   : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
         if (armed) setCount('ducky', 'ARMED', { live: true });
@@ -7369,17 +7397,19 @@
       return;
     }
     // ═══════════════════════════════════════════════════════════════
-    // HID INJECT (Stage 5 — Rubber Ducky / BadUSB, FLIPPER backend).
+    // HID INJECT (Rubber Ducky / BadUSB — FLIPPER + NATIVE Pi backends).
     // ARM → CONFIRM → RUN. NOTHING here injects a keystroke directly:
     // ARM posts hid_arm (the service validates + stages a pending entry,
     // types nothing); CONFIRM posts hid_confirm (the service alone fires,
     // single-shot, and on the flipper path the bridge HIGH-risk gate must
     // also agree). State is reconciled from /api/hid/status — never claimed
-    // optimistically. NATIVE is not wired (disabled, stage 6).
+    // optimistically. NATIVE is only selectable when status reports
+    // native.ready (post enable-native + reboot); the UI never edits boot config.
     // ═══════════════════════════════════════════════════════════════
-    // Backend segment select — flipper only this stage; native is disabled.
+    // Backend segment select. A disabled segment (aria-disabled) cannot be
+    // chosen — NATIVE is disabled until /api/hid/status reports native.ready.
     if (t.hasAttribute('data-hid-backend')) {
-      if (t.getAttribute('aria-disabled') === 'true') return; // native blocked
+      if (t.getAttribute('aria-disabled') === 'true') return; // backend not ready
       hidBackend = t.dataset.hidBackend;
       localStorage.setItem('drifter.hid.backend', hidBackend);
       if (activeTab === 'ducky') render();
@@ -7468,15 +7498,18 @@
       if (activeTab === 'ducky') render();
       return;
     }
-    // ARM (primary) → POST hid_arm {payload_id, backend:'flipper'}. The
-    // service validates + stages a pending entry and publishes ARMED; NOTHING
-    // is typed. The panel reconciles the armed preview from /api/hid/status.
+    // ARM (primary) → POST hid_arm {payload_id, backend}. backend is the
+    // SELECTED segment ('native' | 'flipper'); native is only offered when
+    // /api/hid/status reports native.ready. The service validates + stages a
+    // pending entry and publishes ARMED; NOTHING is typed. The panel
+    // reconciles the armed preview from /api/hid/status.
     if (t.id === 'hid-arm') {
       if (t.getAttribute('aria-disabled') === 'true') return;
       const pid = t.dataset.hidPayload;
       if (!pid) return;
+      const backend = t.dataset.hidBackendSel === 'native' ? 'native' : 'flipper';
       markBusy(t);
-      await postJSON('/api/hid/command', { command: 'hid_arm', payload_id: pid, backend: 'flipper' });
+      await postJSON('/api/hid/command', { command: 'hid_arm', payload_id: pid, backend });
       setTimeout(loadHid, 500);
       return;
     }

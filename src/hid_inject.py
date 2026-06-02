@@ -14,10 +14,15 @@ capability. Two selectable backends:
     gate. The SINGLE authoritative human gate is the ARM → CONFIRM → RUN
     state machine below: there is NO code path from payload-upload to
     keystroke-injection that skips the operator's CONFIRM.
-  * native — Pi USB-gadget HID. This stage (Stage 5) ships the Flipper
-    backend only; the native backend reports 'not configured (requires
-    boot profile — stage 6)' by reading dr_mode from /proc/device-tree
-    and seeing host. It NEVER fakes-ready and NEVER injects.
+  * native — Pi USB-gadget HID (Stage 6). On a node booted with the
+    native profile (dr_mode ∈ {peripheral, otg} + /dev/hidg0 + a bindable
+    UDC) the hid_gadget configfs lifecycle binds the Pi as a USB boot
+    keyboard and writes the hid_ducky-compiled 8-byte reports to
+    /dev/hidg0 on RUN. On THIS live vehicle node the USB-C port boots
+    'host', so native cleanly refuses 'not configured'. It NEVER
+    fakes-ready and NEVER injects unless the boot profile + UDC are real.
+    Enabling the profile is the reboot-gated 'drifter hid enable-native'
+    opt-in — never auto-toggled while live.
 
 Safety model (spec §2.2/2.3/2.5), enforced by DESIGN not policy:
   * ARM validates (payload exists + compiles, backend ready), stores a
@@ -46,6 +51,7 @@ from typing import Dict, Optional
 from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
 import hid_ducky
+import hid_gadget
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -104,31 +110,51 @@ def read_dr_mode() -> str:
 def native_status() -> Dict:
     """Honest native-backend readiness. NEVER fakes ready.
 
-    On this stage the native backend is reported as not configured whenever
-    dr_mode != peripheral/otg (the live node boots host). Reports the boot
-    role read from the device tree + /sys/class/udc + /dev/hidg0 presence.
+    Stage 6: readiness is delegated to the hid_gadget configfs lifecycle.
+    Native is reported ready ONLY when the boot profile is real —
+    dr_mode ∈ {peripheral, otg} AND /dev/hidg0 present AND a bindable UDC
+    exists. On this live node the USB-C port boots 'host', so native is
+    reported not configured and every gadget op hard-refuses. Reports the
+    boot role read from the device tree + /sys/class/udc + /dev/hidg0
+    presence; the UI consumes this read-only and can never flip dr_mode.
     """
     dr_mode = read_dr_mode()
-    try:
-        udcs = [p.name for p in _UDC_DIR.iterdir()] if _UDC_DIR.exists() else []
-    except OSError:
-        udcs = []
+    udcs = hid_gadget.list_udcs(_UDC_DIR)
     hidg0_present = _HIDG0.exists()
     configured = dr_mode in ('peripheral', 'otg')
+    ready, ready_reason = hid_gadget.gadget_ready(_gadget_controller())
+    if not configured:
+        reason = (
+            "native backend not configured (requires boot profile) — "
+            "dr_mode=%s (need peripheral/otg). Run 'drifter hid enable-native' "
+            "+ reboot. The USB-C port is the Pi 5 power input; enabling is a "
+            "deliberate reboot-gated opt-in."
+            % dr_mode
+        )
+    else:
+        reason = ready_reason
     return {
         'dr_mode': dr_mode,
         'hidg0_present': hidg0_present,
-        'bound': bool(udcs) and hidg0_present and configured,
+        'bound': configured and hidg0_present and bool(udcs),
         'boot_profile': 'gadget' if configured else 'host',
         'configured': configured,
-        'ready': False,  # Stage 5 never reports native ready — gadget
-                         # lifecycle is Stage 6 (requires boot profile).
-        'reason': (
-            'native backend not configured (requires boot profile — stage 6)'
-            if not configured else
-            'native gadget lifecycle not implemented this stage (stage 6)'
-        ),
+        'ready': ready,
+        'reason': reason,
     }
+
+
+def _gadget_controller() -> 'hid_gadget.GadgetController':
+    """Build a GadgetController bound to this module's device paths.
+
+    Kept tiny so tests can monkeypatch hid_gadget.read_dr_mode / paths and
+    have native_status + the RUN path follow the same readiness verdict.
+    """
+    return hid_gadget.GadgetController(
+        hidg_path=_HIDG0,
+        udc_dir=_UDC_DIR,
+        dr_mode_reader=read_dr_mode,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -321,17 +347,20 @@ class HidStateMachine:
                                   'line': getattr(e, 'line', None)})
             return
 
-        # Backend readiness gate. Native is NEVER ready this stage.
+        # Backend readiness gate. Native is ready ONLY when the real boot
+        # profile is present (dr_mode peripheral/otg + /dev/hidg0 + bindable
+        # UDC). On this host-mode bench it cleanly refuses 'not configured'.
         if backend == 'native':
             ns = native_status()
-            audit(self.mqtt, 'REJECT', peer, reason='native not ready',
-                  payload_id=payload_id, backend=backend,
-                  dr_mode=ns['dr_mode'], detail=ns['reason'])
-            self._publish_result({'ok': False, 'event': 'ARM',
-                                  'backend': 'native',
-                                  'error': ns['reason'],
-                                  'dr_mode': ns['dr_mode']})
-            return
+            if not ns['ready']:
+                audit(self.mqtt, 'REJECT', peer, reason='native not ready',
+                      payload_id=payload_id, backend=backend,
+                      dr_mode=ns['dr_mode'], detail=ns['reason'])
+                self._publish_result({'ok': False, 'event': 'ARM',
+                                      'backend': 'native',
+                                      'error': ns['reason'],
+                                      'dr_mode': ns['dr_mode']})
+                return
 
         # backend == 'flipper' — readiness is resolved authoritatively by
         # the bridge at fire time; we accept the ARM and let the bridge's
@@ -410,13 +439,7 @@ class HidStateMachine:
             return
 
         if backend == 'native':
-            # Unreachable in normal flow (native ARM is rejected), but
-            # fail-closed here too — never inject on native this stage.
-            ns = native_status()
-            audit(self.mqtt, 'BLOCKED', peer, id=entry['id'], backend='native',
-                  detail=ns['reason'])
-            self._publish_result({'ok': False, 'event': 'RUN', 'id': entry['id'],
-                                  'backend': 'native', 'error': ns['reason']})
+            self._run_native(entry, loaded['script'], peer)
             return
 
         t0 = time.time()
@@ -431,6 +454,82 @@ class HidStateMachine:
             'payload_id': payload_id, 'backend': 'flipper',
             'keystrokes': entry['keystrokes'], 'sha256': entry['sha256'],
             'duration_ms': duration_ms, 'detail': detail,
+        })
+
+    def _run_native(self, entry: Dict, script: str, peer: str) -> None:
+        """RUN on the NATIVE Pi-gadget backend (Stage 6).
+
+        Reachable ONLY after a native ARM (which itself only succeeds when
+        the real boot profile is present) and the operator's CONFIRM. The
+        gadget controller re-checks dr_mode ∈ {peripheral, otg} on EVERY
+        op and hard-refuses otherwise — so on this host-mode node this path
+        fails closed (BLOCKED) and NOTHING is typed. We bind the gadget,
+        write the compiled key-down/key-up frames (honoring compiled
+        DELAYs) to /dev/hidg0, then unbind so the Pi does not linger as a
+        keyboard. Emits GADGET_BIND / GADGET_UNBIND audit events."""
+        arm_id = entry['id']
+        payload_id = entry['payload_id']
+        ctrl = _gadget_controller()
+        # Compile to 8-byte frames (us layout per the payload meta).
+        loaded_meta = (load_payload(payload_id) or {}).get('meta') or {}
+        layout = loaded_meta.get('target_layout', 'us')
+        try:
+            compiled = hid_ducky.compile_ducky(script, layout=layout)
+        except hid_ducky.DuckyParseError as e:
+            audit(self.mqtt, 'BLOCKED', peer, id=arm_id, backend='native',
+                  detail=f'compile error at RUN: {e}')
+            self._publish_result({'ok': False, 'event': 'RUN', 'id': arm_id,
+                                  'backend': 'native', 'error': str(e)})
+            return
+
+        # Bind (== plug in). The controller hard-refuses unless dr_mode ∈
+        # {peripheral, otg}. On the host-mode bench this raises GadgetError
+        # → BLOCKED, fail-closed, no keystrokes.
+        t0 = time.time()
+        try:
+            udc = ctrl.bind()
+        except hid_gadget.GadgetError as e:
+            audit(self.mqtt, 'BLOCKED', peer, id=arm_id, backend='native',
+                  detail=str(e))
+            self._publish_result({'ok': False, 'event': 'RUN', 'id': arm_id,
+                                  'backend': 'native', 'error': str(e)})
+            return
+        audit(self.mqtt, 'GADGET_BIND', peer, id=arm_id, payload_id=payload_id,
+              backend='native', udc=udc)
+
+        ok = True
+        detail = ''
+        written = 0
+        try:
+            written = ctrl.write_reports(
+                compiled.reports, default_delay_ms=compiled.default_delay_ms)
+            detail = f'wrote {written} HID frames to {ctrl.hidg_path}'
+        except hid_gadget.GadgetError as e:
+            ok = False
+            detail = str(e)
+        except OSError as e:
+            ok = False
+            detail = f'hidg0 write failed: {e}'
+        finally:
+            # Always unbind (== unplug) so the Pi does not linger as a
+            # keyboard after the job, even on a write error.
+            try:
+                ctrl.unbind()
+                audit(self.mqtt, 'GADGET_UNBIND', peer, id=arm_id,
+                      backend='native', udc=udc)
+            except hid_gadget.GadgetError as e:
+                log.warning("native unbind refused: %s", e)
+
+        duration_ms = int((time.time() - t0) * 1000)
+        audit(self.mqtt, 'RUN', peer, id=arm_id, payload_id=payload_id,
+              backend='native', sha256=entry['sha256'],
+              line_count=entry['line_count'], keystrokes=entry['keystrokes'],
+              duration_ms=duration_ms, success=ok, frames=written, detail=detail)
+        self._publish_result({
+            'ok': ok, 'event': 'RUN', 'id': arm_id,
+            'payload_id': payload_id, 'backend': 'native',
+            'keystrokes': entry['keystrokes'], 'sha256': entry['sha256'],
+            'duration_ms': duration_ms, 'frames': written, 'detail': detail,
         })
 
     # ── CANCEL ──
@@ -553,7 +652,8 @@ def main():
     # Publish an initial status so the cockpit sees honest readiness even
     # with no Flipper attached and native unconfigured.
     machine._publish_status()
-    log.info("HID Injection Service is LIVE (Flipper backend; native=stage6)")
+    log.info("HID Injection Service is LIVE (Flipper + native backends; "
+             "native ready=%s)", ns['ready'])
 
     while running:
         _expire_stale(machine)

@@ -20,7 +20,10 @@ import pytest
 sys.path.insert(0, 'src')
 
 import hid_ducky as ducky
+import hid_gadget as gadget
 import hid_inject as hi
+import hid_boot as boot
+import diagnose
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -347,3 +350,269 @@ def test_default_flipper_fire_relays_high_risk_through_bridge(monkeypatch, tmp_p
     cmds = [p.get('command', '') for p in payloads]
     assert any(c.startswith('storage write /ext/badusb/') for c in cmds)
     assert any('badusb' in c.lower() or c.startswith('loader open') for c in cmds)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Stage 6 — hid_gadget native lifecycle (host-mode refusal path only)
+# ═══════════════════════════════════════════════════════════════════
+
+def _host_controller(tmp_path):
+    """A GadgetController whose dr_mode reads 'host' (this bench's reality).
+
+    Every gadget op MUST hard-refuse. root is a temp dir so even if a
+    refusal regression slipped through, the real configfs is never touched.
+    """
+    return gadget.GadgetController(
+        root=tmp_path / 'usb_gadget',
+        hidg_path=tmp_path / 'hidg0',
+        udc_dir=tmp_path / 'udc',
+        dr_mode_reader=lambda: 'host',
+    )
+
+
+def test_gadget_mode_ok_false_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    ok, reason = ctrl.gadget_mode_ok()
+    assert ok is False
+    assert 'host' in reason
+
+
+def test_gadget_create_refuses_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    with pytest.raises(gadget.GadgetError):
+        ctrl.create()
+    # Nothing was created on the temp fs.
+    assert not (tmp_path / 'usb_gadget' / gadget.GADGET_NAME).exists()
+
+
+def test_gadget_bind_refuses_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    with pytest.raises(gadget.GadgetError):
+        ctrl.bind()
+
+
+def test_gadget_unbind_refuses_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    with pytest.raises(gadget.GadgetError):
+        ctrl.unbind()
+
+
+def test_gadget_write_reports_refuses_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    frame = bytes([0, 0, 0x04, 0, 0, 0, 0, 0])
+    with pytest.raises(gadget.GadgetError):
+        ctrl.write_reports([(frame, 0)])
+    # No /dev/hidg0-equivalent file was written.
+    assert not (tmp_path / 'hidg0').exists()
+
+
+def test_gadget_teardown_refuses_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    with pytest.raises(gadget.GadgetError):
+        ctrl.teardown()
+
+
+def test_gadget_status_readonly_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    st = ctrl.status()
+    assert st['dr_mode'] == 'host'
+    assert st['configured'] is False
+    assert st['boot_profile'] == 'host'
+    assert st['bound'] is False
+
+
+def test_gadget_ready_false_on_host(tmp_path):
+    ctrl = _host_controller(tmp_path)
+    ready, reason = gadget.gadget_ready(ctrl)
+    assert ready is False
+    assert 'host' in reason
+
+
+def test_native_run_blocked_on_host(monkeypatch, tmp_path):
+    """A native RUN on this host-mode bench must fail closed — nothing typed.
+
+    We force native ARM to be accepted (readiness mocked ready so the entry
+    is stored) but the gadget controller still reads dr_mode=host at RUN and
+    hard-refuses, so the result is a BLOCKED event with no frames written."""
+    _store_payload(monkeypatch, tmp_path)
+    # Force ARM-readiness so a native entry gets stored, but keep the real
+    # gadget controller reading host so the RUN op hard-refuses.
+    monkeypatch.setattr(hi, 'native_status',
+                        lambda: {'ready': True, 'dr_mode': 'host',
+                                 'reason': 'mocked-ready'})
+    host_ctrl = gadget.GadgetController(
+        root=tmp_path / 'usb_gadget',
+        hidg_path=tmp_path / 'hidg0',
+        udc_dir=tmp_path / 'udc',
+        dr_mode_reader=lambda: 'host',
+    )
+    monkeypatch.setattr(hi, '_gadget_controller', lambda: host_ctrl)
+    monkeypatch.setattr(hi, 'HID_AUDIT_LOG', tmp_path / 'hid_audit.log')
+    m = hi.HidStateMachine(MagicMock())
+    m.handle({'command': 'hid_arm', 'payload_id': 'ducky-1',
+              'backend': 'native', 'peer': '10.42.0.7'})
+    assert len(hi.pending_confirms) == 1
+    arm_id = next(iter(hi.pending_confirms))
+    m.handle({'command': 'hid_confirm', 'id': arm_id, 'peer': '10.42.0.7'})
+    events = [json.loads(l)['event']
+              for l in (tmp_path / 'hid_audit.log').read_text().splitlines()]
+    assert 'BLOCKED' in events
+    # No HID device file was written on the host-mode bench.
+    assert not (tmp_path / 'hidg0').exists()
+
+
+def test_arm_native_rejected_when_not_ready(monkeypatch, tmp_path):
+    """With the real native_status (host bench) a native ARM is refused."""
+    _store_payload(monkeypatch, tmp_path)
+    monkeypatch.setattr(hi, 'read_dr_mode', lambda: 'host')
+    m, fired = _machine_with_fire()
+    m.handle({'command': 'hid_arm', 'payload_id': 'ducky-1',
+              'backend': 'native', 'peer': '10.42.0.7'})
+    assert len(hi.pending_confirms) == 0
+    assert fired == []
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Stage 6 — enable-native / disable-native boot-profile editor
+#  (TEMP config path only — NEVER the real /boot config)
+# ═══════════════════════════════════════════════════════════════════
+
+_SAMPLE_CONFIG = (
+    "# Drifter Pi 5 config\n"
+    "dtoverlay=dwc2,dr_mode=host\n"
+    "arm_64bit=1\n"
+)
+
+
+def _temp_config(tmp_path):
+    cfg = tmp_path / 'config.txt'
+    cfg.write_text(_SAMPLE_CONFIG, encoding='utf-8')
+    return cfg
+
+
+def test_enable_native_writes_fenced_block(tmp_path):
+    cfg = _temp_config(tmp_path)
+    changed = boot.enable_native(cfg, check_root=False)
+    assert changed is True
+    text = cfg.read_text()
+    assert boot.BLOCK_START in text
+    assert boot.BLOCK_END in text
+    assert 'dr_mode=peripheral' in text
+    assert 'modules-load=dwc2,libcomposite' in text
+
+
+def test_enable_native_does_not_reboot(tmp_path, monkeypatch):
+    """enable_native is a pure file edit — it never invokes a reboot.
+
+    Guard: os.system / subprocess must not be called by the editor path."""
+    cfg = _temp_config(tmp_path)
+    called = []
+    monkeypatch.setattr(boot.os, 'system',
+                        lambda *a, **k: called.append(a) or 0)
+    boot.enable_native(cfg, check_root=False)
+    assert called == []
+
+
+def test_enable_native_idempotent_on_rerun(tmp_path):
+    cfg = _temp_config(tmp_path)
+    boot.enable_native(cfg, check_root=False)
+    first = cfg.read_text()
+    # Re-run: must be a no-op (returns False) and the file is unchanged —
+    # exactly ONE managed block, never duplicated.
+    changed = boot.enable_native(cfg, check_root=False)
+    assert changed is False
+    second = cfg.read_text()
+    assert first == second
+    assert second.count(boot.BLOCK_START) == 1
+    assert second.count(boot.BLOCK_END) == 1
+
+
+def test_disable_native_removes_block(tmp_path):
+    cfg = _temp_config(tmp_path)
+    boot.enable_native(cfg, check_root=False)
+    removed = boot.disable_native(cfg, check_root=False)
+    assert removed is True
+    text = cfg.read_text()
+    assert boot.BLOCK_START not in text
+    assert boot.BLOCK_END not in text
+    assert 'dr_mode=peripheral' not in text
+    # Original non-managed lines survive.
+    assert 'arm_64bit=1' in text
+
+
+def test_disable_native_idempotent_when_absent(tmp_path):
+    cfg = _temp_config(tmp_path)
+    removed = boot.disable_native(cfg, check_root=False)
+    assert removed is False
+    assert cfg.read_text() == _SAMPLE_CONFIG
+
+
+def test_enable_then_disable_round_trips(tmp_path):
+    cfg = _temp_config(tmp_path)
+    original = cfg.read_text()
+    boot.enable_native(cfg, check_root=False)
+    boot.disable_native(cfg, check_root=False)
+    # The managed block is gone; the meaningful original lines are intact.
+    final = cfg.read_text()
+    assert 'arm_64bit=1' in final
+    assert boot.BLOCK_START not in final
+    assert original.splitlines()[0] in final
+
+
+def test_enable_native_requires_root_by_default(tmp_path, monkeypatch):
+    cfg = _temp_config(tmp_path)
+    monkeypatch.setattr(boot.os, 'geteuid', lambda: 1000)
+    with pytest.raises(boot.BootProfileError):
+        boot.enable_native(cfg)  # check_root defaults True
+    # Refused before any write — the block was NOT added.
+    assert boot.BLOCK_START not in cfg.read_text()
+
+
+def test_enable_native_missing_config_errors(tmp_path):
+    with pytest.raises(boot.BootProfileError):
+        boot.enable_native(tmp_path / 'nope.txt', check_root=False)
+
+
+def test_cli_main_enable_disable_temp_config(tmp_path, capsys, monkeypatch):
+    cfg = _temp_config(tmp_path)
+    monkeypatch.setattr(boot.os, 'geteuid', lambda: 0)
+    rc = boot.main(['enable-native', '--config', str(cfg)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # The reboot warning must name the USB-C power-port hazard.
+    assert 'REBOOT' in out
+    assert 'POWER INPUT' in out
+    assert boot.BLOCK_START in cfg.read_text()
+    rc = boot.main(['disable-native', '--config', str(cfg)])
+    assert rc == 0
+    assert boot.BLOCK_START not in cfg.read_text()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Stage 6 — diagnose warns on dr_mode != host while in drive mode
+# ═══════════════════════════════════════════════════════════════════
+
+def test_diagnose_warns_dr_mode_peripheral_in_drive(monkeypatch):
+    monkeypatch.setattr(diagnose, '_active_mode', lambda: 'drive')
+    monkeypatch.setattr(gadget, 'read_dr_mode', lambda: 'peripheral')
+    r = diagnose.check_hid_dr_mode()
+    assert r.ok is False
+    assert r.fatal is False  # warn-only / non-fatal
+    assert 'WARNING' in r.message
+    assert 'peripheral' in r.message
+
+
+def test_diagnose_ok_dr_mode_host_in_drive(monkeypatch):
+    monkeypatch.setattr(diagnose, '_active_mode', lambda: 'drive')
+    monkeypatch.setattr(gadget, 'read_dr_mode', lambda: 'host')
+    r = diagnose.check_hid_dr_mode()
+    assert r.ok is True
+
+
+def test_diagnose_no_warn_dr_mode_peripheral_in_foot(monkeypatch):
+    """In foot mode the operator may legitimately be running native HID —
+    no drive-mode warning."""
+    monkeypatch.setattr(diagnose, '_active_mode', lambda: 'foot')
+    monkeypatch.setattr(gadget, 'read_dr_mode', lambda: 'peripheral')
+    r = diagnose.check_hid_dr_mode()
+    assert r.ok is True
