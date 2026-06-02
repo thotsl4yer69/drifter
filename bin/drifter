@@ -15,6 +15,38 @@ case "${1:-}" in
         shift
         exec "$PY" /opt/drifter/corpus.py "$@"
         ;;
+    hid)
+        shift
+        # Read-only HID backend status. The enable-native / disable-native
+        # boot-profile editor is STAGE 6 — deliberately NOT shipped here.
+        case "${1:-status}" in
+            status)
+                exec "$PY" - <<'PYEOF'
+import json
+import sys
+sys.path.insert(0, "/opt/drifter")
+try:
+    import hid_inject
+except Exception as e:  # pragma: no cover - import guard
+    print(f"drifter hid: cannot import hid_inject: {e}", file=sys.stderr)
+    sys.exit(1)
+ns = hid_inject.native_status()
+print(json.dumps({"native": ns}, indent=2))
+print()
+print(f"native backend: dr_mode={ns['dr_mode']} "
+      f"boot_profile={ns['boot_profile']} ready={ns['ready']}")
+print(f"  {ns['reason']}")
+print("flipper backend: see 'curl -fsS "
+      "http://127.0.0.1:8080/api/hid/status' for live readiness")
+PYEOF
+                ;;
+            *)
+                echo "usage: drifter hid status" >&2
+                echo "  (enable-native/disable-native is stage 6 — not available)" >&2
+                exit 2
+                ;;
+        esac
+        ;;
     diagnose|"")
         exec "$PY" /opt/drifter/diagnose.py "$@"
         ;;

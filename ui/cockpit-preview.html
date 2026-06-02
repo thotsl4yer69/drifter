@@ -926,6 +926,104 @@
   .arsenal-card .h-status { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.08em; }
   .arsenal-card .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
   .arsenal-card .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+
+  /* ── HID INJECT panel (Rubber Ducky / BadUSB) — Stage 5 ── */
+  /* Segmented backend selector: NATIVE (Pi) | FLIPPER. Mirrors the
+     stencil/glass aesthetic of the rest of the drawer. */
+  .hid-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 8px 0;
+    border: 1px solid var(--glass-stroke); border-radius: var(--r-pill); overflow: hidden;
+    background: rgba(0,0,0,0.25); }
+  .hid-seg .seg {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; text-align: center; padding: 7px 6px; cursor: pointer;
+    color: var(--fg-mute); border: none; background: transparent;
+    transition: color 150ms, background 150ms; }
+  .hid-seg .seg:first-child { border-right: 1px solid var(--glass-stroke); }
+  .hid-seg .seg.active { color: var(--amber); background: rgba(255,174,66,0.12);
+    box-shadow: inset 0 0 10px rgba(255,174,66,0.10); }
+  .hid-seg .seg[aria-disabled="true"] { opacity: 0.4; pointer-events: none; cursor: default; }
+  .hid-seg .seg .seg-state { display: block; font-size: 8px; letter-spacing: 0.04em;
+    color: var(--fg-dim); margin-top: 3px; text-transform: none; }
+  .hid-seg .seg.active .seg-state { color: var(--amber-deep); }
+  /* readiness hint line under the selector */
+  .hid-hint { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-dim);
+    letter-spacing: 0.03em; padding: 2px 0 6px; }
+  .hid-hint.warn { color: var(--amber); }
+  /* payload list + editor split */
+  .hid-split { display: grid; grid-template-columns: minmax(110px, 0.8fr) 1.4fr; gap: 8px;
+    margin: 6px 0; align-items: start; }
+  @media (max-width: 560px) { .hid-split { grid-template-columns: 1fr; } }
+  .hid-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+  .hid-pl {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--fg-mute);
+    padding: 5px 7px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm);
+    background: rgba(0,0,0,0.22); cursor: pointer; display: grid; gap: 2px; }
+  .hid-pl:hover { border-color: var(--glass-stroke-amber); color: var(--fg); }
+  .hid-pl.sel { border-color: var(--glass-stroke-amber); color: var(--amber);
+    background: rgba(255,174,66,0.08); }
+  .hid-pl .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hid-pl .pl-meta { color: var(--fg-dim); font-size: 9px; letter-spacing: 0.04em; }
+  .hid-pl .pl-del { color: var(--red); font-size: 9px; opacity: 0.7; justify-self: end; }
+  .hid-pl .pl-del:hover { opacity: 1; }
+  .hid-editor-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .hid-name-in {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg);
+    background: rgba(0,0,0,0.3); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 5px 7px; width: 100%; box-sizing: border-box; }
+  .hid-script {
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.45;
+    color: var(--fg); background: rgba(0,0,0,0.35); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 7px 8px; width: 100%; min-height: 150px; resize: vertical;
+    box-sizing: border-box; white-space: pre; tab-size: 4; }
+  .hid-script:focus { outline: none; border-color: var(--glass-stroke-amber); }
+  .hid-parse-err {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
+    border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; }
+  .hid-parse-err .ln { color: var(--amber); }
+  /* ARM preview card + countdown ring */
+  .hid-arm-card {
+    border: 1px solid var(--glass-stroke-amber); border-radius: var(--r-sm);
+    background: linear-gradient(180deg, rgba(255,174,66,0.08), rgba(0,0,0,0.28));
+    padding: 8px 10px; margin: 8px 0; display: grid; grid-template-columns: auto 1fr;
+    gap: 10px; align-items: center; }
+  .hid-ring { width: 46px; height: 46px; transform: rotate(-90deg); }
+  .hid-ring circle { fill: none; stroke-width: 4; }
+  .hid-ring .track { stroke: var(--glass-stroke); }
+  .hid-ring .prog { stroke: var(--amber); stroke-linecap: round;
+    transition: stroke-dashoffset 250ms linear; }
+  .hid-ring-wrap { position: relative; width: 46px; height: 46px; }
+  .hid-ring-wrap .secs { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    color: var(--amber); }
+  .hid-arm-meta { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-mute);
+    display: grid; gap: 2px; min-width: 0; }
+  .hid-arm-meta .pm-name { color: var(--amber); font-size: 11px; }
+  .hid-arm-meta .pm-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hid-confirm-btn {
+    border: 1px solid rgba(231,76,60,0.6); background: rgba(231,76,60,0.12);
+    color: var(--red); box-shadow: var(--red-glow);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 8px 14px; border-radius: var(--r-pill);
+    cursor: pointer; text-align: center; }
+  .hid-confirm-btn:hover { background: rgba(231,76,60,0.2); }
+  /* live audit tail */
+  .hid-audit-toggle {
+    font-family: 'Major Mono Display', monospace; font-size: 9.5px; letter-spacing: 0.18em;
+    text-transform: lowercase; color: var(--amber-deep); cursor: pointer;
+    padding: 4px 0; border-top: 1px dashed var(--glass-stroke); margin-top: 8px;
+    display: flex; justify-content: space-between; align-items: center; }
+  .hid-audit-list { max-height: 160px; overflow-y: auto; }
+  .hid-audit-row {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-mute);
+    padding: 3px 0; border-bottom: 1px dashed var(--glass-stroke);
+    display: grid; grid-template-columns: 16px auto 1fr auto; gap: 6px; align-items: baseline; }
+  .hid-audit-row .ev { letter-spacing: 0.06em; }
+  .hid-audit-row .ev.run { color: var(--red); }
+  .hid-audit-row .ev.confirm { color: var(--amber); }
+  .hid-audit-row .ev.arm { color: var(--cyan); }
+  .hid-audit-row .ev.reject, .hid-audit-row .ev.expire, .hid-audit-row .ev.blocked { color: var(--red); }
+  .hid-audit-row .a-peer { color: var(--fg-dim); }
+  .hid-audit-row .a-age { color: var(--fg-dim); text-align: right; }
   .rfa-crit-banner { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
     border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; margin: 4px 0; }
   .rfa-now { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal);
@@ -2621,7 +2719,31 @@
     wifiAudit: null,        // drifter/wifi/audit (handshakes/PMKIDs)
     signalIntelRows: [],    // last N classifications (with novel flag) for the RF tile
     replay: { active: false, session_id: null, speed: 1.0, paused: false },
+    // ── HID INJECT (Rubber Ducky / BadUSB) — Stage 5 (FLIPPER backend) ──
+    // hidStatus mirrors GET /api/hid/status; null until the backend answers
+    // (REAL-DATA: never assume ready). hidPayloads mirrors GET /api/hid/payloads.
+    // hidAudit is a bounded ring fanned out from drifter/hid/audit over WS
+    // (newest first) so the panel's collapsible tail shows live events.
+    hidStatus: null,
+    hidPayloads: null,
+    hidAudit: [],
   };
+  const HID_AUDIT_MAX = 40;
+  // Backend selected in the ducky panel ('flipper' | 'native'). Persisted so
+  // the operator's choice survives re-render. NATIVE is disabled this stage
+  // (requires boot profile — stage 6); flipper is the only fireable backend.
+  let hidBackend = localStorage.getItem('drifter.hid.backend') || 'flipper';
+  // The payload id currently open in the editor (null = new/unsaved). Editor
+  // text + last parse error live on these module vars so a re-render (from a
+  // status poll) does not stomp what the operator is typing.
+  let hidEditorId = null;
+  let hidEditorName = '';
+  let hidEditorScript = '';
+  let hidEditorError = null;   // {error, line} from a 400, or null
+  let hidEditorDirty = false;  // operator typed since last load/save
+  // Payload id pending a delete-confirm (small inline confirm, like flipper).
+  const pendingHidDelete = new Set();
+  let hidAuditOpen = localStorage.getItem('drifter.hid.auditOpen') === '1';
 
   // Per-aircraft short trail history for the enriched radar overlay
   // (Agent A · TASK 1.3). Keyed by ICAO hex, value = list of {lat, lon, ts}.
@@ -5134,10 +5256,167 @@
       return out.join('');
     },
 
-    // DUCKY — USB Rubber Ducky / BadUSB. Empty-state ONLY this stage
-    // (the HID runner backend ships in a later stage).
+    // DUCKY — USB Rubber Ducky / BadUSB (Stage 5 — FLIPPER backend).
+    // ARM → CONFIRM → RUN. NOTHING is typed by this panel: every fire goes
+    // through POST /api/hid/command and the drifter-hid service's own
+    // ARM/CONFIRM gate (and, on the flipper path, the bridge HIGH-risk gate).
+    // REAL-DATA: readiness/armed/injected come ONLY from /api/hid/status —
+    // never claimed optimistically. NATIVE backend is disabled this stage
+    // (requires a boot profile — stage 6); we read dr_mode and refuse.
     ducky(){
-      return emptyState('⌨', 'USB Rubber Ducky / BadUSB — runner not installed yet (coming in a later stage).');
+      const st = cache.hidStatus;            // null until backend answers
+      const native = (st && st.native) || {};
+      const flip = (st && st.flipper) || {};
+      const armed = (st && st.armed) || null;
+      const payloads = (cache.hidPayloads && Array.isArray(cache.hidPayloads))
+        ? cache.hidPayloads
+        : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads : []);
+      const out = [];
+
+      // No backend / status route not present yet → honest empty state.
+      if (st == null) {
+        out.push(`<div class="section-head"><span>hid · inject</span><span class="tag">drifter-hid · badusb</span></div>`);
+        out.push(emptyState('⌨', 'HID inject service not responding. Start drifter-hid (foot mode) to manage Rubber Ducky / BadUSB payloads.'));
+        return out.join('');
+      }
+
+      out.push(`<div class="section-head"><span>hid · inject</span><span class="tag">drifter-hid · badusb</span></div>`);
+
+      // ── Backend selector — NATIVE (Pi) | FLIPPER ──
+      // NATIVE: disabled this stage. We restate the live boot role honestly.
+      const drMode = native.dr_mode || 'unknown';
+      const flipReady = !!(flip.connected && flip.badusb_ready);
+      const flipDisabled = !flipReady;
+      // Force selection onto an enabled backend: NATIVE is never selectable
+      // this stage, so if the persisted choice is native, present flipper.
+      const sel = 'flipper';
+      const flipState = flip.connected
+        ? (flip.badusb_ready ? 'connected · badusb ready' : 'connected · badusb not ready')
+        : 'not connected';
+      out.push(`<div class="hid-seg">
+        <div class="seg${sel === 'native' ? ' active' : ''}" data-hid-backend="native" aria-disabled="true" role="button" tabindex="-1">
+          NATIVE (Pi)<span class="seg-state">dr_mode=${esc(drMode)}</span>
+        </div>
+        <div class="seg${sel === 'flipper' ? ' active' : ''}" data-hid-backend="flipper" aria-disabled="${flipDisabled ? 'true' : 'false'}" role="button" tabindex="${flipDisabled ? -1 : 0}">
+          FLIPPER<span class="seg-state">${esc(flipState)}</span>
+        </div>
+      </div>`);
+      // Native is always disabled this stage — name the reason (UI never edits boot config).
+      out.push(`<div class="hid-hint warn">NATIVE: requires boot profile — enable in a later step (native HID, stage 6)</div>`);
+      if (flipDisabled) {
+        out.push(`<div class="hid-hint warn">FLIPPER: connect Flipper Zero (BadUSB) — plug the Flipper's USB into the target, not the Pi</div>`);
+      } else {
+        out.push(`<div class="hid-hint">FLIPPER: Flipper USB must be plugged into the TARGET. The Pi only relays the BadUSB file + run over serial.</div>`);
+      }
+
+      // ── Payload editor: list (left) + monospace editor (right) ──
+      out.push(`<div class="section-head" style="margin-top:8px"><span>payloads</span><span class="tag">duckyscript · ${payloads.length} stored</span></div>`);
+      const listRows = [];
+      if (!payloads.length) {
+        listRows.push(`<div class="hid-pl" style="cursor:default;opacity:.7"><span class="pl-name">no payloads</span><span class="pl-meta">Save one →</span></div>`);
+      } else {
+        for (const p of payloads) {
+          const pid = String(p.id || '');
+          const lc = (p.line_count != null) ? p.line_count : '—';
+          const isSel = pid && pid === hidEditorId;
+          if (pendingHidDelete.has(pid)) {
+            listRows.push(`<div class="hid-pl sel"><span class="pl-name">${esc(p.name || pid)}</span><span class="pl-meta">delete? <span class="ghost-btn crit" data-hid-del-confirm="${esc(pid)}" role="button" tabindex="0" style="font-size:8px;padding:2px 6px">YES</span> <span class="ghost-btn" data-hid-del-cancel="${esc(pid)}" role="button" tabindex="0" style="font-size:8px;padding:2px 6px">NO</span></span></div>`);
+          } else {
+            listRows.push(`<div class="hid-pl${isSel ? ' sel' : ''}" data-hid-open="${esc(pid)}" role="button" tabindex="0">
+              <span class="pl-name">${esc(p.name || pid)}</span>
+              <span class="pl-meta">${esc(lc)} lines${p.target_layout ? ' · '+esc(p.target_layout) : ''}<span class="pl-del" data-hid-del="${esc(pid)}" role="button" tabindex="0" title="delete"> ✕</span></span>
+            </div>`);
+          }
+        }
+      }
+      const editorName = esc(hidEditorName || '');
+      const editorScript = esc(hidEditorScript || '');
+      const newCls = hidEditorId == null ? ' sel' : '';
+      out.push(`<div class="hid-split">
+        <div class="hid-list">
+          <div class="hid-pl${newCls}" data-hid-open="" role="button" tabindex="0" style="text-align:center"><span class="pl-name">+ new payload</span></div>
+          ${listRows.join('')}
+        </div>
+        <div class="hid-editor-wrap">
+          <input class="hid-name-in" id="hid-name" placeholder="payload name" value="${editorName}" autocomplete="off" spellcheck="false">
+          <textarea class="hid-script" id="hid-script" placeholder="REM example&#10;DELAY 500&#10;GUI r&#10;DELAY 200&#10;STRING notepad&#10;ENTER" spellcheck="false" autocomplete="off" autocapitalize="off">${editorScript}</textarea>
+          ${hidEditorError ? `<div class="hid-parse-err">parse error${hidEditorError.line != null ? ` <span class="ln">line ${esc(hidEditorError.line)}</span>` : ''}: ${esc(hidEditorError.error || 'invalid DuckyScript')}</div>` : ''}
+          <div class="btn-row">
+            <span class="ghost-btn" id="hid-save" role="button" tabindex="0">SAVE</span>
+            ${hidEditorId ? `<span class="ghost-btn crit" data-hid-del="${esc(hidEditorId)}" role="button" tabindex="0">DELETE</span>` : ''}
+          </div>
+        </div>
+      </div>`);
+
+      // ── ARM → CONFIRM → RUN ──
+      out.push(`<div class="section-head" style="margin-top:8px"><span>arm · confirm · inject</span><span class="tag">${armed ? 'ARMED' : 'idle'}</span></div>`);
+      if (armed && armed.id) {
+        // Reconcile from /api/hid/status ONLY — the armed object is the
+        // backend's truth. Show preview + countdown ring from expires_in.
+        const total = 60; // ARM window (matches the service's 60s expiry)
+        const rem = Math.max(0, Math.min(total, Number(armed.expires_in) || 0));
+        const frac = rem / total;
+        const R = 19, C = 2 * Math.PI * R;
+        const off = (C * (1 - frac)).toFixed(1);
+        const firstLine = armed.first_line != null ? armed.first_line : (Array.isArray(armed.preview) ? armed.preview[0] : '');
+        const lastLine = armed.last_line != null ? armed.last_line : (Array.isArray(armed.preview) ? armed.preview[armed.preview.length-1] : '');
+        const ksEst = armed.keystrokes != null ? armed.keystrokes
+                    : (armed.keystroke_estimate != null ? armed.keystroke_estimate : null);
+        out.push(`<div class="hid-arm-card" data-hid-armed-id="${esc(armed.id)}">
+          <div class="hid-ring-wrap">
+            <svg class="hid-ring" viewBox="0 0 46 46">
+              <circle class="track" cx="23" cy="23" r="${R}"></circle>
+              <circle class="prog" cx="23" cy="23" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off}"></circle>
+            </svg>
+            <span class="secs">${Math.ceil(rem)}</span>
+          </div>
+          <div class="hid-arm-meta">
+            <span class="pm-name">${esc(armed.name || armed.payload_id || 'armed payload')}</span>
+            <span class="pm-line">backend: ${esc(armed.backend || '—')} · ${armed.line_count != null ? esc(armed.line_count)+' lines' : '— lines'}${ksEst != null ? ' · ~'+esc(ksEst)+' keys' : ''}</span>
+            ${firstLine ? `<span class="pm-line">first: ${esc(String(firstLine).slice(0,48))}</span>` : ''}
+            ${lastLine ? `<span class="pm-line">last: ${esc(String(lastLine).slice(0,48))}</span>` : ''}
+          </div>
+        </div>`);
+        // Separate, clearly destructive CONFIRM — only this fires. Plus CANCEL.
+        out.push(`<div class="btn-row">
+          <span class="hid-confirm-btn" data-hid-confirm="${esc(armed.id)}" role="button" tabindex="0">CONFIRM — INJECT</span>
+          <span class="ghost-btn" data-hid-cancel="${esc(armed.id)}" role="button" tabindex="0">CANCEL</span>
+        </div>`);
+      } else {
+        // Not armed. The single primary ARM button. Disabled unless flipper
+        // ready AND a saved payload is selected (ARM addresses a payload_id).
+        const canArm = flipReady && hidEditorId != null;
+        const armTitle = !flipReady ? ' title="connect Flipper Zero (BadUSB) first"'
+                       : (hidEditorId == null ? ' title="select a saved payload to arm"' : '');
+        out.push(`<div class="btn-row">
+          <span class="ghost-btn live" id="hid-arm" data-hid-payload="${esc(hidEditorId || '')}" role="button" tabindex="0" aria-disabled="${canArm ? 'false' : 'true'}"${armTitle}>ARM (FLIPPER)</span>
+        </div>`);
+        if (hidEditorDirty && hidEditorId != null) {
+          out.push(`<div class="hid-hint warn">unsaved edits — SAVE before ARM so the injected payload matches what you see</div>`);
+        }
+      }
+
+      // ── Collapsible live audit tail (drifter/hid/audit fan-out) ──
+      const auditRows = cache.hidAudit || [];
+      out.push(`<div class="hid-audit-toggle" id="hid-audit-toggle" role="button" tabindex="0"><span>audit · live tail</span><span class="tag">${auditRows.length} event${auditRows.length === 1 ? '' : 's'} ${hidAuditOpen ? '▾' : '▸'}</span></div>`);
+      if (hidAuditOpen) {
+        if (!auditRows.length) {
+          out.push(emptyState('▤', 'No HID audit events this session. UPLOAD / ARM / CONFIRM / RUN appear here as they happen.'));
+        } else {
+          const list = [];
+          for (const a of auditRows.slice(0, HID_AUDIT_MAX)) {
+            const ev = String(a.event || '').toLowerCase();
+            const age = a.ts ? fmtAge(a.ts) : '';
+            const who = a.peer ? esc(a.peer) : '';
+            const lbl = esc(String(a.event || '—').toUpperCase());
+            const detail = a.payload_id ? esc(String(a.payload_id)) : (a.id ? esc(String(a.id)) : '');
+            list.push(`<div class="hid-audit-row"><span class="ev ${esc(ev)}">●</span><span class="ev ${esc(ev)}">${lbl}</span><span class="a-peer">${detail}${who ? ' · '+who : ''}</span><span class="a-age">${esc(age)}</span></div>`);
+          }
+          out.push(`<div class="hid-audit-list">${list.join('')}</div>`);
+        }
+      }
+
+      return out.join('');
     },
   };
 
@@ -5411,11 +5690,36 @@
     setCount('sentry', known ? (s.armed ? 'armed' : 'off') : '—', { live: !!s.armed });
     if (activeTab === 'sentry') render();
   }
+  // ── HID INJECT (Stage 5) ──
+  // Polls /api/hid/status (readiness + armed snapshot) and /api/hid/payloads
+  // (stored DuckyScript metas). REAL-DATA: a null fetch leaves cache.hidStatus
+  // null, so the renderer shows the honest "service not responding" empty
+  // state — never a fabricated ready/armed. State is reconciled from
+  // /api/hid/status; the panel never optimistically claims injection.
+  async function loadHid(){
+    const s = await safeFetch('/api/hid/status');
+    cache.hidStatus = (s !== null) ? s : cache.hidStatus;
+    const p = await safeFetch('/api/hid/payloads');
+    if (p !== null) cache.hidPayloads = p;
+    const st = cache.hidStatus || {};
+    const armed = st.armed && st.armed.id;
+    const flip = st.flipper || {};
+    const ready = !!(flip.connected && flip.badusb_ready);
+    const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
+              : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
+    // Count badge: ARMED (live) > payload count > ready/off.
+    if (cache.hidStatus == null) setCount('ducky', '—', { live: false });
+    else if (armed) setCount('ducky', 'ARMED', { live: true });
+    else setCount('ducky', ready ? `${plc}` : 'off', { live: ready });
+    if (activeTab === 'ducky') render();
+  }
   // Tab → loader map for applyArsenalTabs() (fires on tab-activation /
-  // mode change). ducky intentionally absent — no backend this stage.
+  // mode change). ducky now has a backend (Stage 5 — FLIPPER); native is
+  // disabled/read-only until stage 6.
   const ARSENAL_LOADERS = {
     kismet: loadKismet, marauder: loadMarauder, flycatcher: loadFlycatcher,
     ghost: loadGhost, alpr: loadAlpr, vision: loadVision, sentry: loadSentry,
+    ducky: loadHid,
   };
   async function loadBle(){
     cache.ble = await safeFetch('/api/ble/recent') || cache.ble;
@@ -5854,6 +6158,38 @@
     if (topic === 'drifter/flipper/subghz') {
       // New capture — refresh captures list.
       loadFlipper();
+    }
+
+    // ── HID INJECT (Stage 5) — status / result / audit fan-out ──
+    // drifter/hid/status carries the authoritative ARM state + backend
+    // readiness; we mirror it verbatim (REAL-DATA — never synthesize).
+    if (topic === 'drifter/hid/status') {
+      if (data && typeof data === 'object') {
+        cache.hidStatus = data;
+        const armed = data.armed && data.armed.id;
+        const flip = data.flipper || {};
+        const ready = !!(flip.connected && flip.badusb_ready);
+        const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
+                  : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
+        if (armed) setCount('ducky', 'ARMED', { live: true });
+        else setCount('ducky', ready ? `${plc}` : 'off', { live: ready });
+        if (activeTab === 'ducky') render();
+      }
+    }
+    // hid/result — an injection (or its failure) reported by the service.
+    // We do NOT claim success on our own; refresh status so the panel
+    // reconciles (the armed entry is single-shot and will have been popped).
+    if (topic === 'drifter/hid/result') {
+      loadHid();
+    }
+    // hid/audit (retained=false) — append to the bounded session ring,
+    // newest first, for the collapsible live tail.
+    if (topic === 'drifter/hid/audit') {
+      if (data && typeof data === 'object' && data.event) {
+        cache.hidAudit.unshift(data);
+        if (cache.hidAudit.length > HID_AUDIT_MAX) cache.hidAudit.length = HID_AUDIT_MAX;
+        if (activeTab === 'ducky') render();
+      }
     }
 
     // ── Vivi ──
@@ -6974,7 +7310,7 @@
 
   // Single delegated click listener — every preset button is data-driven.
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm], [data-marauder-op], [data-marauder-arm], [data-confirm-marauder], [data-sentry-arm], [data-confirm-sentry], [data-cancel-arsenal]');
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm], [data-marauder-op], [data-marauder-arm], [data-confirm-marauder], [data-sentry-arm], [data-confirm-sentry], [data-cancel-arsenal], [data-hid-backend], [data-hid-open], [data-hid-del], [data-hid-del-confirm], [data-hid-del-cancel], [data-hid-confirm], [data-hid-cancel], [data-hid-payload]');
     if (!t) return;
 
     // ── FE-C6: destructive-confirm cancel (any pending key) ─────────
@@ -7030,6 +7366,143 @@
       await postJSON('/api/sentry/command', { action });
       if (activeTab === 'sentry') render();
       setTimeout(loadSentry, 600);
+      return;
+    }
+    // ═══════════════════════════════════════════════════════════════
+    // HID INJECT (Stage 5 — Rubber Ducky / BadUSB, FLIPPER backend).
+    // ARM → CONFIRM → RUN. NOTHING here injects a keystroke directly:
+    // ARM posts hid_arm (the service validates + stages a pending entry,
+    // types nothing); CONFIRM posts hid_confirm (the service alone fires,
+    // single-shot, and on the flipper path the bridge HIGH-risk gate must
+    // also agree). State is reconciled from /api/hid/status — never claimed
+    // optimistically. NATIVE is not wired (disabled, stage 6).
+    // ═══════════════════════════════════════════════════════════════
+    // Backend segment select — flipper only this stage; native is disabled.
+    if (t.hasAttribute('data-hid-backend')) {
+      if (t.getAttribute('aria-disabled') === 'true') return; // native blocked
+      hidBackend = t.dataset.hidBackend;
+      localStorage.setItem('drifter.hid.backend', hidBackend);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Open a stored payload into the editor (or '+ new' = blank). Pulls the
+    // full source from GET /api/hid/payloads/<id> so the editor is real data.
+    if (t.hasAttribute('data-hid-open')) {
+      const pid = t.getAttribute('data-hid-open');
+      hidEditorError = null;
+      hidEditorDirty = false;
+      if (!pid) {                       // new/blank payload
+        hidEditorId = null; hidEditorName = ''; hidEditorScript = '';
+        if (activeTab === 'ducky') render();
+        return;
+      }
+      const full = await safeFetch('/api/hid/payloads/' + encodeURIComponent(pid));
+      if (full) {
+        hidEditorId = pid;
+        hidEditorName = (full.meta && full.meta.name) || full.name || pid;
+        hidEditorScript = full.script || full.source || '';
+      }
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Delete: first tap arms a small inline confirm.
+    if (t.hasAttribute('data-hid-del')) {
+      pendingHidDelete.add(t.getAttribute('data-hid-del'));
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    if (t.hasAttribute('data-hid-del-cancel')) {
+      pendingHidDelete.delete(t.getAttribute('data-hid-del-cancel'));
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    if (t.hasAttribute('data-hid-del-confirm')) {
+      const pid = t.getAttribute('data-hid-del-confirm');
+      pendingHidDelete.delete(pid);
+      markBusy(t);
+      await fetch('/api/hid/payloads/' + encodeURIComponent(pid), { method: 'DELETE' });
+      if (hidEditorId === pid) { hidEditorId = null; hidEditorName = ''; hidEditorScript = ''; }
+      setTimeout(loadHid, 400);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Save → POST /api/hid/payload. The handler compiles via hid_ducky; a
+    // 400 returns {error,line} which we surface inline (no fake "saved").
+    if (t.id === 'hid-save') {
+      const nameEl = document.getElementById('hid-name');
+      const scriptEl = document.getElementById('hid-script');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const script = scriptEl ? scriptEl.value : '';
+      hidEditorName = name; hidEditorScript = script;
+      if (!name || !script.trim()) {
+        hidEditorError = { error: 'name and script are both required', line: null };
+        if (activeTab === 'ducky') render();
+        return;
+      }
+      markBusy(t);
+      const body = { name, script };
+      if (hidEditorId) body.id = hidEditorId;
+      let resp = null;
+      try {
+        const r = await fetch('/api/hid/payload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        try { resp = await r.json(); } catch(_) { resp = null; }
+        if (!r.ok || (resp && resp.ok === false)) {
+          // Render parse error inline with the line number from the backend.
+          hidEditorError = {
+            error: (resp && resp.error) || ('save failed (HTTP ' + r.status + ')'),
+            line: resp ? resp.line : null,
+          };
+        } else {
+          hidEditorError = null;
+          hidEditorDirty = false;
+          if (resp && resp.id) hidEditorId = resp.id;
+        }
+      } catch(_) {
+        hidEditorError = { error: 'network error during save', line: null };
+      }
+      setTimeout(loadHid, 400);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // ARM (primary) → POST hid_arm {payload_id, backend:'flipper'}. The
+    // service validates + stages a pending entry and publishes ARMED; NOTHING
+    // is typed. The panel reconciles the armed preview from /api/hid/status.
+    if (t.id === 'hid-arm') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      const pid = t.dataset.hidPayload;
+      if (!pid) return;
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_arm', payload_id: pid, backend: 'flipper' });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // CONFIRM — INJECT (separate, destructive) → POST hid_confirm {id}.
+    // Only this fires. The service is single-shot and the bridge HIGH-risk
+    // gate must also agree on the flipper path.
+    if (t.hasAttribute('data-hid-confirm')) {
+      const id = t.getAttribute('data-hid-confirm');
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_confirm', id });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // CANCEL armed (always available while armed) → POST hid_cancel {id}.
+    if (t.hasAttribute('data-hid-cancel')) {
+      const id = t.getAttribute('data-hid-cancel');
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_cancel', id });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // Collapsible audit tail toggle.
+    if (t.id === 'hid-audit-toggle') {
+      hidAuditOpen = !hidAuditOpen;
+      localStorage.setItem('drifter.hid.auditOpen', hidAuditOpen ? '1' : '0');
+      if (activeTab === 'ducky') render();
       return;
     }
     // ── FE-C6: FUZZ ID RANGE — first tap arms the confirm row ───────
@@ -7300,6 +7773,17 @@
       loadRfaudio();
       return;
     }
+  });
+
+  // HID editor (Stage 5): mirror keystrokes into module state so a status
+  // poll re-render doesn't stomp what the operator is typing, and flag the
+  // payload dirty so ARM warns when edits are unsaved. Does NOT re-render
+  // (would lose caret position); render() reads these vars on the next paint.
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.id === 'hid-script') { hidEditorScript = t.value; hidEditorDirty = true; }
+    else if (t.id === 'hid-name') { hidEditorName = t.value; hidEditorDirty = true; }
   });
 
   // FE-C4: keyboard activation for the custom role="button" controls.
@@ -7595,6 +8079,19 @@
 
   tickClock();
   setInterval(tickClock, 1000);
+  // HID ARM countdown (Stage 5): when an armed entry exists, decrement its
+  // expires_in locally each second for a smooth ring, and reconcile from the
+  // backend when it lapses. This is display-only — the authoritative ARM
+  // state is /api/hid/status; the service EXPIRES the pending entry itself.
+  setInterval(() => {
+    const st = cache.hidStatus;
+    if (!st || !st.armed || !st.armed.id) return;
+    const e = Number(st.armed.expires_in);
+    if (!isFinite(e)) return;
+    if (e <= 0) { loadHid(); return; }   // lapsed — let the backend confirm EXPIRE
+    st.armed.expires_in = Math.max(0, e - 1);
+    if (activeTab === 'ducky') render();
+  }, 1000);
   // Hero gauge staleness sweep — dims any gauge whose source value
   // stopped arriving (CAN dropout) within GAUGE_STALE_SEC. Independent
   // of the WS fan-out / scheduleRender batching.
@@ -7631,6 +8128,8 @@
       // ARSENAL (stage 1) backfill — read-only count refresh.
       loadKismet, loadMarauder, loadFlycatcher, loadGhost,
       loadAlpr, loadVision, loadSentry,
+      // ARSENAL (stage 5) HID inject — readiness + armed reconcile.
+      loadHid,
     ];
     const fn = slowLoaders[_slowTick % slowLoaders.length];
     if (fn) fn();

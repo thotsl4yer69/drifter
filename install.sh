@@ -286,6 +286,7 @@ step 7 "Deploying DRIFTER application"
 # (boot_reason.py) shipped enabled-but-undeployed and crash-looped. Copying all
 # of src/*.py is safe: only the services we `systemctl enable` ever run, so the
 # extra modules just sit idle. Subpackages (marauder_features/) come along too.
+# This also auto-deploys the hid_* modules (drifter-hid) — no manifest to update.
 cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"
 chmod +x "${DRIFTER_DIR}"/*.py 2>/dev/null || true
 # Local subpackages imported by services (e.g. marauder_bridge -> marauder_features).
@@ -544,7 +545,7 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-db-checkpoint drifter-boot-reason drifter-marauder"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid"
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

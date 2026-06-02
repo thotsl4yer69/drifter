@@ -1744,3 +1744,209 @@ def test_post_sentry_command_503_without_mqtt(monkeypatch):
     handler._post_sentry_command()
     handler.send_error.assert_called_once()
     assert handler.send_error.call_args[0][0] == 503
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Rubber Ducky / BadUSB HID API (BE-1)
+# ═══════════════════════════════════════════════════════════════════
+
+def _build_get_handler(peer: str = '127.0.0.1'):
+    """A DashboardHandler wired enough to call a GET/DELETE route method."""
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler.wfile = io.BytesIO()
+    handler.client_address = (peer, 0)
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.send_error = MagicMock()
+    handler._serve_json = MagicMock()
+    return handler
+
+
+def test_hid_routes_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert routes['/api/hid/status'] is h.DashboardHandler._get_hid_status
+    assert routes['/api/hid/payloads'] is h.DashboardHandler._get_hid_payloads
+
+
+def test_hid_command_allowlist_accepts_three_commands():
+    state.mqtt_client = MagicMock()
+    for body in (
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}',
+        b'{"command":"hid_confirm","id":"arm-1"}',
+        b'{"command":"hid_cancel","id":"arm-1"}',
+    ):
+        handler = _build_post_handler(body)
+        handler._post_hid_command()
+        handler.send_error.assert_not_called()
+    # All three relay to drifter/hid/command.
+    topics = {c[0][0] for c in state.mqtt_client.publish.call_args_list}
+    assert topics == {'drifter/hid/command'}
+
+
+def test_hid_command_arm_stamps_peer_ip():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}',
+        peer='10.42.0.9')
+    handler._post_hid_command()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    assert _json.loads(payload)['peer'] == '10.42.0.9'
+
+
+def test_hid_command_rejects_unknown_command():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"hid_nuke"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_arm_rejects_bad_backend():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"usb"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_arm_rejects_empty_payload_id():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"","backend":"flipper"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_command_confirm_rejects_empty_id():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"hid_confirm","id":""}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_command_rejects_remote_peer():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_cancel","id":"arm-1"}', peer='192.168.1.50')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_503_when_no_mqtt():
+    state.mqtt_client = None
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+def test_hid_status_native_not_configured_on_this_host(monkeypatch):
+    state.latest_state.clear()
+    handler = _build_get_handler()
+    handler._get_hid_status(None)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['native']['ready'] is False
+    assert payload['native']['dr_mode'] != 'peripheral'
+    # Flipper honestly not connected when nothing published.
+    assert payload['flipper']['connected'] is False
+
+
+def test_hid_status_rejects_remote_peer():
+    handler = _build_get_handler(peer='8.8.8.8')
+    handler._get_hid_status(None)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+
+
+def test_hid_payload_upload_compiles_and_persists(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"recon","script":"STRING whoami\\nENTER"}')
+    handler._post_hid_payload()
+    handler.send_error.assert_not_called()
+    # The real _serve_json wrote {ok:true,...} to wfile; the payload landed.
+    body = _json.loads(handler.wfile.getvalue())
+    assert body['ok'] is True
+    txts = list(tmp_path.glob('ducky-*.txt'))
+    metas = list(tmp_path.glob('ducky-*.meta.json'))
+    assert len(txts) == 1 and len(metas) == 1
+
+
+def test_hid_payload_upload_parse_error_returns_400_with_line(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"bad","script":"STRING ok\\nFOOBAR x"}')
+    handler._post_hid_payload()
+    # Body is written via wfile with a 400 status; nothing persisted.
+    handler.send_response.assert_called_with(400)
+    body = _json.loads(handler.wfile.getvalue())
+    assert body['ok'] is False
+    assert body['line'] == 2
+    assert list(tmp_path.glob('*.txt')) == []
+
+
+def test_hid_payload_upload_rejects_remote_peer(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"x","script":"STRING a"}', peer='1.2.3.4')
+    handler._post_hid_payload()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+
+
+def test_hid_payload_delete_removes_files_and_audits(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    (tmp_path / 'ducky-9.txt').write_text('STRING a')
+    (tmp_path / 'ducky-9.meta.json').write_text('{"id":"ducky-9"}')
+    handler = _build_get_handler()
+    handler._delete_hid_payload('ducky-9')
+    assert not (tmp_path / 'ducky-9.txt').exists()
+    assert not (tmp_path / 'ducky-9.meta.json').exists()
+    events = [_json.loads(l)['event']
+              for l in (tmp_path / 'audit.log').read_text().splitlines()]
+    assert 'DELETE' in events
+
+
+def test_hid_payload_delete_404_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    state.mqtt_client = MagicMock()
+    handler = _build_get_handler()
+    handler._delete_hid_payload('ducky-absent')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 404
+
+
+def test_hid_payload_delete_path_traversal_400(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    handler = _build_get_handler()
+    handler._delete_hid_payload('../config')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_get_single_payload(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h.hid_inject, 'HID_PAYLOAD_DIR', tmp_path)
+    (tmp_path / 'ducky-3.txt').write_text('STRING hi')
+    (tmp_path / 'ducky-3.meta.json').write_text('{"id":"ducky-3"}')
+    handler = _build_get_handler()
+    handler._serve_hid_payload('ducky-3')
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['script'] == 'STRING hi'
+    assert payload['meta']['id'] == 'ducky-3'

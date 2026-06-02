@@ -41,6 +41,8 @@ from config import (
     save_settings,
     validate_settings_payload,
 )
+import hid_ducky
+import hid_inject
 from corpus import corpus_search, dtc_lookup
 from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
@@ -228,6 +230,70 @@ _ARSENAL_AUDIT_LOG = Path('/opt/drifter/state/arsenal_audit.log')
 # marauder ops) runs its own confirm-token round-trip — these are thin relays.
 _MARAUDER_COMMANDS = set(MARAUDER_COMMANDS)
 _SENTRY_COMMANDS = set(SENTRY_COMMANDS)
+
+# ─── Rubber Ducky / BadUSB HID (BE-1) ─────────────────────────────────
+# POST /api/hid/command allowlist. The drifter-hid service is the
+# authoritative SECOND gate (ARM→CONFIRM→RUN); for the Flipper backend a
+# THIRD gate is the bridge's HIGH-risk classifier. This handler RELAYS
+# only — it never injects and never bypasses CONFIRM.
+_HID_COMMANDS = {'hid_arm', 'hid_confirm', 'hid_cancel'}
+_HID_BACKENDS = {'native', 'flipper'}
+# Payload storage shared with hid_inject.HID_PAYLOAD_DIR. The API compiles +
+# persists here; the service reads from the same dir at ARM/RUN time.
+_HID_PAYLOAD_DIR = Path('/opt/drifter/state/hid_payloads')
+# Append-only audit shared with hid_inject.HID_AUDIT_LOG. The API records
+# UPLOAD/DELETE here (operator events) with peer IP and also publishes
+# drifter/hid/audit so the cockpit + logger see it.
+_HID_AUDIT_LOG = Path('/opt/drifter/state/hid_audit.log')
+
+
+def _hid_audit(event: str, peer: str, **fields) -> None:
+    """Append one JSONL record to the HID audit log AND publish it.
+
+    Mirrors hid_inject.audit so UPLOAD/DELETE (which happen API-side, not
+    in the service) land in the SAME append-only trail with the peer IP.
+    Never raises — a failed audit write must not break the route."""
+    record = {'ts': time.time(), 'event': event, 'peer': peer}
+    record.update(fields)
+    try:
+        _HID_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _HID_AUDIT_LOG.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record, default=str) + '\n')
+    except OSError as e:
+        log.warning("hid audit write failed: %s", e)
+    if state.mqtt_client is not None:
+        try:
+            state.mqtt_client.publish(
+                TOPICS.get('hid_audit', 'drifter/hid/audit'),
+                json.dumps(record, default=str), qos=1, retain=False)
+        except Exception as e:
+            log.warning("hid audit publish failed: %s", e)
+    log.info("hid-audit %s", json.dumps(record, default=str))
+
+
+def _hid_payload_id_ok(payload_id: str) -> bool:
+    """Path-traversal guard for a payload id used in a filesystem path."""
+    return bool(payload_id) and not (
+        '/' in payload_id or '\\' in payload_id or '..' in payload_id)
+
+
+def _hid_list_payloads() -> list:
+    """Enumerate stored payload metas newest-first. Honest empty list when
+    none exist — never fabricated rows."""
+    out = []
+    if not _HID_PAYLOAD_DIR.exists():
+        return out
+    try:
+        for meta_path in _HID_PAYLOAD_DIR.glob('*.meta.json'):
+            try:
+                meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            out.append(meta)
+    except OSError as e:
+        log.warning("hid payload listing error: %s", e)
+    out.sort(key=lambda m: m.get('created_ts') or 0, reverse=True)
+    return out
 
 
 def _arsenal_audit(event: str, peer: str, **fields) -> None:
@@ -607,6 +673,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path.startswith('/api/can/captures/'):
             self._serve_can_capture_file(parsed.path[len('/api/can/captures/'):])
+            return
+        if parsed.path.startswith('/api/hid/payloads/'):
+            self._serve_hid_payload(parsed.path[len('/api/hid/payloads/'):])
             return
         # Vivi avatar assets — the 3D viewer page fetches its GLB plus any
         # texture / animation bundles from here. Path-traversal guarded in
@@ -1056,6 +1125,218 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             'mode':  mode,
             'tools': tools,
         })
+
+    # ─── Rubber Ducky / BadUSB HID (BE-1) ────────────────────────────
+    def _get_hid_status(self, parsed):
+        """Backend readiness + currently-armed entry (if any).
+
+        {native:{dr_mode,hidg0_present,bound,boot_profile,...},
+         flipper:{connected,badusb_ready}, armed:{...}|null}
+
+        native readiness is read HONESTLY from /proc/device-tree dr_mode —
+        on this host it is 'host' so native reports not-configured and is
+        NEVER faked ready. flipper readiness is merged from the live
+        retained drifter/flipper/status snapshot. `armed` reflects the
+        most recent ARMED preview the service published on drifter/hid/status
+        (the service is the authority; the API does not invent state)."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        native = hid_inject.native_status()
+        # Honest flipper readiness from the retained status topic.
+        fstatus = state.latest_state.get('flipper_status')
+        if isinstance(fstatus, dict) and fstatus:
+            connected = (fstatus.get('state') == 'connected'
+                         or fstatus.get('connected') is True)
+        else:
+            connected = False
+        flipper = {
+            'connected': connected,
+            # BadUSB-app readiness needs the bridge to confirm at fire time;
+            # we do not fabricate it — connected is the honest precondition.
+            'badusb_ready': connected,
+        }
+        # Armed snapshot from the service's last drifter/hid/status publish.
+        armed = None
+        hid_status = state.latest_state.get('hid_status')
+        if isinstance(hid_status, dict):
+            armed = hid_status.get('armed')
+        self._serve_json({'native': native, 'flipper': flipper,
+                          'armed': armed, 'ts': time.time()})
+
+    def _get_hid_payloads(self, parsed):
+        """List stored payload metas, newest-first. Honest empty list."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        self._serve_json(_hid_list_payloads())
+
+    def _serve_hid_payload(self, payload_id: str):
+        """Single payload {meta, script} for the editor. 404 when absent."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        loaded = hid_inject.load_payload(payload_id)
+        if loaded is None:
+            self.send_error(404, 'payload not found')
+            return
+        self._serve_json({'meta': loaded['meta'], 'script': loaded['script']})
+
+    def _post_hid_payload(self):
+        """Compile a DuckyScript payload, persist .txt + .meta.json, audit
+        UPLOAD. 400 {ok:false,error,line} on a parse error — the payload is
+        NOT stored if it cannot compile.
+
+        Body: {name, script, layout?, id?}. Compilation here is the same
+        compiler the service uses at ARM time, so a stored payload is known
+        to compile. NO injection happens — this only validates + persists."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        script = body.get('script')
+        name = body.get('name') or 'unnamed'
+        layout = body.get('layout') or 'us'
+        if not isinstance(script, str) or not script.strip():
+            self.send_error(400, 'body requires a non-empty "script" string')
+            return
+        # Validate by compiling. A parse error blocks persistence.
+        try:
+            compiled = hid_ducky.compile_ducky(script, layout=layout)
+        except hid_ducky.DuckyParseError as e:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'ok': False, 'error': str(e),
+                'line': getattr(e, 'line', None)}).encode())
+            return
+        # Persist. id defaults to ducky-<unix_ts> (mirrors capture ids).
+        payload_id = body.get('id') or f'ducky-{int(time.time())}'
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        sha = hid_ducky.sha256_source(script)
+        meta = {
+            'id': payload_id,
+            'name': str(name)[:200],
+            'created_ts': time.time(),
+            'line_count': compiled.line_count,
+            'keystrokes': compiled.keystrokes,
+            'sha256': sha,
+            'backend_hint': body.get('backend_hint'),
+            'target_layout': layout,
+        }
+        try:
+            _HID_PAYLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            (_HID_PAYLOAD_DIR / f'{payload_id}.txt').write_text(
+                script, encoding='utf-8')
+            (_HID_PAYLOAD_DIR / f'{payload_id}.meta.json').write_text(
+                json.dumps(meta), encoding='utf-8')
+        except OSError as e:
+            log.warning("hid payload persist failed: %s", e)
+            self.send_error(500, 'failed to persist payload')
+            return
+        _hid_audit('UPLOAD', peer, id=payload_id, name=meta['name'],
+                   line_count=compiled.line_count, sha256=sha, layout=layout)
+        self._serve_json({'ok': True, 'id': payload_id, 'meta': meta})
+
+    def _delete_hid_payload(self, payload_id: str):
+        """Remove a stored payload (.txt + .meta.json). Audited DELETE."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        txt = _HID_PAYLOAD_DIR / f'{payload_id}.txt'
+        meta = _HID_PAYLOAD_DIR / f'{payload_id}.meta.json'
+        if not txt.exists() and not meta.exists():
+            self.send_error(404, 'payload not found')
+            return
+        ok = True
+        for p in (txt, meta):
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError as e:
+                log.warning("hid payload delete failed: %s", e)
+                ok = False
+        _hid_audit('DELETE', peer, id=payload_id, ok=ok)
+        self._serve_json({'ok': ok})
+
+    def _post_hid_command(self):
+        """Relay an allowlisted command to drifter/hid/command.
+
+        The drifter-hid service is the authoritative SECOND gate
+        (ARM→CONFIRM→RUN); for the Flipper backend the bridge's HIGH-risk
+        classifier is a THIRD gate. This handler validates the allowlist
+        and stamps the peer IP onto the relayed message so the service
+        records it in the audit trail — there is NO upload→inject path here
+        that skips CONFIRM.
+
+        Allowlist (_HID_COMMANDS):
+          {"command":"hid_arm","payload_id":"ducky-…","backend":"native"|"flipper"}
+          {"command":"hid_confirm","id":"arm-…"}
+          {"command":"hid_cancel","id":"arm-…"}
+        503 if mqtt offline; 403 off-peer; 400 on a bad/unknown command."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        command = body.get('command')
+        if command not in _HID_COMMANDS:
+            self.send_error(400, 'command')
+            return
+        if command == 'hid_arm':
+            payload_id = body.get('payload_id')
+            backend = body.get('backend')
+            if not isinstance(payload_id, str) or not payload_id.strip():
+                self.send_error(400, 'payload_id')
+                return
+            if backend not in _HID_BACKENDS:
+                self.send_error(400, 'backend')
+                return
+        else:  # hid_confirm / hid_cancel
+            arm_id = body.get('id')
+            if not isinstance(arm_id, str) or not arm_id.strip():
+                self.send_error(400, 'id')
+                return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        # Stamp the peer IP so the service audits the operator's address.
+        relay = dict(body)
+        relay['peer'] = peer
+        ok = False
+        try:
+            state.mqtt_client.publish(
+                TOPICS.get('hid_command', 'drifter/hid/command'),
+                json.dumps(relay), qos=1)
+            ok = True
+        except Exception as e:
+            log.warning("hid command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/hid/command'})
 
     def _get_rf_emergency(self, parsed):
         """Latest emergency-band activity scan."""
@@ -1573,6 +1854,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return
         self.send_error(404, f'asset not found: {rel}')
 
+    # ─── DELETE ───────────────────────────────────────────────────────
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith('/api/hid/payloads/'):
+            self._delete_hid_payload(parsed.path[len('/api/hid/payloads/'):])
+            return
+        self.send_error(404)
+
     # ─── POST ─────────────────────────────────────────────────────────
     def do_POST(self) -> None:
         if self.path == '/api/analyse':
@@ -1598,6 +1887,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if self.path == '/api/sentry/command':
             self._post_sentry_command()
+            return
+        if self.path == '/api/hid/payload':
+            self._post_hid_payload()
+            return
+        if self.path == '/api/hid/command':
+            self._post_hid_command()
             return
         if self.path == '/api/vivi/reset':
             self._post_vivi_reset()
@@ -2614,6 +2909,9 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/sentry/status':         DashboardHandler._get_sentry_status,
     # Arsenal aggregate (BE-3) — present derived from /healthz + hardware
     '/api/arsenal':               DashboardHandler._get_arsenal,
+    # Rubber Ducky / BadUSB HID (BE-1) — Flipper backend; native=stage6
+    '/api/hid/status':            DashboardHandler._get_hid_status,
+    '/api/hid/payloads':          DashboardHandler._get_hid_payloads,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
     # Vivi 3D avatar viewer
     '/avatar':                    DashboardHandler._serve_avatar_page,

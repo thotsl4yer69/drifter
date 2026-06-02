@@ -788,6 +788,11 @@ TOPICS = {
     'flipper_command': 'drifter/flipper/command',
     'flipper_result': 'drifter/flipper/result',
     'flipper_subghz': 'drifter/flipper/subghz',
+    # HID injection (drifter-hid — Rubber Ducky / BadUSB, foot-only)
+    'hid_command': 'drifter/hid/command',
+    'hid_status': 'drifter/hid/status',
+    'hid_result': 'drifter/hid/result',
+    'hid_audit': 'drifter/hid/audit',
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
@@ -1054,6 +1059,8 @@ SERVICES = [
     "drifter-fly-catcher",   # ADS-B ghost detector
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge
+    # Arsenal — Rubber Ducky / BadUSB HID injection (foot-only)
+    "drifter-hid",           # ARM→CONFIRM→RUN HID injector (Flipper + native)
 ]
 
 # ── Modes ──
@@ -1090,6 +1097,7 @@ FOOT_ONLY_SERVICES = [
     "drifter-kismet-bridge",
     "drifter-wifi-audit",
     "drifter-marauder",      # NEW
+    "drifter-hid",           # Rubber Ducky / BadUSB HID injection (NEW)
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
@@ -1149,6 +1157,7 @@ ARSENAL_SERVICE_UNITS = [
     "drifter-rf",
     "drifter-rfaudio",
     "drifter-fly-catcher",
+    "drifter-hid",
 ]
 
 # Marauder command allowlist for POST /api/marauder/command. Mirrors the
