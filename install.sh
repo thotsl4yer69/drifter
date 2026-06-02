@@ -335,6 +335,15 @@ if [ -f "${REPO_DIR}/ui/cockpit-preview.html" ]; then
     ok "Cockpit page deployed (ui/cockpit-preview.html)"
 fi
 
+# Avatar + media assets — web_dashboard_handlers._serve_avatar_asset serves
+# /assets/* from /opt/drifter/assets. Without this the Vivi 3D viewer
+# (/avatar) loads but the .glb model 404s, so she never renders.
+if [ -d "${REPO_DIR}/assets" ]; then
+    mkdir -p "${DRIFTER_DIR}/assets"
+    cp "${REPO_DIR}"/assets/* "${DRIFTER_DIR}/assets/" 2>/dev/null || true
+    ok "Assets deployed ($(ls "${REPO_DIR}/assets" | wc -l) file(s), incl. vivi_avatar.glb)"
+fi
+
 # Cockpit desktop launcher — DRIFTER-Cockpit.desktop execs this.
 if [ -f "${REPO_DIR}/tools/launch-cockpit.sh" ]; then
     install -D -m 0755 "${REPO_DIR}/tools/launch-cockpit.sh" \
