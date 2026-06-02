@@ -366,151 +366,282 @@ def kill_halt_recon() -> dict:
 # ── HTML ────────────────────────────────────────────────────────────────────
 
 OPSEC_HTML = r"""<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="nightrun">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>DRIFTER · OPSEC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@300;400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
+/* ────────────────────────────────────────────────────────────
+   DRIFTER OPSEC console — cockpit-grade reskin.
+   Tokens + glass/stencil/scanline primitives ported INLINE from
+   ui/cockpit-preview.html (opsec runs standalone on :8090; no
+   cross-server stylesheet plumbing). Default palette = nightrun
+   (armed red — green→red reads "offensive").
+   ──────────────────────────────────────────────────────────── */
 :root{
-  --bg:#020503;--bg-elev:#06100a;--card:#0a1610;--card-hi:#0f1f17;
-  --border:rgba(57,255,20,.15);--border-hi:rgba(57,255,20,.4);
-  --text:#caffd5;--text-mute:#5a7c66;
-  --green:#39ff14;--green-glow:rgba(57,255,20,.45);
-  --amber:#ffb000;--red:#ff2052;--cyan:#22d3ee;
-  --mono:'JetBrains Mono','Fira Code',Menlo,Consolas,monospace;
-  --fs-xs:11px;--fs-sm:12px;--fs-md:14px;--fs-lg:18px;
+  --bg-0:#07090d;--bg-1:#0c1017;--bg-2:#11161f;--bg-3:#161c28;--bg-edge:#1c2330;
+  --glass-bg:rgba(22,27,36,.62);--glass-bg-strong:rgba(22,27,36,.88);
+  --glass-stroke:rgba(255,255,255,.09);--glass-stroke-2:rgba(255,255,255,.10);
+  --glass-stroke-amber:rgba(255,174,66,.45);--glass-stroke-cyan:rgba(125,211,252,.35);
+  --glass-blur:blur(20px) saturate(150%);
+  --fg:#e8eaed;--fg-mute:#9aa3b1;--fg-dim:#5a6471;--fg-deep:#38414e;
+  --amber:#ffae42;--amber-deep:#b87a1f;
+  --amber-glow:0 0 24px rgba(255,174,66,.30);--amber-glow-strong:0 0 32px rgba(255,174,66,.55);
+  --cyan:#7dd3fc;--cyan-dim:rgba(125,211,252,.55);
+  --red:#ff6b6b;--red-glow:0 0 22px rgba(255,107,107,.45);--teal:#5eead4;
+  --r-sm:4px;--r-md:10px;--r-lg:16px;--r-pill:999px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;
 }
-html,body{
-  background:var(--bg);color:var(--text);font-family:var(--mono);
-  font-size:var(--fs-md);min-height:100vh;
+/* nightrun = armed/offensive default palette */
+:root[data-theme="nightrun"]{
+  --fg:#ff7878;--fg-mute:#c44545;--fg-dim:#843030;--fg-deep:#4d1c1c;
+  --amber:#ff3030;--amber-deep:#c41818;
+  --amber-glow:0 0 24px rgba(255,48,48,.28);--amber-glow-strong:0 0 32px rgba(255,48,48,.55);
+  --cyan:#c44545;--teal:#ff7878;
+  --bg-0:#0a0606;--bg-1:#100808;--bg-2:#160c0c;--bg-3:#1f1010;
+  --glass-stroke-amber:rgba(255,48,48,.45);--glass-stroke-cyan:rgba(196,69,69,.35);
 }
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100%}
 body{
-  background:
-    radial-gradient(1200px 600px at 50% -200px,rgba(57,255,20,.08),transparent 60%),
-    repeating-linear-gradient(0deg,rgba(57,255,20,.03) 0,rgba(57,255,20,.03) 1px,transparent 1px,transparent 3px),
-    var(--bg);
+  font-family:'Bricolage Grotesque',system-ui,sans-serif;
+  font-feature-settings:'ss01' 1,'cv01' 1;
+  background:var(--bg-0);color:var(--fg);font-size:14px;line-height:1.4;
+  min-height:100vh;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%,rgba(255,48,48,.05) 0%,transparent 60%),
+    radial-gradient(ellipse 50% 50% at 100% 110%,rgba(196,69,69,.035) 0%,transparent 65%),
+    radial-gradient(ellipse 60% 50% at 0% 80%,rgba(255,120,120,.022) 0%,transparent 60%);
 }
+/* CRT scanline + grain (low-intensity, click-through) */
+body::before,body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999}
+body::before{
+  background-image:repeating-linear-gradient(to bottom,
+    rgba(255,255,255,.018) 0px,rgba(255,255,255,.018) 1px,transparent 1px,transparent 3px);
+  mix-blend-mode:overlay;opacity:.42;
+}
+body::after{
+  background-image:
+    radial-gradient(circle at 20% 30%,rgba(255,48,48,.05) 0px,transparent 1px),
+    radial-gradient(circle at 70% 60%,rgba(196,69,69,.045) 0px,transparent 1px),
+    radial-gradient(circle at 40% 80%,rgba(255,255,255,.04) 0px,transparent 1px);
+  background-size:3px 3px,5px 5px,7px 7px;opacity:.32;
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.stencil{font-family:'Major Mono Display','JetBrains Mono',monospace;letter-spacing:.18em;text-transform:lowercase}
+
+/* ── Top bar ───────────────────────────────────────────────── */
 header{
-  padding:14px 18px;border-bottom:1px solid var(--border-hi);
-  background:linear-gradient(180deg,#031509 0%,var(--bg) 100%);
-  display:flex;align-items:center;gap:18px;justify-content:space-between;
+  display:flex;align-items:center;gap:14px;justify-content:space-between;
+  padding:0 16px;height:52px;position:relative;z-index:30;
+  background:linear-gradient(180deg,rgba(255,48,48,.05),transparent 45%),rgba(10,6,6,.82);
+  border-bottom:1px solid var(--glass-stroke);
+  backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
 }
-.brand{display:flex;align-items:center;gap:14px}
+header::after{
+  content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--amber) 35%,var(--amber) 65%,transparent);
+  opacity:.5;
+}
+.brand{display:flex;align-items:center;gap:12px}
+.brand .badge{
+  display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  border:1px solid var(--glass-stroke-amber);border-radius:7px;
+  background:var(--glass-bg);backdrop-filter:var(--glass-blur);
+  color:var(--amber);font-family:'Major Mono Display',monospace;font-size:15px;
+  text-shadow:var(--amber-glow);
+}
 .brand h1{
-  font-size:18px;letter-spacing:6px;color:var(--green);font-weight:700;
-  text-shadow:0 0 12px var(--green-glow);
+  font-family:'Major Mono Display',monospace;font-size:15px;letter-spacing:.18em;
+  color:var(--amber);font-weight:400;text-shadow:var(--amber-glow);margin:0;
+  text-transform:lowercase;
 }
-.brand .sub{font-size:var(--fs-xs);color:var(--text-mute);letter-spacing:2px}
+.brand .sub{
+  font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.2em;
+  color:var(--fg-dim);text-transform:uppercase;
+}
+.top-right{display:flex;align-items:center;gap:10px}
 .mode-pill{
-  padding:4px 12px;border:1px solid var(--green);border-radius:2px;
-  font-size:var(--fs-xs);letter-spacing:2px;color:var(--green);
-  text-shadow:0 0 8px var(--green-glow);
+  display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.18em;
+  border:1px solid var(--glass-stroke-amber);border-radius:var(--r-pill);
+  color:var(--amber);background:var(--glass-bg);backdrop-filter:var(--glass-blur);
+  box-shadow:inset 0 0 12px rgba(255,48,48,.08);text-transform:uppercase;
 }
-.mode-pill.drive{color:var(--cyan);border-color:var(--cyan);text-shadow:0 0 8px var(--cyan)}
+.mode-pill.drive{color:var(--cyan);border-color:var(--glass-stroke-cyan);box-shadow:none}
 .switch-link{
-  font-size:var(--fs-xs);color:var(--text-mute);text-decoration:none;
-  border:1px solid var(--border);padding:4px 10px;border-radius:2px;
-  letter-spacing:1.5px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;
+  color:var(--fg-mute);text-decoration:none;padding:5px 10px;
+  border:1px solid var(--glass-stroke);border-radius:var(--r-pill);
+  background:var(--glass-bg);backdrop-filter:var(--glass-blur);text-transform:uppercase;
 }
-.switch-link:hover{color:var(--green);border-color:var(--green)}
+.switch-link:hover{color:var(--amber);border-color:var(--glass-stroke-amber)}
+
+/* ── Nav (drawer-tab styled) ───────────────────────────────── */
 nav{
-  display:flex;border-bottom:1px solid var(--border);background:var(--bg-elev);
+  display:flex;gap:4px;padding:8px 16px 0;position:relative;z-index:20;
+  background:rgba(10,6,6,.5);border-bottom:1px solid var(--glass-stroke);
 }
 nav a{
-  flex:1;padding:12px 16px;color:var(--text-mute);text-decoration:none;
-  text-align:center;letter-spacing:3px;font-size:var(--fs-sm);
-  border-right:1px solid var(--border);transition:.18s ease;cursor:pointer;
+  flex:1;text-align:center;padding:10px 14px;cursor:pointer;text-decoration:none;
+  font-family:'Major Mono Display',monospace;font-size:11px;letter-spacing:.16em;
+  color:var(--fg-mute);text-transform:lowercase;border-radius:var(--r-md) var(--r-md) 0 0;
+  border:1px solid transparent;border-bottom:none;transition:.16s ease;
 }
-nav a:last-child{border-right:none}
-nav a.active,nav a:hover{
-  color:var(--green);background:rgba(57,255,20,.05);
-  text-shadow:0 0 8px var(--green-glow);
+nav a:hover{color:var(--amber)}
+nav a.active{
+  color:var(--amber);background:linear-gradient(180deg,rgba(255,48,48,.14),rgba(255,48,48,.02));
+  border-color:var(--glass-stroke);text-shadow:var(--amber-glow);
 }
-nav a.kill{color:var(--red)}
-nav a.kill.active,nav a.kill:hover{
-  color:var(--red);background:rgba(255,32,82,.06);
-  text-shadow:0 0 8px var(--red);
+nav a.kill{color:var(--fg-dim)}
+nav a.kill:hover,nav a.kill.active{
+  color:var(--red);background:linear-gradient(180deg,rgba(255,107,107,.16),rgba(255,107,107,.02));
+  text-shadow:var(--red-glow);
 }
-main{padding:18px;max-width:1200px;margin:0 auto}
+
+main{padding:18px;max-width:1240px;margin:0 auto}
 .page{display:none}
 .page.active{display:block}
-.card{
-  background:var(--card);border:1px solid var(--border);border-radius:2px;
-  padding:14px;margin-bottom:14px;
+
+/* ── Glass tile (cockpit primitive) ─────────────────────────── */
+.tile{
+  background:var(--glass-bg);backdrop-filter:var(--glass-blur);
+  -webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-stroke);border-radius:var(--r-lg);
+  position:relative;overflow:hidden;padding:16px;margin-bottom:16px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.30);
 }
-.card h2{
-  font-size:var(--fs-sm);letter-spacing:3px;color:var(--green);
-  margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);
-  display:flex;justify-content:space-between;align-items:baseline;
+.tile::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.04) 0%,transparent 30%,transparent 70%,rgba(0,0,0,.18) 100%);
 }
-.card h2 .count{color:var(--text-mute);font-size:var(--fs-xs);letter-spacing:1px}
-.tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
-button.tile,button.btn{
-  background:var(--card-hi);border:1px solid var(--border);color:var(--text);
-  padding:12px;font-family:var(--mono);font-size:var(--fs-sm);cursor:pointer;
-  letter-spacing:1.5px;transition:.14s;border-radius:2px;
-  text-align:left;
+.tile>*{position:relative;z-index:1}
+.tile .corner{position:absolute;width:11px;height:11px;border:1px solid var(--glass-stroke-amber);opacity:.45;pointer-events:none;z-index:0}
+.tile .corner.tl{top:6px;left:6px;border-right:none;border-bottom:none}
+.tile .corner.tr{top:6px;right:6px;border-left:none;border-bottom:none}
+.tile .corner.bl{bottom:6px;left:6px;border-right:none;border-top:none}
+.tile .corner.br{bottom:6px;right:6px;border-left:none;border-top:none}
+.tile.danger{border-color:rgba(255,107,107,.30)}
+.tile.danger .corner{border-color:rgba(255,107,107,.45)}
+
+/* ── Section head (stencil) ─────────────────────────────────── */
+.section-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-family:'Major Mono Display',monospace;font-size:10px;letter-spacing:.22em;
+  text-transform:lowercase;color:var(--amber-deep);padding:2px 0 10px;
+  margin-bottom:12px;border-bottom:1px dashed var(--glass-stroke);
 }
-button.tile:hover,button.btn:hover{border-color:var(--green);color:var(--green);box-shadow:0 0 12px -4px var(--green-glow)}
-button.danger{border-color:rgba(255,32,82,.3)}
-button.danger:hover{border-color:var(--red);color:var(--red);box-shadow:0 0 12px -4px var(--red)}
+.section-head.crit{color:var(--red)}
+.section-head .tag{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--fg-dim);
+  letter-spacing:0;text-transform:none;
+}
+
+/* ── Tiles grid / probe buttons ─────────────────────────────── */
+.tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+button.probe,button.btn{
+  background:var(--glass-bg-strong);border:1px solid var(--glass-stroke);
+  color:var(--fg);padding:11px 12px;cursor:pointer;text-align:left;
+  font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;
+  border-radius:var(--r-md);transition:.14s ease;
+}
+button.probe:hover,button.btn:hover{
+  border-color:var(--glass-stroke-amber);color:var(--amber);
+  box-shadow:0 0 14px -4px var(--amber-glow-strong);
+}
+button.btn.danger{border-color:rgba(255,107,107,.30);color:var(--fg)}
+button.btn.danger:hover{border-color:rgba(255,107,107,.6);color:var(--red);box-shadow:0 0 14px -4px var(--red-glow)}
 button:disabled{opacity:.4;cursor:not-allowed}
+.run-flag{color:var(--amber)}
+
 input[type=text]{
-  background:#000;border:1px solid var(--border);color:var(--text);
-  padding:10px;font-family:var(--mono);font-size:var(--fs-sm);
-  width:100%;border-radius:2px;outline:none;
+  background:rgba(0,0,0,.45);border:1px solid var(--glass-stroke);color:var(--fg);
+  padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:12px;
+  width:100%;border-radius:var(--r-md);outline:none;
 }
-input[type=text]:focus{border-color:var(--green);box-shadow:0 0 8px -2px var(--green-glow)}
+input[type=text]:focus{border-color:var(--glass-stroke-amber);box-shadow:0 0 10px -2px var(--amber-glow-strong)}
+
+/* ── Terminal / output panes (mono) ─────────────────────────── */
 .term{
-  background:#000;border:1px solid var(--border);padding:12px;
-  font-family:var(--mono);font-size:var(--fs-sm);color:var(--green);
-  height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;
-  border-radius:2px;
+  background:rgba(0,0,0,.55);border:1px solid var(--glass-stroke);
+  padding:14px;font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--amber);height:420px;overflow-y:auto;white-space:pre-wrap;
+  word-break:break-word;border-radius:var(--r-md);
 }
 .term .err{color:var(--red)}
 .term .ok{color:var(--cyan)}
-.term .prompt{color:var(--text-mute)}
-.tool-row{display:flex;gap:8px;margin-bottom:10px;align-items:stretch}
+.term .prompt{color:var(--fg-mute)}
+
+/* ── Curated launcher rows (output adjacent) ────────────────── */
+.tool-split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:880px){.tool-split{grid-template-columns:1fr}}
+.tool-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tool-block{
+  padding:10px 0;border-bottom:1px solid var(--glass-stroke);
+}
+.tool-block:last-child{border-bottom:none}
+.tool-block.active{
+  background:linear-gradient(90deg,rgba(255,48,48,.07),transparent);
+  border-left:2px solid var(--amber);padding-left:10px;margin-left:-12px;border-radius:0 var(--r-sm) var(--r-sm) 0;
+}
 .tool-row label{
-  min-width:120px;color:var(--text-mute);font-size:var(--fs-xs);
-  letter-spacing:1.5px;align-self:center;
+  min-width:118px;color:var(--fg-mute);font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.06em;
 }
-.tool-row .hint{font-size:var(--fs-xs);color:var(--text-mute);margin-top:4px}
-table{width:100%;border-collapse:collapse;font-size:var(--fs-xs)}
-th,td{
-  padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);
-  letter-spacing:.5px;
+.tool-row input{flex:1;min-width:160px}
+.tool-row .btn{min-width:118px;text-align:center}
+.hint{font-size:10px;color:var(--fg-dim);margin-top:5px;margin-left:126px;font-family:'JetBrains Mono',monospace}
+.term.sticky{position:sticky;top:12px}
+
+/* ── KV + tables ────────────────────────────────────────────── */
+.kv{
+  display:grid;grid-template-columns:160px 1fr;gap:6px 14px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
 }
-th{color:var(--text-mute);text-transform:uppercase;letter-spacing:2px;font-size:10px}
-.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 14px;font-size:var(--fs-xs)}
-.kv dt{color:var(--text-mute);text-transform:uppercase;letter-spacing:1.5px}
-.kv dd{color:var(--green)}
-.kill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.kv dt{color:var(--fg-mute);text-transform:uppercase;letter-spacing:.12em;font-size:10px;align-self:center}
+.kv dd{color:var(--amber);margin:0}
+table{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--glass-stroke);letter-spacing:.04em}
+th{color:var(--fg-dim);text-transform:uppercase;letter-spacing:.16em;font-size:9px}
+
+/* ── Killswitch cards ───────────────────────────────────────── */
+.kill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .kill-card{
-  background:var(--card-hi);border:1px solid rgba(255,32,82,.2);
-  padding:14px;border-radius:2px;
+  background:var(--glass-bg-strong);border:1px solid rgba(255,107,107,.22);
+  padding:14px;border-radius:var(--r-md);
 }
 .kill-card h3{
-  color:var(--red);font-size:var(--fs-sm);letter-spacing:2px;
-  margin-bottom:6px;
+  color:var(--red);font-family:'Major Mono Display',monospace;font-size:12px;
+  letter-spacing:.14em;margin:0 0 6px;text-transform:lowercase;
 }
-.kill-card p{color:var(--text-mute);font-size:var(--fs-xs);margin-bottom:12px;line-height:1.5}
+.kill-card p{color:var(--fg-mute);font-size:11px;margin:0 0 12px;line-height:1.5;font-family:'JetBrains Mono',monospace}
 .confirm-prompt{
-  margin-top:8px;font-size:var(--fs-xs);color:var(--amber);
-  letter-spacing:1.5px;display:none;
+  margin-top:8px;font-size:11px;color:var(--amber);letter-spacing:.08em;
+  display:none;font-family:'JetBrains Mono',monospace;
 }
 .confirm-prompt.show{display:block}
+
+/* ── Empty state ────────────────────────────────────────────── */
+.empty{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:28px 14px;color:var(--fg-dim);font-family:'JetBrains Mono',monospace;font-size:11px;
+}
+.empty .glyph{font-size:26px;opacity:.5;line-height:1}
+
+/* ── Footer ─────────────────────────────────────────────────── */
 footer{
-  padding:10px 18px;border-top:1px solid var(--border);
-  font-size:var(--fs-xs);color:var(--text-mute);letter-spacing:1.5px;
-  display:flex;justify-content:space-between;
+  padding:11px 18px;border-top:1px solid var(--glass-stroke);margin-top:8px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-dim);
+  letter-spacing:.08em;display:flex;justify-content:space-between;
 }
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.dot.ok{background:var(--green);box-shadow:0 0 6px var(--green-glow)}
-.dot.warn{background:var(--amber)}
-.dot.off{background:var(--text-mute);opacity:.5}
+.dot.ok{background:var(--amber);box-shadow:var(--amber-glow)}
+.dot.warn{background:var(--cyan)}
+.dot.off{background:var(--fg-dim);opacity:.5}
 .blink{animation:blink 1.2s step-end infinite}
 @keyframes blink{50%{opacity:.4}}
 </style>
@@ -519,101 +650,81 @@ footer{
 
 <header>
   <div class="brand">
-    <h1>OPSEC</h1>
-    <span class="sub">MZ1312 · UNCAGED</span>
+    <span class="badge">⊗</span>
+    <div>
+      <h1>opsec</h1>
+      <div class="sub">MZ1312 · UNCAGED · ARMED</div>
+    </div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px">
+  <div class="top-right">
     <span class="mode-pill" id="mode-pill">FOOT</span>
     <a class="switch-link" href="http://10.42.0.1:8080/" id="switch-link">→ DRIVE</a>
   </div>
 </header>
 
 <nav>
-  <a data-page="terminal" class="active">TERMINAL</a>
-  <a data-page="tools">TOOLS</a>
-  <a data-page="flipper">FLIPPER</a>
-  <a data-page="wardrive">WARDRIVE</a>
-  <a data-page="killswitch" class="kill">KILLSWITCH</a>
+  <a data-page="terminal" class="active">terminal</a>
+  <a data-page="tools">tools</a>
+  <a data-page="killswitch" class="kill">killswitch</a>
 </nav>
 
 <main>
 
 <section id="page-terminal" class="page active">
-  <div class="card">
-    <h2>QUICK PROBES</h2>
-    <div class="tile-grid" id="quick-tiles"><div class="prompt" style="color:var(--text-mute);padding:8px">// awaiting probe set...</div></div>
+  <div class="tile">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="section-head">quick probes<span class="tag">read-only · fixed argv</span></div>
+    <div class="tile-grid" id="quick-tiles"><div class="empty"><span class="glyph">▦</span><span>awaiting probe set</span></div></div>
   </div>
-  <div class="card">
-    <h2>OUTPUT <span class="blink" style="color:var(--text-mute)">_</span></h2>
+  <div class="tile">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="section-head">output<span class="tag blink">_</span></div>
     <div class="term" id="term"><span class="prompt">// ready · select a probe above or use TOOLS</span></div>
   </div>
 </section>
 
 <section id="page-tools" class="page">
-  <div class="card">
-    <h2>CURATED LAUNCHERS</h2>
-    <div id="tool-rows"></div>
-  </div>
-  <div class="card">
-    <h2>OUTPUT <span class="blink" style="color:var(--text-mute)">_</span></h2>
-    <div class="term" id="tools-term"><span class="prompt">// run a launcher to see output here</span></div>
-  </div>
-</section>
-
-<section id="page-flipper" class="page">
-  <div class="card">
-    <h2>FLIPPER STATUS</h2>
-    <dl class="kv" id="flipper-status">
-      <dt>connection</dt><dd>—</dd>
-    </dl>
-  </div>
-  <div class="card">
-    <h2>SUBGHZ CAPTURES <span class="count" id="capture-count">0</span></h2>
-    <div id="captures"><div class="prompt" style="color:var(--text-mute);padding:8px">// no captures yet · plug in Flipper and broadcast on 433.92 MHz</div></div>
-  </div>
-</section>
-
-<section id="page-wardrive" class="page">
-  <div class="card">
-    <h2>WARDRIVE STATUS</h2>
-    <dl class="kv" id="wardrive-status"><dt>state</dt><dd>awaiting wardrive...</dd></dl>
-  </div>
-  <div class="card">
-    <h2>WIFI <span class="count" id="wifi-count">0</span></h2>
-    <div id="wifi-table" style="overflow-x:auto"><div class="prompt" style="color:var(--text-mute);padding:8px">// waiting for first scan…</div></div>
-  </div>
-  <div class="card">
-    <h2>BLUETOOTH <span class="count" id="bt-count">0</span></h2>
-    <div id="bt-table" style="overflow-x:auto"><div class="prompt" style="color:var(--text-mute);padding:8px">// waiting for first scan…</div></div>
+  <div class="tile">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="section-head">curated launchers<span class="tag">arbitrary-arg · ad-hoc console</span></div>
+    <div class="tool-split">
+      <div id="tool-rows"></div>
+      <div>
+        <div class="section-head">output<span class="tag" id="tools-active">// idle</span></div>
+        <div class="term sticky" id="tools-term"><span class="prompt">// run a launcher — output lands here</span></div>
+      </div>
+    </div>
   </div>
 </section>
 
 <section id="page-killswitch" class="page">
-  <div class="card">
-    <h2 style="color:var(--red);border-color:rgba(255,32,82,.3)">⚠ DANGER ZONE</h2>
+  <div class="tile danger">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="section-head crit">⚠ danger zone<span class="tag">destructive · confirm-gated</span></div>
     <div class="kill-grid">
       <div class="kill-card">
-        <h3>RANDOMIZE MAC</h3>
+        <h3>randomize mac</h3>
         <p>Bring wlan0 down, set a fresh random 02:xx address, bring it up. Severs current Wi-Fi associations.</p>
         <button class="btn danger" data-confirm="MAC" data-action="mac-randomize">EXECUTE</button>
         <div class="confirm-prompt"></div>
       </div>
       <div class="kill-card">
-        <h3>WIPE LOGS</h3>
+        <h3>wipe logs</h3>
         <p>Delete /opt/drifter/logs/* and /opt/drifter/wardrive_logs/*. Reports total bytes purged.</p>
         <button class="btn danger" data-confirm="WIPE" data-action="wipe-logs">EXECUTE</button>
         <div class="confirm-prompt"></div>
       </div>
       <div class="kill-card">
-        <h3>HALT RECON</h3>
+        <h3>halt recon</h3>
         <p>systemctl stop drifter-flipper + drifter-wardrive. Dashboard stays up so you keep the UI.</p>
         <button class="btn danger" data-confirm="HALT" data-action="halt-recon">EXECUTE</button>
         <div class="confirm-prompt"></div>
       </div>
     </div>
   </div>
-  <div class="card">
-    <h2>RESULT</h2>
+  <div class="tile">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="section-head">result<span class="tag blink">_</span></div>
     <div class="term" id="kill-term" style="height:200px"><span class="prompt">// no actions taken</span></div>
   </div>
 </section>
@@ -657,8 +768,14 @@ async function runTool(name, args, btn){
   clearTerm('tools-term');
   appendTo('tools-term', '$ ' + name + ' ' + (args || ''), 'prompt');
   appendTo('tools-term', '// running…', 'ok');
-  // Bring the OUTPUT card into view — it sits below the launchers, so a
-  // click with no scroll looked like nothing happened.
+  // Highlight the active launcher block + label the output pane so a
+  // launch is obviously wired to the adjacent output.
+  document.querySelectorAll('.tool-block.active').forEach(x => x.classList.remove('active'));
+  if (btn){ const blk = btn.closest('.tool-block'); if (blk) blk.classList.add('active'); }
+  const lbl = document.getElementById('tools-active');
+  if (lbl){ lbl.textContent = '// running ' + name + '…'; lbl.classList.add('run-flag'); }
+  // Bring the OUTPUT pane into view — it sits beside/below the launchers,
+  // so a click with no scroll looked like nothing happened.
   document.getElementById('tools-term').scrollIntoView({behavior:'smooth', block:'center'});
   let _label;
   if (btn){ _label = btn.textContent; btn.textContent = 'RUNNING…'; btn.disabled = true; btn.style.opacity = '.5'; }
@@ -677,14 +794,18 @@ async function runTool(name, args, btn){
     if (!data.stdout && !data.stderr) appendTo('tools-term', '(no output)', 'ok');
     appendTo('tools-term', '// rc=' + data.rc + ' · ' + data.duration_ms + 'ms', 'ok');
   } catch (e){ appendTo('tools-term', 'ERR ' + e, 'err'); }
-  finally { if (btn){ btn.textContent = _label; btn.disabled = false; btn.style.opacity = ''; } }
+  finally {
+    if (btn){ btn.textContent = _label; btn.disabled = false; btn.style.opacity = ''; }
+    if (lbl){ lbl.textContent = '// ' + name + ' done'; lbl.classList.remove('run-flag'); }
+  }
 }
 
 // ── Build quick probe tiles ───────────────────────────────────────────
 const quick = document.getElementById('quick-tiles');
+quick.innerHTML = '';
 for (const name of Object.keys(PROBES)){
   const b = document.createElement('button');
-  b.className = 'tile';
+  b.className = 'probe';
   b.textContent = name;
   b.onclick = () => runProbe(name);
   quick.appendChild(b);
@@ -694,14 +815,14 @@ for (const name of Object.keys(PROBES)){
 const toolRows = document.getElementById('tool-rows');
 for (const [name, spec] of Object.entries(TOOLS)){
   const row = document.createElement('div');
-  row.style.marginBottom = '14px';
+  row.className = 'tool-block';
   row.innerHTML = `
     <div class="tool-row">
       <label>${name}</label>
       <input type="text" value="${spec.default}" data-tool="${name}">
-      <button class="btn" data-launch="${name}" style="min-width:120px">LAUNCH</button>
+      <button class="btn" data-launch="${name}">LAUNCH</button>
     </div>
-    <div class="hint" style="margin-left:128px">${spec.hint}</div>
+    <div class="hint">${spec.hint}</div>
   `;
   toolRows.appendChild(row);
 }
@@ -723,7 +844,7 @@ document.querySelectorAll('nav a').forEach(a => {
   };
 });
 
-// ── Mode + MQTT poll ──────────────────────────────────────────────────
+// ── Mode poll ─────────────────────────────────────────────────────────
 async function refreshMode(){
   try {
     const m = await fetch('/api/mode/status').then(r => r.json());
@@ -741,84 +862,20 @@ async function refreshMode(){
   } catch(e){}
 }
 
-function fmt(o, indent=0){
-  if (o == null) return '—';
-  if (typeof o === 'object') return JSON.stringify(o);
-  return String(o);
-}
-
-function renderKV(elId, obj){
-  const el = document.getElementById(elId);
-  if (!obj || Object.keys(obj).length === 0){
-    el.innerHTML = '<dt>state</dt><dd>no data yet</dd>';
-    return;
-  }
-  el.innerHTML = '';
-  for (const [k, v] of Object.entries(obj)){
-    el.insertAdjacentHTML('beforeend', `<dt>${k}</dt><dd>${fmt(v)}</dd>`);
-  }
-}
-
-function renderTable(elId, rows, columns){
-  const el = document.getElementById(elId);
-  if (!rows || rows.length === 0){
-    el.innerHTML = '<div style="padding:8px;color:var(--text-mute)">// empty</div>';
-    return;
-  }
-  let html = '<table><thead><tr>';
-  for (const c of columns) html += `<th>${c}</th>`;
-  html += '</tr></thead><tbody>';
-  for (const r of rows){
-    html += '<tr>';
-    for (const c of columns) html += `<td>${fmt(r[c])}</td>`;
-    html += '</tr>';
-  }
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
+// ── MQTT connectivity (footer only — flipper/wardrive views live in the
+// cockpit drawers now; opsec stays a focused console). ─────────────────
 async function refreshMqtt(){
   try {
     const data = await fetch('/api/mqtt/cache').then(r => r.json());
     const dot = document.getElementById('mqtt-dot');
     const state = document.getElementById('mqtt-state');
-    const topics = Object.keys(data.latest);
+    const topics = Object.keys(data.latest || {});
     if (topics.length){
       dot.className = 'dot ok';
       state.textContent = 'live · ' + topics.length + ' topics';
     } else {
       dot.className = 'dot warn';
       state.textContent = 'connected · idle';
-    }
-
-    // Flipper
-    const fStatus = data.latest['drifter/flipper/status'];
-    renderKV('flipper-status', fStatus ? fStatus.payload : {connection:'no signal'});
-    document.getElementById('capture-count').textContent = data.captures.length;
-    if (data.captures.length){
-      const div = document.getElementById('captures');
-      div.innerHTML = data.captures.slice(0, 20).map(c =>
-        `<div style="padding:8px;border-bottom:1px solid var(--border);font-size:var(--fs-xs)">
-          <span class="prompt">${new Date(c.ts*1000).toTimeString().slice(0,8)}</span>
-          ${' ' + JSON.stringify(c.payload)}
-        </div>`
-      ).join('');
-    }
-
-    // Wardrive
-    const wStatus = data.latest['drifter/wardrive/status'];
-    renderKV('wardrive-status', wStatus ? wStatus.payload : {state:'no signal'});
-    const wifi = data.latest['drifter/wardrive/wifi'];
-    if (wifi){
-      const aps = (wifi.payload.aps || wifi.payload.networks || []);
-      document.getElementById('wifi-count').textContent = aps.length;
-      renderTable('wifi-table', aps.slice(0, 100), ['ssid','bssid','signal','channel','encryption']);
-    }
-    const bt = data.latest['drifter/wardrive/bt'];
-    if (bt){
-      const devs = (bt.payload.devices || []);
-      document.getElementById('bt-count').textContent = devs.length;
-      renderTable('bt-table', devs.slice(0, 100), ['address','name','rssi']);
     }
   } catch(e){
     document.getElementById('mqtt-dot').className = 'dot warn';
