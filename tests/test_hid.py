@@ -616,3 +616,36 @@ def test_diagnose_no_warn_dr_mode_peripheral_in_foot(monkeypatch):
     monkeypatch.setattr(gadget, 'read_dr_mode', lambda: 'peripheral')
     r = diagnose.check_hid_dr_mode()
     assert r.ok is True
+
+
+# ── Regression: enable-native must not leave a conflicting dwc2 directive ──
+def test_enable_native_stashes_conflicting_dwc2(tmp_path):
+    import hid_boot
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("dtparam=audio=on\ndtoverlay=dwc2,dr_mode=host\nmax_framebuffers=2\n")
+    hid_boot.enable_native(config_path=cfg, check_root=False)
+    text = cfg.read_text()
+    active = [l for l in text.splitlines()
+              if l.strip().startswith("dtoverlay=dwc2") and not l.strip().startswith("#")]
+    assert active == ["dtoverlay=dwc2,dr_mode=peripheral"], active
+    assert "#drifter-hid-stashed# dtoverlay=dwc2,dr_mode=host" in text
+
+
+def test_disable_native_restores_stashed_host(tmp_path):
+    import hid_boot
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("dtoverlay=dwc2,dr_mode=host\n")
+    hid_boot.enable_native(config_path=cfg, check_root=False)
+    hid_boot.disable_native(config_path=cfg, check_root=False)
+    assert cfg.read_text() == "dtoverlay=dwc2,dr_mode=host\n"
+
+
+def test_enable_native_idempotent_no_double_stash(tmp_path):
+    import hid_boot
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("dtoverlay=dwc2,dr_mode=host\n")
+    hid_boot.enable_native(config_path=cfg, check_root=False)
+    first = cfg.read_text()
+    hid_boot.enable_native(config_path=cfg, check_root=False)
+    assert cfg.read_text() == first
+    assert first.count("#drifter-hid-stashed#") == 1

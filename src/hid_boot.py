@@ -114,6 +114,38 @@ def _managed_block() -> str:
     return f"{BLOCK_START}\n{_MANAGED_BODY}{BLOCK_END}\n"
 
 
+# A pre-existing `dtoverlay=dwc2,dr_mode=host` (or any active dwc2 overlay)
+# OUTSIDE the managed block conflicts with the block's dr_mode=peripheral —
+# config.txt would then carry two dwc2 dr_mode directives and the boot
+# outcome is firmware-dependent. enable_native stashes (comments out) any
+# such active line with this sentinel; disable_native restores it verbatim.
+_STASH_PREFIX = '#drifter-hid-stashed# '
+
+
+def _stash_conflicting(text: str) -> str:
+    """Comment out any active (uncommented) dtoverlay=dwc2 line so the
+    managed block's dr_mode=peripheral is the single dwc2 directive."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        s = line.lstrip()
+        if s.startswith('dtoverlay=dwc2') and not s.startswith('#'):
+            out.append(_STASH_PREFIX + line)
+        else:
+            out.append(line)
+    return ''.join(out)
+
+
+def _unstash(text: str) -> str:
+    """Restore lines previously stashed by _stash_conflicting."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith(_STASH_PREFIX):
+            out.append(line[len(_STASH_PREFIX):])
+        else:
+            out.append(line)
+    return ''.join(out)
+
+
 def enable_native(config_path: Path = DEFAULT_CONFIG_PATH,
                   check_root: bool = True) -> bool:
     """Write the fenced managed block into config.txt. Idempotent.
@@ -129,6 +161,7 @@ def enable_native(config_path: Path = DEFAULT_CONFIG_PATH,
     # Strip any prior managed block, then append a fresh one — this makes
     # re-runs idempotent (the block is always exactly one, current copy).
     base = _strip_managed_block(text)
+    base = _stash_conflicting(base)
     if base and not base.endswith('\n'):
         base += '\n'
     new_text = base + _managed_block()
@@ -152,9 +185,9 @@ def disable_native(config_path: Path = DEFAULT_CONFIG_PATH,
         _require_root()
     path = Path(config_path)
     text = _read(path)
-    if not has_managed_block(text):
+    if not has_managed_block(text) and _STASH_PREFIX not in text:
         return False
-    new_text = _strip_managed_block(text)
+    new_text = _unstash(_strip_managed_block(text))
     try:
         path.write_text(new_text, encoding='utf-8')
     except OSError as e:
