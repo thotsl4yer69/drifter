@@ -38,7 +38,6 @@ mkdir -p "$APPS" "$DESKTOP"
 # key | Name | Comment | Terminal(true/false) | Exec
 LAUNCHERS="
 cockpit|DRIFTER Cockpit|Vehicle HUD — hero gauges, RF intel, Vivi (kiosk)|false|${BIN_DST}/launch-cockpit.sh
-vivi|DRIFTER Vivi|Vivi 3D avatar viewer|false|${BIN_DST}/drifter-open.sh vivi
 opsec|DRIFTER OPSEC Console|Foot-mode Kali console on :8090 (terminal, tools, killswitch)|false|${BIN_DST}/drifter-open.sh opsec
 diagnose|DRIFTER Diagnose|Full fleet-contract hardware + service probe|true|${BIN_DST}/drifter-term.sh diagnose
 status|DRIFTER Service Status|One line per drifter service|true|${BIN_DST}/drifter-term.sh status
