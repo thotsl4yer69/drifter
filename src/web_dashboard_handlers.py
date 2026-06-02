@@ -23,12 +23,18 @@ import ble_persistence
 import web_dashboard_state as state
 from ble_map_html import BLE_MAP_HTML
 from config import (
+    ARSENAL_SERVICE_UNITS,
     DEFAULT_MODE,
+    DRIVE_ONLY_SERVICES,
+    FOOT_ONLY_SERVICES,
+    MARAUDER_COMMANDS,
     MODE_STATE_PATH,
     MODES,
+    SENTRY_COMMANDS,
     SERVICES,
     SETTINGS_SCHEMA,
     SETTINGS_SECTIONS,
+    SHARED_SERVICES,
     TOPICS,
     XTYPE_DTC_LOOKUP,
     load_settings,
@@ -190,6 +196,54 @@ _STATIC_FILES = {
 _BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
 
 _RFAUDIO_ACTIONS = {'start', 'stop', 'scan', 'test_tone', 'list_bands'}
+
+# ─── Arsenal service control (BE-4) ───────────────────────────────────
+# POST /api/service/<unit> drives `sudo -n systemctl <action> <unit>` for
+# foot-mode arsenal tools. The unit allowlist is the arsenal subset
+# (ARSENAL_SERVICE_UNITS) intersected with the modes a foot-mode tool is
+# allowed to live in (FOOT_ONLY ∪ SHARED). A DRIVE_ONLY unit can therefore
+# NEVER appear here even if it slipped into ARSENAL_SERVICE_UNITS — the
+# intersection is fail-closed. Unknown / arbitrary units are rejected.
+_SERVICE_ACTIONS = {'start', 'stop', 'restart'}
+_SERVICE_UNITS = (
+    (set(FOOT_ONLY_SERVICES) | set(SHARED_SERVICES))
+    & set(ARSENAL_SERVICE_UNITS)
+)
+# Defence in depth: an explicit deny-set of every drive-only unit, asserted
+# disjoint from the computed allowlist at import so a future edit that lets a
+# drive unit through trips the test suite instead of the vehicle.
+_DRIVE_ONLY_UNITS = set(DRIVE_ONLY_SERVICES)
+assert not (_SERVICE_UNITS & _DRIVE_ONLY_UNITS), \
+    "arsenal service allowlist must never include a DRIVE_ONLY unit"
+
+# systemctl call timeout — start/stop of a small unit is sub-second; cap so a
+# wedged unit can't pin the handler thread.
+_SERVICE_CTL_TIMEOUT = 15.0
+
+# Append-only audit trail for every service-control attempt (peer, unit,
+# action, rc, result). Mirrors the ducky/marauder audit requirement.
+_ARSENAL_AUDIT_LOG = Path('/opt/drifter/state/arsenal_audit.log')
+
+# Marauder / sentry command relays. The bridge re-validates and (for HIGH-risk
+# marauder ops) runs its own confirm-token round-trip — these are thin relays.
+_MARAUDER_COMMANDS = set(MARAUDER_COMMANDS)
+_SENTRY_COMMANDS = set(SENTRY_COMMANDS)
+
+
+def _arsenal_audit(event: str, peer: str, **fields) -> None:
+    """Append one JSONL record to the arsenal audit log AND log a line.
+
+    Never raises — a failed audit write must not break the control path,
+    but it is logged at WARNING so a broken audit surface is visible."""
+    record = {'ts': time.time(), 'event': event, 'peer': peer}
+    record.update(fields)
+    try:
+        _ARSENAL_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _ARSENAL_AUDIT_LOG.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record, default=str) + '\n')
+    except OSError as e:
+        log.warning("arsenal audit write failed: %s", e)
+    log.info("arsenal-audit %s", json.dumps(record, default=str))
 
 # rf_monitor's on_message() command allowlist. Mirrors the if/elif chain in
 # src/rf_monitor.py so the dashboard surface can't smuggle arbitrary commands
@@ -1536,6 +1590,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path.startswith('/api/mode/'):
             self._post_mode(self.path[len('/api/mode/'):])
             return
+        if self.path.startswith('/api/service/'):
+            self._post_service(self.path[len('/api/service/'):])
+            return
+        if self.path == '/api/marauder/command':
+            self._post_marauder_command()
+            return
+        if self.path == '/api/sentry/command':
+            self._post_sentry_command()
+            return
         if self.path == '/api/vivi/reset':
             self._post_vivi_reset()
             return
@@ -1767,6 +1830,191 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("rfaudio command publish failed: %s", e)
         self._serve_json({'ok': ok, 'published': 'drifter/rfaudio/command'})
+
+    def _read_post_body(self):
+        """Read + JSON-decode the request body, capped at MAX_POST_BODY.
+
+        Returns the decoded object, or None on a malformed body (the caller
+        has already not sent any response in that case — but we send the 400
+        here so callers don't each repeat it). On None the caller must return
+        immediately."""
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            return json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return None
+
+    def _post_service(self, unit: str):
+        """Start/stop/restart a foot-mode arsenal systemd unit.
+
+        Hard safety model (the whole point of this stage):
+          * _is_local_peer gated — 403 off 127.0.0.1 / 10.42.0.0/24.
+          * action ∈ {start,stop,restart}.
+          * unit ∈ _SERVICE_UNITS, the arsenal subset of
+            (FOOT_ONLY ∪ SHARED). A DRIVE_ONLY or arbitrary unit is rejected
+            403 (fail-closed) — never operated.
+          * REFUSE with 409 when the node is in 'drive' mode (foot-gate at
+            the route, mirroring the UI mode-gate). Read the mode the same
+            way /healthz / _get_arsenal do.
+          * Execute `sudo -n systemctl <action> <unit>` (timeout, captured).
+          * Audit EVERY call (peer IP, unit, action, rc, result) to the
+            JSONL log + a log line.
+        Returns {ok, unit, action, rc}.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'service: local network only')
+            return
+        # Strip any stray path component / query — unit is the path tail.
+        unit = (unit or '').split('/', 1)[0].split('?', 1)[0].strip()
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        action = body.get('action')
+        # Action allowlist first — cheapest reject, no audit noise needed
+        # for a malformed verb.
+        if action not in _SERVICE_ACTIONS:
+            self.send_error(400, 'action')
+            return
+        # Unit allowlist — fail-closed. A DRIVE_ONLY or unknown unit never
+        # reaches systemctl. Audit the refusal so a probe is visible.
+        if unit not in _SERVICE_UNITS:
+            _arsenal_audit('BLOCKED', peer, unit=unit, action=action,
+                           reason='unit not in arsenal allowlist')
+            self.send_error(403, 'unit not in arsenal allowlist')
+            return
+        # Foot-gate AT THE ROUTE: refuse start/stop while driving. The mode
+        # is read from the same authoritative marker /healthz uses.
+        try:
+            mode = (Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
+                    or DEFAULT_MODE)
+        except OSError:
+            mode = DEFAULT_MODE
+        if mode == 'drive':
+            _arsenal_audit('REFUSED', peer, unit=unit, action=action,
+                           reason='node in drive mode')
+            self.send_error(409, 'arsenal service control disabled in drive mode')
+            return
+        # Execute. sudo -n so a missing NOPASSWD rule fails fast instead of
+        # hanging on a password prompt.
+        rc = None
+        ok = False
+        err = ''
+        try:
+            r = subprocess.run(
+                ['sudo', '-n', 'systemctl', action, unit],
+                capture_output=True, text=True, timeout=_SERVICE_CTL_TIMEOUT,
+            )
+            rc = r.returncode
+            ok = (rc == 0)
+            if not ok:
+                err = (r.stderr or r.stdout or '').strip()[:200]
+        except subprocess.TimeoutExpired:
+            err = 'systemctl timed out'
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
+            err = str(e)[:200]
+        _arsenal_audit('RUN' if ok else 'FAIL', peer, unit=unit,
+                       action=action, rc=rc, error=err or None)
+        out = {'ok': ok, 'unit': unit, 'action': action, 'rc': rc}
+        if err:
+            out['error'] = err
+        self._serve_json(out)
+
+    def _post_marauder_command(self):
+        """Thin relay to drifter/marauder/cmd — the marauder_bridge's risk
+        classifier + ConfirmRegistry is the authoritative second gate.
+
+        Body: {op, ...params}. `op` is the operation name (validated against
+        _MARAUDER_COMMANDS, which mirrors the bridge's action names). The
+        bridge dispatch reads its 'command' field, so we relay `op` as
+        `command` and pass through any `id`, `args`, and (crucially) any
+        `confirm_token` so the HIGH-risk confirm round-trip works END TO END
+        without the cockpit ever reimplementing tiers or auto-confirming.
+
+        _is_local_peer gated; 503 if mqtt offline. HIGH-risk ops are in the
+        allowlist ONLY so they can be relayed WITH a confirm token — the
+        bridge still refuses them without one.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        op = body.get('op') or body.get('command')
+        if op not in _MARAUDER_COMMANDS:
+            self.send_error(400, 'op')
+            return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        # Build the bridge-shaped payload. Preserve operator-supplied id /
+        # args / confirm_token verbatim; the bridge owns confirm semantics.
+        relay = {'command': op}
+        if isinstance(body.get('args'), dict):
+            relay['args'] = body['args']
+        if body.get('id') is not None:
+            relay['id'] = body['id']
+        if body.get('confirm_token') is not None:
+            relay['confirm_token'] = body['confirm_token']
+        topic = TOPICS.get('marauder_cmd', 'drifter/marauder/cmd')
+        ok = False
+        try:
+            state.mqtt_client.publish(topic, json.dumps(relay), qos=1)
+            ok = True
+        except Exception as e:
+            log.warning("marauder command publish failed: %s", e)
+        # Audit HIGH-risk relays (and confirms) with peer IP per the spec.
+        _arsenal_audit('MARAUDER', peer, op=op,
+                       confirm=bool(body.get('confirm_token')), ok=ok)
+        self._serve_json({'ok': ok, 'published': topic})
+
+    def _post_sentry_command(self):
+        """Thin relay to drifter/sentry/event — arm/disarm the sentry.
+
+        Body: {action: 'arm'|'disarm'}. _is_local_peer gated; allowlist
+        {arm,disarm}; 503 if mqtt offline.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'sentry: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        action = body.get('action')
+        if action not in _SENTRY_COMMANDS:
+            self.send_error(400, 'action')
+            return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        topic = TOPICS.get('sentry_event', 'drifter/sentry/event')
+        ok = False
+        try:
+            state.mqtt_client.publish(
+                topic,
+                json.dumps({'action': action, 'ts': time.time()}),
+                qos=1,
+            )
+            ok = True
+        except Exception as e:
+            log.warning("sentry command publish failed: %s", e)
+        _arsenal_audit('SENTRY', peer, action=action, ok=ok)
+        self._serve_json({'ok': ok, 'published': topic})
 
     def _post_rf_command(self):
         """Forward a JSON body to drifter/rf/command via MQTT.

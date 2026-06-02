@@ -519,6 +519,8 @@ done
 shopt -u nullglob
 
 # Sudoers drop-ins — narrow NOPASSWD entries for the dashboards.
+# Ships drifter-mode.sudoers (mode-switch) AND drifter-service.sudoers
+# (arsenal service start/stop/restart for the foot-mode toolkit, BE-4).
 # visudo -cf validates each file before activating; a bad sudoers file would
 # break system-wide sudo, so refuse to ship it (set -e propagates the failure).
 for sudoers_src in "${REPO_DIR}"/services/drifter-*.sudoers; do

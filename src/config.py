@@ -871,6 +871,7 @@ TOPICS = {
     'learn_event': 'drifter/learn/event',
     'llm_query': 'drifter/llm/query',
     'llm_response': 'drifter/llm/response',
+    'marauder_cmd': 'drifter/marauder/cmd',
     'mesh_announce': 'drifter/mesh/announce',
     'mesh_bridge': 'drifter/mesh/bridge',
     'mesh_node': 'drifter/mesh/node',
@@ -1129,6 +1130,49 @@ BEACON_SPAM_RANDOM_REFUSE = True
 # Same reasoning for Rick Astley beacon spam. Flip plus add a wildcard
 # `marauder.wifi[].ssid: "*"` allowlist entry to enable.
 BEACON_SPAM_RICKROLL_REFUSE = True
+
+
+# ── Arsenal foot-mode control allowlists (BE-4 + command relays) ──────
+# The arsenal subset of units the dashboard's POST /api/service/<unit> route
+# is permitted to start/stop/restart. This is intersected at the route with
+# (FOOT_ONLY_SERVICES ∪ SHARED_SERVICES) so a DRIVE_ONLY unit can NEVER be
+# operated even if listed here — fail-closed, defence in depth. The matching
+# sudoers drop-in (services/drifter-service.sudoers) enumerates exactly these
+# units; keep the two in lock-step.
+ARSENAL_SERVICE_UNITS = [
+    "drifter-kismet",
+    "drifter-kismet-bridge",
+    "drifter-marauder",
+    "drifter-wardrive",
+    "drifter-wifi-audit",
+    "drifter-flipper",
+    "drifter-rf",
+    "drifter-rfaudio",
+    "drifter-fly-catcher",
+]
+
+# Marauder command allowlist for POST /api/marauder/command. Mirrors the
+# marauder_bridge classifier's action names (LOW ∪ MED ∪ HIGH). HIGH-risk
+# ops ARE present so the cockpit can RELAY them WITH the bridge confirm
+# token — the dashboard never reimplements the risk tiers or bypasses the
+# bridge's ConfirmRegistry; the bridge is the authoritative second gate.
+MARAUDER_COMMANDS = [
+    # LOW
+    "scan_ap", "scan_sta", "scan_probes", "stop",
+    "deauth_detect", "ble_scan_all", "ble_scan_airtag", "ble_scan_skim",
+    "probe", "status",
+    # MED
+    "select_ap", "channel_hop", "scan_param",
+    # HIGH (relayed only with the bridge's confirm_token round-trip)
+    "deauth_attack", "beacon_spam_list", "beacon_spam_random",
+    "beacon_spam_rickroll", "probe_flood",
+    "ble_spam_swift_pair", "ble_spam_easy_setup",
+    "ble_spam_apple_proximity", "ble_spam_all",
+    "evilportal_start", "evilportal_stop",
+]
+
+# Sentry arm/disarm relay allowlist for POST /api/sentry/command.
+SENTRY_COMMANDS = ["arm", "disarm"]
 
 
 

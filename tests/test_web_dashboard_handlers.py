@@ -1521,3 +1521,226 @@ def test_arsenal_live_state_surfaced_when_present(monkeypatch, tmp_path):
     rfaudio = {t['name']: t for t in payload['tools']}['rfaudio']
     assert rfaudio['present'] is True
     assert rfaudio['state'] == 'playing'
+
+
+# ─── BE-4: /api/service/<unit> start/stop + marauder/sentry relays ─────
+# The whole point of this stage is the SAFETY MODEL: local-peer ACL, unit
+# allowlist (never DRIVE_ONLY / arbitrary), action allowlist, drive-mode
+# foot-gate at the route, audit on every call. Marauder/sentry are thin
+# relays (allowlist + 403 + 503 + publish), never reimplementing tiers.
+
+def _service_handler(monkeypatch, tmp_path, body, peer='127.0.0.1',
+                     mode='foot', audit=None):
+    """Build a handler for _post_service with mode + audit isolated to tmp."""
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text(mode)
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
+    monkeypatch.setattr(h, '_ARSENAL_AUDIT_LOG',
+                        audit if audit is not None else tmp_path / 'arsenal_audit.log')
+    handler = _build_post_handler(body, peer=peer)
+    handler._serve_json = MagicMock()
+    return handler
+
+
+def _a_foot_unit():
+    """A unit guaranteed to be in the arsenal allowlist (foot/shared)."""
+    return sorted(h._SERVICE_UNITS)[0]
+
+
+def test_post_service_rejects_drive_only_unit(monkeypatch, tmp_path):
+    """A DRIVE_ONLY unit must be refused 403 — never reaches systemctl."""
+    from config import DRIVE_ONLY_SERVICES
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    drive_unit = DRIVE_ONLY_SERVICES[0]
+    assert drive_unit not in h._SERVICE_UNITS
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}')
+    handler._post_service(drive_unit)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_rejects_unknown_unit(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}')
+    handler._post_service('drifter-nonexistent')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_rejects_bad_action(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"enable"}')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    run.assert_not_called()
+
+
+def test_post_service_refuses_in_drive_mode(monkeypatch, tmp_path):
+    """Foot-gate AT THE ROUTE: 409 when the node is in drive mode."""
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               mode='drive')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 409
+    run.assert_not_called()
+
+
+def test_post_service_rejects_remote_peer(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               peer='192.168.1.50')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_happy_path_invokes_systemctl_and_audits(monkeypatch, tmp_path):
+    """A valid start in foot mode runs `sudo -n systemctl start <unit>`,
+    returns {ok,unit,action,rc}, and writes an audit record."""
+    audit_log = tmp_path / 'arsenal_audit.log'
+    completed = MagicMock()
+    completed.returncode = 0
+    completed.stdout = ''
+    completed.stderr = ''
+    run = MagicMock(return_value=completed)
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    unit = _a_foot_unit()
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               audit=audit_log)
+    handler._post_service(unit)
+    # systemctl invoked with sudo -n and the exact unit/action.
+    args = run.call_args[0][0]
+    assert args == ['sudo', '-n', 'systemctl', 'start', unit]
+    # response shape
+    handler._serve_json.assert_called_once()
+    out = handler._serve_json.call_args[0][0]
+    assert out == {'ok': True, 'unit': unit, 'action': 'start', 'rc': 0}
+    # audit written with peer + unit + action + rc
+    assert audit_log.exists()
+    rec = _json.loads(audit_log.read_text().strip().splitlines()[-1])
+    assert rec['peer'] == '127.0.0.1'
+    assert rec['unit'] == unit
+    assert rec['action'] == 'start'
+    assert rec['rc'] == 0
+    assert rec['event'] == 'RUN'
+
+
+def test_post_service_audits_blocked_unit(monkeypatch, tmp_path):
+    """A refused (non-allowlisted) unit is audited as BLOCKED with peer IP."""
+    audit_log = tmp_path / 'arsenal_audit.log'
+    monkeypatch.setattr(h.subprocess, 'run', MagicMock())
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"stop"}',
+                               audit=audit_log)
+    handler._post_service('drifter-canbridge')
+    assert audit_log.exists()
+    rec = _json.loads(audit_log.read_text().strip().splitlines()[-1])
+    assert rec['event'] == 'BLOCKED'
+    assert rec['unit'] == 'drifter-canbridge'
+    assert rec['peer'] == '127.0.0.1'
+
+
+def test_service_allowlist_excludes_all_drive_only_units():
+    """Structural invariant — no DRIVE_ONLY unit can ever be controllable."""
+    from config import DRIVE_ONLY_SERVICES
+    assert not (h._SERVICE_UNITS & set(DRIVE_ONLY_SERVICES))
+
+
+# ─── Marauder command relay ────────────────────────────────────────────
+
+def test_post_marauder_command_allowlist_relays(monkeypatch):
+    """A LOW-tier op publishes to drifter/marauder/cmd as `command`."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"scan_ap"}')
+    handler._post_marauder_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/marauder/cmd'
+    assert _json.loads(payload)['command'] == 'scan_ap'
+
+
+def test_post_marauder_command_high_risk_relays_with_confirm_token(monkeypatch):
+    """HIGH-risk op is in the allowlist and relays a confirm_token verbatim —
+    the bridge owns the confirm gate; the handler never strips it."""
+    state.mqtt_client = MagicMock()
+    body = b'{"op":"deauth_attack","confirm_token":"tok-123","args":{"bssid":"AA"}}'
+    handler = _build_post_handler(body)
+    handler._post_marauder_command()
+    _topic, payload = state.mqtt_client.publish.call_args[0]
+    parsed = _json.loads(payload)
+    assert parsed['command'] == 'deauth_attack'
+    assert parsed['confirm_token'] == 'tok-123'
+    assert parsed['args'] == {'bssid': 'AA'}
+
+
+def test_post_marauder_command_rejects_unknown_op(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"rm_rf_slash"}')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_marauder_command_rejects_remote_peer(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"scan_ap"}', peer='8.8.8.8')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_marauder_command_503_without_mqtt(monkeypatch):
+    state.mqtt_client = None
+    handler = _build_post_handler(b'{"op":"scan_ap"}')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+# ─── Sentry command relay ──────────────────────────────────────────────
+
+def test_post_sentry_command_arm_relays(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"arm"}')
+    handler._post_sentry_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/sentry/event'
+    assert _json.loads(payload)['action'] == 'arm'
+
+
+def test_post_sentry_command_rejects_unknown_action(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"detonate"}')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_sentry_command_rejects_remote_peer(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"disarm"}', peer='172.16.0.1')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_sentry_command_503_without_mqtt(monkeypatch):
+    state.mqtt_client = None
+    handler = _build_post_handler(b'{"action":"arm"}')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503

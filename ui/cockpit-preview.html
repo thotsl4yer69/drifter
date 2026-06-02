@@ -2634,6 +2634,12 @@
   // FE-C6: destructive CAN/RF ops require a second confirm tap. Keys:
   // 'fuzz' (FUZZ ID RANGE) and 'tpms_clear' (clear TPMS assignments).
   const pendingConfirm = new Set();
+  // Stage-3 arsenal: HIGH-risk marauder ops + sentry arm/disarm each require
+  // a second explicit confirm tap (mirrors the sub-GHz REPLAY confirm-row).
+  // Keys are the marauder op name (e.g. 'deauth_attack') or 'sentry:arm' /
+  // 'sentry:disarm'. The bridge's own classifier/confirm is the authoritative
+  // second gate — the cockpit only surfaces these behind a confirm-row.
+  const pendingArsenalConfirm = new Set();
   // Set to the unix-ms when FORCE SPECTRUM SCAN was last clicked. The button
   // stays in .busy until either the next drifter/rf/spectrum frame lands via
   // WS or this deadline expires (rtl_power sweeps usually finish in 60–90s).
@@ -4950,16 +4956,53 @@
       const state = m.state || '';
       const out = [];
       out.push(`<div class="section-head"><span>marauder</span><span class="tag">esp32</span></div>`);
-      // Honest empty when no hardware / no status at all.
-      if (!state || state === 'no_hardware') {
-        return out.join('') + emptyState('⌬', 'NO MARAUDER DETECTED — plug in the ESP32 Marauder board to enable Wi-Fi/BLE recon.');
+      const noHw = !state || state === 'no_hardware';
+      // Honest empty when no hardware / no status at all — but still render the
+      // control surface (aria-disabled) so the operator sees what plugging in
+      // the ESP32 would enable, never a fabricated "ready".
+      if (!noHw) {
+        out.push(`<div class="kv"><div class="k">State</div><div class="v ${state === 'idle' || state === 'scanning' || state === 'ready' ? 'teal' : 'dim'}">${esc(state)}</div></div>`);
+        if (m.mode != null) out.push(`<div class="kv"><div class="k">Mode</div><div class="v">${esc(m.mode)}</div></div>`);
+        if (m.channel != null) out.push(`<div class="kv"><div class="k">Channel</div><div class="v">${esc(m.channel)}</div></div>`);
+        if (m.aps != null) out.push(`<div class="kv"><div class="k">APs</div><div class="v">${esc(m.aps)}</div></div>`);
+        if (m.stations != null) out.push(`<div class="kv"><div class="k">Stations</div><div class="v">${esc(m.stations)}</div></div>`);
+        if (m.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(m.ts)} ago</div></div>`);
       }
-      out.push(`<div class="kv"><div class="k">State</div><div class="v ${state === 'idle' || state === 'scanning' || state === 'ready' ? 'teal' : 'dim'}">${esc(state)}</div></div>`);
-      if (m.mode != null) out.push(`<div class="kv"><div class="k">Mode</div><div class="v">${esc(m.mode)}</div></div>`);
-      if (m.channel != null) out.push(`<div class="kv"><div class="k">Channel</div><div class="v">${esc(m.channel)}</div></div>`);
-      if (m.aps != null) out.push(`<div class="kv"><div class="k">APs</div><div class="v">${esc(m.aps)}</div></div>`);
-      if (m.stations != null) out.push(`<div class="kv"><div class="k">Stations</div><div class="v">${esc(m.stations)}</div></div>`);
-      if (m.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(m.ts)} ago</div></div>`);
+      // ── LOW-tier recon controls (scan/sniff/stop) — POST /api/marauder/command
+      // {op}. The marauder_bridge classifier is the authoritative second gate;
+      // the cockpit only relays these allowlisted op names.
+      const dis = noHw ? ' aria-disabled="true"' : '';
+      const disTitle = noHw ? ' title="connect ESP32 marauder"' : '';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>recon</span><span class="tag">low-risk</span></div>`);
+      out.push(`<div class="btn-row">
+        <span class="ghost-btn" data-marauder-op="scan_ap"${dis}${disTitle} role="button" tabindex="0">SCAN AP</span>
+        <span class="ghost-btn" data-marauder-op="scan_sta"${dis}${disTitle} role="button" tabindex="0">SCAN STA</span>
+        <span class="ghost-btn" data-marauder-op="scan_probes"${dis}${disTitle} role="button" tabindex="0">SNIFF PROBES</span>
+        <span class="ghost-btn" data-marauder-op="deauth_detect"${dis}${disTitle} role="button" tabindex="0">DEAUTH DETECT</span>
+        <span class="ghost-btn crit" data-marauder-op="stop"${dis}${disTitle} role="button" tabindex="0">STOP</span>
+      </div>`);
+      if (noHw) {
+        out.push(`<div class="kv"><div class="k">Hardware</div><div class="v dim">connect ESP32 marauder</div></div>`);
+      }
+      // ── HIGH-risk ops — never one-click. Each arms an inline confirm-row
+      // (mirrors the sub-GHz REPLAY confirm). The bridge still demands its own
+      // confirm-token round-trip; this is purely the cockpit-side guard so a
+      // single tap can't launch deauth/beacon-spam/evil-portal.
+      out.push(`<div class="section-head" style="margin-top:8px"><span>active attack</span><span class="tag high">high-risk · confirm</span></div>`);
+      const HIGH = [
+        ['deauth_attack', 'DEAUTH ATTACK'],
+        ['beacon_spam_random', 'BEACON SPAM (RANDOM)'],
+        ['beacon_spam_rickroll', 'BEACON SPAM (RICKROLL)'],
+        ['evilportal_start', 'EVIL PORTAL'],
+      ];
+      const arm = noHw ? ' aria-disabled="true"' : '';
+      for (const [op, label] of HIGH) {
+        if (pendingArsenalConfirm.has(op)) {
+          out.push(`<div class="confirm-row high-risk-confirm" data-confirm-row="${esc(op)}"><span class="high-risk-badge">HIGH RISK</span><span class="high-risk-cmd">${esc(label)}</span> — bridge will demand its own confirm token. <span class="ghost-btn crit" data-confirm-marauder="${esc(op)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel-arsenal="${esc(op)}" role="button" tabindex="0">CANCEL</span></div>`);
+        } else {
+          out.push(`<div class="btn-row"><span class="ghost-btn crit" data-marauder-arm="${esc(op)}"${arm}${disTitle} role="button" tabindex="0">${esc(label)}</span></div>`);
+        }
+      }
       return out.join('');
     },
 
@@ -5061,13 +5104,33 @@
       const s = cache.sentry || {};
       const out = [];
       out.push(`<div class="section-head"><span>sentry</span><span class="tag">guard</span></div>`);
-      if (s.armed == null && s.ts == null) {
-        return out.join('') + emptyState('◈', 'No sentry status. Start drifter-sentry to monitor for tamper/motion.');
+      const known = s.armed != null || s.ts != null;
+      if (!known) {
+        out.push(emptyState('◈', 'No sentry status. Start drifter-sentry to monitor for tamper/motion.'));
+      } else {
+        out.push(`<div class="kv"><div class="k">Armed</div><div class="v ${s.armed ? 'teal' : 'dim'}">${s.armed ? 'armed' : 'disarmed'}</div></div>`);
+        if (s.threshold_g != null) out.push(`<div class="kv"><div class="k">Threshold</div><div class="v">${esc(s.threshold_g)} g</div></div>`);
+        if (s.auto_arm != null) out.push(`<div class="kv"><div class="k">Auto-arm</div><div class="v">${s.auto_arm ? 'on' : 'off'}</div></div>`);
+        if (s.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(s.ts)} ago</div></div>`);
       }
-      out.push(`<div class="kv"><div class="k">Armed</div><div class="v ${s.armed ? 'teal' : 'dim'}">${s.armed ? 'armed' : 'disarmed'}</div></div>`);
-      if (s.threshold_g != null) out.push(`<div class="kv"><div class="k">Threshold</div><div class="v">${esc(s.threshold_g)} g</div></div>`);
-      if (s.auto_arm != null) out.push(`<div class="kv"><div class="k">Auto-arm</div><div class="v">${s.auto_arm ? 'on' : 'off'}</div></div>`);
-      if (s.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(s.ts)} ago</div></div>`);
+      // ── ARM / DISARM via the confirm-row pattern → POST /api/sentry/command
+      // {action}. State is NOT flipped optimistically; the next /api/sentry/status
+      // poll reconciles the Armed line against the bridge's retained status.
+      out.push(`<div class="section-head" style="margin-top:8px"><span>guard control</span><span class="tag">confirm</span></div>`);
+      const dis = known ? '' : ' aria-disabled="true"';
+      const disTitle = known ? '' : ' title="start drifter-sentry first"';
+      const arm = pendingArsenalConfirm.has('sentry:arm');
+      const disarm = pendingArsenalConfirm.has('sentry:disarm');
+      if (arm) {
+        out.push(`<div class="confirm-row" data-confirm-row="sentry:arm"><span class="tx-badge">SENTRY</span>Arm the motion/tilt guard? <span class="ghost-btn live" data-confirm-sentry="arm" role="button" tabindex="0">CONFIRM ARM</span><span class="ghost-btn" data-cancel-arsenal="sentry:arm" role="button" tabindex="0">CANCEL</span></div>`);
+      } else if (disarm) {
+        out.push(`<div class="confirm-row" data-confirm-row="sentry:disarm"><span class="tx-badge">SENTRY</span>Disarm the guard? <span class="ghost-btn live" data-confirm-sentry="disarm" role="button" tabindex="0">CONFIRM DISARM</span><span class="ghost-btn" data-cancel-arsenal="sentry:disarm" role="button" tabindex="0">CANCEL</span></div>`);
+      } else {
+        out.push(`<div class="btn-row">
+          <span class="ghost-btn" data-sentry-arm="arm"${dis}${disTitle} role="button" tabindex="0">ARM</span>
+          <span class="ghost-btn crit" data-sentry-arm="disarm"${dis}${disTitle} role="button" tabindex="0">DISARM</span>
+        </div>`);
+      }
       return out.join('');
     },
 
@@ -6673,8 +6736,10 @@
   // 3s self-poll off /api/arsenal. REAL-DATA: a tool's "present" flag is
   // derived server-side from /healthz + hardware-presence; present:false
   // renders a disabled/absent card — never a fabricated "up". START/STOP
-  // render aria-disabled this stage (service control = BE-4, stage 3);
-  // they POST nowhere yet. OPEN PANEL routes to the tool's drawer tab.
+  // POST to /api/service/<unit> (service control = BE-4). Buttons are
+  // aria-disabled when the card has no controllable unit, or whenever the
+  // node is in 'drive' mode (foot-gate mirrors the route-level foot-gate).
+  // OPEN PANEL routes to the tool's drawer tab.
   // ═══════════════════════════════════════════════════════════════
   // Glyph + drawer-tab mapping by tool name. Tools without a tab omit it.
   const ARSENAL_TOOLS = {
@@ -6689,10 +6754,14 @@
     rf:        { glyph: '⊚', tab: 'rf' },
     wardrive:  { glyph: '◇', tab: 'wardrive' },
   };
-  function arsenalCardHTML(t){
+  function arsenalCardHTML(t, mode){
     const meta = ARSENAL_TOOLS[t.name] || {};
     const glyph = meta.glyph || '⊗';
     const present = !!t.present;
+    // Foot-gate mirror: service control is refused server-side when the node
+    // is in 'drive' mode. We disable the buttons + show a hint here too so the
+    // operator never fires a POST that the route would 403/409.
+    const driveLocked = mode === 'drive';
     // live_meta is the backend's {unit_active, hardware_ok} object — render
     // it as an honest one-liner, never the raw [object Object]. Falls back
     // to the state string / presence word when no structured meta is sent.
@@ -6709,12 +6778,29 @@
     const pill = present
       ? `<span class="h-status ok">${esc(t.state || 'present')}</span>`
       : `<span class="h-status missing">absent</span>`;
-    // Service control is stage 3 (BE-4) — render the buttons disabled so the
-    // capability is visible but no dead-end POST fires.
-    const ctlHint = 'service control — stage 3';
-    const startStop = `
-      <span class="ghost-btn" aria-disabled="true" title="${ctlHint}">START</span>
-      <span class="ghost-btn" aria-disabled="true" title="${ctlHint}">STOP</span>`;
+    // START/STOP drive /api/service/<unit>. Only controllable when the card
+    // carries a unit; disabled (with a hint) when there's no unit to control
+    // or when the node is in drive mode (route-level foot-gate mirror).
+    // State is NOT flipped optimistically — the next /api/arsenal poll
+    // reconciles the pill/meta against systemctl reality.
+    let startStop;
+    if (!t.unit) {
+      const noUnitHint = 'no controllable unit';
+      startStop = `
+        <span class="ghost-btn" aria-disabled="true" title="${noUnitHint}">START</span>
+        <span class="ghost-btn" aria-disabled="true" title="${noUnitHint}">STOP</span>`;
+    } else if (driveLocked) {
+      const footHint = 'foot mode only';
+      startStop = `
+        <span class="ghost-btn" aria-disabled="true" title="${footHint}">START</span>
+        <span class="ghost-btn" aria-disabled="true" title="${footHint}">STOP</span>
+        <span class="h-meta" style="width:100%;text-align:right">foot mode only</span>`;
+    } else {
+      const unit = esc(t.unit);
+      startStop = `
+        <span class="ghost-btn" data-arsenal-svc="${unit}" data-arsenal-action="start" role="button" tabindex="0" title="systemctl start ${unit}">START</span>
+        <span class="ghost-btn crit" data-arsenal-svc="${unit}" data-arsenal-action="stop" role="button" tabindex="0" title="systemctl stop ${unit}">STOP</span>`;
+    }
     // OPEN PANEL only for tools that have a drawer tab (and only useful in foot).
     const openPanel = meta.tab
       ? `<span class="ghost-btn" data-arsenal-tab="${esc(meta.tab)}" title="Open ${esc(t.name)} drawer">OPEN PANEL</span>`
@@ -6755,12 +6841,29 @@
     const grid = document.getElementById('arsenal-grid');
     const opsecEl = document.getElementById('arsenal-opsec');
     const modeEl = document.getElementById('arsenal-mode');
-    // OPEN PANEL → close overlay, switch to that tool's drawer tab.
-    grid.addEventListener('click', e => {
-      const b = e.target.closest('[data-arsenal-tab]');
-      if (!b) return;
-      overlay.close();
-      setTab(b.dataset.arsenalTab);
+    let arsenalMode = '';
+    // Grid clicks: OPEN PANEL routes to the drawer tab; START/STOP drive the
+    // service-control route then re-poll so state reconciles against reality.
+    grid.addEventListener('click', async e => {
+      const tab = e.target.closest('[data-arsenal-tab]');
+      if (tab) {
+        overlay.close();
+        setTab(tab.dataset.arsenalTab);
+        return;
+      }
+      const svc = e.target.closest('[data-arsenal-svc]');
+      if (svc) {
+        if (svc.getAttribute('aria-disabled') === 'true') return;
+        const unit = svc.dataset.arsenalSvc;
+        const action = svc.dataset.arsenalAction;
+        if (!unit || !action) return;
+        markBusy(svc);
+        // REAL-DATA: do not optimistically flip the card. Just fire the
+        // control and let the next /api/arsenal poll show systemctl truth.
+        await postJSON('/api/service/' + encodeURIComponent(unit), { action });
+        setTimeout(poll, 600);
+        return;
+      }
     });
     async function poll(){
       try {
@@ -6771,8 +6874,9 @@
           if (opsecEl) opsecEl.innerHTML =
             `${present}/${a.tools.length} tools present · mode ${esc(a.mode || '—')}`
             + `<span class="sub">curated, parameter-validated actions — full ad-hoc console lives on :8090</span>`;
+          arsenalMode = a.mode || '';
           grid.innerHTML = a.tools.length
-            ? a.tools.map(arsenalCardHTML).join('')
+            ? a.tools.map(t => arsenalCardHTML(t, arsenalMode)).join('')
             : `<div class="empty"><span class="gl">⊗</span>No arsenal tools reported.</div>`;
         } else if (opsecEl) {
           opsecEl.innerHTML = `arsenal unavailable<span class="sub">/api/arsenal not reachable</span>`;
@@ -6870,13 +6974,62 @@
 
   // Single delegated click listener — every preset button is data-driven.
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm]');
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm], [data-marauder-op], [data-marauder-arm], [data-confirm-marauder], [data-sentry-arm], [data-confirm-sentry], [data-cancel-arsenal]');
     if (!t) return;
 
     // ── FE-C6: destructive-confirm cancel (any pending key) ─────────
     if (t.hasAttribute('data-cancel-confirm')) {
       pendingConfirm.delete(t.getAttribute('data-cancel-confirm'));
       render();
+      return;
+    }
+    // ── Stage-3 arsenal: cancel a pending marauder/sentry confirm-row ──
+    if (t.hasAttribute('data-cancel-arsenal')) {
+      pendingArsenalConfirm.delete(t.getAttribute('data-cancel-arsenal'));
+      render();
+      return;
+    }
+    // ── Marauder LOW-tier recon op → relay to /api/marauder/command {op} ──
+    if (t.dataset.marauderOp) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      markBusy(t);
+      await postJSON('/api/marauder/command', { op: t.dataset.marauderOp });
+      setTimeout(loadMarauder, 600);
+      return;
+    }
+    // ── Marauder HIGH-risk op: first tap arms the inline confirm-row ──
+    if (t.dataset.marauderArm) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingArsenalConfirm.add(t.dataset.marauderArm);
+      if (activeTab === 'marauder') render();
+      return;
+    }
+    // ── Marauder HIGH-risk confirmed: relay the op. The bridge classifier
+    // still requires its own confirm-token round-trip — we do NOT bypass it.
+    if (t.dataset.confirmMarauder) {
+      const op = t.dataset.confirmMarauder;
+      pendingArsenalConfirm.delete(op);
+      markBusy(t);
+      await postJSON('/api/marauder/command', { op });
+      if (activeTab === 'marauder') render();
+      setTimeout(loadMarauder, 600);
+      return;
+    }
+    // ── Sentry ARM/DISARM: first tap arms the inline confirm-row ──
+    if (t.dataset.sentryArm) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingArsenalConfirm.add('sentry:' + t.dataset.sentryArm);
+      if (activeTab === 'sentry') render();
+      return;
+    }
+    // ── Sentry confirmed → relay to /api/sentry/command {action} ──
+    if (t.dataset.confirmSentry) {
+      const action = t.dataset.confirmSentry;
+      pendingArsenalConfirm.delete('sentry:' + action);
+      markBusy(t);
+      await postJSON('/api/sentry/command', { action });
+      if (activeTab === 'sentry') render();
+      setTimeout(loadSentry, 600);
       return;
     }
     // ── FE-C6: FUZZ ID RANGE — first tap arms the confirm row ───────
