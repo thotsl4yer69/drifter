@@ -239,11 +239,11 @@ const TOPICS = {
   QUERY:    'drifter/vivi/query',
 };
 const PALETTE = {
-  hair:   new THREE.Color(0x0e0805),
+  hair:   new THREE.Color(0x3a241a),
   skin:   new THREE.Color(0xf5c9a0),
   iris:   new THREE.Color(0xff8c00),
   eyeGlow:new THREE.Color(0xff8c00),
-  outfit: new THREE.Color(0x14080a),
+  outfit: new THREE.Color(0x2a141a),
   trim:   new THREE.Color(0xff8c00),
 };
 
@@ -504,6 +504,80 @@ function fmtBytes(n) {
       state.mixer = new THREE.AnimationMixer(model);
       state.mixer.clipAction(gltf.animations[0]).play();
     }
+
+    // ── Face-aware framing ───────────────────────────────────────────
+    // The full-body rig (1100+ nodes incl. IK helper bones) makes a
+    // naive Box3 scale/target land the camera on the legs. Instead, aim
+    // at the eye bones' real world position and derive the portrait
+    // distance from her actual eye height — robust to the model scale.
+    model.updateWorldMatrix(true, true);
+    // GLTFLoader sanitizes node names (".", "/", spaces -> "_"), so the
+    // rig bones read as eye_master_L / DEF-eye_L / head. Target the real
+    // face bones — the body bounding box is skewed by Kiriko's posed limbs
+    // + props, so its centre is NOT on her head axis.
+    const eyeBones = [];
+    let headBone = null, faceForward = null;
+    model.traverse((o) => {
+      if (/^(eye_master_[LR]|DEF-eye_[LR])$/.test(o.name)) eyeBones.push(o);
+      if (!headBone && o.name === 'head') headBone = o;
+    });
+    // Rescale via the head bone (a known landmark) so she matches the
+    // ~1.7m figure the lights + floor disc were authored for. setFromObject
+    // under-measures this skinned rig (bones carry the scale the geometry
+    // box misses), leaving her ~5x oversized with the lights at her shins.
+    const _hp = new THREE.Vector3();
+    if (headBone) {
+      headBone.getWorldPosition(_hp);
+      if (_hp.y > 0.05) {
+        model.scale.multiplyScalar(1.55 / _hp.y);
+        model.position.x = 0; model.position.z = 0;
+        model.updateWorldMatrix(true, true);
+      }
+    }
+    const face = new THREE.Vector3();
+    const tmp = new THREE.Vector3();
+    if (eyeBones.length) {
+      eyeBones.forEach((b) => { b.getWorldPosition(tmp); face.add(tmp); });
+      face.multiplyScalar(1 / eyeBones.length);
+      // camera sits on the side the eyes look toward (eyes' local +Z/-Z)
+      faceForward = new THREE.Vector3(0, 0, 1)
+        .transformDirection(eyeBones[0].matrixWorld).setY(0).normalize();
+    } else if (headBone) {
+      headBone.getWorldPosition(face);
+      if (faceForward == null) {
+        faceForward = new THREE.Vector3(0, 0, 1)
+          .transformDirection(headBone.matrixWorld).setY(0).normalize();
+      }
+    } else {
+      const mb = new THREE.Box3().setFromObject(model);
+      face.set(0, mb.max.y * 0.92, 0);
+    }
+    // If we couldn't derive a facing direction, assume she faces +Z (the
+    // original camera at +Z framed her front).
+    if (!faceForward || !isFinite(faceForward.x) || faceForward.lengthSq() < 0.1) {
+      faceForward = new THREE.Vector3(0, 0, 1);
+    }
+    // setFromObject badly under-measures this skinned rig, so absolute
+    // metres are unreliable. The head's world height scales with the model,
+    // so derive the portrait distance + the jaw->eye lift from it.
+    face.y += 0.05;              // head bone at jaw; nudge up to eye level
+    const dist = 0.72;           // head + shoulders portrait (metres, post-rescale)
+    controls.minDistance = 0.35;
+    controls.maxDistance = 8;
+    controls.minPolarAngle = Math.PI * 0.20;
+    controls.maxPolarAngle = Math.PI * 0.68;
+    controls.target.copy(face);
+    camera.position.copy(face)
+      .addScaledVector(faceForward, dist)
+      .add(new THREE.Vector3(0, 0.05, 0));
+    camera.near = 0.05; camera.far = 100;
+    camera.updateProjectionMatrix();
+    // Aim the key spotlight at her actual face (it was targeting y=1.4).
+    if (typeof key !== 'undefined' && key.target) {
+      key.target.position.copy(face); key.target.updateMatrixWorld();
+    }
+    controls.update();
+    log('FRAMED ON FACE');
 
     log('LINK ESTABLISHED');
     setTimeout(() => document.getElementById('boot').classList.add('fade'), 600);
