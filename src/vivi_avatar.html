@@ -307,8 +307,9 @@ key.position.set(1.2, 2.6, 1.8);
 key.target.position.set(0, 1.4, 0);
 scene.add(key); scene.add(key.target);
 
-const fill = new THREE.PointLight(0xffaa33, 1.6, 10, 1.4);
-fill.position.set(-1.6, 1.8, 1.2);
+// Cool fill from the opposite side gives her form instead of flat orange.
+const fill = new THREE.PointLight(0x3a6ea5, 2.2, 12, 1.1);
+fill.position.set(-1.8, 1.9, 1.4);
 scene.add(fill);
 
 const rim = new THREE.PointLight(0xff5500, 2.2, 8, 1.6);
@@ -534,6 +535,29 @@ function fmtBytes(n) {
         model.updateWorldMatrix(true, true);
       }
     }
+
+    // ── Ease out of the T-pose ───────────────────────────────────────
+    // The ripped GLB has no idle clip, so she's frozen in bind-pose
+    // (arms straight out) — the thing that reads as "broken". Rotate the
+    // upper-arm + forearm deform bones into a relaxed arms-down stance.
+    let _uaL = null, _uaR = null, _faL = null, _faR = null;
+    model.traverse((o) => {
+      if (!o.isBone) return;
+      const n = o.name.toLowerCase();
+      const isDef = n.includes('def'), tail = /[._]l$/.test(n) ? 'L' : (/[._]r$/.test(n) ? 'R' : '');
+      const skip = /001|tweak|fk|ik|parent/.test(n);
+      if (skip || !isDef || !tail) return;
+      if (/upper.?arm/.test(n)) { tail === 'L' ? _uaL = o : _uaR = o; }
+      else if (/forearm/.test(n)) { tail === 'L' ? _faL = o : _faR = o; }
+    });
+    // POSE_* are iterated against screenshots; arms swing down from T-pose.
+    const POSE_UA = 1.15, POSE_FA = 0.18;
+    if (_uaL) _uaL.rotation.z -= POSE_UA;
+    if (_uaR) _uaR.rotation.z += POSE_UA;
+    if (_faL) _faL.rotation.z -= POSE_FA;
+    if (_faR) _faR.rotation.z += POSE_FA;
+    model.updateWorldMatrix(true, true);
+
     const face = new THREE.Vector3();
     const tmp = new THREE.Vector3();
     if (eyeBones.length) {
@@ -561,7 +585,7 @@ function fmtBytes(n) {
     // metres are unreliable. The head's world height scales with the model,
     // so derive the portrait distance + the jaw->eye lift from it.
     face.y += 0.05;              // head bone at jaw; nudge up to eye level
-    const dist = 0.72;           // head + shoulders portrait (metres, post-rescale)
+    const dist = 1.15;           // head + torso so the posed arms read
     controls.minDistance = 0.35;
     controls.maxDistance = 8;
     controls.minPolarAngle = Math.PI * 0.20;
