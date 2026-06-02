@@ -74,22 +74,26 @@ fi
 
 # ── 2. Core Dependencies ──
 step 2 "Installing core dependencies"
-apt-get install -y -qq \
-    python3-pip \
-    python3-venv \
-    can-utils \
-    mosquitto-clients \
-    network-manager \
-    alsa-utils \
-    git \
-    curl \
-    jq \
-    rsync \
-    librtlsdr-dev \
-    rtl-sdr \
-    gpsd \
-    gpsd-clients 2>/dev/null
-ok "Core packages installed"
+if [[ "${SKIP_APT:-0}" != "1" ]]; then
+    apt-get install -y -qq \
+        python3-pip \
+        python3-venv \
+        can-utils \
+        mosquitto-clients \
+        network-manager \
+        alsa-utils \
+        git \
+        curl \
+        jq \
+        rsync \
+        librtlsdr-dev \
+        rtl-sdr \
+        gpsd \
+        gpsd-clients 2>/dev/null
+    ok "Core packages installed"
+else
+    ok "Skipped (--skip-apt) — assumed present"
+fi
 
 # Install rtl_433 (433 MHz signal decoder)
 if command -v rtl_433 &>/dev/null; then
@@ -117,18 +121,22 @@ fi
 step 3 "Installing NanoMQ MQTT broker"
 if command -v nanomq &>/dev/null; then
     ok "NanoMQ already installed"
-else
+elif command -v mosquitto &>/dev/null; then
+    ok "Mosquitto already installed (MQTT broker)"
+    systemctl enable mosquitto 2>/dev/null || true
+elif [[ "${SKIP_APT:-0}" != "1" ]]; then
     # Try the official install script
     if curl -s https://assets.emqx.com/images/install-nanomq-deb.sh | bash 2>/dev/null; then
         apt-get install -y -qq nanomq 2>/dev/null
         ok "NanoMQ installed from EMQX repo"
     else
-        # Fallback: use mosquitto
         warn "NanoMQ repo unavailable, installing Mosquitto as fallback"
         apt-get install -y -qq mosquitto 2>/dev/null
         systemctl enable mosquitto
         ok "Mosquitto installed as MQTT broker"
     fi
+else
+    warn "No MQTT broker found — skipped install (--skip-apt)"
 fi
 
 # ── 4. TTS Engine ──
@@ -185,7 +193,13 @@ fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──
 step 5 "Installing voice input system dependencies"
-apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
+if dpkg -s portaudio19-dev 2>/dev/null | grep -q 'Status: install ok installed'; then
+    ok "portaudio19-dev already installed"
+elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+    apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
+else
+    warn "portaudio19-dev missing — skipped install (--skip-apt)"
+fi
 # Python deps (vosk, pyaudio, openwakeword) installed below after venv creation
 
 # Download Vosk model
@@ -309,6 +323,22 @@ if [ -d "${REPO_DIR}/static/leaflet" ]; then
     mkdir -p "${DRIFTER_DIR}/static/leaflet"
     cp "${REPO_DIR}"/static/leaflet/* "${DRIFTER_DIR}/static/leaflet/"
     ok "Leaflet $(ls "${REPO_DIR}/static/leaflet" | wc -l) asset(s) deployed"
+fi
+
+# Cockpit front door — web_dashboard_handlers.py serves the cockpit page from
+# /opt/drifter/ui/cockpit-preview.html. Without this the dashboard root returns
+# "503 cockpit not deployed" even though the service is healthy.
+if [ -f "${REPO_DIR}/ui/cockpit-preview.html" ]; then
+    mkdir -p "${DRIFTER_DIR}/ui"
+    cp "${REPO_DIR}/ui/cockpit-preview.html" "${DRIFTER_DIR}/ui/"
+    ok "Cockpit page deployed (ui/cockpit-preview.html)"
+fi
+
+# Cockpit desktop launcher — DRIFTER-Cockpit.desktop execs this.
+if [ -f "${REPO_DIR}/tools/launch-cockpit.sh" ]; then
+    install -D -m 0755 "${REPO_DIR}/tools/launch-cockpit.sh" \
+            "${DRIFTER_DIR}/bin/launch-cockpit.sh"
+    ok "Cockpit launcher deployed (bin/launch-cockpit.sh)"
 fi
 
 # Data files
@@ -444,24 +474,26 @@ fi
 # ── 9. Wi-Fi Hotspot ──
 step 9 "Configuring Wi-Fi hotspot"
 
-# Remove existing if present
-nmcli con show "MZ1312_DRIFTER" &>/dev/null && nmcli con delete "MZ1312_DRIFTER" &>/dev/null
-
-nmcli con add type wifi \
-    ifname wlan0 \
-    con-name "MZ1312_DRIFTER" \
-    autoconnect yes \
-    ssid "MZ1312_DRIFTER" \
-    -- \
-    802-11-wireless.mode ap \
-    802-11-wireless.band bg \
-    802-11-wireless.channel 6 \
-    ipv4.method shared \
-    ipv4.addresses 10.42.0.1/24 \
-    wifi-sec.key-mgmt wpa-psk \
-    wifi-sec.psk "uncaged1312" 2>/dev/null
-
-ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+# Preserve existing hotspot profile + rotated PSK (operator may have changed it).
+# Only create from defaults if it doesn't exist yet.
+if nmcli con show "MZ1312_DRIFTER" &>/dev/null; then
+    ok "Hotspot MZ1312_DRIFTER already configured — preserving PSK"
+else
+    nmcli con add type wifi \
+        ifname wlan0 \
+        con-name "MZ1312_DRIFTER" \
+        autoconnect yes \
+        ssid "MZ1312_DRIFTER" \
+        -- \
+        802-11-wireless.mode ap \
+        802-11-wireless.band bg \
+        802-11-wireless.channel 6 \
+        ipv4.method shared \
+        ipv4.addresses 10.42.0.1/24 \
+        wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.psk "uncaged1312" 2>/dev/null
+    ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+fi
 
 # ── 10. systemd Services ──
 step 10 "Installing systemd services"

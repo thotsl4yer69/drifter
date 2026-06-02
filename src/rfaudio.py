@@ -185,13 +185,18 @@ _scan_thread: threading.Thread | None = None
 _scan_stop = threading.Event()
 
 
-def _publish_status(client) -> None:
+def _publish_status(client, scan_index=None, scan_total=None) -> None:
     payload = {
         'state': _state,
         'freq_mhz': _stream.freq_mhz,
         'mode': _stream.mode,
         'ts': time.time(),
     }
+    # BE-3: additive scan-progress fields, only present mid-scan. FE
+    # degrades gracefully when absent.
+    if scan_index is not None and scan_total is not None:
+        payload['scan_index'] = scan_index
+        payload['scan_total'] = scan_total
     client.publish(TOPICS['rfaudio_status'], json.dumps(payload), retain=True, qos=1)
 
 
@@ -224,12 +229,13 @@ def _start_scan(client) -> None:
 
     def worker():
         global _state
-        for band in EMERGENCY_AUDIO_BANDS:
+        total = len(EMERGENCY_AUDIO_BANDS)
+        for i, band in enumerate(EMERGENCY_AUDIO_BANDS):
             if _scan_stop.is_set():
                 break
             _stream.start(band['freq_mhz'], band['mode'], RFAUDIO_DEFAULT_GAIN)
             _state = 'scanning'
-            _publish_status(client)
+            _publish_status(client, scan_index=i, scan_total=total)
             log.info("scan: %s @ %.3f MHz", band['name'], band['freq_mhz'])
             if _scan_stop.wait(SCAN_DWELL_SEC):
                 break

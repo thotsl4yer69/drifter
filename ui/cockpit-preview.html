@@ -25,7 +25,7 @@
 
     --glass-bg: rgba(22, 27, 36, 0.62);
     --glass-bg-strong: rgba(22, 27, 36, 0.88);
-    --glass-stroke: rgba(255, 255, 255, 0.06);
+    --glass-stroke: rgba(255, 255, 255, 0.09);
     --glass-stroke-2: rgba(255, 255, 255, 0.10);
     --glass-stroke-amber: rgba(255, 174, 66, 0.45);
     --glass-stroke-cyan: rgba(125, 211, 252, 0.35);
@@ -38,6 +38,9 @@
     --fg-deep: #38414e;
 
     --amber: #ffae42;
+    /* FE-C3: focus-ring accent — tracks --amber so the keyboard ring
+       follows the active theme (amber is redefined per data-theme). */
+    --accent: var(--amber);
     --amber-deep: #b87a1f;
     --amber-glow: 0 0 24px rgba(255, 174, 66, 0.30);
     --amber-glow-strong: 0 0 32px rgba(255, 174, 66, 0.55);
@@ -472,6 +475,13 @@
     position: relative;
     overflow: hidden;
     min-height: 0;
+    /* Layered depth: inset top highlight reads as a lit bevel, soft drop
+       shadow lifts the tile off the near-black background. Static — no Pi
+       GPU cost (paints once, not per frame). */
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 8px 24px rgba(0, 0, 0, 0.30);
   }
   .tile::before {
     content:''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
@@ -501,8 +511,8 @@
     padding: 12px 16px 4px; position: relative;
   }
   .tile-label {
-    font-family: 'Major Mono Display', monospace; font-size: 9.5px;
-    letter-spacing: 0.28em; color: var(--amber-deep);
+    font-family: 'Major Mono Display', monospace; font-size: 12px;
+    letter-spacing: 0.24em; color: var(--amber);
   }
   .tile-meta {
     font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -510,7 +520,15 @@
   }
 
   /* ── HERO GAUGES ──────────────────────────────────────────── */
-  .row-hero { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; min-height: 0; position: relative; }
+  .row-hero { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 10px; min-height: 0; position: relative; }
+  /* Safety hierarchy: SPEED is the most-glanced datum, so it leads (top-left,
+     widest track) with rpm next; coolant/voltage follow. Reordered via grid
+     `order` rather than moving markup — gauges are bound by id, and this also
+     pulls speed into the first row at the 2-col phone breakpoint. */
+  .row-hero > #g-speed   { order: 1; }
+  .row-hero > #g-rpm     { order: 2; }
+  .row-hero > #g-coolant { order: 3; }
+  .row-hero > #g-voltage { order: 4; }
   .hero-empty-banner {
     position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%);
     font-family: 'Major Mono Display', monospace; font-size: 9.5px;
@@ -534,6 +552,9 @@
     overflow: hidden;
   }
   .gauge .val.dim { color: var(--fg-deep); }
+  /* No-data state: hide the needle so the bar doesn't read as a real
+     "reading pinned at minimum" before any telemetry frame arrives. */
+  .gauge .val.dim ~ .bar .needle { opacity: 0; }
   .gauge .val .unit {
     font-size: 14px; color: var(--fg-mute);
     font-weight: 400; letter-spacing: 0.06em;
@@ -556,8 +577,8 @@
   }
   .gauge .ladder {
     display: flex; justify-content: space-between; padding: 0 16px;
-    font-size: 9px; font-family: 'JetBrains Mono', monospace;
-    color: var(--fg-dim); letter-spacing: 0.06em;
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-mute); letter-spacing: 0.06em;
   }
   .gauge .ladder .peg { color: var(--amber); }
   .gauge.warn .val { color: var(--amber); text-shadow: var(--amber-glow); }
@@ -870,6 +891,19 @@
   .health-row .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
   .health-row .h-status.warn { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
   .health-row .h-status.bad { color: var(--red); border: 1px solid rgba(231,76,60,0.5); }
+  .health-row .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+  .h-action { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--amber);
+    padding: 2px 8px 4px 26px; letter-spacing: 0.04em; }
+  .rfa-crit-banner { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
+    border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; margin: 4px 0; }
+  .rfa-now { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal);
+    letter-spacing: 0.06em; padding: 2px 0 4px; }
+  .rfa-manual { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; margin: 4px 0; }
+  .rfa-manual input, .rfa-manual select { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    background: rgba(0,0,0,0.3); color: var(--fg); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 4px 6px; min-width: 0; }
+  .rfa-note { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-mute);
+    letter-spacing: 0.03em; padding: 4px 0 2px; }
   .health-popover { padding: 6px 8px; border-top: 1px dashed var(--glass-stroke);
     background: rgba(0,0,0,0.25); font-family: 'JetBrains Mono', monospace;
     font-size: 10px; color: var(--fg-mute); white-space: pre-wrap; }
@@ -1518,6 +1552,10 @@
     display: flex; gap: 2px; padding: 6px;
     border-bottom: 1px solid var(--glass-stroke);
     overflow-x: auto; scrollbar-width: none;
+    /* FE-C4: edge-fade affordance hints there are more tabs to scroll
+       past the right (and left) overflow boundary on the 16-tab strip. */
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
   }
   .drawer-tabs::-webkit-scrollbar { display: none; }
   .drawer-tab {
@@ -1741,7 +1779,7 @@
   .overlay-root.open { display: flex; align-items: center; justify-content: center; opacity: 1; }
   .overlay-card {
     width: min(680px, calc(100vw - 48px));
-    max-height: min(760px, calc(100vh - 96px));
+    max-height: min(760px, calc(100dvh - 96px));
     background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
     border: 1px solid rgba(255,174,66,0.22);
     border-radius: var(--r-lg);
@@ -2066,11 +2104,11 @@
 
   @media (max-width: 640px) {
     .top { padding: 0 6px; }
-    .top .pill.vitals { font-size: 8.5px; padding: 2px 5px; }
+    .top .pill.vitals { font-size: 10px; padding: 2px 5px; }
     .row-hero { gap: 6px; }
     .gauge { padding: 8px; }
     .gauge .val { font-size: 30px; }
-    .gauge .ladder { font-size: 8px; }
+    .gauge .ladder { font-size: 10px; }
     /* Phone — alerts + RF as a swipe-tab strip. JS adds .tab-strip /
        .tab-active classes; CSS hides whichever isn't active. */
     .row-split { display: block; position: relative; }
@@ -2119,6 +2157,41 @@
     .row-split .tile.tab-active.slide-from-right { animation: rowSplitSlideFromRight 180ms ease-out; }
     .row-split .tile.tab-active.slide-from-left  { animation: rowSplitSlideFromLeft  180ms ease-out; }
   }
+
+  /* ── FE-C3: honest disabled controls + keyboard focus ring ──────
+     aria-disabled controls (absent-hardware buttons) read as inert:
+     dimmed, not-allowed cursor, and non-interactive. The global
+     focus-visible ring restores keyboard discoverability that the
+     ghost-btn reset removed. */
+  [aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── FE-C1: prefers-reduced-motion ─────────────────────────────
+     Operators with vestibular sensitivity (or a moving vehicle) can
+     suppress all CSS animation. rAF canvas loops are paused in JS by
+     the same media query so the radar sweep / spectrum phosphor stop
+     too — gauges still update on real data. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ── FE-C2: landscape phone / short-viewport packing ───────────
+     A 360px-tall landscape phone has no room for the full 48px top +
+     64px rail + tall drawer. Collapse chrome and cap the data sheet so
+     gauges stay visible without overlap. */
+  @media (orientation: landscape) and (max-height: 480px) {
+    .shell { grid-template-rows: 36px 1fr; }
+    .top { height: 36px; }
+    .rail { width: 52px; }
+    .rail-btn .rail-label { display: none; }
+    .data-sheet, .sheet { max-height: min(70vh, 320px); }
+    .drawer-body { max-height: min(70dvh, 320px); }
+    .overlay-card { max-height: min(94dvh, calc(100dvh - 24px)); }
+  }
 </style>
 </head>
 <body>
@@ -2134,10 +2207,10 @@
         <div class="sub">uncaged technology / est 1991</div>
       </div>
     </div>
-    <div class="reg" id="reg-id">REG. <b>N7-DRFT-X25</b></div>
+    <div class="reg" id="reg-id">REG. <b>—</b></div>
     <div class="top-spacer"></div>
 
-    <span class="pill driver" id="pill-driver"><span class="dot"></span>OPERATOR · MAZ</span>
+    <span class="pill driver" id="pill-driver"><span class="dot"></span>OPERATOR</span>
     <span class="pill" id="pill-gps"><span class="dot" style="background:var(--fg-deep);box-shadow:none"></span>GPS · <span class="mono v">—</span></span>
     <span class="pill idle" id="pill-health"><span class="dot"></span>HEALTHZ · <span class="v">—</span></span>
     <span class="pill clickable" id="pill-mode" role="button" tabindex="0"
@@ -2413,7 +2486,7 @@
 
   <!-- ── DRAWER ───────────────────────────────────────────── -->
   <aside class="drawer">
-    <div class="drawer-tabs" id="drawer-tabs">
+    <div class="drawer-tabs" id="drawer-tabs" role="tablist" aria-label="Data panels">
       <div class="drawer-tab active" data-tab="sensors">SENSORS <span class="count" data-count="sensors">0</span></div>
       <div class="drawer-tab" data-tab="tires">TIRES <span class="count" data-count="tires">0/4</span></div>
       <div class="drawer-tab" data-tab="dtcs">DTCS <span class="count" data-count="dtcs">0</span></div>
@@ -2432,12 +2505,12 @@
       <div class="drawer-tab" data-tab="health">HEALTH <span class="count" data-count="health">—</span></div>
     </div>
 
-    <div class="drawer-body" id="drawer-body">
+    <div class="drawer-body" id="drawer-body" role="tabpanel" tabindex="0" aria-label="Active data panel">
       <div class="empty"><span class="gl">◌</span>Loading…</div>
     </div>
 
     <div class="drawer-foot">
-      <span>driver · <span class="driver" id="foot-driver">MAZ</span></span>
+      <span>driver · <span class="driver" id="foot-driver">—</span></span>
       <span class="mono" id="foot-session">session —</span>
     </div>
   </aside>
@@ -2513,6 +2586,9 @@
 
   // Capture IDs in pending-confirm state for inline replay confirm rows.
   const pendingReplays = new Set();
+  // FE-C6: destructive CAN/RF ops require a second confirm tap. Keys:
+  // 'fuzz' (FUZZ ID RANGE) and 'tpms_clear' (clear TPMS assignments).
+  const pendingConfirm = new Set();
   // Set to the unix-ms when FORCE SPECTRUM SCAN was last clicked. The button
   // stays in .busy until either the next drifter/rf/spectrum frame lands via
   // WS or this deadline expires (rtl_power sweeps usually finish in 60–90s).
@@ -2589,6 +2665,11 @@
   const SPARK_LEN = 60;
   const gaugeBuf = { coolant: [], voltage: [], rpm: [], speed: [] };
   const gaugeLastTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
+  // Source timestamp (seconds) of the last real value per gauge. Drives
+  // client-side staleness expiry so a frozen needle can never read as live
+  // after a CAN dropout. 0 = never seen.
+  const GAUGE_STALE_SEC = 8;
+  const gaugeValueTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
 
   // ── Hero gauge live-state ───────────────────────────────────────
   // Counts gauges that have received a value (have .live class) and
@@ -2765,6 +2846,10 @@
     if (!tile) return;
     if (typeof value !== 'number' || !isFinite(value)) return;
 
+    // Record the source freshness of this real datum (used by the staleness
+    // sweep). Done before the throttle return so buffered values still count.
+    gaugeValueTs[name] = ts || Date.now() / 1000;
+
     // Throttle to 4Hz max so a high-rate CAN topic doesn't repaint constantly.
     const now = Date.now();
     if (now - gaugeLastTs[name] < 200) {
@@ -2795,6 +2880,7 @@
       else if (value >= cfg.warn) tile.classList.add('warn');
     }
     tile.classList.add('live');
+    everSeenTelemetry = true;
     updateHeroLiveState();
 
     // Needle position
@@ -2819,11 +2905,41 @@
     }
   }
 
+  // Client-side staleness expiry: a gauge whose source value stopped
+  // updating must lose .live and dim within GAUGE_STALE_SEC. We dim the
+  // number (do NOT zero it) and park the needle/ghost — re-arming on the
+  // next real value clears the dim. Runs alongside the poll loop.
+  function sweepGaugeStaleness(){
+    const now = Date.now() / 1000;
+    for (const name in GAUGES){
+      const cfg = GAUGES[name];
+      const tile = document.getElementById(cfg.id);
+      if (!tile) continue;
+      const seenTs = gaugeValueTs[name];
+      if (!seenTs) continue;            // never armed — leave untouched
+      if (now - seenTs > GAUGE_STALE_SEC && tile.classList.contains('live')){
+        tile.classList.remove('live');
+        const valEl = tile.querySelector('.val');
+        if (valEl) valEl.classList.add('dim');
+        updateHeroLiveState();
+      }
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // ALERTS / DTC tile
   // ═══════════════════════════════════════════════════════════════
   const alertsRing = [];   // max 5, newest first
   const ALERT_RING_MAX = 5;
+  // Real-data-only: never invent a "last clear" time. Stamp it only when we
+  // actually observe alerts transition from present → none (a genuine clear
+  // event the running UI witnessed). Null until then → renders as an em-dash.
+  let alertsLastClearTs = null;
+  let alertsPrevActive = 0;
+  // True once any real datum has arrived (a gauge went live, or an alert/DTC
+  // exists). Until then the summary chips show "—" instead of a hard 0 so the
+  // bench/cold-boot state reads as "no data yet" rather than "connected, clear".
+  let everSeenTelemetry = false;
 
   function pushAlert(a){
     // Dedupe by ts+message
@@ -2843,14 +2959,23 @@
     const active = alertsRing.length;
     const crit = alertsRing.filter(a => (a.level||0) >= 3).length;
     const anomalies = alertsRing.filter(isAnomaly).length;
-    document.getElementById('al-active').textContent = active;
-    document.getElementById('al-crit').textContent = crit;
+    // Any real alert/DTC datum counts as telemetry seen.
+    if (active > 0 || dtcList.length > 0) everSeenTelemetry = true;
+    // Show real counts once any data has arrived; "—" on a cold/bench start so
+    // a hard 0 can't be mistaken for "connected and clear".
+    const chip = n => everSeenTelemetry ? String(n) : '—';
+    document.getElementById('al-active').textContent = chip(active);
+    document.getElementById('al-crit').textContent = chip(crit);
     const anomEl = document.getElementById('al-anomaly');
-    if (anomEl) anomEl.textContent = anomalies;
-    document.getElementById('al-dtcs').textContent = dtcList.length;
-    const lastClear = alertsRing.length === 0 ? new Date()
-      .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : '—';
-    document.getElementById('al-last').textContent = lastClear;
+    if (anomEl) anomEl.textContent = chip(anomalies);
+    document.getElementById('al-dtcs').textContent = chip(dtcList.length);
+    // Stamp "last clear" only on a genuine present → none transition.
+    if (alertsPrevActive > 0 && active === 0) {
+      alertsLastClearTs = new Date()
+        .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false});
+    }
+    alertsPrevActive = active;
+    document.getElementById('al-last').textContent = alertsLastClearTs || '—';
 
     const tile = document.getElementById('alerts-tile');
     tile.classList.toggle('crit', crit > 0);
@@ -2951,7 +3076,7 @@
       if (v) v.textContent = val || (on ? 'on' : '—');
     };
     setMod('rtl_433',  !!status.rtl_433_active,  status.rtl_433_active ? 'TRX' : 'idle');
-    setMod('dump1090', !!status.dump1090_active, status.dump1090_active ? 'ADSB' : 'idle');
+    setMod('dump1090', !!status.dump1090_active, status.dump1090_active ? 'ADSB' : (status.dump1090_active == null ? '—' : 'idle'));
     const specAge = cache.rfSpec && cache.rfSpec.ts ? fmtAge(cache.rfSpec.ts) : '—';
     setMod('spectrum', !!(cache.rfSpec && cache.rfSpec.ts), specAge);
     setMod('rfaudio',  !!status.rfaudio_active, status.rfaudio_active ? 'on' : 'idle');
@@ -3073,6 +3198,10 @@
     const bandEl = document.getElementById('spectrum-bandplan');
     const heatWrap = document.getElementById('spectrum-heat-wrap');
     if (!heatCanvas || !waveCanvas) return;
+    // FE-C5: match backing store to displayed width × DPR (heights are
+    // fixed by CSS: wave 50px, heat 22px). Done before any geometry read.
+    fitCanvasDpr(waveCanvas, 50);
+    fitCanvasDpr(heatCanvas, 22);
     if (!bins || !bins.length) {
       if (empty) empty.style.display = '';
       if (heatWrap) heatWrap.style.display = 'none';
@@ -3404,12 +3533,12 @@
     { key: 'run_time',   label: 'Run time',  id: 'PID 0x1F', unit: 's' },
   ];
 
-  // ADS-B radar — rings at 1/3/10/30 km. If no GPS fix yet, falls
-  // back to a Melbourne placeholder FOR VISUALIZATION ONLY, never
-  // persisted/republished. Producer: /api/aircraft/recent (drifter-feeds).
+  // ADS-B radar — rings at 1/3/10/30 km. If no GPS fix yet (or the
+  // snapshot is stale), the scope draws empty with an AWAITING GPS FIX
+  // label and plots no blips — never a fabricated origin.
+  // Producer: /api/aircraft/recent (drifter-feeds).
   const ADSB_RADAR_RANGE_KM = 30;
   const ADSB_RADAR_RINGS = [1, 3, 10, 30];
-  const ADSB_PLACEHOLDER_ORIGIN = { lat: -37.85, lon: 144.96 };
   // Tracks: hex → { trail: [{x,y,t}], firstSeen }. Trail dots fade
   // behind each contact so motion is legible between updates.
   const _adsbRadarState = {
@@ -3466,16 +3595,21 @@
       ctx.fillStyle = `rgba(94,234,212,${alpha.toFixed(3)})`;
       ctx.fill();
     }
-    // Bright leading edge
+    // Bright leading edge — two solid strokes (a wider translucent base under
+    // a bright core) fake the glow without per-frame shadowBlur, which is one
+    // of the most expensive Canvas2D ops on the Pi's limited-GL stack.
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -radius);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(94,234,212,0.35)';
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(0, -radius);
     ctx.lineWidth = 1.6;
-    ctx.strokeStyle = 'rgba(160,255,240,0.9)';
-    ctx.shadowColor = 'rgba(94,234,212,0.9)';
-    ctx.shadowBlur = 12;
+    ctx.strokeStyle = 'rgba(190,255,245,0.95)';
     ctx.stroke();
-    ctx.shadowBlur = 0;
     ctx.restore();
 
     // ── Ping rings ───────────────────────────────────────────────
@@ -3487,20 +3621,58 @@
       const t = (nowMs - p.t0) / PING_MS;
       if (t > 1) { pings.splice(i, 1); continue; }
       const r = 4 + t * 28;
+      const a = 1 - t;
+      // Soft halo + bright core, no per-frame shadowBlur.
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(255,210,140,${(1 - t).toFixed(3)})`;
-      ctx.lineWidth = 1.4;
-      ctx.shadowColor = 'rgba(255,174,66,0.7)';
-      ctx.shadowBlur = 8;
+      ctx.strokeStyle = `rgba(255,174,66,${(a * 0.35).toFixed(3)})`;
+      ctx.lineWidth = 3;
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,210,140,${a.toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
     // Continue animation if anything is moving.
     _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
   }
 
+  // FE-C1: honor OS reduce-motion — the rotating radar sweep is the one
+  // rAF loop that runs continuously, so gate it. The static rings + blips
+  // (renderAdsbRadar) still draw; only the animated beam is suppressed.
+  function prefersReducedMotion(){
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (_) { return false; }
+  }
+  // FE-C5: size a canvas backing store to its displayed CSS size × DPR so
+  // the spectrum + ADS-B scope stay crisp on hi-DPI screens and never
+  // overflow the mobile drawer. Returns true if dimensions changed (caller
+  // may need a full redraw). The render code reads canvas.width/height for
+  // its pixel geometry, so growing the backing store is all that's needed —
+  // CSS keeps the displayed size at 100%. cssH may be omitted to derive it
+  // from the rendered client height (keeps aspect for the square radar).
+  function fitCanvasDpr(canvas, cssH){
+    if (!canvas) return false;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cssW = canvas.clientWidth || canvas.width;
+    const h = cssH != null ? cssH : (canvas.clientHeight || canvas.height);
+    const wantW = Math.max(1, Math.round(cssW * dpr));
+    const wantH = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW; canvas.height = wantH;
+      return true;
+    }
+    return false;
+  }
   function _adsbEnsureSweep(){
+    if (prefersReducedMotion()) {
+      // Clear any beam already drawn and never schedule the loop.
+      const sweep = document.getElementById('adsb-radar-sweep');
+      if (sweep) { const sc = sweep.getContext('2d'); sc.clearRect(0, 0, sweep.width, sweep.height); }
+      if (_adsbRadarState.sweepRaf) { cancelAnimationFrame(_adsbRadarState.sweepRaf); _adsbRadarState.sweepRaf = 0; }
+      return;
+    }
     if (!_adsbRadarState.sweepRaf) {
       _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
     }
@@ -3509,6 +3681,13 @@
   function renderAdsbRadar(){
     const canvas = document.getElementById('adsb-radar');
     if (!canvas) return;
+    // FE-C5: square scope — size both stacked canvases to the displayed
+    // box × DPR so the rings/blips and sweep beam share one pixel grid
+    // and stay sharp without overflowing the mobile drawer.
+    const cssSide = canvas.clientWidth || canvas.width;
+    fitCanvasDpr(canvas, cssSide);
+    const sweepCv = document.getElementById('adsb-radar-sweep');
+    if (sweepCv) fitCanvasDpr(sweepCv, cssSide);
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 18;
@@ -3592,10 +3771,23 @@
     const snap = cache.aircraft || {};
     const list = Array.isArray(snap.aircraft) ? snap.aircraft : [];
     const oSnap = snap.origin || {};
-    const oLat = oSnap.lat != null ? oSnap.lat : ADSB_PLACEHOLDER_ORIGIN.lat;
-    const oLon = oSnap.lon != null ? oSnap.lon : ADSB_PLACEHOLDER_ORIGIN.lon;
     const now = Date.now() / 1000;
     const nowMs = performance.now();
+
+    // ── Freshness + real-origin gate ─────────────────────────────
+    // Plot ONLY against a real GPS origin from a fresh snapshot. No
+    // fabricated/placeholder origin, ever. Stale or no fix → empty
+    // scope (rings already drawn above) + AWAITING GPS FIX, no blips.
+    const fresh = snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
+    if (!fresh || oSnap.lat == null || oSnap.lon == null) {
+      ctx.fillStyle = 'rgba(245,245,245,0.7)';
+      ctx.font = '600 11px "Major Mono Display", "JetBrains Mono", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('AWAITING GPS FIX', cx, cy + radius * 0.45);
+      return;
+    }
+    const oLat = oSnap.lat;
+    const oLon = oSnap.lon;
 
     _adsbRadarState.hits = [];
     const seenHexes = new Set();
@@ -3816,7 +4008,7 @@
         </span>
         <span class="ghost-btn crit" id="tpms-clear-learn" role="button" tabindex="0">CLEAR LEARN</span>
         <span class="ghost-btn crit" id="tpms-clear-assignments" role="button" tabindex="0" title="Wipe per-corner assignment file">CLEAR ASSIGNMENTS</span>
-      </div>`;
+      </div>${pendingConfirm.has('tpms_clear') ? `<div class="confirm-row high-risk-confirm" data-confirm-row="tpms_clear"><span class="high-risk-badge">TPMS CLEAR</span>Wipe all per-corner sensor assignments? <span class="ghost-btn crit" data-confirm-tpms-clear role="button" tabindex="0">CONFIRM CLEAR</span><span class="ghost-btn" data-cancel-confirm="tpms_clear" role="button" tabindex="0">CANCEL</span></div>` : ''}`;
 
       // Per-sensor harvest table: shows each sensor ID seen since
       // HARVEST start, last pressure/temp/RSSI, plus a corner-assignment
@@ -3857,7 +4049,7 @@
       const list = Array.isArray(snap.codes) ? snap.codes
                  : Array.isArray(snap) ? snap : [];
       if (!list.length) {
-        return `<div class="section-head"><span>diagnostic codes</span><span class="tag">/api/dtcs/recent</span></div>` +
+        return `<div class="section-head"><span>diagnostic codes</span><span class="tag">diagnostic ring</span></div>` +
           emptyState('◇', 'No stored DTCs. Diagnostic ring is clean.');
       }
       const rows = list.map(d => {
@@ -3902,28 +4094,43 @@
       const out = [];
       out.push(`<div class="section-head"><span>rf · pipeline</span><span class="tag">drifter-rf · rfaudio</span></div>`);
       const modKv = (k, v) => `<div class="kv"><div class="k">${esc(k)}</div><div class="v ${v && v !== '—' ? 'teal' : 'dim'}">${esc(v || '—')}</div></div>`;
-      out.push(modKv('rtl_433',  status.rtl_433_active  ? 'active' : 'idle'));
-      out.push(modKv('dump1090', status.dump1090_active ? 'active' : 'idle'));
-      out.push(modKv('rfaudio',  status.rfaudio_active  ? 'active' : 'idle'));
+      // Build the body separately so the empty-state can fire honestly.
+      // The earlier `out.join('') || emptyState(...)` was unreachable
+      // because the section-head above always made `out` truthy (FE-B4).
+      const body = [];
+      body.push(modKv('rtl_433',  status.rtl_433_active  ? 'active' : 'idle'));
+      // dump1090: render `—` until an independent flag arrives (R6 — no
+      // mirror-faking from rtl_433). null/undefined → `—`, false → idle.
+      body.push(modKv('dump1090', status.dump1090_active ? 'active' : (status.dump1090_active == null ? '—' : 'idle')));
+      body.push(modKv('rfaudio',  status.rfaudio_active  ? 'active' : 'idle'));
       if (sp.ts) {
-        out.push(modKv('spectrum', `${fmtAge(sp.ts)} ago`));
+        body.push(modKv('spectrum', `${fmtAge(sp.ts)} ago`));
         const strongest = sp.strongest_signal || {};
         if (strongest.freq != null) {
           const p = strongest.power_db != null ? strongest.power_db : strongest.power;
-          out.push(modKv('peak', `${strongest.freq} MHz · ${p != null ? p+' dB' : '—'}`));
+          body.push(modKv('peak', `${strongest.freq} MHz · ${p != null ? p+' dB' : '—'}`));
         }
       }
       const emerBands = (emer.bands && Object.keys(emer.bands)) || [];
       if (emerBands.length) {
-        out.push(`<div class="section-head" style="margin-top:6px"><span>emergency bands</span><span class="tag">${emerBands.length} watched</span></div>`);
+        body.push(`<div class="section-head" style="margin-top:6px"><span>emergency bands</span><span class="tag">${emerBands.length} watched</span></div>`);
         for (const k of emerBands) {
           const entry = emer.bands[k] || {};
           const dbm = entry.power_db != null ? entry.power_db
                     : entry.dbm != null ? entry.dbm : null;
-          out.push(`<div class="kv"><div class="k">${esc(k)}</div><div class="v">${dbm != null ? dbm.toFixed(1)+' dBm' : '—'}</div></div>`);
+          body.push(`<div class="kv"><div class="k">${esc(k)}</div><div class="v">${dbm != null ? dbm.toFixed(1)+' dBm' : '—'}</div></div>`);
         }
       }
-      return out.join('') || emptyState('⊚', 'RF service idle. Plug in RTL-SDR or start drifter-rf.');
+      // "Meaningful" body = any live pipeline flag, spectrum data, or
+      // watched emergency bands. The 3 always-present idle mod rows alone
+      // do not count — when everything is idle/empty, show the friendly
+      // empty state instead of a wall of `idle`.
+      const meaningful = !!(status.rtl_433_active || status.dump1090_active ||
+                            status.rfaudio_active || sp.ts || emerBands.length);
+      if (meaningful) {
+        return out.concat(body).join('');
+      }
+      return out.join('') + emptyState('⊚', 'RF service idle. Plug in RTL-SDR or start drifter-rf.');
     },
 
     ble(){
@@ -4172,16 +4379,81 @@
       const rfa = cache.rfaudioStatus || {};
       const activeFreq = rfa.freq_mhz;
       const bands = Array.isArray(rfa.bands) && rfa.bands.length ? rfa.bands : EMERGENCY_BANDS_FALLBACK;
-      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · quick tune</span><span class="tag">${rfa.state || 'idle'}${activeFreq ? ' · '+activeFreq+' MHz' : ''}</span></div>`);
+      // Honest hardware gating (FE-B2). BE-2 merges probe presence into
+      // /api/rfaudio/status. Treat an *absent* presence flag as "unknown
+      // → assume present" so a stale/old backend doesn't dim everything;
+      // only an explicit `false` disables controls.
+      const sdrAbsent     = rfa.sdr_present === false;
+      const speakerAbsent = rfa.speaker_present === false;
+      const sdrAction     = rfa.sdr_action || 'plug in RTL-SDR';
+      const speakerAction = rfa.speaker_action || 'plug in USB audio dongle';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · quick tune</span><span class="tag">${esc(rfa.state || 'idle')}${activeFreq ? ' · '+activeFreq+' MHz' : ''}</span></div>`);
+
+      // FE-B2 — surface a backend error as a crit banner; cleared when
+      // the next clean status carries no error.
+      if (rfa.error) {
+        out.push(`<div class="rfa-crit-banner crit">⚠ ${esc(String(rfa.error))}</div>`);
+      }
+
+      // FE-B3 — compact NOW readout + scan progress when scanning.
+      const nowParts = [];
+      if (rfa.state === 'playing' || rfa.state === 'scanning') {
+        if (rfa.freq_mhz != null) nowParts.push(`${rfa.freq_mhz} MHz`);
+        if (rfa.mode) nowParts.push(esc(rfa.mode));
+      }
+      let scanProg = '';
+      if (rfa.state === 'scanning') {
+        // Match current freq against the band list for a friendly name.
+        const cur = Array.isArray(rfa.bands)
+          ? rfa.bands.find(b => activeFreq != null && Math.abs((b.freq_mhz || 0) - activeFreq) < 0.01)
+          : null;
+        if (cur && cur.name) scanProg += ` · ${esc(cur.name)}`;
+        if (rfa.scan_index != null && rfa.scan_total != null) {
+          scanProg += ` · ${rfa.scan_index + 1}/${rfa.scan_total}`;
+        }
+      }
+      out.push(`<div class="rfa-now">NOW ${nowParts.length ? nowParts.join(' ') : '—'}${scanProg}</div>`);
+
       const bandBtns = bands.map(b => {
         const active = activeFreq != null && Math.abs((b.freq_mhz || 0) - activeFreq) < 0.01;
-        const cls = active ? 'ghost-btn live band-btn' : 'ghost-btn band-btn';
-        return `<span class="${cls}" data-rfaudio-band data-freq="${b.freq_mhz}" data-mode="${esc(b.mode || 'nfm')}" role="button" tabindex="0">
+        let cls = active ? 'ghost-btn live band-btn' : 'ghost-btn band-btn';
+        const dis = sdrAbsent || speakerAbsent;
+        if (dis) cls += ' dim';
+        return `<span class="${cls}" data-rfaudio-band data-freq="${b.freq_mhz}" data-mode="${esc(b.mode || 'nfm')}" role="button" tabindex="0"${dis ? ' aria-disabled="true"' : ''}>
           ${active ? '<span class="dot"></span>' : ''}${esc(b.name)}<span class="freq">${b.freq_mhz} MHz · ${esc(b.mode || 'nfm')}</span>
         </span>`;
       }).join('');
       out.push(`<div class="btn-grid">${bandBtns}</div>`);
-      out.push(`<div class="btn-row"><span class="ghost-btn crit" id="rfaudio-band-stop" role="button" tabindex="0">STOP</span></div>`);
+      if (sdrAbsent) {
+        out.push(emptyState('∿', sdrAction));
+      } else if (speakerAbsent) {
+        out.push(emptyState('🔇', speakerAction));
+      }
+
+      // FE-B2 — manual tune sub-panel. Numeric freq + mode + gain (auto=0).
+      const tuneDis = sdrAbsent || speakerAbsent;
+      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · manual tune</span><span class="tag">24–1766 MHz</span></div>`);
+      out.push(`<div class="rfa-manual">
+        <input type="number" id="rfa-freq" min="24" max="1766" step="0.001" placeholder="MHz" aria-label="frequency MHz">
+        <select id="rfa-mode" aria-label="mode">
+          <option value="nfm">nfm</option>
+          <option value="wfm">wfm</option>
+          <option value="fm">fm</option>
+          <option value="am">am</option>
+          <option value="usb">usb</option>
+          <option value="lsb">lsb</option>
+          <option value="raw">raw</option>
+        </select>
+        <input type="number" id="rfa-gain" min="0" max="49.6" step="0.1" value="0" placeholder="gain (0=auto)" aria-label="gain">
+      </div>`);
+      out.push(`<div class="btn-row">
+        <span class="ghost-btn${tuneDis ? ' dim' : ''}" id="rfaudio-manual-tune" role="button" tabindex="0"${tuneDis ? ' aria-disabled="true"' : ''}>TUNE</span>
+        <span class="ghost-btn${speakerAbsent ? ' dim' : ''}" id="rfaudio-test-tone" role="button" tabindex="0"${speakerAbsent ? ' aria-disabled="true"' : ''}>TEST TONE</span>
+        <span class="ghost-btn" id="rfaudio-refresh-bands" role="button" tabindex="0">REFRESH BANDS</span>
+        <span class="ghost-btn crit" id="rfaudio-band-stop" role="button" tabindex="0">STOP</span>
+      </div>`);
+      // Shared-SDR note — always visible (FE-B3).
+      out.push(`<div class="rfa-note">Starting audio pauses TPMS/spectrum (shared SDR)</div>`);
       return out.join('');
     },
 
@@ -4297,6 +4569,11 @@
         </select>
         <span class="ghost-btn crit" id="candisc-fuzz-range" role="button" tabindex="0" title="Brute-force a range of CAN IDs and log replies">FUZZ ID RANGE</span>
       </div>`);
+      // FE-C6: FUZZ floods the bus — require a second confirm tap before
+      // any command leaves the UI (mirrors the sub-GHz REPLAY confirm row).
+      if (pendingConfirm.has('fuzz')) {
+        out.push(`<div class="confirm-row high-risk-confirm" data-confirm-row="fuzz"><span class="high-risk-badge">CAN FUZZ</span>Brute-force the selected CAN ID range? <span class="ghost-btn crit" data-confirm-fuzz role="button" tabindex="0">CONFIRM FUZZ</span><span class="ghost-btn" data-cancel-confirm="fuzz" role="button" tabindex="0">CANCEL</span></div>`);
+      }
 
       // Results table — sortable by header click (lightweight, no library).
       out.push(`<div class="section-head" style="margin-top:8px"><span>results</span><span class="tag">${discoveries.length} run${discoveries.length === 1 ? '' : 's'} · last ${Math.min(8, discoveries.length)}</span></div>`);
@@ -4365,7 +4642,7 @@
       </div>`);
       out.push(`<iframe id="tar1090-frame" src="http://${location.hostname}:8504/"
         sandbox="allow-scripts allow-same-origin allow-popups"
-        style="width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
+        style="width:100%; height:calc(100dvh - 220px); min-height:480px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
         loading="lazy"></iframe>`);
       // Defer the probe — if it fails, flip the cache flag and re-render.
       setTimeout(probeTar1090, 0);
@@ -4377,7 +4654,7 @@
       const out = [];
       out.push(`<div class="section-head"><span>sessions · recent</span><span class="tag">${list.length} of last 10</span></div>`);
       if (!list.length) {
-        out.push(emptyState('∿', 'No sessions yet. Drives auto-record when CAN traffic begins (ignition ON). drifter-logger writes one .jsonl per drive to /opt/drifter/state/sessions/.'));
+        out.push(emptyState('∿', 'No sessions yet. Drives auto-record when CAN traffic begins (ignition ON). One log per drive.'));
       } else {
         for (const s of list) {
           const startTs = s.start_ts || s.started_at || s.ts;
@@ -4466,7 +4743,7 @@
       const targets = Array.isArray(a.recent_targets) ? a.recent_targets.slice(0, 5) : [];
       out.push(`<div class="section-head" style="margin-top:8px"><span>recent targets</span><span class="tag">last ${targets.length}</span></div>`);
       if (!targets.length) {
-        out.push(emptyState('∿', 'ALLOWLIST EMPTY OR AUDIT IDLE — edit /opt/drifter/etc/audit_targets.yaml'));
+        out.push(emptyState('∿', 'No audit targets configured.'));
       } else {
         for (const t of targets) {
           const typ = (t.type || '').toLowerCase();
@@ -4489,7 +4766,7 @@
       const sw = st.system_watchdog || {};
       const sys = sw.system || {};
       const out = [];
-      out.push(`<div class="section-head"><span>hardware health</span><span class="tag">composed · /healthz + /api/state</span></div>`);
+      out.push(`<div class="section-head"><span>hardware health</span><span class="tag">system health</span></div>`);
       // Top chip row
       const overall = sw.overall || hz.status || '—';
       const chipCls = overall === 'ok' || overall === 'online' ? 'cyan' : (overall === 'degraded' ? 'red' : 'amber');
@@ -4510,14 +4787,14 @@
       rows.push({ glyph: '⌁', name: 'usb tree', meta: `${usbCount} known devices · rtl-sdr ${sdrOn ? 'on' : 'off'} · mic ${mic.detected ? 'on' : 'off'} · bt ${bt.detected ? 'on' : 'off'}`, status: usbCount ? 'ok' : 'warn', detail: JSON.stringify({rtl_sdr: sdr, microphone: mic, bluetooth: bt}, null, 2) });
       // RTL-SDR row
       const rfStatus = cache.rfStatus || st.rf_status || {};
-      rows.push({ glyph: '∿', name: 'rtl-sdr', meta: `${rfStatus.state || 'idle'} · gain ${sdr.gain != null ? sdr.gain : 'auto'} · sr ${sdr.sample_rate || '2.4M'} · f ${sdr.frequency_mhz != null ? sdr.frequency_mhz.toFixed(2)+' MHz' : '—'}`, status: rfStatus.state === 'online' ? 'ok' : 'warn', detail: JSON.stringify(rfStatus, null, 2) });
+      rows.push({ glyph: '∿', name: 'rtl-sdr', meta: `${rfStatus.state || 'idle'} · gain ${sdr.gain != null ? sdr.gain : '—'} · sr ${sdr.sample_rate || '—'} · f ${sdr.frequency_mhz != null ? sdr.frequency_mhz.toFixed(2)+' MHz' : '—'}`, status: rfStatus.state === 'online' ? 'ok' : 'warn', detail: JSON.stringify(rfStatus, null, 2) });
       // Flipper row
       const fh = cache.flipperHardware || st.flipper_hardware || {};
       const fs = cache.flipperStatus   || st.flipper_status   || {};
       rows.push({ glyph: '⌬', name: 'flipper', meta: `fw ${esc(fs.firmware || fh.firmware || '—')} · batt ${fh.battery_percent != null ? fh.battery_percent+'%' : '—'} · module ${esc(fh.module || 'none')}`, status: fs.state === 'connected' ? 'ok' : 'warn', detail: JSON.stringify({status: fs, hardware: fh}, null, 2) });
       // CAN row
       const candisc = cache.canDiscovery || st.can_discovery_status || {};
-      rows.push({ glyph: '◈', name: 'can bus', meta: `${esc(candisc.state || 'unknown')} · ${candisc.bitrate || '500k'} · err ${candisc.error_count != null ? candisc.error_count : 0} · last ${candisc.last_frame_ts ? fmtAge(candisc.last_frame_ts)+' ago' : '—'}`, status: candisc.state === 'active' ? 'ok' : 'warn', detail: JSON.stringify(candisc, null, 2) });
+      rows.push({ glyph: '◈', name: 'can bus', meta: `${esc(candisc.state || 'unknown')} · ${candisc.bitrate || '—'} · err ${candisc.error_count != null ? candisc.error_count : 0} · last ${candisc.last_frame_ts ? fmtAge(candisc.last_frame_ts)+' ago' : '—'}`, status: candisc.state === 'active' ? 'ok' : 'warn', detail: JSON.stringify(candisc, null, 2) });
       // GPS row — pull from state if present
       const gps = st.gps || st.gps_fix || {};
       const gpsFix = gps.fix || gps.mode || (gps.lat != null ? '3d' : 'none');
@@ -4543,6 +4820,41 @@
         </div>
         <div class="health-popover" id="health-pop-${i}" hidden>${esc(r.detail)}</div>`);
       }
+      // ── Hardware affordances (FE-B1) — from /api/hardware. Renders the
+      // backend's actionable summary + probe rows. Probes with
+      // connected:false stay visible as `missing` + remediation; never
+      // hidden, never faked.
+      const hw = cache.hardware || {};
+      const summary = Array.isArray(hw.summary) ? hw.summary : [];
+      const probes = (hw.probes && typeof hw.probes === 'object') ? hw.probes : {};
+      const hwRows = [];
+      const STATUS_OK = { ok: 1, missing: 1, warn: 1 };
+      for (const s of summary) {
+        if (!s || !s.item) continue;
+        const status = STATUS_OK[s.status] ? s.status : 'warn';
+        hwRows.push({ item: s.item, status, detail: s.detail || '', action: s.action || '' });
+      }
+      // Probe rows not already covered by summary — keep disconnected ones visible.
+      const summaryItems = new Set(summary.map(s => s && s.item).filter(Boolean));
+      for (const [dev, p] of Object.entries(probes)) {
+        if (summaryItems.has(dev) || !p || typeof p !== 'object') continue;
+        const connected = !!p.connected;
+        hwRows.push({ item: dev, status: connected ? 'ok' : 'missing',
+                      detail: p.detail || '', action: connected ? '' : (p.action || '') });
+      }
+      if (hwRows.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>hardware affordances</span><span class="tag">${hwRows.length} probe(s)</span></div>`);
+        for (const hr of hwRows) {
+          out.push(`<div class="health-row">
+            <div class="h-glyph">∷</div>
+            <div>
+              <div class="h-name">${esc(hr.item)}</div>
+              <div class="h-meta">${esc(hr.detail || '—')}</div>
+            </div>
+            <div class="h-status ${hr.status}">${esc(hr.status)}</div>
+          </div>` + (hr.action ? `<div class="h-action">${esc(hr.action)}</div>` : ''));
+        }
+      }
       return out.join('');
     },
   };
@@ -4559,7 +4871,11 @@
     activeTab = name;
     localStorage.setItem('drifter.drawer.tab', name);
     document.querySelectorAll('.drawer-tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.tab === name);
+      const sel = t.dataset.tab === name;
+      t.classList.toggle('active', sel);
+      // FE-C4: keep ARIA tab state in sync with the visual active state.
+      t.setAttribute('aria-selected', sel ? 'true' : 'false');
+      t.tabIndex = sel ? 0 : -1;
     });
     render();
   }
@@ -4748,6 +5064,10 @@
     reconcileRfOpsButtons();
     if (activeTab === 'flipper') render();
   }
+  async function loadHardware(){
+    cache.hardware = await safeFetch('/api/hardware') || cache.hardware;
+    if (activeTab === 'health') render();
+  }
   async function loadBle(){
     cache.ble = await safeFetch('/api/ble/recent') || cache.ble;
     const allDets = (cache.ble && cache.ble.detections) || [];
@@ -4877,22 +5197,24 @@
   async function loadDriver(){
     // /api/driver returns {preferred_name, name, registration_plate} —
     // all may be null on a fresh bench Pi. Patch the topbar pill, drawer
-    // foot, and reg plate so a hardcoded "MAZ" / "N7-DRFT-X25" never
+    // foot, and reg plate so a hardcoded operator name / plate never
     // ships as the operator identity.
     const j = await safeFetch('/api/driver');
     const dn = (j && (j.preferred_name || j.name) || '').trim();
-    const label = dn ? dn.toUpperCase() : 'OPERATOR';
+    const label = dn ? dn.toUpperCase() : '';
     const pill = document.getElementById('pill-driver');
     if (pill) {
       // Preserve the leading status dot; replace the text node only.
-      pill.innerHTML = '<span class="dot"></span>OPERATOR · ' + esc(label);
+      // No real name yet → bare "OPERATOR" (never a fabricated identity).
+      pill.innerHTML = '<span class="dot"></span>OPERATOR' + (label ? ' · ' + esc(label) : '');
     }
     const foot = document.getElementById('foot-driver');
-    if (foot) foot.textContent = label;
+    if (foot) foot.textContent = label || 'OPERATOR';
     const reg = (j && j.registration_plate || '').trim();
-    if (reg) {
-      const regEl = document.getElementById('reg-id');
-      if (regEl) regEl.innerHTML = 'REG. <b>' + esc(reg) + '</b>';
+    const regEl = document.getElementById('reg-id');
+    if (regEl) {
+      const b = regEl.querySelector('b');
+      if (b) b.textContent = reg || '—';
     }
   }
   async function loadRfStatus(){
@@ -4901,7 +5223,14 @@
       const svc = cache.healthz.services;
       cache.rfStatus = cache.rfStatus || {};
       cache.rfStatus.rtl_433_active  = !!svc['drifter-rf'];
-      cache.rfStatus.dump1090_active = !!svc['drifter-rf'];
+      // dump1090 liveness is NOT the drifter-rf service flag (R6: no
+      // mirror-faking). Use an independent flag only if the backend
+      // exposes one (BE-4); otherwise leave null so the UI renders `—`.
+      if (svc['drifter-dump1090'] !== undefined) {
+        cache.rfStatus.dump1090_active = !!svc['drifter-dump1090'];
+      } else if (cache.rfStatus.dump1090_active === undefined) {
+        cache.rfStatus.dump1090_active = null;
+      }
       cache.rfStatus.rfaudio_active  = !!svc['drifter-rfaudio'];
       renderRfTile();
     }
@@ -5893,7 +6222,7 @@
     overlay.open(`
       <div class="overlay-head">
         <div class="overlay-glyph">◌</div>
-        <div class="overlay-title">Settings<span class="sub">GET/POST /api/settings · live</span></div>
+        <div class="overlay-title">Settings<span class="sub">live</span></div>
         <div class="overlay-close" title="Close (Esc)">×</div>
       </div>
       <div class="overlay-body" id="settings-body"><div class="empty"><span class="gl">◌</span>Loading…</div></div>
@@ -6125,8 +6454,59 @@
 
   // Single delegated click listener — every preset button is data-driven.
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel]');
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm]');
     if (!t) return;
+
+    // ── FE-C6: destructive-confirm cancel (any pending key) ─────────
+    if (t.hasAttribute('data-cancel-confirm')) {
+      pendingConfirm.delete(t.getAttribute('data-cancel-confirm'));
+      render();
+      return;
+    }
+    // ── FE-C6: FUZZ ID RANGE — first tap arms the confirm row ───────
+    if (t.id === 'candisc-fuzz-range') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingConfirm.add('fuzz');
+      if (activeTab === 'candisc') render();
+      return;
+    }
+    // ── FE-C6: FUZZ confirmed — perform the range fuzz ──────────────
+    // Matches the backend contract: POST /api/can/command
+    // { command:'fuzz_range', id_start, id_end } (hex strings accepted).
+    if (t.hasAttribute('data-confirm-fuzz')) {
+      pendingConfirm.delete('fuzz');
+      const startEl = document.getElementById('candisc-fuzz-start');
+      const endEl = document.getElementById('candisc-fuzz-end');
+      const id_start = startEl && startEl.value;
+      const id_end = endEl && endEl.value;
+      markBusy(t);
+      await postJSON('/api/can/command', { command: 'fuzz_range', id_start, id_end });
+      if (activeTab === 'candisc') render();
+      return;
+    }
+    // ── FE-C6: TPMS clear confirmed ─────────────────────────────────
+    if (t.hasAttribute('data-confirm-tpms-clear')) {
+      pendingConfirm.delete('tpms_clear');
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_clear_assignments' });
+      tpmsAssignments = {};
+      if (activeTab === 'tires' || activeTab === 'tpms') render();
+      return;
+    }
+
+    // ── FE-C6: vitals popover — tap-to-toggle on touch ──────────────
+    // Hover opens it on desktop; phones have no hover, so tapping the
+    // CPU/MEM/TEMP pill toggles .popover-open. Tapping a different pill
+    // (or anywhere else, see the document handler below) closes others.
+    const vitalsPill = t.closest && t.closest('.pill.vitals');
+    if (vitalsPill) {
+      const wasOpen = vitalsPill.classList.contains('popover-open');
+      document.querySelectorAll('.pill.vitals.popover-open').forEach(p => {
+        if (p !== vitalsPill) p.classList.remove('popover-open');
+      });
+      vitalsPill.classList.toggle('popover-open', !wasOpen);
+      return;
+    }
 
     // ── CONV (conversation mode) — toggle vivi's "keep listening" flag ──
     if (t.id === 'btn-conv') {
@@ -6218,9 +6598,8 @@
       return;
     }
     if (t.id === 'tpms-clear-assignments') {
-      markBusy(t);
-      await postJSON('/api/rf/command', { command: 'tpms_clear_assignments' });
-      tpmsAssignments = {};
+      // FE-C6: arm the confirm row — actual wipe runs on data-confirm-tpms-clear.
+      pendingConfirm.add('tpms_clear');
       if (activeTab === 'tires' || activeTab === 'tpms') render();
       return;
     }
@@ -6304,16 +6683,70 @@
 
     // ── rfaudio quick-tune presets ──
     if (t.dataset.rfaudioBand != null) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
       const freq = parseFloat(t.dataset.freq);
       const mode = t.dataset.mode || 'nfm';
       if (!isFinite(freq)) return;
       markBusy(t);
       await postJSON('/api/rfaudio/command', {
-        action: 'start', freq_mhz: freq, mode, gain: 40,
+        action: 'start', freq_mhz: freq, mode, gain: 0,
       });
       loadRfaudio();
       return;
     }
+    // ── rfaudio manual tune (FE-B2) ──
+    if (t.id === 'rfaudio-manual-tune') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      const freqEl = document.getElementById('rfa-freq');
+      const modeEl = document.getElementById('rfa-mode');
+      const gainEl = document.getElementById('rfa-gain');
+      const freq = parseFloat(freqEl && freqEl.value);
+      const mode = (modeEl && modeEl.value) || 'nfm';
+      let gain = parseFloat(gainEl && gainEl.value);
+      if (!isFinite(gain)) gain = 0;
+      // Client-validate the same 24–1766 MHz envelope the backend enforces.
+      if (!isFinite(freq) || freq < 24 || freq > 1766) {
+        if (freqEl) { freqEl.classList.add('crit'); setTimeout(() => freqEl.classList.remove('crit'), 1500); }
+        return;
+      }
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', {
+        action: 'start', freq_mhz: freq, mode, gain,
+      });
+      loadRfaudio();
+      return;
+    }
+    // ── rfaudio TEST TONE (FE-B2) — stays live whenever a speaker is present ──
+    if (t.id === 'rfaudio-test-tone') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', { action: 'test_tone' });
+      loadRfaudio();
+      return;
+    }
+    // ── rfaudio REFRESH BANDS (FE-B2) ──
+    if (t.id === 'rfaudio-refresh-bands') {
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', { action: 'list_bands' });
+      loadRfaudio();
+      return;
+    }
+  });
+
+  // FE-C4: keyboard activation for the custom role="button" controls.
+  // The ghost-btn / pill spans are not native <button>s, so Enter/Space
+  // would otherwise do nothing. Synthesize a click so every delegated
+  // click handler above also fires from the keyboard. aria-disabled
+  // controls are inert (CSS sets pointer-events:none; we mirror it here).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const btn = t.closest('[role="button"][tabindex="0"]');
+    if (!btn) return;
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    e.preventDefault();
+    btn.click();
   });
 
   // TPMS per-corner dropdown — POSTs tpms_assign_corner on each change.
@@ -6378,8 +6811,24 @@
     });
   }
   function initTabs(){
-    document.querySelectorAll('.drawer-tab').forEach(t => {
+    const tabs = Array.from(document.querySelectorAll('.drawer-tab'));
+    tabs.forEach((t, i) => {
+      // FE-C4: full tablist semantics — role/tab id + keyboard activation.
+      t.setAttribute('role', 'tab');
+      if (!t.id) t.id = 'drawer-tab-' + t.dataset.tab;
+      t.setAttribute('aria-selected', t.classList.contains('active') ? 'true' : 'false');
+      t.tabIndex = t.classList.contains('active') ? 0 : -1;
       t.addEventListener('click', () => setTab(t.dataset.tab));
+      t.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault(); setTab(t.dataset.tab);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const next = tabs[(i + dir + tabs.length) % tabs.length];
+          if (next) { setTab(next.dataset.tab); next.focus(); }
+        }
+      });
     });
   }
   function initMapControls(){
@@ -6566,6 +7015,7 @@
   loadState();
   loadAlerts(); loadDtcs(); loadTpms(); loadTpmsAssignments(); loadTrip();
   loadRfSpec(); loadRfEmer(); loadRfClassification(); loadFlipper(); loadRfaudio();
+  loadHardware();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions(); loadCanDiscovery();
   loadOrigin(); loadMode(); loadDriver();
@@ -6575,6 +7025,22 @@
 
   tickClock();
   setInterval(tickClock, 1000);
+  // Hero gauge staleness sweep — dims any gauge whose source value
+  // stopped arriving (CAN dropout) within GAUGE_STALE_SEC. Independent
+  // of the WS fan-out / scheduleRender batching.
+  setInterval(sweepGaugeStaleness, 2000);
+  // FE-C5: re-fit DPR-scaled canvases on resize / orientation change so
+  // they stay sharp and don't overflow when the drawer width changes.
+  // Debounced; the render functions call fitCanvasDpr() themselves, so we
+  // just trigger a repaint of the two scopes.
+  let _canvasResizeT = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(_canvasResizeT);
+    _canvasResizeT = setTimeout(() => {
+      if (document.getElementById('spectrum-canvas')) renderSpectrumStrip();
+      if (document.getElementById('adsb-radar')) renderAdsbRadar();
+    }, 200);
+  });
   // Audited pollers (US-2): the previous 22 setInterval pollers caused
   // primary UI sluggishness on Pi 5 chromium. Replaced with ONE 30s
   // refresh tick that fires the long-tail HTTP loaders sequentially.
@@ -6591,7 +7057,7 @@
       loadRfSpec, loadRfEmer, loadFlipper, loadBle, loadPersistent,
       loadWardrive, loadAircraft, loadAdsb, loadSessions, loadOrigin,
       loadMode, loadRfStatus, loadRfaudio, loadRfClassification,
-      loadCanDiscovery,
+      loadCanDiscovery, loadHardware,
     ];
     const fn = slowLoaders[_slowTick % slowLoaders.length];
     if (fn) fn();
@@ -6604,6 +7070,11 @@
   document.addEventListener('click', (ev) => {
     const t = ev.target;
     if (!(t instanceof Element)) return;
+    // FE-C6: dismiss any tap-opened vitals popover when tapping outside
+    // its own pill (the toggle itself is handled in the main listener).
+    if (!t.closest('.pill.vitals')) {
+      document.querySelectorAll('.pill.vitals.popover-open').forEach(p => p.classList.remove('popover-open'));
+    }
     // REPLAY start
     const startBtn = t.closest('[data-replay-start]');
     if (startBtn) {

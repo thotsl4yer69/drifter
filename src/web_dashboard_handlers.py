@@ -36,6 +36,7 @@ from config import (
     validate_settings_payload,
 )
 from corpus import corpus_search, dtc_lookup
+from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
 
 log = logging.getLogger(__name__)
@@ -522,7 +523,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         })
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
-    def _get_rfaudio_status(self, parsed):    self._serve_json(state.latest_state.get('rfaudio_status', {}))
+    def _get_rfaudio_status(self, parsed):
+        """rfaudio status + live hardware-presence echo (BE-2).
+
+        Start from the retained rfaudio status (verbatim, including any
+        `error`), then merge in fresh RTL-SDR / speaker presence so the
+        cockpit can gate tune/scan/test-tone honestly. Build a COPY —
+        never mutate latest_state (it's the WS fan-out source)."""
+        status = dict(state.latest_state.get('rfaudio_status', {}))
+        sdr = probe_rtl_sdr()
+        spk = probe_speaker()
+        status['sdr_present'] = bool(sdr['connected'])
+        status['speaker_present'] = bool(spk['connected'])
+        status['sdr_action'] = sdr.get('action', '')
+        status['speaker_action'] = spk.get('action', '')
+        self._serve_json(status)
 
     def _get_recent_alerts(self, parsed):
         """Return the in-memory ring of recent alert messages, newest first."""

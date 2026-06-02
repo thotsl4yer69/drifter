@@ -362,8 +362,19 @@ def test_get_rfaudio_status_route_registered():
     assert callable(routes['/api/rfaudio/status'])
 
 
+def _patch_rfaudio_probes(monkeypatch, sdr=True, speaker=True):
+    """Stub hw_probe probes so rfaudio-status tests don't shell out."""
+    monkeypatch.setattr(h, 'probe_rtl_sdr', lambda: {
+        'connected': sdr, 'action': '' if sdr else 'Plug in RTL-SDR dongle'})
+    monkeypatch.setattr(h, 'probe_speaker', lambda: {
+        'connected': speaker,
+        'action': '' if speaker else 'Plug in USB audio dongle (plughw:0,0)'})
+
+
 def test_get_rfaudio_status_serves_latest(monkeypatch):
-    """The handler must surface latest_state['rfaudio_status'] verbatim."""
+    """The handler must surface latest_state['rfaudio_status'] verbatim,
+    plus the merged hardware-presence echo (BE-2)."""
+    _patch_rfaudio_probes(monkeypatch, sdr=True, speaker=True)
     state.latest_state.clear()
     state.latest_state['rfaudio_status'] = {
         'state': 'playing', 'freq_mhz': 476.525, 'mode': 'nfm',
@@ -378,14 +389,75 @@ def test_get_rfaudio_status_serves_latest(monkeypatch):
     assert payload['state'] == 'playing'
     assert payload['freq_mhz'] == 476.525
     assert len(payload['bands']) == 1
+    assert payload['sdr_present'] is True
+    assert payload['speaker_present'] is True
 
 
-def test_get_rfaudio_status_serves_empty_when_no_publish_yet():
+def test_get_rfaudio_status_serves_empty_when_no_publish_yet(monkeypatch):
+    """Even with no retained status, the presence echo (BE-2) is always
+    present so the cockpit can gate honestly from a cold start."""
+    _patch_rfaudio_probes(monkeypatch, sdr=False, speaker=False)
     state.latest_state.clear()
     handler = _build_post_handler(b'')
     handler._serve_json = MagicMock()
     h.DashboardHandler._get_rfaudio_status(handler, None)
-    handler._serve_json.assert_called_once_with({})
+    handler._serve_json.assert_called_once()
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['sdr_present'] is False
+    assert payload['speaker_present'] is False
+    assert payload['sdr_action']
+    assert payload['speaker_action']
+
+
+def test_rfaudio_status_includes_presence(monkeypatch):
+    """BE-2 regression: monkeypatch probes, assert sdr_present/speaker_present
+    keys are present and latest_state is NOT mutated by building the echo."""
+    _patch_rfaudio_probes(monkeypatch, sdr=False, speaker=True)
+    state.latest_state.clear()
+    base = {'state': 'idle', 'freq_mhz': None, 'mode': None,
+            'error': 'rtl_fm exited', 'ts': 12.0}
+    state.latest_state['rfaudio_status'] = base
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_rfaudio_status(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    assert 'sdr_present' in payload and 'speaker_present' in payload
+    assert payload['sdr_present'] is False
+    assert payload['speaker_present'] is True
+    assert payload['sdr_action']
+    # error passes through verbatim
+    assert payload['error'] == 'rtl_fm exited'
+    # latest_state untouched — no presence keys leaked into the retained copy.
+    assert 'sdr_present' not in state.latest_state['rfaudio_status']
+    assert state.latest_state['rfaudio_status'] is base
+
+
+def test_dump1090_not_mirrored_from_rtl433():
+    """BE-4 regression: the RF status capture path must NOT derive
+    dump1090_active from rtl_433. An incoming rf/status with no independent
+    dump1090 flag yields dump1090_active=None (FE renders '—'), never a
+    mirror of the rtl_433 state."""
+    # Behavioural check: rtl_433 up, no independent dump1090 flag →
+    # dump1090_active is None, NOT mirrored from rtl_433_active=True.
+    state.latest_state.clear()
+    msg = _FakeMsg('drifter/rf/status', {
+        'state': 'online', 'sdr_detected': True,
+        'rtl433_installed': True, 'dump1090_installed': True,
+        'rtl_433_active': True, 'ts': 1.0,
+    })
+    state.on_message(None, None, msg)
+    captured = state.latest_state['rf_status']
+    assert captured['dump1090_active'] is None
+    assert captured['dump1090_active'] != captured['rtl_433_active']
+
+    # When the publisher DOES supply an independent flag, it is respected
+    # verbatim (not overwritten).
+    state.latest_state.clear()
+    msg2 = _FakeMsg('drifter/rf/status', {
+        'rtl_433_active': True, 'dump1090_active': False, 'ts': 2.0,
+    })
+    state.on_message(None, None, msg2)
+    assert state.latest_state['rf_status']['dump1090_active'] is False
 
 
 # ── /api/alerts/recent ────────────────────────────────────────────────

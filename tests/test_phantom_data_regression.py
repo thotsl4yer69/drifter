@@ -194,3 +194,93 @@ def test_llm_offline_fallback_is_deterministic(vivi):
     r2 = vivi._rag_fallback('coolant temperature')
     r3 = vivi._rag_fallback('coolant temperature')
     assert r1 == r2 == r3
+
+
+# ── (e) Cockpit FE real-data guards (Phases A/B) ─────────────────────
+# These grep/regex over ui/cockpit-preview.html and GATE the build: they
+# pin the two FAKE-DATA violations the polish build fixed (ADS-B
+# placeholder-origin canvas + frozen-live hero gauges) plus the hardcoded
+# REG/OPERATOR literals and the rfaudio gain:40 default. If any of these
+# regress, the cockpit is once again capable of presenting fabricated or
+# stale data as live truth.
+
+import re as _re
+
+
+def _cockpit_text():
+    return Path('ui/cockpit-preview.html').read_text()
+
+
+def _render_adsb_radar_body(src):
+    """Slice the renderAdsbRadar() function body so freshness assertions
+    are scoped to the canvas renderer, not the whole file."""
+    start = src.index('function renderAdsbRadar(')
+    # Walk braces from the first '{' after the signature to its match.
+    i = src.index('{', start)
+    depth = 0
+    for j in range(i, len(src)):
+        c = src[j]
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                return src[start:j + 1]
+    raise AssertionError('renderAdsbRadar() body not balanced')
+
+
+def test_cockpit_no_placeholder_origin_constant():
+    """FE-A1 / R1: the ADSB_PLACEHOLDER_ORIGIN city-coordinate fallback
+    must be gone entirely — blips plot only against a real GPS origin."""
+    src = _cockpit_text()
+    assert 'ADSB_PLACEHOLDER_ORIGIN' not in src, (
+        'ADSB_PLACEHOLDER_ORIGIN reintroduced — phantom origin fallback is back'
+    )
+
+
+def test_cockpit_adsb_radar_gates_on_freshness():
+    """FE-A1 / R2: renderAdsbRadar must gate on AIRCRAFT_FRESH_WINDOW_SEC
+    and have an AWAITING GPS FIX empty-draw path so the canvas agrees with
+    its text counterpart when the snapshot is stale or origin is missing."""
+    body = _render_adsb_radar_body(_cockpit_text())
+    assert 'AIRCRAFT_FRESH_WINDOW_SEC' in body, (
+        'radar renderer no longer references the freshness window'
+    )
+    assert 'AWAITING GPS FIX' in body, (
+        'radar renderer lost its AWAITING GPS FIX empty-draw path'
+    )
+    # The constant itself must be a small number of seconds, not minutes.
+    m = _re.search(r'AIRCRAFT_FRESH_WINDOW_SEC\s*=\s*(\d+)', _cockpit_text())
+    assert m and int(m.group(1)) <= 120
+
+
+def test_cockpit_gauge_staleness_sweep_present():
+    """FE-A2 / R3: GAUGE_STALE_SEC must exist and a sweep must remove the
+    .live class so a frozen needle can't masquerade as live after a CAN
+    dropout."""
+    src = _cockpit_text()
+    m = _re.search(r'GAUGE_STALE_SEC\s*=\s*(\d+)', src)
+    assert m, 'GAUGE_STALE_SEC constant not found'
+    assert int(m.group(1)) <= 30, 'gauge stale window too generous'
+    assert 'sweepGaugeStaleness' in src, 'staleness sweep function missing'
+    # The sweep must actually strip .live (dim != live).
+    assert _re.search(r"classList\.remove\(\s*['\"]live['\"]\s*\)", src), (
+        'no classList.remove("live") — sweep cannot demote a stale gauge'
+    )
+
+
+def test_cockpit_no_hardcoded_reg_or_operator():
+    """FE-A3 / R4: the fake plate N7-DRFT-X25 and the OPERATOR · MAZ
+    literal must be gone — empty node shows REG. — and OPERATOR only."""
+    src = _cockpit_text()
+    assert 'N7-DRFT-X25' not in src, 'hardcoded REG plate reintroduced'
+    assert 'OPERATOR · MAZ' not in src, 'hardcoded OPERATOR · MAZ literal reintroduced'
+
+
+def test_cockpit_rfaudio_gain_not_40():
+    """FE-B2 / R5: no rfaudio start POST may default gain to 40 — auto
+    gain is 0. A 40 dB literal historically blasted the front-end."""
+    src = _cockpit_text()
+    assert not _re.search(r'gain\s*:\s*40\b', src), (
+        'an rfaudio POST still sends gain:40 — must be gain:0 (auto)'
+    )
