@@ -653,9 +653,15 @@ async function runProbe(name){
   } catch (e){ appendTo('term', 'ERR ' + e, 'err'); }
 }
 
-async function runTool(name, args){
+async function runTool(name, args, btn){
   clearTerm('tools-term');
   appendTo('tools-term', '$ ' + name + ' ' + (args || ''), 'prompt');
+  appendTo('tools-term', '// running…', 'ok');
+  // Bring the OUTPUT card into view — it sits below the launchers, so a
+  // click with no scroll looked like nothing happened.
+  document.getElementById('tools-term').scrollIntoView({behavior:'smooth', block:'center'});
+  let _label;
+  if (btn){ _label = btn.textContent; btn.textContent = 'RUNNING…'; btn.disabled = true; btn.style.opacity = '.5'; }
   try {
     const res = await fetch('/api/launch/' + encodeURIComponent(name), {
       method: 'POST',
@@ -663,11 +669,15 @@ async function runTool(name, args){
       body: JSON.stringify({args: args || ''}),
     });
     const data = await res.json();
+    clearTerm('tools-term');
+    appendTo('tools-term', '$ ' + name + ' ' + (args || ''), 'prompt');
     if (data.error){ appendTo('tools-term', 'ERR ' + data.error, 'err'); return; }
     if (data.stdout) appendTo('tools-term', data.stdout);
     if (data.stderr) appendTo('tools-term', data.stderr, 'err');
+    if (!data.stdout && !data.stderr) appendTo('tools-term', '(no output)', 'ok');
     appendTo('tools-term', '// rc=' + data.rc + ' · ' + data.duration_ms + 'ms', 'ok');
   } catch (e){ appendTo('tools-term', 'ERR ' + e, 'err'); }
+  finally { if (btn){ btn.textContent = _label; btn.disabled = false; btn.style.opacity = ''; } }
 }
 
 // ── Build quick probe tiles ───────────────────────────────────────────
@@ -699,7 +709,7 @@ toolRows.addEventListener('click', e => {
   const name = e.target.dataset.launch;
   if (!name) return;
   const input = toolRows.querySelector(`input[data-tool="${name}"]`);
-  runTool(name, input ? input.value : '');
+  runTool(name, input ? input.value : '', e.target);
 });
 
 // ── Page nav ──────────────────────────────────────────────────────────
