@@ -1402,3 +1402,122 @@ def test_sentry_status_passes_live_payload_through():
     handler._serve_json = MagicMock()
     h.DashboardHandler._get_sentry_status(handler, _FakeParsed())
     assert handler._serve_json.call_args[0][0] == live
+
+
+# ─── /api/arsenal aggregate (BE-3) ────────────────────────────────────
+
+def _call_arsenal(monkeypatch, tmp_path, active_units, peer='127.0.0.1'):
+    """Drive _get_arsenal with a mocked /healthz services source.
+
+    `active_units` is the set of units `_systemctl_active` reports active;
+    everything else is inactive. Forces 'both' mode so every arsenal unit
+    is "expected" and the healthz reading isn't mode-suppressed. Returns
+    (handler, payload_or_None)."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active',
+                        lambda u: u in active_units)
+    monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: True)
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text('both')
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
+    handler = _build_post_handler(b'', peer=peer)
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_arsenal(handler, _FakeParsed())
+    payload = (handler._serve_json.call_args[0][0]
+               if handler._serve_json.called else None)
+    return handler, payload
+
+
+def test_arsenal_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/arsenal' in routes
+    assert routes['/api/arsenal'] is h.DashboardHandler._get_arsenal
+
+
+def test_arsenal_rejects_remote_peer(monkeypatch, tmp_path):
+    """Aggregate exposes recon posture — must 403 off the hotspot."""
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set(),
+                                     peer='192.168.1.50')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    handler._serve_json.assert_not_called()
+
+
+def test_arsenal_shape_and_mode(monkeypatch, tmp_path):
+    """200 + contract shape: {ts, mode, tools:[{name,unit,present,state,
+    live_meta,actions}]} with one entry per declared foot-mode tool."""
+    state.latest_state.clear()
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set())
+    handler.send_error.assert_not_called()
+    assert set(payload) == {'ts', 'mode', 'tools'}
+    assert payload['mode'] == 'both'
+    assert isinstance(payload['ts'], (int, float))
+    names = [t['name'] for t in payload['tools']]
+    assert names == [s['name'] for s in h._ARSENAL_TOOLS]
+    for t in payload['tools']:
+        assert set(t) >= {'name', 'unit', 'present', 'state',
+                          'live_meta', 'actions'}
+        assert isinstance(t['present'], bool)
+        assert isinstance(t['actions'], list)
+
+
+def test_arsenal_inactive_unit_is_not_present(monkeypatch, tmp_path):
+    """REAL-DATA: a tool whose unit is inactive must report present:false
+    and an honest 'absent' state — never a fabricated 'up'."""
+    state.latest_state.clear()
+    # No units active at all.
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set())
+    by_name = {t['name']: t for t in payload['tools']}
+    kismet = by_name['kismet']
+    assert kismet['unit'] == 'drifter-kismet'
+    assert kismet['present'] is False
+    assert kismet['state'] == 'absent'
+    assert kismet['live_meta']['unit_active'] is False
+
+
+def test_arsenal_active_unit_without_hw_gate_is_present(monkeypatch, tmp_path):
+    """A unit-only tool (no hardware gate) is present once its unit is
+    active, and surfaces 'idle' until it publishes a live state."""
+    state.latest_state.clear()
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-kismet'})
+    kismet = {t['name']: t for t in payload['tools']}['kismet']
+    assert kismet['present'] is True
+    assert kismet['live_meta']['unit_active'] is True
+    assert kismet['state'] == 'idle'
+
+
+def test_arsenal_marauder_no_hardware_blocks_presence(monkeypatch, tmp_path):
+    """Active unit + ESP32 reporting state:'no_hardware' => present:false.
+    The hardware signal vetoes presence even though the unit is up."""
+    state.latest_state.clear()
+    state.latest_state['marauder_status'] = {'state': 'no_hardware'}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-marauder'})
+    marauder = {t['name']: t for t in payload['tools']}['marauder']
+    assert marauder['live_meta']['unit_active'] is True
+    assert marauder['live_meta']['hardware_ok'] is False
+    assert marauder['present'] is False
+    assert marauder['state'] == 'no_hardware'
+
+
+def test_arsenal_ghost_never_present_without_unit(monkeypatch, tmp_path):
+    """ghost has no service unit shipped — it stays present:false even
+    when 'every' unit is reported active."""
+    state.latest_state.clear()
+    all_units = {s['unit'] for s in h._ARSENAL_TOOLS if s['unit']}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, all_units)
+    ghost = {t['name']: t for t in payload['tools']}['ghost']
+    assert ghost['unit'] is None
+    assert ghost['present'] is False
+
+
+def test_arsenal_live_state_surfaced_when_present(monkeypatch, tmp_path):
+    """A present tool surfaces its published `state` verbatim."""
+    state.latest_state.clear()
+    state.latest_state['rfaudio_status'] = {'state': 'playing'}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-rfaudio'})
+    rfaudio = {t['name']: t for t in payload['tools']}['rfaudio']
+    assert rfaudio['present'] is True
+    assert rfaudio['state'] == 'playing'

@@ -331,6 +331,11 @@
     width: 2px; background: var(--amber); box-shadow: 0 0 10px var(--amber);
     border-radius: 0 2px 2px 0;
   }
+  /* Arsenal rail entry: recedes in drive, promotes to the top in foot/both. */
+  .rail-btn[data-rail="arsenal"] { order: 5; opacity: 0.6; }
+  .shell.mode-foot .rail-btn[data-rail="arsenal"] {
+    order: -1; opacity: 1; box-shadow: 0 0 14px -4px var(--amber);
+  }
   .rail-spacer { flex: 1; }
   .rail-vivi {
     width: 46px; height: 46px; border-radius: 50%;
@@ -897,6 +902,30 @@
   .health-row .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
   .h-action { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--amber);
     padding: 2px 8px 4px 26px; letter-spacing: 0.04em; }
+  /* Arsenal overlay — stencil/CRT amber-on-glass, extends the health-row tokens. */
+  .opsec-banner {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+    border: 1px solid var(--glass-stroke-amber); border-radius: var(--r-sm);
+    background: linear-gradient(180deg, rgba(255,174,66,0.07), rgba(0,0,0,0.25));
+    padding: 8px 12px; margin-bottom: 12px;
+  }
+  .opsec-banner .opsec-summary { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg); }
+  .opsec-banner .opsec-summary .sub { display: block; color: var(--fg-mute); font-size: 9.5px; margin-top: 2px; letter-spacing: 0.04em; }
+  .arsenal-grid { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .arsenal-card {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px;
+    padding: 7px 4px; border-top: 1px dashed var(--glass-stroke); font-size: 11px;
+  }
+  .arsenal-card .h-glyph { font-family: 'Major Mono Display', monospace; color: var(--amber); width: 18px; text-align: center; }
+  .arsenal-card .ac-id { min-width: 0; }
+  .arsenal-card .h-name { font-family: 'JetBrains Mono', monospace; color: var(--fg); font-size: 11px; }
+  .arsenal-card .h-meta { font-family: 'JetBrains Mono', monospace; color: var(--fg-mute); font-size: 10px; display: block; }
+  .arsenal-card.absent { opacity: 0.55; }
+  .arsenal-card .ac-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .arsenal-card .ghost-btn { font-size: 9px; padding: 3px 8px; letter-spacing: 0.08em; }
+  .arsenal-card .h-status { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.08em; }
+  .arsenal-card .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
+  .arsenal-card .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
   .rfa-crit-banner { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
     border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; margin: 4px 0; }
   .rfa-now { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal);
@@ -2247,6 +2276,8 @@
       <span class="rail-glyph">⊚</span><span class="rail-label">RF</span></div>
     <div class="rail-btn" data-rail="settings" title="Settings">
       <span class="rail-glyph">◌</span><span class="rail-label">Set</span></div>
+    <div class="rail-btn" data-rail="arsenal" title="Arsenal — foot-mode toolkit">
+      <span class="rail-glyph">⊗</span><span class="rail-label">Arms</span></div>
     <div class="rail-spacer"></div>
     <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
   </nav>
@@ -6638,6 +6669,121 @@
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // ARSENAL — foot-mode toolkit launcher. Mirrors openRf(): overlay +
+  // 3s self-poll off /api/arsenal. REAL-DATA: a tool's "present" flag is
+  // derived server-side from /healthz + hardware-presence; present:false
+  // renders a disabled/absent card — never a fabricated "up". START/STOP
+  // render aria-disabled this stage (service control = BE-4, stage 3);
+  // they POST nowhere yet. OPEN PANEL routes to the tool's drawer tab.
+  // ═══════════════════════════════════════════════════════════════
+  // Glyph + drawer-tab mapping by tool name. Tools without a tab omit it.
+  const ARSENAL_TOOLS = {
+    kismet:    { glyph: '▦', tab: 'kismet' },
+    marauder:  { glyph: '⌬', tab: 'marauder' },
+    flipper:   { glyph: '⌬', tab: 'flipper' },
+    flycatcher:{ glyph: '☎', tab: 'flycatcher' },
+    ghost:     { glyph: '◬', tab: 'ghost' },
+    alpr:      { glyph: '▢', tab: 'alpr' },
+    vision:    { glyph: '◉', tab: 'vision' },
+    sentry:    { glyph: '◈', tab: 'sentry' },
+    rf:        { glyph: '⊚', tab: 'rf' },
+    wardrive:  { glyph: '◇', tab: 'wardrive' },
+  };
+  function arsenalCardHTML(t){
+    const meta = ARSENAL_TOOLS[t.name] || {};
+    const glyph = meta.glyph || '⊗';
+    const present = !!t.present;
+    // live_meta is the backend's {unit_active, hardware_ok} object — render
+    // it as an honest one-liner, never the raw [object Object]. Falls back
+    // to the state string / presence word when no structured meta is sent.
+    let liveMeta;
+    if (t.live_meta && typeof t.live_meta === 'object') {
+      const m = t.live_meta;
+      const bits = [];
+      bits.push(m.unit_active ? 'unit active' : 'unit inactive');
+      if (m.hardware_ok === false) bits.push('hardware absent');
+      liveMeta = bits.join(' · ');
+    } else {
+      liveMeta = t.live_meta || (present ? (t.state || 'ready') : 'not present');
+    }
+    const pill = present
+      ? `<span class="h-status ok">${esc(t.state || 'present')}</span>`
+      : `<span class="h-status missing">absent</span>`;
+    // Service control is stage 3 (BE-4) — render the buttons disabled so the
+    // capability is visible but no dead-end POST fires.
+    const ctlHint = 'service control — stage 3';
+    const startStop = `
+      <span class="ghost-btn" aria-disabled="true" title="${ctlHint}">START</span>
+      <span class="ghost-btn" aria-disabled="true" title="${ctlHint}">STOP</span>`;
+    // OPEN PANEL only for tools that have a drawer tab (and only useful in foot).
+    const openPanel = meta.tab
+      ? `<span class="ghost-btn" data-arsenal-tab="${esc(meta.tab)}" title="Open ${esc(t.name)} drawer">OPEN PANEL</span>`
+      : '';
+    return `<div class="arsenal-card${present ? '' : ' absent'}">
+      <div class="h-glyph">${glyph}</div>
+      <div class="ac-id">
+        <span class="h-name">${esc(t.name)}${t.unit ? ' · '+esc(t.unit) : ''}</span>
+        <span class="h-meta">${esc(liveMeta)}</span>
+      </div>
+      <div class="ac-controls">${pill}${startStop}${openPanel}</div>
+    </div>`;
+  }
+  async function openArsenal(){
+    overlay.open(`
+      <div class="overlay-head">
+        <div class="overlay-glyph">⊗</div>
+        <div class="overlay-title">ARSENAL<span class="sub">foot-mode toolkit · live presence</span></div>
+        <div class="overlay-close" title="Close (Esc)">×</div>
+      </div>
+      <div class="overlay-body">
+        <div class="opsec-banner">
+          <div class="opsec-summary" id="arsenal-opsec">
+            checking posture…
+            <span class="sub">curated, parameter-validated actions — full ad-hoc console lives on :8090</span>
+          </div>
+          <span class="ghost-btn" id="arsenal-opsec-open" title="Open full OPSEC console (:8090)">OPEN FULL OPSEC</span>
+        </div>
+        <div class="section-head"><span>tools</span><span class="tag" id="arsenal-mode">—</span></div>
+        <div class="arsenal-grid" id="arsenal-grid"><div class="empty"><span class="gl">⊗</span>Loading arsenal…</div></div>
+      </div>`);
+    // OPEN FULL OPSEC → same host, port 8090, new tab. Never a fabricated URL.
+    const opsecBtn = document.getElementById('arsenal-opsec-open');
+    if (opsecBtn) opsecBtn.onclick = () => {
+      const host = location.hostname || '127.0.0.1';
+      window.open(`http://${host}:8090`, '_blank', 'noopener');
+    };
+    const grid = document.getElementById('arsenal-grid');
+    const opsecEl = document.getElementById('arsenal-opsec');
+    const modeEl = document.getElementById('arsenal-mode');
+    // OPEN PANEL → close overlay, switch to that tool's drawer tab.
+    grid.addEventListener('click', e => {
+      const b = e.target.closest('[data-arsenal-tab]');
+      if (!b) return;
+      overlay.close();
+      setTab(b.dataset.arsenalTab);
+    });
+    async function poll(){
+      try {
+        const a = await fetch('/api/arsenal').then(x => x.ok ? x.json() : null);
+        if (a && Array.isArray(a.tools)) {
+          if (modeEl) modeEl.textContent = a.mode || '—';
+          const present = a.tools.filter(t => t.present).length;
+          if (opsecEl) opsecEl.innerHTML =
+            `${present}/${a.tools.length} tools present · mode ${esc(a.mode || '—')}`
+            + `<span class="sub">curated, parameter-validated actions — full ad-hoc console lives on :8090</span>`;
+          grid.innerHTML = a.tools.length
+            ? a.tools.map(arsenalCardHTML).join('')
+            : `<div class="empty"><span class="gl">⊗</span>No arsenal tools reported.</div>`;
+        } else if (opsecEl) {
+          opsecEl.innerHTML = `arsenal unavailable<span class="sub">/api/arsenal not reachable</span>`;
+        }
+      } catch(_){}
+      if (document.getElementById('arsenal-grid')) setTimeout(poll, 3000);
+    }
+    poll();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // HOLD TO TALK — POSTs to drifter/voice/listen_now via dashboard
   // ═══════════════════════════════════════════════════════════════
   let talkActive = false;
@@ -7076,6 +7222,7 @@
           case 'sessions': openSessions(); break;
           case 'settings': openSettings(); break;
           case 'rf':       openRf(); break;
+          case 'arsenal':  openArsenal(); break;
         }
       });
     });

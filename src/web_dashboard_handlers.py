@@ -428,6 +428,105 @@ def _is_local_peer(peer: str) -> bool:
     return peer == '127.0.0.1' or peer.startswith('10.42.0.')
 
 
+# ─── /api/arsenal aggregate (BE-3) ────────────────────────────────────
+# One descriptor per foot-mode tool surfaced on the launcher board. The
+# aggregate route folds these into a single payload the cockpit's
+# openArsenal() overlay polls every 3s. `present` is derived HONESTLY:
+#   * `unit` — the systemd unit whose `is-active` state (via the shared
+#     /healthz services map) is a necessary condition for presence; None
+#     for tools with no dedicated unit (e.g. ghost, which has no service
+#     shipped here — it stays present:false until one exists).
+#   * `hw_key` — when set, a latest_state key whose payload carries a
+#     hardware-presence signal. A tool is only `present` when BOTH the
+#     unit is active AND (if hw_key is set) the hardware probe agrees.
+#     This is what stops the UI from ever rendering a green/up card for a
+#     tool whose unit is dead or whose dongle/ESP32/camera is unplugged.
+#   * `state_key` — latest_state key for the live status payload; its
+#     `state` field (or a tool-specific honest default) is surfaced.
+#   * `actions` — verbs the tool *would* expose (metadata only; the
+#     START/STOP route is BE-4, not built here — the UI renders them
+#     aria-disabled this stage).
+_ARSENAL_TOOLS = [
+    {'name': 'kismet',    'unit': 'drifter-kismet',       'tab': 'kismet',
+     'state_key': 'wifi_devices',  'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'marauder',  'unit': 'drifter-marauder',     'tab': 'marauder',
+     'state_key': 'marauder_status', 'hw_key': 'marauder_status',
+     'actions': ['start', 'stop']},
+    {'name': 'flipper',   'unit': 'drifter-flipper',      'tab': 'flipper',
+     'state_key': 'flipper_status', 'hw_key': 'flipper_status',
+     'actions': ['start', 'stop']},
+    {'name': 'wardrive',  'unit': 'drifter-wardrive',     'tab': 'wardrive',
+     'state_key': 'wardrive_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'wifi_audit', 'unit': 'drifter-wifi-audit',  'tab': 'wardrive',
+     'state_key': 'wifi_audit', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'flycatcher', 'unit': 'drifter-fly-catcher', 'tab': 'flycatcher',
+     'state_key': 'state_fly_catcher', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'ghost',     'unit': None,                   'tab': 'ghost',
+     'state_key': 'ghost_status', 'hw_key': None,
+     'actions': []},
+    {'name': 'alpr',      'unit': 'drifter-alpr',         'tab': 'alpr',
+     'state_key': 'alpr_plate', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'vision',    'unit': 'drifter-vision',       'tab': 'vision',
+     'state_key': 'vision_status', 'hw_key': 'vision_status',
+     'actions': ['start', 'stop']},
+    {'name': 'sentry',    'unit': 'drifter-sentry',       'tab': 'sentry',
+     'state_key': 'sentry_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'rf',        'unit': 'drifter-rf',           'tab': 'rf',
+     'state_key': 'rf_spectrum', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'rfaudio',   'unit': 'drifter-rfaudio',      'tab': 'rf',
+     'state_key': 'rfaudio_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+]
+
+
+def _arsenal_hw_present(tool: dict) -> bool:
+    """Honest hardware-presence check for an arsenal tool.
+
+    Returns True when the tool declares no hardware gate (`hw_key` is
+    None) — unit-active is then sufficient. When a hw_key is set, the
+    matching latest_state payload must NOT signal absent hardware:
+      * marauder publishes state:'no_hardware' when no ESP32 is attached;
+      * flipper/vision publish nothing (or an empty/disconnected status)
+        until their device enumerates.
+    Never fabricates presence — a missing payload reads as absent."""
+    hw_key = tool.get('hw_key')
+    if not hw_key:
+        return True
+    payload = state.latest_state.get(hw_key)
+    if not isinstance(payload, dict) or not payload:
+        return False
+    st = str(payload.get('state', '')).lower()
+    if st in ('no_hardware', 'absent', 'disconnected', 'not_connected'):
+        return False
+    # flipper publishes connected/state fields; treat an explicit
+    # disconnected/false as absent without inventing a 'connected' default.
+    if payload.get('connected') is False:
+        return False
+    return True
+
+
+def _arsenal_state_str(tool: dict, present: bool) -> str:
+    """Live status string for an arsenal tool — honest, never faked.
+
+    Prefers the tool's published `state` field. Falls back to 'idle' only
+    when the unit is present (active + hardware) but hasn't published a
+    state yet; 'absent' when not present. No tool is ever reported 'up'
+    while its unit is dead or its hardware is missing."""
+    payload = state.latest_state.get(tool.get('state_key'))
+    if isinstance(payload, dict):
+        st = payload.get('state') or payload.get('status')
+        if isinstance(st, str) and st.strip():
+            return st.strip()
+    return 'idle' if present else 'absent'
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     """Route HTTP requests to one of the small endpoint methods below."""
 
@@ -854,6 +953,55 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             status = {'armed': None, 'threshold_g': None,
                       'auto_arm': None, 'ts': None}
         self._serve_json(status)
+
+    def _get_arsenal(self, parsed):
+        """Foot-mode arsenal aggregate (BE-3).
+
+        {ts, mode, tools:[{name, unit, present, state, live_meta, actions}]}
+
+        `present` is derived from the SAME service map /healthz computes
+        (we call the shared _healthz_payload() so service-active detection
+        is never reimplemented differently) AND from hardware-presence
+        signals already in latest_state. A tool is present ONLY when its
+        unit is active and its hardware (when it has any) agrees — so the
+        UI renders a disabled card for an inactive/absent tool and NEVER a
+        fabricated 'up'. `actions` is metadata only; the START/STOP route
+        is BE-4 and is not built here."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'arsenal: local network only')
+            return
+        # Reuse /healthz's authoritative services map + mode rather than
+        # re-running systemctl with different logic.
+        payload, _ = _healthz_payload()
+        services = payload.get('services', {}) or {}
+        mode = payload.get('mode', DEFAULT_MODE)
+
+        tools = []
+        for spec in _ARSENAL_TOOLS:
+            unit = spec.get('unit')
+            # No-unit tools (e.g. ghost) can never be present until a
+            # service ships; unit-bearing tools follow the healthz reading.
+            unit_active = bool(services.get(unit)) if unit else False
+            hw_ok = _arsenal_hw_present(spec)
+            present = unit_active and hw_ok
+            tools.append({
+                'name':    spec['name'],
+                'unit':    unit,
+                'tab':     spec.get('tab'),
+                'present': present,
+                'state':   _arsenal_state_str(spec, present),
+                'live_meta': {
+                    'unit_active':  unit_active,
+                    'hardware_ok':  hw_ok,
+                },
+                'actions': list(spec.get('actions', [])),
+            })
+        self._serve_json({
+            'ts':    payload.get('ts', time.time()),
+            'mode':  mode,
+            'tools': tools,
+        })
 
     def _get_rf_emergency(self, parsed):
         """Latest emergency-band activity scan."""
@@ -2216,6 +2364,8 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/alpr/plates':           DashboardHandler._get_alpr_plates,
     '/api/vision/status':         DashboardHandler._get_vision_status,
     '/api/sentry/status':         DashboardHandler._get_sentry_status,
+    # Arsenal aggregate (BE-3) — present derived from /healthz + hardware
+    '/api/arsenal':               DashboardHandler._get_arsenal,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
     # Vivi 3D avatar viewer
     '/avatar':                    DashboardHandler._serve_avatar_page,
