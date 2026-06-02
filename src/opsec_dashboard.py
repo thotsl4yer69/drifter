@@ -493,6 +493,8 @@ nav a{
   border:1px solid transparent;border-bottom:none;transition:.16s ease;
 }
 nav a:hover{color:var(--amber)}
+nav a.back{margin-right:auto;color:var(--cyan);font-weight:500}
+nav a.back:hover{color:var(--fg)}
 nav a.active{
   color:var(--amber);background:linear-gradient(180deg,rgba(255,48,48,.14),rgba(255,48,48,.02));
   border-color:var(--glass-stroke);text-shadow:var(--amber-glow);
@@ -663,6 +665,7 @@ footer{
 </header>
 
 <nav>
+  <a class="back" id="nav-cockpit" href="#" title="Back to the cockpit dashboard">&larr; cockpit</a>
   <a data-page="terminal" class="active">terminal</a>
   <a data-page="tools">tools</a>
   <a data-page="killswitch" class="kill">killswitch</a>
@@ -834,8 +837,13 @@ toolRows.addEventListener('click', e => {
 });
 
 // ── Page nav ──────────────────────────────────────────────────────────
+// Back-to-cockpit link: real navigation to the HUD on :8080 (same host).
+// In kiosk mode there is no browser chrome, so this is the only way back.
+var _bk = document.getElementById('nav-cockpit');
+if (_bk) _bk.href = 'http://' + (location.hostname || '127.0.0.1') + ':8080/';
 document.querySelectorAll('nav a').forEach(a => {
   a.onclick = (e) => {
+    if (!a.dataset.page) return;   // back link → let the anchor navigate
     e.preventDefault();
     document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
     document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
