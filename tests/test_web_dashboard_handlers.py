@@ -1266,3 +1266,139 @@ def test_mechanic_history_route_registered():
 
 def test_rf_commands_allowlist_includes_tpms_delta_capture():
     assert 'tpms_delta_capture' in h._RF_COMMANDS
+
+
+# ─── Arsenal read-side routes (BE-2) ──────────────────────────────────
+# Each route: 200 + an HONEST empty shape with an empty latest_state
+# (never a fabricated 'up'/'idle'/demo-row status), and 403 for a
+# non-local peer (mirrors the rfaudio ACL tests above).
+
+class _FakeParsed:
+    """Minimal urlparse() stand-in carrying just a query string."""
+    def __init__(self, query=''):
+        self.query = query
+
+
+def _call_get(method_name, peer='127.0.0.1', query=''):
+    """Invoke an Arsenal GET handler with an empty latest_state and a
+    captured _serve_json. Returns (handler, payload_or_None)."""
+    state.latest_state.clear()
+    handler = _build_post_handler(b'', peer=peer)
+    handler._serve_json = MagicMock()
+    method = getattr(h.DashboardHandler, method_name)
+    method(handler, _FakeParsed(query))
+    payload = (handler._serve_json.call_args[0][0]
+               if handler._serve_json.called else None)
+    return handler, payload
+
+
+_ARSENAL_ROUTES = {
+    '/api/kismet/devices':      '_get_kismet_devices',
+    '/api/marauder/status':     '_get_marauder_status',
+    '/api/marauder/scan':       '_get_marauder_scan',
+    '/api/flycatcher/aircraft': '_get_flycatcher_aircraft',
+    '/api/ghost/status':        '_get_ghost_status',
+    '/api/alpr/plates':         '_get_alpr_plates',
+    '/api/vision/status':       '_get_vision_status',
+    '/api/sentry/status':       '_get_sentry_status',
+}
+
+
+def test_arsenal_routes_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    for path, fn in _ARSENAL_ROUTES.items():
+        assert path in routes, path
+        assert routes[path] is getattr(h.DashboardHandler, fn)
+
+
+@pytest.mark.parametrize('method_name', list(_ARSENAL_ROUTES.values()))
+def test_arsenal_route_rejects_remote_peer(method_name):
+    """Capture/recon data must 403 outside 127.0.0.1 / 10.42.0.0/24."""
+    handler, payload = _call_get(method_name, peer='192.168.1.50')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    handler._serve_json.assert_not_called()
+
+
+def test_arsenal_route_allows_hotspot_peer():
+    """10.42.0.0/24 hotspot peer is allowed through (no 403)."""
+    handler, payload = _call_get('_get_marauder_status', peer='10.42.0.7')
+    handler.send_error.assert_not_called()
+    handler._serve_json.assert_called_once()
+
+
+def test_kismet_devices_honest_empty():
+    handler, payload = _call_get('_get_kismet_devices')
+    assert payload == {'wifi': [], 'ble': [], 'ts': None}
+
+
+def test_marauder_status_honest_no_hardware():
+    handler, payload = _call_get('_get_marauder_status')
+    assert payload == {'state': 'no_hardware'}
+
+
+def test_marauder_scan_honest_empty_default_stream():
+    handler, payload = _call_get('_get_marauder_scan')
+    assert payload == {'stream': 'ap', 'rows': []}
+
+
+def test_marauder_scan_honours_stream_querystring():
+    handler, payload = _call_get('_get_marauder_scan', query='stream=sta&n=5')
+    assert payload == {'stream': 'sta', 'rows': []}
+
+
+def test_marauder_scan_rejects_unknown_stream_falls_back_to_ap():
+    handler, payload = _call_get('_get_marauder_scan', query='stream=bogus')
+    assert payload['stream'] == 'ap'
+    assert payload['rows'] == []
+
+
+def test_flycatcher_aircraft_honest_empty():
+    handler, payload = _call_get('_get_flycatcher_aircraft')
+    assert payload == {'aircraft': [], 'classified': [], 'state': None}
+
+
+def test_ghost_status_honest_empty():
+    handler, payload = _call_get('_get_ghost_status')
+    assert payload == {'status': None, 'trackers': [], 'stingray': [],
+                       'alpr': [], 'rf': []}
+
+
+def test_alpr_plates_honest_empty():
+    handler, payload = _call_get('_get_alpr_plates')
+    assert payload == {'plates': []}
+
+
+def test_vision_status_honest_empty():
+    handler, payload = _call_get('_get_vision_status')
+    assert payload == {'status': None, 'objects': []}
+
+
+def test_sentry_status_honest_empty():
+    handler, payload = _call_get('_get_sentry_status')
+    assert payload == {'armed': None, 'threshold_g': None,
+                       'auto_arm': None, 'ts': None}
+
+
+def test_marauder_scan_returns_live_rows_when_present():
+    """When the scan ring has rows, they pass through (n caps newest)."""
+    state.latest_state.clear()
+    state.latest_state['marauder_scan_ap'] = {
+        'rows': [{'ssid': 'a'}, {'ssid': 'b'}, {'ssid': 'c'}]}
+    handler = _build_post_handler(b'', peer='127.0.0.1')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_marauder_scan(handler, _FakeParsed('stream=ap&n=2'))
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['stream'] == 'ap'
+    assert payload['rows'] == [{'ssid': 'b'}, {'ssid': 'c'}]
+
+
+def test_sentry_status_passes_live_payload_through():
+    """A retained sentry status is surfaced verbatim, not the empty shape."""
+    state.latest_state.clear()
+    live = {'armed': True, 'threshold_g': 2.5, 'auto_arm': False, 'ts': 99.0}
+    state.latest_state['sentry_status'] = live
+    handler = _build_post_handler(b'', peer='127.0.0.1')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_sentry_status(handler, _FakeParsed())
+    assert handler._serve_json.call_args[0][0] == live

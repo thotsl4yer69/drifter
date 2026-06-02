@@ -1594,6 +1594,11 @@
   .drawer-body::-webkit-scrollbar { width: 4px; }
   .drawer-body::-webkit-scrollbar-thumb { background: var(--glass-stroke-2); border-radius: 4px; }
 
+  /* ARSENAL tab-gate (stage 1): the 8 foot-mode arsenal tabs stay hidden
+     in DRIVE mode so the strip keeps its current 16 tabs (no overflow
+     regression). FOOT/BOTH mode adds the .mode-foot shell class and the
+     extra tabs appear. */
+  .shell:not(.mode-foot) .drawer-tab[data-arsenal="1"]{display:none}
   .shell.drawer-collapsed .drawer-tabs { display: none; }
   .shell.drawer-collapsed .drawer-body { display: none; }
   .shell.drawer-collapsed .drawer-foot { padding: 0; justify-content: center; }
@@ -2502,6 +2507,14 @@
       <div class="drawer-tab" data-tab="airspace">AIRSPACE <span class="count" data-count="airspace">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
       <div class="drawer-tab" data-tab="playback">PLAYBACK <span class="count" data-count="playback">0</span></div>
+      <div class="drawer-tab" data-tab="kismet" data-arsenal="1">KISMET <span class="count" data-count="kismet">0</span></div>
+      <div class="drawer-tab" data-tab="marauder" data-arsenal="1">MARAUDER <span class="count" data-count="marauder">—</span></div>
+      <div class="drawer-tab" data-tab="flycatcher" data-arsenal="1">FLYCATCHER <span class="count" data-count="flycatcher">0</span></div>
+      <div class="drawer-tab" data-tab="ghost" data-arsenal="1">GHOST <span class="count" data-count="ghost">—</span></div>
+      <div class="drawer-tab" data-tab="alpr" data-arsenal="1">ALPR <span class="count" data-count="alpr">0</span></div>
+      <div class="drawer-tab" data-tab="vision" data-arsenal="1">VISION <span class="count" data-count="vision">0</span></div>
+      <div class="drawer-tab" data-tab="sentry" data-arsenal="1">SENTRY <span class="count" data-count="sentry">—</span></div>
+      <div class="drawer-tab" data-tab="ducky" data-arsenal="1">DUCKY <span class="count" data-count="ducky">—</span></div>
       <div class="drawer-tab" data-tab="audit">AUDIT <span class="count" data-count="audit">0</span></div>
       <div class="drawer-tab" data-tab="health">HEALTH <span class="count" data-count="health">—</span></div>
     </div>
@@ -2621,7 +2634,7 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
 
   // ── Active tab ─────────────────────────────────────────────────
-  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions','playback','audit','health'];
+  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions','playback','audit','health','kismet','marauder','flycatcher','ghost','alpr','vision','sentry','ducky'];
   const _urlTab = new URLSearchParams(location.search).get('tab');
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
@@ -4858,6 +4871,180 @@
       }
       return out.join('');
     },
+
+    // ═══════════════════════════════════════════════════════════════
+    // ARSENAL renderers (stage 1 — read-only). Each is driven by a
+    // cache.<tool> populated by a loadX() that safeFetch()es the BE-2
+    // GET route. ALWAYS falls back to emptyState() when data is empty
+    // or absent — never fabricates tool status or demo rows.
+    // No start/stop controls this stage (those land in stage 3).
+    // ═══════════════════════════════════════════════════════════════
+
+    // KISMET — Wi-Fi + BLE device discovery (/api/kismet/devices)
+    kismet(){
+      const k = cache.kismet || {};
+      const wifi = Array.isArray(k.wifi) ? k.wifi : [];
+      const ble = Array.isArray(k.ble) ? k.ble : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>kismet</span><span class="tag">${wifi.length} wifi · ${ble.length} ble</span></div>`);
+      if (!wifi.length && !ble.length) {
+        return out.join('') + emptyState('▦', 'No Kismet devices. Start drifter-kismet (Wi-Fi/BLE capture) to populate this list.');
+      }
+      if (wifi.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>wifi</span><span class="tag">last ${Math.min(wifi.length,20)}</span></div>`);
+        for (const d of wifi.slice(0, 20)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">▦</div>
+            <div class="name">${esc(d.ssid || d.bssid || d.mac || '(hidden)')}<span class="sub">${esc(d.bssid || d.mac || '')}${d.channel != null ? ' · ch '+esc(d.channel) : ''}${d.signal != null ? ' · '+esc(d.signal)+' dBm' : ''}</span></div>
+            <div class="ts">${d.ts ? fmtAge(d.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      if (ble.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>ble</span><span class="tag">last ${Math.min(ble.length,20)}</span></div>`);
+        for (const d of ble.slice(0, 20)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">▦</div>
+            <div class="name">${esc(d.name || d.mac || d.addr || '(unknown)')}<span class="sub">${esc(d.mac || d.addr || '')}${d.rssi != null ? ' · '+esc(d.rssi)+' dBm' : ''}</span></div>
+            <div class="ts">${d.ts ? fmtAge(d.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // MARAUDER — ESP32 Marauder status (/api/marauder/status)
+    marauder(){
+      const m = cache.marauder || {};
+      const state = m.state || '';
+      const out = [];
+      out.push(`<div class="section-head"><span>marauder</span><span class="tag">esp32</span></div>`);
+      // Honest empty when no hardware / no status at all.
+      if (!state || state === 'no_hardware') {
+        return out.join('') + emptyState('⌬', 'NO MARAUDER DETECTED — plug in the ESP32 Marauder board to enable Wi-Fi/BLE recon.');
+      }
+      out.push(`<div class="kv"><div class="k">State</div><div class="v ${state === 'idle' || state === 'scanning' || state === 'ready' ? 'teal' : 'dim'}">${esc(state)}</div></div>`);
+      if (m.mode != null) out.push(`<div class="kv"><div class="k">Mode</div><div class="v">${esc(m.mode)}</div></div>`);
+      if (m.channel != null) out.push(`<div class="kv"><div class="k">Channel</div><div class="v">${esc(m.channel)}</div></div>`);
+      if (m.aps != null) out.push(`<div class="kv"><div class="k">APs</div><div class="v">${esc(m.aps)}</div></div>`);
+      if (m.stations != null) out.push(`<div class="kv"><div class="k">Stations</div><div class="v">${esc(m.stations)}</div></div>`);
+      if (m.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(m.ts)} ago</div></div>`);
+      return out.join('');
+    },
+
+    // FLYCATCHER — aircraft / IMSI-catcher airspace (/api/flycatcher/aircraft)
+    flycatcher(){
+      const f = cache.flycatcher || {};
+      const aircraft = Array.isArray(f.aircraft) ? f.aircraft : [];
+      const classified = Array.isArray(f.classified) ? f.classified : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>flycatcher</span><span class="tag">${aircraft.length} ac · ${classified.length} classified</span></div>`);
+      if (!aircraft.length && !classified.length) {
+        return out.join('') + emptyState('☎', 'No fly-catcher data. Start drifter-fly-catcher to classify airspace activity.');
+      }
+      const rows = classified.length ? classified : aircraft;
+      for (const a of rows.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">☎</div>
+          <div class="name">${esc(a.callsign || a.icao || a.hex || a.id || '(unknown)')}<span class="sub">${esc(a.classification || a.type || '')}${a.altitude != null ? ' · '+esc(a.altitude)+' ft' : ''}${a.distance_km != null ? ' · '+esc(a.distance_km)+' km' : ''}</span></div>
+          <div class="ts">${a.ts ? fmtAge(a.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // GHOST — tracker / stingray / ALPR / RF aggregation (/api/ghost/status)
+    ghost(){
+      const g = cache.ghost || {};
+      const trackers = Array.isArray(g.trackers) ? g.trackers : [];
+      const stingray = Array.isArray(g.stingray) ? g.stingray : [];
+      const alpr = Array.isArray(g.alpr) ? g.alpr : [];
+      const rf = Array.isArray(g.rf) ? g.rf : [];
+      const total = trackers.length + stingray.length + alpr.length + rf.length;
+      const out = [];
+      out.push(`<div class="section-head"><span>ghost</span><span class="tag">${total} signals</span></div>`);
+      if (!g.status && !total) {
+        return out.join('') + emptyState('◬', 'No ghost-protocol data. No drifter-ghost service is running on this node yet.');
+      }
+      if (g.status) out.push(`<div class="kv"><div class="k">Status</div><div class="v">${esc(g.status)}</div></div>`);
+      const groups = [['trackers', trackers], ['stingray', stingray], ['alpr', alpr], ['rf', rf]];
+      for (const [label, arr] of groups) {
+        if (!arr.length) continue;
+        out.push(`<div class="section-head" style="margin-top:8px"><span>${label}</span><span class="tag">${arr.length}</span></div>`);
+        for (const x of arr.slice(0, 15)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">◬</div>
+            <div class="name">${esc(x.name || x.id || x.plate || x.mac || x.label || '(signal)')}<span class="sub">${esc(x.detail || x.type || '')}</span></div>
+            <div class="ts">${x.ts ? fmtAge(x.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // ALPR — license plate reads (/api/alpr/plates)
+    alpr(){
+      const a = cache.alpr || {};
+      const plates = Array.isArray(a.plates) ? a.plates : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>alpr</span><span class="tag">${plates.length} plates</span></div>`);
+      if (!plates.length) {
+        return out.join('') + emptyState('▢', 'No plate reads. Camera/ALPR model absent or drifter-alpr idle.');
+      }
+      for (const p of plates.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">▢</div>
+          <div class="name">${esc(p.plate || '(unread)')}<span class="sub">${p.confidence != null ? 'conf '+esc(p.confidence) : ''}</span></div>
+          <div class="ts">${p.ts ? fmtAge(p.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // VISION — object detection (/api/vision/status)
+    vision(){
+      const v = cache.vision || {};
+      const objects = Array.isArray(v.objects) ? v.objects : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>vision</span><span class="tag">${objects.length} objects</span></div>`);
+      if (!v.status && !objects.length) {
+        return out.join('') + emptyState('◉', 'No vision data. Camera absent or drifter-vision idle.');
+      }
+      if (v.status) out.push(`<div class="kv"><div class="k">Status</div><div class="v ${v.status === 'online' || v.status === 'active' ? 'teal' : 'dim'}">${esc(v.status)}</div></div>`);
+      if (!objects.length) {
+        return out.join('') + emptyState('◉', 'Vision online but no objects detected.');
+      }
+      out.push(`<div class="section-head" style="margin-top:8px"><span>objects</span><span class="tag">last ${Math.min(objects.length,30)}</span></div>`);
+      for (const o of objects.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">◉</div>
+          <div class="name">${esc(o.label || o.cls || o.name || '(object)')}<span class="sub">${o.confidence != null ? 'conf '+esc(o.confidence) : ''}</span></div>
+          <div class="ts">${o.ts ? fmtAge(o.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // SENTRY — motion/tilt sentry (/api/sentry/status) — status display only
+    sentry(){
+      const s = cache.sentry || {};
+      const out = [];
+      out.push(`<div class="section-head"><span>sentry</span><span class="tag">guard</span></div>`);
+      if (s.armed == null && s.ts == null) {
+        return out.join('') + emptyState('◈', 'No sentry status. Start drifter-sentry to monitor for tamper/motion.');
+      }
+      out.push(`<div class="kv"><div class="k">Armed</div><div class="v ${s.armed ? 'teal' : 'dim'}">${s.armed ? 'armed' : 'disarmed'}</div></div>`);
+      if (s.threshold_g != null) out.push(`<div class="kv"><div class="k">Threshold</div><div class="v">${esc(s.threshold_g)} g</div></div>`);
+      if (s.auto_arm != null) out.push(`<div class="kv"><div class="k">Auto-arm</div><div class="v">${s.auto_arm ? 'on' : 'off'}</div></div>`);
+      if (s.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(s.ts)} ago</div></div>`);
+      return out.join('');
+    },
+
+    // DUCKY — USB Rubber Ducky / BadUSB. Empty-state ONLY this stage
+    // (the HID runner backend ships in a later stage).
+    ducky(){
+      return emptyState('⌨', 'USB Rubber Ducky / BadUSB — runner not installed yet (coming in a later stage).');
+    },
   };
 
   function render(){
@@ -4879,6 +5066,10 @@
       t.tabIndex = sel ? 0 : -1;
     });
     render();
+    // ARSENAL (stage 1): when an arsenal tab is activated, fetch its
+    // BE-2 route once so the panel shows live data (or its honest
+    // empty-state) immediately rather than waiting for the slow tick.
+    applyArsenalTabs();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5069,6 +5260,69 @@
     cache.hardware = await safeFetch('/api/hardware') || cache.hardware;
     if (activeTab === 'health') render();
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ARSENAL loaders (stage 1 — read-only). Each safeFetch()es the
+  // matching BE-2 GET route and re-renders if its tab is active. The
+  // renderers fall back to emptyState() whenever a fetch returns null
+  // or an empty shape — never fabricated status. ducky has no backend
+  // this stage (empty-state-only renderer), so no loader is wired.
+  // ═══════════════════════════════════════════════════════════════
+  async function loadKismet(){
+    cache.kismet = await safeFetch('/api/kismet/devices') || cache.kismet;
+    const k = cache.kismet || {};
+    const n = (Array.isArray(k.wifi) ? k.wifi.length : 0) + (Array.isArray(k.ble) ? k.ble.length : 0);
+    setCount('kismet', `${n}`, { live: n > 0 });
+    if (activeTab === 'kismet') render();
+  }
+  async function loadMarauder(){
+    cache.marauder = await safeFetch('/api/marauder/status') || cache.marauder;
+    const st = (cache.marauder && cache.marauder.state) || '';
+    const present = st && st !== 'no_hardware';
+    setCount('marauder', present ? esc(st) : 'off', { live: !!present });
+    if (activeTab === 'marauder') render();
+  }
+  async function loadFlycatcher(){
+    cache.flycatcher = await safeFetch('/api/flycatcher/aircraft') || cache.flycatcher;
+    const f = cache.flycatcher || {};
+    const n = (Array.isArray(f.classified) && f.classified.length) ? f.classified.length
+            : (Array.isArray(f.aircraft) ? f.aircraft.length : 0);
+    setCount('flycatcher', `${n}`, { live: n > 0 });
+    if (activeTab === 'flycatcher') render();
+  }
+  async function loadGhost(){
+    cache.ghost = await safeFetch('/api/ghost/status') || cache.ghost;
+    const g = cache.ghost || {};
+    const n = ['trackers','stingray','alpr','rf'].reduce((s,k)=> s + (Array.isArray(g[k]) ? g[k].length : 0), 0);
+    setCount('ghost', g.status || n ? `${n}` : 'off', { live: n > 0 });
+    if (activeTab === 'ghost') render();
+  }
+  async function loadAlpr(){
+    cache.alpr = await safeFetch('/api/alpr/plates') || cache.alpr;
+    const n = (cache.alpr && Array.isArray(cache.alpr.plates)) ? cache.alpr.plates.length : 0;
+    setCount('alpr', `${n}`, { live: n > 0 });
+    if (activeTab === 'alpr') render();
+  }
+  async function loadVision(){
+    cache.vision = await safeFetch('/api/vision/status') || cache.vision;
+    const v = cache.vision || {};
+    const n = Array.isArray(v.objects) ? v.objects.length : 0;
+    setCount('vision', v.status || n ? `${n}` : 'off', { live: n > 0 });
+    if (activeTab === 'vision') render();
+  }
+  async function loadSentry(){
+    cache.sentry = await safeFetch('/api/sentry/status') || cache.sentry;
+    const s = cache.sentry || {};
+    const known = s.armed != null || s.ts != null;
+    setCount('sentry', known ? (s.armed ? 'armed' : 'off') : '—', { live: !!s.armed });
+    if (activeTab === 'sentry') render();
+  }
+  // Tab → loader map for applyArsenalTabs() (fires on tab-activation /
+  // mode change). ducky intentionally absent — no backend this stage.
+  const ARSENAL_LOADERS = {
+    kismet: loadKismet, marauder: loadMarauder, flycatcher: loadFlycatcher,
+    ghost: loadGhost, alpr: loadAlpr, vision: loadVision, sentry: loadSentry,
+  };
   async function loadBle(){
     cache.ble = await safeFetch('/api/ble/recent') || cache.ble;
     const allDets = (cache.ble && cache.ble.detections) || [];
@@ -5283,6 +5537,20 @@
       modePill.classList.remove('idle'); modePill.classList.add('live');
       md.style.background = 'var(--amber)';
     }
+    // ARSENAL mode hook (stage 1): toggle foot-mode shell class so the
+    // tab-gate CSS reveals the 8 arsenal tabs only in foot/both modes.
+    const shell = document.querySelector('.shell');
+    if (shell) shell.classList.toggle('mode-foot', cache.mode === 'foot' || cache.mode === 'both');
+    applyArsenalTabs();
+  }
+
+  // ARSENAL (stage 1): re-fire the loaders for whichever arsenal tab is
+  // active so its panel refreshes when foot-mode reveals it. Read-only —
+  // no rail button / overlay this stage. Each loader falls back to its
+  // honest empty-state when the BE-2 route returns nothing.
+  function applyArsenalTabs(){
+    const fn = ARSENAL_LOADERS[activeTab];
+    if (fn) fn();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -7060,6 +7328,9 @@
       loadWardrive, loadAircraft, loadAdsb, loadSessions, loadOrigin,
       loadMode, loadRfStatus, loadRfaudio, loadRfClassification,
       loadCanDiscovery, loadHardware,
+      // ARSENAL (stage 1) backfill — read-only count refresh.
+      loadKismet, loadMarauder, loadFlycatcher, loadGhost,
+      loadAlpr, loadVision, loadSentry,
     ];
     const fn = slowLoaders[_slowTick % slowLoaders.length];
     if (fn) fn();

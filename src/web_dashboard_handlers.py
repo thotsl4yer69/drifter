@@ -672,6 +672,189 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self._serve_json(_snapshot_airspace())
 
+    # ─── Arsenal read-side routes (BE-2, foot-mode toolkit) ───────────
+    # All GET, all _is_local_peer gated, all read state.latest_state from
+    # the `drifter/#` subscription. Each returns the live snapshot or an
+    # HONEST empty/`no_hardware` shape — NEVER a fabricated 'up'/'idle'
+    # status or demo rows when the tool/hardware is absent.
+
+    def _get_kismet_devices(self, parsed):
+        """Kismet Wi-Fi + BLE device snapshot.
+
+        Reads drifter/wifi/devices + drifter/ble/devices. Honest empty
+        shape {wifi:[],ble:[],ts:null} when neither has published — an
+        empty REST poll is a legitimate state, not a fault."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'kismet: local network only')
+            return
+        wifi = state.latest_state.get('wifi_devices')
+        ble = state.latest_state.get('ble_devices')
+        if not isinstance(wifi, list):
+            wifi = list(wifi.get('devices', [])) if isinstance(wifi, dict) else []
+        if not isinstance(ble, list):
+            ble = list(ble.get('devices', [])) if isinstance(ble, dict) else []
+        ts = None
+        for src in (state.latest_state.get('wifi_devices'),
+                    state.latest_state.get('ble_devices')):
+            if isinstance(src, dict) and src.get('ts') is not None:
+                ts = src.get('ts')
+        self._serve_json({'wifi': wifi, 'ble': ble, 'ts': ts})
+
+    def _get_marauder_status(self, parsed):
+        """ESP32 Marauder bridge status (retained drifter/marauder/status).
+
+        Honest {state:'no_hardware'} when no ESP32 has ever announced —
+        never fabricate a connected/idle state for absent hardware."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder: local network only')
+            return
+        status = state.latest_state.get('marauder_status')
+        if not isinstance(status, dict) or not status:
+            status = {'state': 'no_hardware'}
+        self._serve_json(status)
+
+    def _get_marauder_scan(self, parsed):
+        """Live Marauder scan ring for a single stream.
+
+        ?stream=ap|sta|probe (default ap) & ?n=<int> (cap the returned
+        rows, newest-kept). Reads drifter/marauder/scan/<stream>. Empty
+        rows list when no scan has run — honest, never demo rows."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder scan: local network only')
+            return
+        qs = parse_qs(parsed.query or '') if parsed is not None else {}
+        stream = (qs.get('stream', ['ap'])[0] or 'ap').lower()
+        if stream not in ('ap', 'sta', 'probe'):
+            stream = 'ap'
+        try:
+            n = int(qs.get('n', [0])[0])
+        except (ValueError, TypeError):
+            n = 0
+        snap = state.latest_state.get('marauder_scan_' + stream)
+        if isinstance(snap, dict):
+            rows = snap.get('rows') or snap.get('devices') or []
+        elif isinstance(snap, list):
+            rows = snap
+        else:
+            rows = []
+        rows = list(rows)
+        if n > 0:
+            rows = rows[-n:]
+        self._serve_json({'stream': stream, 'rows': rows})
+
+    def _get_flycatcher_aircraft(self, parsed):
+        """IMSI-catcher / fly-catcher airspace classification.
+
+        Reads drifter/airspace/aircraft_classified + drifter/state/fly_catcher.
+        Honest empty lists + null state when the detector is idle/absent."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'flycatcher: local network only')
+            return
+        classified = state.latest_state.get('airspace_aircraft_classified')
+        if isinstance(classified, dict):
+            classified = classified.get('aircraft') or classified.get('classified') or []
+        elif not isinstance(classified, list):
+            classified = []
+        fc = state.latest_state.get('state_fly_catcher')
+        if isinstance(fc, dict):
+            aircraft = fc.get('aircraft') if isinstance(fc.get('aircraft'), list) else []
+        else:
+            aircraft = []
+            fc = None
+        self._serve_json({
+            'aircraft': aircraft,
+            'classified': list(classified),
+            'state': fc,
+        })
+
+    def _get_ghost_status(self, parsed):
+        """Counter-surveillance (ghost_protocol) posture.
+
+        Reads drifter/ghost/{status,tracker,stingray,alpr,rf}. ghost has
+        no service unit shipped here, so this returns honest empty lists +
+        null status until a drifter-ghost.service exists — never faked."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'ghost: local network only')
+            return
+
+        def _aslist(key):
+            v = state.latest_state.get(key)
+            if isinstance(v, list):
+                return v
+            if isinstance(v, dict):
+                inner = v.get(key.split('_', 1)[-1]) or v.get('items')
+                return inner if isinstance(inner, list) else [v]
+            return []
+
+        status = state.latest_state.get('ghost_status')
+        if not isinstance(status, dict):
+            status = None
+        self._serve_json({
+            'status': status,
+            'trackers': _aslist('ghost_tracker'),
+            'stingray': _aslist('ghost_stingray'),
+            'alpr': _aslist('ghost_alpr'),
+            'rf': _aslist('ghost_rf'),
+        })
+
+    def _get_alpr_plates(self, parsed):
+        """ALPR plate-read ring (drifter/vision/alpr/plate).
+
+        Honest empty list when no camera/model has produced a read."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'alpr: local network only')
+            return
+        snap = state.latest_state.get('alpr_plate')
+        if isinstance(snap, dict):
+            plates = snap.get('plates') if isinstance(snap.get('plates'), list) else [snap]
+        elif isinstance(snap, list):
+            plates = snap
+        else:
+            plates = []
+        self._serve_json({'plates': list(plates)})
+
+    def _get_vision_status(self, parsed):
+        """Vision pipeline status + object detections.
+
+        Reads drifter/vision/{status,object}. Honest null status + empty
+        objects when no camera/model is running."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'vision: local network only')
+            return
+        status = state.latest_state.get('vision_status')
+        if not isinstance(status, dict):
+            status = None
+        objs = state.latest_state.get('vision_object')
+        if isinstance(objs, dict):
+            objects = objs.get('objects') if isinstance(objs.get('objects'), list) else [objs]
+        elif isinstance(objs, list):
+            objects = objs
+        else:
+            objects = []
+        self._serve_json({'status': status, 'objects': list(objects)})
+
+    def _get_sentry_status(self, parsed):
+        """Sentry (impact/tamper) status (retained drifter/sentry/status).
+
+        Honest empty shape with null fields when the sentry has never
+        published — never fabricate an armed/disarmed posture."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'sentry: local network only')
+            return
+        status = state.latest_state.get('sentry_status')
+        if not isinstance(status, dict) or not status:
+            status = {'armed': None, 'threshold_g': None,
+                      'auto_arm': None, 'ts': None}
+        self._serve_json(status)
+
     def _get_rf_emergency(self, parsed):
         """Latest emergency-band activity scan."""
         self._serve_json(state.latest_state.get('rf_emergency', {}))
@@ -2024,6 +2207,15 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/can/discovery':         DashboardHandler._get_can_discovery,
     '/api/can/captures':          DashboardHandler._get_can_captures,
     '/api/airspace/aircraft':     DashboardHandler._get_airspace_aircraft,
+    # Arsenal read-side routes (BE-2, foot-mode toolkit)
+    '/api/kismet/devices':        DashboardHandler._get_kismet_devices,
+    '/api/marauder/status':       DashboardHandler._get_marauder_status,
+    '/api/marauder/scan':         DashboardHandler._get_marauder_scan,
+    '/api/flycatcher/aircraft':   DashboardHandler._get_flycatcher_aircraft,
+    '/api/ghost/status':          DashboardHandler._get_ghost_status,
+    '/api/alpr/plates':           DashboardHandler._get_alpr_plates,
+    '/api/vision/status':         DashboardHandler._get_vision_status,
+    '/api/sentry/status':         DashboardHandler._get_sentry_status,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
     # Vivi 3D avatar viewer
     '/avatar':                    DashboardHandler._serve_avatar_page,
