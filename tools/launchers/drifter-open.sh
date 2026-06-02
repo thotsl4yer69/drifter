@@ -17,12 +17,18 @@ for _ in $(seq 1 10); do
   sleep 1
 done
 
-# This Pi has no hardware GL (/dev/dri absent — vc4-kms-v3d disabled), so
-# Mesa falls back to llvmpipe which Chromium can't use for WebGL. Force
-# Chromium's bundled SwiftShader software GL so the Vivi 3D viewer (three.js)
-# gets a working WebGL context. Harmless for the non-WebGL opsec view.
-GL_FLAGS=(--ignore-gpu-blocklist --enable-unsafe-swiftshader
-          --use-gl=angle --use-angle=swiftshader)
+# Pick a GL backend for the Vivi 3D viewer (three.js needs a real WebGL
+# context). If the GPU is present (/dev/dri — vc4-kms-v3d enabled) use
+# hardware GL; otherwise fall back to Chromium's bundled SwiftShader
+# software GL (llvmpipe alone can't create a WebGL context on this Pi).
+# Auto-detect so this survives enabling the GPU + reboot. Harmless for opsec.
+if ls /dev/dri/renderD* >/dev/null 2>&1; then
+  GL_FLAGS=(--ignore-gpu-blocklist --enable-gpu-rasterization
+            --use-gl=angle --use-angle=gl)
+else
+  GL_FLAGS=(--ignore-gpu-blocklist --enable-unsafe-swiftshader
+            --use-gl=angle --use-angle=swiftshader)
+fi
 if command -v chromium >/dev/null 2>&1; then
   exec chromium --new-window --no-first-run --noerrdialogs "${GL_FLAGS[@]}" \
     --user-data-dir=/tmp/drifter-chromium-views "$URL" >/dev/null 2>&1
