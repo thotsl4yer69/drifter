@@ -7874,12 +7874,18 @@
   // Init wiring
   // ═══════════════════════════════════════════════════════════════
   function initRail(){
+    // Highlight the clicked rail button (only map/cockpit were synced before,
+    // so HW/RF/Trip/etc. never lit up — making them feel inert).
+    const _railActive = (name) => {
+      document.querySelectorAll('.rail-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.rail === name));
+    };
     document.querySelectorAll('[data-rail]').forEach(el => {
       el.addEventListener('click', () => {
         const target = el.dataset.rail;
         switch (target) {
-          case 'cockpit':  setMapMode(false); break;
-          case 'map':      setMapMode(true); refreshMap(); break;
+          case 'cockpit':  setMapMode(false); _railActive('cockpit'); break;
+          case 'map':      setMapMode(true); refreshMap(); _railActive('map'); break;
           case 'mechanic': openChat('mechanic'); break;
           case 'vivi':     openChat('vivi'); break;
           case 'hardware':
@@ -7888,11 +7894,16 @@
               document.getElementById('shell').classList.remove('drawer-collapsed');
               localStorage.setItem('drifter.drawer.collapsed','0'); }
             setTab('health');
+            // The HEALTH tab sits far right in a 24-tab scroller; bring it into
+            // view so the jump is visible even when the drawer was already open.
+            { const ht = document.querySelector('.drawer-tab[data-tab="health"]');
+              if (ht) ht.scrollIntoView({ inline: 'center', block: 'nearest' }); }
+            _railActive('hardware');
             break;
-          case 'sessions': openSessions(); break;
-          case 'settings': openSettings(); break;
-          case 'rf':       openRf(); break;
-          case 'arsenal':  openArsenal(); break;
+          case 'sessions': openSessions(); _railActive('sessions'); break;
+          case 'settings': openSettings(); _railActive('settings'); break;
+          case 'rf':       openRf(); _railActive('rf'); break;
+          case 'arsenal':  openArsenal(); _railActive('arsenal'); break;
         }
       });
     });
