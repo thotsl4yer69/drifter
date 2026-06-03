@@ -74,22 +74,26 @@ fi
 
 # ── 2. Core Dependencies ──
 step 2 "Installing core dependencies"
-apt-get install -y -qq \
-    python3-pip \
-    python3-venv \
-    can-utils \
-    mosquitto-clients \
-    network-manager \
-    alsa-utils \
-    git \
-    curl \
-    jq \
-    rsync \
-    librtlsdr-dev \
-    rtl-sdr \
-    gpsd \
-    gpsd-clients 2>/dev/null
-ok "Core packages installed"
+if [[ "${SKIP_APT:-0}" != "1" ]]; then
+    apt-get install -y -qq \
+        python3-pip \
+        python3-venv \
+        can-utils \
+        mosquitto-clients \
+        network-manager \
+        alsa-utils \
+        git \
+        curl \
+        jq \
+        rsync \
+        librtlsdr-dev \
+        rtl-sdr \
+        gpsd \
+        gpsd-clients 2>/dev/null
+    ok "Core packages installed"
+else
+    ok "Skipped (--skip-apt) — assumed present"
+fi
 
 # Install rtl_433 (433 MHz signal decoder)
 if command -v rtl_433 &>/dev/null; then
@@ -117,18 +121,22 @@ fi
 step 3 "Installing NanoMQ MQTT broker"
 if command -v nanomq &>/dev/null; then
     ok "NanoMQ already installed"
-else
+elif command -v mosquitto &>/dev/null; then
+    ok "Mosquitto already installed (MQTT broker)"
+    systemctl enable mosquitto 2>/dev/null || true
+elif [[ "${SKIP_APT:-0}" != "1" ]]; then
     # Try the official install script
     if curl -s https://assets.emqx.com/images/install-nanomq-deb.sh | bash 2>/dev/null; then
         apt-get install -y -qq nanomq 2>/dev/null
         ok "NanoMQ installed from EMQX repo"
     else
-        # Fallback: use mosquitto
         warn "NanoMQ repo unavailable, installing Mosquitto as fallback"
         apt-get install -y -qq mosquitto 2>/dev/null
         systemctl enable mosquitto
         ok "Mosquitto installed as MQTT broker"
     fi
+else
+    warn "No MQTT broker found — skipped install (--skip-apt)"
 fi
 
 # ── 4. TTS Engine ──
@@ -185,7 +193,13 @@ fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──
 step 5 "Installing voice input system dependencies"
-apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
+if dpkg -s portaudio19-dev 2>/dev/null | grep -q 'Status: install ok installed'; then
+    ok "portaudio19-dev already installed"
+elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+    apt-get install -y -qq portaudio19-dev 2>/dev/null || warn "portaudio19-dev not found"
+else
+    warn "portaudio19-dev missing — skipped install (--skip-apt)"
+fi
 # Python deps (vosk, pyaudio, openwakeword) installed below after venv creation
 
 # Download Vosk model
@@ -237,7 +251,11 @@ pip install --quiet \
     requests \
     numpy \
     pyserial \
-    pyyaml
+    pyyaml \
+    Pillow
+# Pillow: lcd_dashboard.py / boot_manager.py render the in-car 3.5" SPI LCD with
+#   PIL + numpy straight to the framebuffer. numpy is already above; Pillow is a
+#   prebuilt arm64 wheel so it's safe in the core block.
 # pyserial: flipper_bridge.py imports `serial` at module load (drifter-flipper
 #   is enabled) and marauder_transport/realdash also need it — without it the
 #   service crash-loops on ModuleNotFoundError. pyyaml: config.py imports `yaml`
@@ -261,6 +279,10 @@ pip install --quiet faster-whisper piper-tts sounddevice 2>/dev/null && ok "Vivi
     || (pip install --quiet "bleak>=0.21.0" \
         && ok "bleak installed (passive BLE scanner)") \
     || warn "bleak install failed — drifter-bleconv disabled"
+# In-car SPI LCD GPIO buttons (drifter-lcd). RPi.GPIO only builds on a Pi, so
+# keep it best-effort — the LCD dashboard auto-cycles/MQTT-controls without it.
+pip install --quiet RPi.GPIO 2>/dev/null && ok "RPi.GPIO installed (LCD buttons)" || \
+    warn "RPi.GPIO install failed — LCD buttons disabled (run scripts/setup-lcd.sh on the Pi)"
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 7. Deploy Application ──
@@ -272,6 +294,7 @@ step 7 "Deploying DRIFTER application"
 # (boot_reason.py) shipped enabled-but-undeployed and crash-looped. Copying all
 # of src/*.py is safe: only the services we `systemctl enable` ever run, so the
 # extra modules just sit idle. Subpackages (marauder_features/) come along too.
+# This also auto-deploys the hid_* modules (drifter-hid) — no manifest to update.
 cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"
 chmod +x "${DRIFTER_DIR}"/*.py 2>/dev/null || true
 # Local subpackages imported by services (e.g. marauder_bridge -> marauder_features).
@@ -309,6 +332,31 @@ if [ -d "${REPO_DIR}/static/leaflet" ]; then
     mkdir -p "${DRIFTER_DIR}/static/leaflet"
     cp "${REPO_DIR}"/static/leaflet/* "${DRIFTER_DIR}/static/leaflet/"
     ok "Leaflet $(ls "${REPO_DIR}/static/leaflet" | wc -l) asset(s) deployed"
+fi
+
+# Cockpit front door — web_dashboard_handlers.py serves the cockpit page from
+# /opt/drifter/ui/cockpit-preview.html. Without this the dashboard root returns
+# "503 cockpit not deployed" even though the service is healthy.
+if [ -f "${REPO_DIR}/ui/cockpit-preview.html" ]; then
+    mkdir -p "${DRIFTER_DIR}/ui"
+    cp "${REPO_DIR}/ui/cockpit-preview.html" "${DRIFTER_DIR}/ui/"
+    ok "Cockpit page deployed (ui/cockpit-preview.html)"
+fi
+
+# Avatar + media assets — web_dashboard_handlers._serve_avatar_asset serves
+# /assets/* from /opt/drifter/assets. Without this the Vivi 3D viewer
+# (/avatar) loads but the .glb model 404s, so she never renders.
+if [ -d "${REPO_DIR}/assets" ]; then
+    mkdir -p "${DRIFTER_DIR}/assets"
+    cp "${REPO_DIR}"/assets/* "${DRIFTER_DIR}/assets/" 2>/dev/null || true
+    ok "Assets deployed ($(ls "${REPO_DIR}/assets" | wc -l) file(s), incl. vivi_avatar.glb)"
+fi
+
+# Cockpit desktop launcher — DRIFTER-Cockpit.desktop execs this.
+if [ -f "${REPO_DIR}/tools/launch-cockpit.sh" ]; then
+    install -D -m 0755 "${REPO_DIR}/tools/launch-cockpit.sh" \
+            "${DRIFTER_DIR}/bin/launch-cockpit.sh"
+    ok "Cockpit launcher deployed (bin/launch-cockpit.sh)"
 fi
 
 # Data files
@@ -444,24 +492,26 @@ fi
 # ── 9. Wi-Fi Hotspot ──
 step 9 "Configuring Wi-Fi hotspot"
 
-# Remove existing if present
-nmcli con show "MZ1312_DRIFTER" &>/dev/null && nmcli con delete "MZ1312_DRIFTER" &>/dev/null
-
-nmcli con add type wifi \
-    ifname wlan0 \
-    con-name "MZ1312_DRIFTER" \
-    autoconnect yes \
-    ssid "MZ1312_DRIFTER" \
-    -- \
-    802-11-wireless.mode ap \
-    802-11-wireless.band bg \
-    802-11-wireless.channel 6 \
-    ipv4.method shared \
-    ipv4.addresses 10.42.0.1/24 \
-    wifi-sec.key-mgmt wpa-psk \
-    wifi-sec.psk "uncaged1312" 2>/dev/null
-
-ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+# Preserve existing hotspot profile + rotated PSK (operator may have changed it).
+# Only create from defaults if it doesn't exist yet.
+if nmcli con show "MZ1312_DRIFTER" &>/dev/null; then
+    ok "Hotspot MZ1312_DRIFTER already configured — preserving PSK"
+else
+    nmcli con add type wifi \
+        ifname wlan0 \
+        con-name "MZ1312_DRIFTER" \
+        autoconnect yes \
+        ssid "MZ1312_DRIFTER" \
+        -- \
+        802-11-wireless.mode ap \
+        802-11-wireless.band bg \
+        802-11-wireless.channel 6 \
+        ipv4.method shared \
+        ipv4.addresses 10.42.0.1/24 \
+        wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.psk "uncaged1312" 2>/dev/null
+    ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+fi
 
 # ── 10. systemd Services ──
 step 10 "Installing systemd services"
@@ -487,6 +537,8 @@ done
 shopt -u nullglob
 
 # Sudoers drop-ins — narrow NOPASSWD entries for the dashboards.
+# Ships drifter-mode.sudoers (mode-switch) AND drifter-service.sudoers
+# (arsenal service start/stop/restart for the foot-mode toolkit, BE-4).
 # visudo -cf validates each file before activating; a bad sudoers file would
 # break system-wide sudo, so refuse to ship it (set -e propagates the failure).
 for sudoers_src in "${REPO_DIR}"/services/drifter-*.sudoers; do
@@ -510,7 +562,11 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-db-checkpoint drifter-boot-reason drifter-marauder"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid drifter-lcd drifter-autoconnect drifter-boot-manager drifter-ghost drifter-ghost-voice"
+# NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
+# both drive the SPI LCD — they are mutually exclusive. The deploy enables both
+# here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
+# the lcd_dashboard menu UI, or disable drifter-lcd to keep the mirror.
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

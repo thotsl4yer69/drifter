@@ -24,6 +24,7 @@ import requests
 
 from config import (
     DRIFTER_DIR,
+    LOCATION_GRADE_STEEP_PCT,
     MQTT_HOST,
     MQTT_PORT,
     NAV_CAMERA_BEARING_TOLERANCE_DEG,
@@ -52,6 +53,11 @@ EARTH_RADIUS_M = 6_371_000.0
 
 GPS_REOPEN_BACKOFF_SEC = 5.0
 ROUTE_CACHE_QUANT_M = 50  # round endpoints to ~50m grid for cache keys
+
+# Throttle for enrichment-driven nav alerts so a hill or a standing weather
+# warning doesn't spam Vivi.
+GRADE_ALERT_COOLDOWN_SEC = 60
+WEATHER_ALERT_COOLDOWN_SEC = 300
 
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -204,6 +210,11 @@ class NavState:
         self.last_camera_ts: float = 0.0
         self.route_target: tuple | None = None
         self.inside_fences: set = set()
+        # Enrichment from weather_service / location_service.
+        self.grade_pct: float | None = None
+        self.elevation_m: float | None = None
+        self.last_grade_alert_ts: float = 0.0
+        self.last_weather_alert_ts: dict = {}   # alert kind -> last emit ts
 
 
 def _nearest_camera(state: NavState, cameras: Iterable[dict]) -> tuple | None:
@@ -393,6 +404,76 @@ def _gps_loop(state: NavState, running_ref: list) -> None:
             next_reopen = time.time() + GPS_REOPEN_BACKOFF_SEC
 
 
+def _handle_elevation(client: mqtt.Client, state: NavState, payload: bytes) -> None:
+    """Grade-aware routing: surface a nav alert on steep terrain ahead.
+
+    Hill grade drives fuel economy and engine/brake load, so the cockpit + Vivi
+    get a heads-up. Throttled by GRADE_ALERT_COOLDOWN_SEC.
+    """
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    grade = data.get('grade_pct')
+    elev = data.get('elevation_m')
+    if isinstance(elev, (int, float)):
+        state.elevation_m = elev
+    if not isinstance(grade, (int, float)):
+        return
+    state.grade_pct = grade
+    if abs(grade) < LOCATION_GRADE_STEEP_PCT:
+        return
+    now = time.time()
+    if now - state.last_grade_alert_ts < GRADE_ALERT_COOLDOWN_SEC:
+        return
+    state.last_grade_alert_ts = now
+    if grade < 0:
+        msg = f"Steep descent {grade:.0f}% ahead — engine-brake, save the pads."
+    else:
+        msg = f"Steep climb {grade:.0f}% ahead — expect higher fuel burn and load."
+    client.publish(TOPICS['nav_alert'], json.dumps({
+        'event': 'steep_grade', 'grade_pct': grade, 'elevation_m': elev,
+        'message': msg, 'urgent': False, 'ts': now,
+    }))
+    log.info(msg)
+
+
+def _handle_weather_alerts(client: mqtt.Client, state: NavState, payload: bytes) -> None:
+    """Re-surface actionable weather hazards as urgent nav alerts.
+
+    weather_service derives rain_soon / fog / ice / high_wind advisories; nav
+    forwards the hazardous ones as nav_alert so Vivi speaks "rain/fog/ice
+    ahead". Per-kind cooldown stops a standing warning from repeating.
+    """
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    now = time.time()
+    urgent_kinds = {'rain_soon', 'fog', 'ice', 'gov'}
+    for alert in data.get('alerts', []):
+        if not isinstance(alert, dict):
+            continue
+        kind = alert.get('kind')
+        if kind not in urgent_kinds:
+            continue
+        last = state.last_weather_alert_ts.get(kind, 0.0)
+        if now - last < WEATHER_ALERT_COOLDOWN_SEC:
+            continue
+        state.last_weather_alert_ts[kind] = now
+        client.publish(TOPICS['nav_alert'], json.dumps({
+            'event': 'weather', 'kind': kind,
+            'message': alert.get('message') or alert.get('event') or 'Weather hazard ahead',
+            'urgent': kind in ('fog', 'ice'),
+            'ts': now,
+        }))
+        log.info(f"Weather alert forwarded: {kind}")
+
+
 def main() -> None:
     log.info("DRIFTER Navigation starting...")
     cameras = _load_cameras()
@@ -439,6 +520,10 @@ def main() -> None:
                 client.publish(TOPICS['nav_alert'], json.dumps({
                     'event': 'route_error', 'reason': str(e), 'ts': time.time(),
                 }))
+        elif msg.topic == TOPICS['location_elevation']:
+            _handle_elevation(client, state, msg.payload)
+        elif msg.topic == TOPICS['weather_alerts']:
+            _handle_weather_alerts(client, state, msg.payload)
 
     client.on_message = on_message
 
@@ -454,7 +539,11 @@ def main() -> None:
     if not running[0]:
         return
 
-    client.subscribe(TOPICS['nav_route'], 0)
+    client.subscribe([
+        (TOPICS['nav_route'], 0),
+        (TOPICS['location_elevation'], 0),
+        (TOPICS['weather_alerts'], 0),
+    ])
     client.loop_start()
 
     gps_thread = threading.Thread(target=_gps_loop, args=(state, running), daemon=True)

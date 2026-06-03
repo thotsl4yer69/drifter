@@ -81,6 +81,12 @@ MEDIUM_RISK_PREFIXES = (
 )
 HIGH_RISK_PREFIXES = (
     'storage write', 'storage remove', 'storage rename', 'storage mkdir',
+    # Rubber Ducky / BadUSB injection path (drifter-hid Flipper backend).
+    # Pushing a payload to /ext/badusb and firing it via the BadUSB app or
+    # `loader open` is HIGH-risk: the bridge's OWN confirm gate must agree,
+    # in addition to drifter-hid's ARM→CONFIRM→RUN state machine (defence
+    # in depth — there is no single-gate path from upload to injection).
+    'badusb', 'loader open',
 )
 BLOCKED_PATTERNS = (
     'update', 'dfu', 'storage write /int/', 'storage remove /int/',

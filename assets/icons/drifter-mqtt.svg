@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11161f"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="34" fill="url(#bg)" stroke="#7dd3fc" stroke-width="3" stroke-opacity="0.85"/>
+  <rect x="22" y="22" width="212" height="212" rx="24" fill="none" stroke="#7dd3fc" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="128" y="58" font-family="monospace" font-size="20" letter-spacing="3"
+        text-anchor="middle" fill="#7dd3fc" fill-opacity="0.75">MZ1312</text>
+  <text x="128" y="150" font-family="sans-serif" font-weight="700" font-size="62"
+        letter-spacing="1" text-anchor="middle" fill="#7dd3fc">MQTT</text>
+  <text x="128" y="206" font-family="monospace" font-size="22" letter-spacing="6"
+        text-anchor="middle" fill="#e8eaed" fill-opacity="0.9">DRIFTER</text>
+</svg>

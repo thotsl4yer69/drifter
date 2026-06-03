@@ -1,0 +1,29 @@
+# /etc/sudoers.d/drifter-service
+# NOPASSWD entries for the cockpit ARSENAL service-control surface (BE-4).
+# Installed by install.sh at /etc/sudoers.d/drifter-service (mode 0440) via
+# the same services/drifter-*.sudoers glob that ships drifter-mode.sudoers.
+#
+# The dashboard's POST /api/service/<unit> route runs
+#   sudo -n systemctl <action> <unit>
+# for exactly the foot-mode arsenal units below. The route already gates:
+#   * local-peer ACL (127.0.0.1 + 10.42.0.0/24),
+#   * action allowlist {start,stop,restart},
+#   * unit allowlist = (FOOT_ONLY ∪ SHARED) ∩ ARSENAL_SERVICE_UNITS,
+#   * a hard 409 refusal whenever the node is in DRIVE mode.
+# This file is the kernel-enforced floor: even if the route were bypassed,
+# the drifter user can ONLY start/stop/restart these specific arsenal units
+# and NOTHING else. NO DRIVE_ONLY units, NO wildcards, NO bare `systemctl`.
+# Keep this enumeration in lock-step with config.ARSENAL_SERVICE_UNITS.
+
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-kismet, /usr/bin/systemctl stop drifter-kismet, /usr/bin/systemctl restart drifter-kismet
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-kismet-bridge, /usr/bin/systemctl stop drifter-kismet-bridge, /usr/bin/systemctl restart drifter-kismet-bridge
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-marauder, /usr/bin/systemctl stop drifter-marauder, /usr/bin/systemctl restart drifter-marauder
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-wardrive, /usr/bin/systemctl stop drifter-wardrive, /usr/bin/systemctl restart drifter-wardrive
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-wifi-audit, /usr/bin/systemctl stop drifter-wifi-audit, /usr/bin/systemctl restart drifter-wifi-audit
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-flipper, /usr/bin/systemctl stop drifter-flipper, /usr/bin/systemctl restart drifter-flipper
+# NOTE: drifter-rf is in ARSENAL_SERVICE_UNITS but is a DRIVE_ONLY service,
+# so the route's (FOOT_ONLY ∪ SHARED) ∩ arsenal intersection drops it and it
+# is never reachable via /api/service. Deliberately NOT granted here — the
+# vehicle's RTL-SDR/TPMS unit must not be operable from the arsenal surface.
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-rfaudio, /usr/bin/systemctl stop drifter-rfaudio, /usr/bin/systemctl restart drifter-rfaudio
+drifter ALL=(root) NOPASSWD: /usr/bin/systemctl start drifter-fly-catcher, /usr/bin/systemctl stop drifter-fly-catcher, /usr/bin/systemctl restart drifter-fly-catcher

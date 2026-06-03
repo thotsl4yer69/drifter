@@ -31,6 +31,30 @@ from config import (
     WEATHER_API_HOST,
 )
 
+# How long an OpenWeatherMap (drifter/weather/current) snapshot is trusted
+# before we fall back to the direct Open-Meteo fetch. ~2× the weather
+# service's 15-min cadence.
+MQTT_WEATHER_TTL_SEC = 1800
+
+
+def _driving_mode(w: dict) -> tuple[str, str | None]:
+    """Map a weather snapshot to a driving mode + a one-line adjustment.
+
+    Priority ice > fog > rain > normal — the most hazardous wins.
+    """
+    if not w:
+        return 'normal', None
+    temp = w.get('temp_c')
+    damp = w.get('is_raining') or w.get('is_snowing') or ((w.get('humidity') or 0) >= 90)
+    if isinstance(temp, (int, float)) and temp <= 3.0 and damp:
+        return 'ice', "Ice risk — gentle throttle and brakes, leave a big gap."
+    vis = w.get('visibility_m')
+    if w.get('is_foggy') or (isinstance(vis, (int, float)) and vis < 1000):
+        return 'fog', "Fog — lights on, slow down, double your following distance."
+    if w.get('is_raining'):
+        return 'rain', "Wet roads — ease off, longer braking distances."
+    return 'normal', None
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [ASSIST] %(message)s',
@@ -60,6 +84,8 @@ class AssistState:
         self.drive_start: float | None = None
         self.fatigue_active: bool = False
         self.weather: dict = {}
+        self.driving_mode: str = 'normal'      # normal | rain | fog | ice
+        self.last_mqtt_weather: float = 0.0     # ts of last drifter/weather/current
 
 
 def _is_night(now: datetime | None = None) -> bool:
@@ -160,6 +186,24 @@ def main() -> None:
                     state.last_speed = s
                 except (TypeError, ValueError):
                     pass
+        elif topic == TOPICS['weather_current'] and isinstance(data, dict):
+            # Prefer the OpenWeatherMap feed over our own Open-Meteo fetch.
+            state.weather = data
+            state.last_mqtt_weather = time.time()
+            mode, advice = _driving_mode(data)
+            payload = dict(data)
+            payload['mode'] = mode
+            payload['mode_advice'] = advice
+            payload['source'] = 'openweathermap'
+            client.publish(TOPICS['driver_weather'], json.dumps(payload), retain=True)
+            if mode != state.driving_mode:
+                state.driving_mode = mode
+                log.info(f"Driving mode → {mode}")
+                if mode != 'normal' and advice:
+                    client.publish(TOPICS['driver_event'], json.dumps({
+                        'event': 'driving_mode', 'mode': mode,
+                        'message': advice, 'ts': time.time(),
+                    }))
         elif topic == TOPICS['nav_position'] and isinstance(data, dict):
             lat = data.get('lat'); lon = data.get('lon')
             if lat is not None and lon is not None:
@@ -196,6 +240,7 @@ def main() -> None:
         (TOPICS['nav_position'], 0),
         (TOPICS['safety_alert'], 0),
         (TOPICS['drive_session'], 0),
+        (TOPICS['weather_current'], 0),
     ])
     client.loop_start()
     log.info("Driver Assist LIVE")
@@ -226,11 +271,22 @@ def main() -> None:
                     'event': 'fatigue', 'message': msg, 'ts': now,
                 }))
 
-        # Weather pull every 10 minutes
-        if state.last_pos and now - last_weather > 600:
+        # Weather pull every 10 minutes — ONLY as a fallback. If the
+        # OpenWeatherMap-backed weather_service is publishing, we defer to it
+        # (richer data, single API caller) and skip the Open-Meteo fetch.
+        mqtt_weather_fresh = now - state.last_mqtt_weather < MQTT_WEATHER_TTL_SEC
+        if state.last_pos and not mqtt_weather_fresh and now - last_weather > 600:
             w = _fetch_weather(*state.last_pos)
             if w:
                 state.weather = w
+                mode, advice = _driving_mode({
+                    'is_raining': (w.get('precip_mm') or 0) > 0,
+                    'visibility_m': w.get('visibility_m'),
+                    'temp_c': w.get('temp_c'),
+                })
+                w['mode'] = mode
+                w['mode_advice'] = advice
+                w['source'] = 'open-meteo'
                 client.publish(TOPICS['driver_weather'], json.dumps(w), retain=True)
             last_weather = now
 

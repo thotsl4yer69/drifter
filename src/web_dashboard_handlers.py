@@ -20,15 +20,24 @@ import yaml
 
 import ble_history
 import ble_persistence
+import hid_ducky
+import hid_inject
 import web_dashboard_state as state
 from ble_map_html import BLE_MAP_HTML
 from config import (
+    ARSENAL_SERVICE_UNITS,
     DEFAULT_MODE,
+    DRIVE_ONLY_SERVICES,
+    FOOT_ONLY_SERVICES,
+    GOOGLE_MAPS_API_KEY,
+    MARAUDER_COMMANDS,
     MODE_STATE_PATH,
     MODES,
+    SENTRY_COMMANDS,
     SERVICES,
     SETTINGS_SCHEMA,
     SETTINGS_SECTIONS,
+    SHARED_SERVICES,
     TOPICS,
     XTYPE_DTC_LOOKUP,
     load_settings,
@@ -36,6 +45,7 @@ from config import (
     validate_settings_payload,
 )
 from corpus import corpus_search, dtc_lookup
+from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
 
 log = logging.getLogger(__name__)
@@ -123,6 +133,8 @@ def _healthz_payload() -> tuple[dict, int]:
         'drifter-can-discovery', 'drifter-fly-catcher',
         'drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
         'drifter-rf-baseline', 'drifter-session-recorder',
+        # In-car SPI LCD: inactive (exits hw-pending) until /dev/fb1 is wired.
+        'drifter-lcd',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]
@@ -189,6 +201,118 @@ _STATIC_FILES = {
 _BLE_HISTORY_DB = '/opt/drifter/state/ble_history.db'
 
 _RFAUDIO_ACTIONS = {'start', 'stop', 'scan', 'test_tone', 'list_bands'}
+
+# ─── Arsenal service control (BE-4) ───────────────────────────────────
+# POST /api/service/<unit> drives `sudo -n systemctl <action> <unit>` for
+# foot-mode arsenal tools. The unit allowlist is the arsenal subset
+# (ARSENAL_SERVICE_UNITS) intersected with the modes a foot-mode tool is
+# allowed to live in (FOOT_ONLY ∪ SHARED). A DRIVE_ONLY unit can therefore
+# NEVER appear here even if it slipped into ARSENAL_SERVICE_UNITS — the
+# intersection is fail-closed. Unknown / arbitrary units are rejected.
+_SERVICE_ACTIONS = {'start', 'stop', 'restart'}
+_SERVICE_UNITS = (
+    (set(FOOT_ONLY_SERVICES) | set(SHARED_SERVICES))
+    & set(ARSENAL_SERVICE_UNITS)
+)
+# Defence in depth: an explicit deny-set of every drive-only unit, asserted
+# disjoint from the computed allowlist at import so a future edit that lets a
+# drive unit through trips the test suite instead of the vehicle.
+_DRIVE_ONLY_UNITS = set(DRIVE_ONLY_SERVICES)
+assert not (_SERVICE_UNITS & _DRIVE_ONLY_UNITS), \
+    "arsenal service allowlist must never include a DRIVE_ONLY unit"
+
+# systemctl call timeout — start/stop of a small unit is sub-second; cap so a
+# wedged unit can't pin the handler thread.
+_SERVICE_CTL_TIMEOUT = 15.0
+
+# Append-only audit trail for every service-control attempt (peer, unit,
+# action, rc, result). Mirrors the ducky/marauder audit requirement.
+_ARSENAL_AUDIT_LOG = Path('/opt/drifter/state/arsenal_audit.log')
+
+# Marauder / sentry command relays. The bridge re-validates and (for HIGH-risk
+# marauder ops) runs its own confirm-token round-trip — these are thin relays.
+_MARAUDER_COMMANDS = set(MARAUDER_COMMANDS)
+_SENTRY_COMMANDS = set(SENTRY_COMMANDS)
+
+# ─── Rubber Ducky / BadUSB HID (BE-1) ─────────────────────────────────
+# POST /api/hid/command allowlist. The drifter-hid service is the
+# authoritative SECOND gate (ARM→CONFIRM→RUN); for the Flipper backend a
+# THIRD gate is the bridge's HIGH-risk classifier. This handler RELAYS
+# only — it never injects and never bypasses CONFIRM.
+_HID_COMMANDS = {'hid_arm', 'hid_confirm', 'hid_cancel'}
+_HID_BACKENDS = {'native', 'flipper'}
+# Payload storage shared with hid_inject.HID_PAYLOAD_DIR. The API compiles +
+# persists here; the service reads from the same dir at ARM/RUN time.
+_HID_PAYLOAD_DIR = Path('/opt/drifter/state/hid_payloads')
+# Append-only audit shared with hid_inject.HID_AUDIT_LOG. The API records
+# UPLOAD/DELETE here (operator events) with peer IP and also publishes
+# drifter/hid/audit so the cockpit + logger see it.
+_HID_AUDIT_LOG = Path('/opt/drifter/state/hid_audit.log')
+
+
+def _hid_audit(event: str, peer: str, **fields) -> None:
+    """Append one JSONL record to the HID audit log AND publish it.
+
+    Mirrors hid_inject.audit so UPLOAD/DELETE (which happen API-side, not
+    in the service) land in the SAME append-only trail with the peer IP.
+    Never raises — a failed audit write must not break the route."""
+    record = {'ts': time.time(), 'event': event, 'peer': peer}
+    record.update(fields)
+    try:
+        _HID_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _HID_AUDIT_LOG.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record, default=str) + '\n')
+    except OSError as e:
+        log.warning("hid audit write failed: %s", e)
+    if state.mqtt_client is not None:
+        try:
+            state.mqtt_client.publish(
+                TOPICS.get('hid_audit', 'drifter/hid/audit'),
+                json.dumps(record, default=str), qos=1, retain=False)
+        except Exception as e:
+            log.warning("hid audit publish failed: %s", e)
+    log.info("hid-audit %s", json.dumps(record, default=str))
+
+
+def _hid_payload_id_ok(payload_id: str) -> bool:
+    """Path-traversal guard for a payload id used in a filesystem path."""
+    return bool(payload_id) and not (
+        '/' in payload_id or '\\' in payload_id or '..' in payload_id)
+
+
+def _hid_list_payloads() -> list:
+    """Enumerate stored payload metas newest-first. Honest empty list when
+    none exist — never fabricated rows."""
+    out = []
+    if not _HID_PAYLOAD_DIR.exists():
+        return out
+    try:
+        for meta_path in _HID_PAYLOAD_DIR.glob('*.meta.json'):
+            try:
+                meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            out.append(meta)
+    except OSError as e:
+        log.warning("hid payload listing error: %s", e)
+    out.sort(key=lambda m: m.get('created_ts') or 0, reverse=True)
+    return out
+
+
+def _arsenal_audit(event: str, peer: str, **fields) -> None:
+    """Append one JSONL record to the arsenal audit log AND log a line.
+
+    Never raises — a failed audit write must not break the control path,
+    but it is logged at WARNING so a broken audit surface is visible."""
+    record = {'ts': time.time(), 'event': event, 'peer': peer}
+    record.update(fields)
+    try:
+        _ARSENAL_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _ARSENAL_AUDIT_LOG.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record, default=str) + '\n')
+    except OSError as e:
+        log.warning("arsenal audit write failed: %s", e)
+    log.info("arsenal-audit %s", json.dumps(record, default=str))
 
 # rf_monitor's on_message() command allowlist. Mirrors the if/elif chain in
 # src/rf_monitor.py so the dashboard surface can't smuggle arbitrary commands
@@ -427,6 +551,105 @@ def _is_local_peer(peer: str) -> bool:
     return peer == '127.0.0.1' or peer.startswith('10.42.0.')
 
 
+# ─── /api/arsenal aggregate (BE-3) ────────────────────────────────────
+# One descriptor per foot-mode tool surfaced on the launcher board. The
+# aggregate route folds these into a single payload the cockpit's
+# openArsenal() overlay polls every 3s. `present` is derived HONESTLY:
+#   * `unit` — the systemd unit whose `is-active` state (via the shared
+#     /healthz services map) is a necessary condition for presence; None
+#     for tools with no dedicated unit (e.g. ghost, which has no service
+#     shipped here — it stays present:false until one exists).
+#   * `hw_key` — when set, a latest_state key whose payload carries a
+#     hardware-presence signal. A tool is only `present` when BOTH the
+#     unit is active AND (if hw_key is set) the hardware probe agrees.
+#     This is what stops the UI from ever rendering a green/up card for a
+#     tool whose unit is dead or whose dongle/ESP32/camera is unplugged.
+#   * `state_key` — latest_state key for the live status payload; its
+#     `state` field (or a tool-specific honest default) is surfaced.
+#   * `actions` — verbs the tool *would* expose (metadata only; the
+#     START/STOP route is BE-4, not built here — the UI renders them
+#     aria-disabled this stage).
+_ARSENAL_TOOLS = [
+    {'name': 'kismet',    'unit': 'drifter-kismet',       'tab': 'kismet',
+     'state_key': 'wifi_devices',  'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'marauder',  'unit': 'drifter-marauder',     'tab': 'marauder',
+     'state_key': 'marauder_status', 'hw_key': 'marauder_status',
+     'actions': ['start', 'stop']},
+    {'name': 'flipper',   'unit': 'drifter-flipper',      'tab': 'flipper',
+     'state_key': 'flipper_status', 'hw_key': 'flipper_status',
+     'actions': ['start', 'stop']},
+    {'name': 'wardrive',  'unit': 'drifter-wardrive',     'tab': 'wardrive',
+     'state_key': 'wardrive_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'wifi_audit', 'unit': 'drifter-wifi-audit',  'tab': 'wardrive',
+     'state_key': 'wifi_audit', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'flycatcher', 'unit': 'drifter-fly-catcher', 'tab': 'flycatcher',
+     'state_key': 'state_fly_catcher', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'ghost',     'unit': None,                   'tab': 'ghost',
+     'state_key': 'ghost_status', 'hw_key': None,
+     'actions': []},
+    {'name': 'alpr',      'unit': 'drifter-alpr',         'tab': 'alpr',
+     'state_key': 'alpr_plate', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'vision',    'unit': 'drifter-vision',       'tab': 'vision',
+     'state_key': 'vision_status', 'hw_key': 'vision_status',
+     'actions': ['start', 'stop']},
+    {'name': 'sentry',    'unit': 'drifter-sentry',       'tab': 'sentry',
+     'state_key': 'sentry_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'rf',        'unit': 'drifter-rf',           'tab': 'rf',
+     'state_key': 'rf_spectrum', 'hw_key': None,
+     'actions': ['start', 'stop']},
+    {'name': 'rfaudio',   'unit': 'drifter-rfaudio',      'tab': 'rf',
+     'state_key': 'rfaudio_status', 'hw_key': None,
+     'actions': ['start', 'stop']},
+]
+
+
+def _arsenal_hw_present(tool: dict) -> bool:
+    """Honest hardware-presence check for an arsenal tool.
+
+    Returns True when the tool declares no hardware gate (`hw_key` is
+    None) — unit-active is then sufficient. When a hw_key is set, the
+    matching latest_state payload must NOT signal absent hardware:
+      * marauder publishes state:'no_hardware' when no ESP32 is attached;
+      * flipper/vision publish nothing (or an empty/disconnected status)
+        until their device enumerates.
+    Never fabricates presence — a missing payload reads as absent."""
+    hw_key = tool.get('hw_key')
+    if not hw_key:
+        return True
+    payload = state.latest_state.get(hw_key)
+    if not isinstance(payload, dict) or not payload:
+        return False
+    st = str(payload.get('state', '')).lower()
+    if st in ('no_hardware', 'absent', 'disconnected', 'not_connected'):
+        return False
+    # flipper publishes connected/state fields; treat an explicit
+    # disconnected/false as absent without inventing a 'connected' default.
+    if payload.get('connected') is False:
+        return False
+    return True
+
+
+def _arsenal_state_str(tool: dict, present: bool) -> str:
+    """Live status string for an arsenal tool — honest, never faked.
+
+    Prefers the tool's published `state` field. Falls back to 'idle' only
+    when the unit is present (active + hardware) but hasn't published a
+    state yet; 'absent' when not present. No tool is ever reported 'up'
+    while its unit is dead or its hardware is missing."""
+    payload = state.latest_state.get(tool.get('state_key'))
+    if isinstance(payload, dict):
+        st = payload.get('state') or payload.get('status')
+        if isinstance(st, str) and st.strip():
+            return st.strip()
+    return 'idle' if present else 'absent'
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     """Route HTTP requests to one of the small endpoint methods below."""
 
@@ -453,6 +676,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path.startswith('/api/can/captures/'):
             self._serve_can_capture_file(parsed.path[len('/api/can/captures/'):])
+            return
+        if parsed.path.startswith('/api/hid/payloads/'):
+            self._serve_hid_payload(parsed.path[len('/api/hid/payloads/'):])
             return
         # Vivi avatar assets — the 3D viewer page fetches its GLB plus any
         # texture / animation bundles from here. Path-traversal guarded in
@@ -522,7 +748,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         })
     def _get_state(self, parsed):             self._serve_json(state.latest_state)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
-    def _get_rfaudio_status(self, parsed):    self._serve_json(state.latest_state.get('rfaudio_status', {}))
+    def _get_rfaudio_status(self, parsed):
+        """rfaudio status + live hardware-presence echo (BE-2).
+
+        Start from the retained rfaudio status (verbatim, including any
+        `error`), then merge in fresh RTL-SDR / speaker presence so the
+        cockpit can gate tune/scan/test-tone honestly. Build a COPY —
+        never mutate latest_state (it's the WS fan-out source)."""
+        status = dict(state.latest_state.get('rfaudio_status', {}))
+        sdr = probe_rtl_sdr()
+        spk = probe_speaker()
+        status['sdr_present'] = bool(sdr['connected'])
+        status['speaker_present'] = bool(spk['connected'])
+        status['sdr_action'] = sdr.get('action', '')
+        status['speaker_action'] = spk.get('action', '')
+        self._serve_json(status)
 
     def _get_recent_alerts(self, parsed):
         """Return the in-memory ring of recent alert messages, newest first."""
@@ -656,6 +896,464 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_error(403, 'airspace: local network only')
             return
         self._serve_json(_snapshot_airspace())
+
+    # ─── Arsenal read-side routes (BE-2, foot-mode toolkit) ───────────
+    # All GET, all _is_local_peer gated, all read state.latest_state from
+    # the `drifter/#` subscription. Each returns the live snapshot or an
+    # HONEST empty/`no_hardware` shape — NEVER a fabricated 'up'/'idle'
+    # status or demo rows when the tool/hardware is absent.
+
+    def _get_kismet_devices(self, parsed):
+        """Kismet Wi-Fi + BLE device snapshot.
+
+        Reads drifter/wifi/devices + drifter/ble/devices. Honest empty
+        shape {wifi:[],ble:[],ts:null} when neither has published — an
+        empty REST poll is a legitimate state, not a fault."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'kismet: local network only')
+            return
+        wifi = state.latest_state.get('wifi_devices')
+        ble = state.latest_state.get('ble_devices')
+        if not isinstance(wifi, list):
+            wifi = list(wifi.get('devices', [])) if isinstance(wifi, dict) else []
+        if not isinstance(ble, list):
+            ble = list(ble.get('devices', [])) if isinstance(ble, dict) else []
+        ts = None
+        for src in (state.latest_state.get('wifi_devices'),
+                    state.latest_state.get('ble_devices')):
+            if isinstance(src, dict) and src.get('ts') is not None:
+                ts = src.get('ts')
+        self._serve_json({'wifi': wifi, 'ble': ble, 'ts': ts})
+
+    def _get_marauder_status(self, parsed):
+        """ESP32 Marauder bridge status (retained drifter/marauder/status).
+
+        Honest {state:'no_hardware'} when no ESP32 has ever announced —
+        never fabricate a connected/idle state for absent hardware."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder: local network only')
+            return
+        status = state.latest_state.get('marauder_status')
+        if not isinstance(status, dict) or not status:
+            status = {'state': 'no_hardware'}
+        self._serve_json(status)
+
+    def _get_marauder_scan(self, parsed):
+        """Live Marauder scan ring for a single stream.
+
+        ?stream=ap|sta|probe (default ap) & ?n=<int> (cap the returned
+        rows, newest-kept). Reads drifter/marauder/scan/<stream>. Empty
+        rows list when no scan has run — honest, never demo rows."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder scan: local network only')
+            return
+        qs = parse_qs(parsed.query or '') if parsed is not None else {}
+        stream = (qs.get('stream', ['ap'])[0] or 'ap').lower()
+        if stream not in ('ap', 'sta', 'probe'):
+            stream = 'ap'
+        try:
+            n = int(qs.get('n', [0])[0])
+        except (ValueError, TypeError):
+            n = 0
+        snap = state.latest_state.get('marauder_scan_' + stream)
+        if isinstance(snap, dict):
+            rows = snap.get('rows') or snap.get('devices') or []
+        elif isinstance(snap, list):
+            rows = snap
+        else:
+            rows = []
+        rows = list(rows)
+        if n > 0:
+            rows = rows[-n:]
+        self._serve_json({'stream': stream, 'rows': rows})
+
+    def _get_flycatcher_aircraft(self, parsed):
+        """IMSI-catcher / fly-catcher airspace classification.
+
+        Reads drifter/airspace/aircraft_classified + drifter/state/fly_catcher.
+        Honest empty lists + null state when the detector is idle/absent."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'flycatcher: local network only')
+            return
+        classified = state.latest_state.get('airspace_aircraft_classified')
+        if isinstance(classified, dict):
+            classified = classified.get('aircraft') or classified.get('classified') or []
+        elif not isinstance(classified, list):
+            classified = []
+        fc = state.latest_state.get('state_fly_catcher')
+        if isinstance(fc, dict):
+            aircraft = fc.get('aircraft') if isinstance(fc.get('aircraft'), list) else []
+        else:
+            aircraft = []
+            fc = None
+        self._serve_json({
+            'aircraft': aircraft,
+            'classified': list(classified),
+            'state': fc,
+        })
+
+    def _get_mapconfig(self, parsed):
+        """Map config for the cockpit's MZ1312 Google basemap.
+
+        Local-only — the Maps JS key never leaves the hotspot. An empty key
+        makes the cockpit hide the mz1312 basemap and fall back to dark/sat."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'mapconfig: local network only')
+            return
+        self._serve_json({
+            'google_maps_key': GOOGLE_MAPS_API_KEY or '',
+            'has_google': bool(GOOGLE_MAPS_API_KEY),
+        })
+
+    def _get_ghost_status(self, parsed):
+        """Counter-surveillance (ghost_protocol) posture.
+
+        Reads drifter/ghost/{status,tracker,stingray,alpr,rf}. ghost has
+        no service unit shipped here, so this returns honest empty lists +
+        null status until a drifter-ghost.service exists — never faked."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'ghost: local network only')
+            return
+
+        def _aslist(key):
+            v = state.latest_state.get(key)
+            if isinstance(v, list):
+                return v
+            if isinstance(v, dict):
+                inner = v.get(key.split('_', 1)[-1]) or v.get('items')
+                return inner if isinstance(inner, list) else [v]
+            return []
+
+        status = state.latest_state.get('ghost_status')
+        if not isinstance(status, dict):
+            status = None
+        self._serve_json({
+            'status': status,
+            'trackers': _aslist('ghost_tracker'),
+            'stingray': _aslist('ghost_stingray'),
+            'alpr': _aslist('ghost_alpr'),
+            'rf': _aslist('ghost_rf'),
+        })
+
+    def _get_alpr_plates(self, parsed):
+        """ALPR plate-read ring (drifter/vision/alpr/plate).
+
+        Honest empty list when no camera/model has produced a read."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'alpr: local network only')
+            return
+        snap = state.latest_state.get('alpr_plate')
+        if isinstance(snap, dict):
+            plates = snap.get('plates') if isinstance(snap.get('plates'), list) else [snap]
+        elif isinstance(snap, list):
+            plates = snap
+        else:
+            plates = []
+        self._serve_json({'plates': list(plates)})
+
+    def _get_vision_status(self, parsed):
+        """Vision pipeline status + object detections.
+
+        Reads drifter/vision/{status,object}. Honest null status + empty
+        objects when no camera/model is running."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'vision: local network only')
+            return
+        status = state.latest_state.get('vision_status')
+        if not isinstance(status, dict):
+            status = None
+        objs = state.latest_state.get('vision_object')
+        if isinstance(objs, dict):
+            objects = objs.get('objects') if isinstance(objs.get('objects'), list) else [objs]
+        elif isinstance(objs, list):
+            objects = objs
+        else:
+            objects = []
+        self._serve_json({'status': status, 'objects': list(objects)})
+
+    def _get_sentry_status(self, parsed):
+        """Sentry (impact/tamper) status (retained drifter/sentry/status).
+
+        Honest empty shape with null fields when the sentry has never
+        published — never fabricate an armed/disarmed posture."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'sentry: local network only')
+            return
+        status = state.latest_state.get('sentry_status')
+        if not isinstance(status, dict) or not status:
+            status = {'armed': None, 'threshold_g': None,
+                      'auto_arm': None, 'ts': None}
+        self._serve_json(status)
+
+    def _get_arsenal(self, parsed):
+        """Foot-mode arsenal aggregate (BE-3).
+
+        {ts, mode, tools:[{name, unit, present, state, live_meta, actions}]}
+
+        `present` is derived from the SAME service map /healthz computes
+        (we call the shared _healthz_payload() so service-active detection
+        is never reimplemented differently) AND from hardware-presence
+        signals already in latest_state. A tool is present ONLY when its
+        unit is active and its hardware (when it has any) agrees — so the
+        UI renders a disabled card for an inactive/absent tool and NEVER a
+        fabricated 'up'. `actions` is metadata only; the START/STOP route
+        is BE-4 and is not built here."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'arsenal: local network only')
+            return
+        # Reuse /healthz's authoritative services map + mode rather than
+        # re-running systemctl with different logic.
+        payload, _ = _healthz_payload()
+        services = payload.get('services', {}) or {}
+        mode = payload.get('mode', DEFAULT_MODE)
+
+        tools = []
+        for spec in _ARSENAL_TOOLS:
+            unit = spec.get('unit')
+            # No-unit tools (e.g. ghost) can never be present until a
+            # service ships; unit-bearing tools follow the healthz reading.
+            unit_active = bool(services.get(unit)) if unit else False
+            hw_ok = _arsenal_hw_present(spec)
+            present = unit_active and hw_ok
+            tools.append({
+                'name':    spec['name'],
+                'unit':    unit,
+                'tab':     spec.get('tab'),
+                'present': present,
+                'state':   _arsenal_state_str(spec, present),
+                'live_meta': {
+                    'unit_active':  unit_active,
+                    'hardware_ok':  hw_ok,
+                },
+                'actions': list(spec.get('actions', [])),
+            })
+        self._serve_json({
+            'ts':    payload.get('ts', time.time()),
+            'mode':  mode,
+            'tools': tools,
+        })
+
+    # ─── Rubber Ducky / BadUSB HID (BE-1) ────────────────────────────
+    def _get_hid_status(self, parsed):
+        """Backend readiness + currently-armed entry (if any).
+
+        {native:{dr_mode,hidg0_present,bound,boot_profile,...},
+         flipper:{connected,badusb_ready}, armed:{...}|null}
+
+        native readiness is read HONESTLY from /proc/device-tree dr_mode —
+        on this host it is 'host' so native reports not-configured and is
+        NEVER faked ready. flipper readiness is merged from the live
+        retained drifter/flipper/status snapshot. `armed` reflects the
+        most recent ARMED preview the service published on drifter/hid/status
+        (the service is the authority; the API does not invent state)."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        native = hid_inject.native_status()
+        # Honest flipper readiness from the retained status topic.
+        fstatus = state.latest_state.get('flipper_status')
+        if isinstance(fstatus, dict) and fstatus:
+            connected = (fstatus.get('state') == 'connected'
+                         or fstatus.get('connected') is True)
+        else:
+            connected = False
+        flipper = {
+            'connected': connected,
+            # BadUSB-app readiness needs the bridge to confirm at fire time;
+            # we do not fabricate it — connected is the honest precondition.
+            'badusb_ready': connected,
+        }
+        # Armed snapshot from the service's last drifter/hid/status publish.
+        armed = None
+        hid_status = state.latest_state.get('hid_status')
+        if isinstance(hid_status, dict):
+            armed = hid_status.get('armed')
+        self._serve_json({'native': native, 'flipper': flipper,
+                          'armed': armed, 'ts': time.time()})
+
+    def _get_hid_payloads(self, parsed):
+        """List stored payload metas, newest-first. Honest empty list."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        self._serve_json(_hid_list_payloads())
+
+    def _serve_hid_payload(self, payload_id: str):
+        """Single payload {meta, script} for the editor. 404 when absent."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        loaded = hid_inject.load_payload(payload_id)
+        if loaded is None:
+            self.send_error(404, 'payload not found')
+            return
+        self._serve_json({'meta': loaded['meta'], 'script': loaded['script']})
+
+    def _post_hid_payload(self):
+        """Compile a DuckyScript payload, persist .txt + .meta.json, audit
+        UPLOAD. 400 {ok:false,error,line} on a parse error — the payload is
+        NOT stored if it cannot compile.
+
+        Body: {name, script, layout?, id?}. Compilation here is the same
+        compiler the service uses at ARM time, so a stored payload is known
+        to compile. NO injection happens — this only validates + persists."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        script = body.get('script')
+        name = body.get('name') or 'unnamed'
+        layout = body.get('layout') or 'us'
+        if not isinstance(script, str) or not script.strip():
+            self.send_error(400, 'body requires a non-empty "script" string')
+            return
+        # Validate by compiling. A parse error blocks persistence.
+        try:
+            compiled = hid_ducky.compile_ducky(script, layout=layout)
+        except hid_ducky.DuckyParseError as e:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'ok': False, 'error': str(e),
+                'line': getattr(e, 'line', None)}).encode())
+            return
+        # Persist. id defaults to ducky-<unix_ts> (mirrors capture ids).
+        payload_id = body.get('id') or f'ducky-{int(time.time())}'
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        sha = hid_ducky.sha256_source(script)
+        meta = {
+            'id': payload_id,
+            'name': str(name)[:200],
+            'created_ts': time.time(),
+            'line_count': compiled.line_count,
+            'keystrokes': compiled.keystrokes,
+            'sha256': sha,
+            'backend_hint': body.get('backend_hint'),
+            'target_layout': layout,
+        }
+        try:
+            _HID_PAYLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            (_HID_PAYLOAD_DIR / f'{payload_id}.txt').write_text(
+                script, encoding='utf-8')
+            (_HID_PAYLOAD_DIR / f'{payload_id}.meta.json').write_text(
+                json.dumps(meta), encoding='utf-8')
+        except OSError as e:
+            log.warning("hid payload persist failed: %s", e)
+            self.send_error(500, 'failed to persist payload')
+            return
+        _hid_audit('UPLOAD', peer, id=payload_id, name=meta['name'],
+                   line_count=compiled.line_count, sha256=sha, layout=layout)
+        self._serve_json({'ok': True, 'id': payload_id, 'meta': meta})
+
+    def _delete_hid_payload(self, payload_id: str):
+        """Remove a stored payload (.txt + .meta.json). Audited DELETE."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        if not _hid_payload_id_ok(payload_id):
+            self.send_error(400, 'bad payload id')
+            return
+        txt = _HID_PAYLOAD_DIR / f'{payload_id}.txt'
+        meta = _HID_PAYLOAD_DIR / f'{payload_id}.meta.json'
+        if not txt.exists() and not meta.exists():
+            self.send_error(404, 'payload not found')
+            return
+        ok = True
+        for p in (txt, meta):
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError as e:
+                log.warning("hid payload delete failed: %s", e)
+                ok = False
+        _hid_audit('DELETE', peer, id=payload_id, ok=ok)
+        self._serve_json({'ok': ok})
+
+    def _post_hid_command(self):
+        """Relay an allowlisted command to drifter/hid/command.
+
+        The drifter-hid service is the authoritative SECOND gate
+        (ARM→CONFIRM→RUN); for the Flipper backend the bridge's HIGH-risk
+        classifier is a THIRD gate. This handler validates the allowlist
+        and stamps the peer IP onto the relayed message so the service
+        records it in the audit trail — there is NO upload→inject path here
+        that skips CONFIRM.
+
+        Allowlist (_HID_COMMANDS):
+          {"command":"hid_arm","payload_id":"ducky-…","backend":"native"|"flipper"}
+          {"command":"hid_confirm","id":"arm-…"}
+          {"command":"hid_cancel","id":"arm-…"}
+        503 if mqtt offline; 403 off-peer; 400 on a bad/unknown command."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'hid: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        command = body.get('command')
+        if command not in _HID_COMMANDS:
+            self.send_error(400, 'command')
+            return
+        if command == 'hid_arm':
+            payload_id = body.get('payload_id')
+            backend = body.get('backend')
+            if not isinstance(payload_id, str) or not payload_id.strip():
+                self.send_error(400, 'payload_id')
+                return
+            if backend not in _HID_BACKENDS:
+                self.send_error(400, 'backend')
+                return
+        else:  # hid_confirm / hid_cancel
+            arm_id = body.get('id')
+            if not isinstance(arm_id, str) or not arm_id.strip():
+                self.send_error(400, 'id')
+                return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        # Stamp the peer IP so the service audits the operator's address.
+        relay = dict(body)
+        relay['peer'] = peer
+        ok = False
+        try:
+            state.mqtt_client.publish(
+                TOPICS.get('hid_command', 'drifter/hid/command'),
+                json.dumps(relay), qos=1)
+            ok = True
+        except Exception as e:
+            log.warning("hid command publish failed: %s", e)
+        self._serve_json({'ok': ok, 'published': 'drifter/hid/command'})
 
     def _get_rf_emergency(self, parsed):
         """Latest emergency-band activity scan."""
@@ -1173,6 +1871,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return
         self.send_error(404, f'asset not found: {rel}')
 
+    # ─── DELETE ───────────────────────────────────────────────────────
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith('/api/hid/payloads/'):
+            self._delete_hid_payload(parsed.path[len('/api/hid/payloads/'):])
+            return
+        self.send_error(404)
+
     # ─── POST ─────────────────────────────────────────────────────────
     def do_POST(self) -> None:
         if self.path == '/api/analyse':
@@ -1189,6 +1895,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if self.path.startswith('/api/mode/'):
             self._post_mode(self.path[len('/api/mode/'):])
+            return
+        if self.path.startswith('/api/service/'):
+            self._post_service(self.path[len('/api/service/'):])
+            return
+        if self.path == '/api/marauder/command':
+            self._post_marauder_command()
+            return
+        if self.path == '/api/sentry/command':
+            self._post_sentry_command()
+            return
+        if self.path == '/api/hid/payload':
+            self._post_hid_payload()
+            return
+        if self.path == '/api/hid/command':
+            self._post_hid_command()
             return
         if self.path == '/api/vivi/reset':
             self._post_vivi_reset()
@@ -1421,6 +2142,191 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 log.warning("rfaudio command publish failed: %s", e)
         self._serve_json({'ok': ok, 'published': 'drifter/rfaudio/command'})
+
+    def _read_post_body(self):
+        """Read + JSON-decode the request body, capped at MAX_POST_BODY.
+
+        Returns the decoded object, or None on a malformed body (the caller
+        has already not sent any response in that case — but we send the 400
+        here so callers don't each repeat it). On None the caller must return
+        immediately."""
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            length = min(length, MAX_POST_BODY)
+            raw = self.rfile.read(length) if length else b'{}'
+            return json.loads(raw or b'{}')
+        except (ValueError, json.JSONDecodeError):
+            self.send_error(400, 'invalid JSON body')
+            return None
+
+    def _post_service(self, unit: str):
+        """Start/stop/restart a foot-mode arsenal systemd unit.
+
+        Hard safety model (the whole point of this stage):
+          * _is_local_peer gated — 403 off 127.0.0.1 / 10.42.0.0/24.
+          * action ∈ {start,stop,restart}.
+          * unit ∈ _SERVICE_UNITS, the arsenal subset of
+            (FOOT_ONLY ∪ SHARED). A DRIVE_ONLY or arbitrary unit is rejected
+            403 (fail-closed) — never operated.
+          * REFUSE with 409 when the node is in 'drive' mode (foot-gate at
+            the route, mirroring the UI mode-gate). Read the mode the same
+            way /healthz / _get_arsenal do.
+          * Execute `sudo -n systemctl <action> <unit>` (timeout, captured).
+          * Audit EVERY call (peer IP, unit, action, rc, result) to the
+            JSONL log + a log line.
+        Returns {ok, unit, action, rc}.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'service: local network only')
+            return
+        # Strip any stray path component / query — unit is the path tail.
+        unit = (unit or '').split('/', 1)[0].split('?', 1)[0].strip()
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        action = body.get('action')
+        # Action allowlist first — cheapest reject, no audit noise needed
+        # for a malformed verb.
+        if action not in _SERVICE_ACTIONS:
+            self.send_error(400, 'action')
+            return
+        # Unit allowlist — fail-closed. A DRIVE_ONLY or unknown unit never
+        # reaches systemctl. Audit the refusal so a probe is visible.
+        if unit not in _SERVICE_UNITS:
+            _arsenal_audit('BLOCKED', peer, unit=unit, action=action,
+                           reason='unit not in arsenal allowlist')
+            self.send_error(403, 'unit not in arsenal allowlist')
+            return
+        # Foot-gate AT THE ROUTE: refuse start/stop while driving. The mode
+        # is read from the same authoritative marker /healthz uses.
+        try:
+            mode = (Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
+                    or DEFAULT_MODE)
+        except OSError:
+            mode = DEFAULT_MODE
+        if mode == 'drive':
+            _arsenal_audit('REFUSED', peer, unit=unit, action=action,
+                           reason='node in drive mode')
+            self.send_error(409, 'arsenal service control disabled in drive mode')
+            return
+        # Execute. sudo -n so a missing NOPASSWD rule fails fast instead of
+        # hanging on a password prompt.
+        rc = None
+        ok = False
+        err = ''
+        try:
+            r = subprocess.run(
+                ['sudo', '-n', 'systemctl', action, unit],
+                capture_output=True, text=True, timeout=_SERVICE_CTL_TIMEOUT,
+            )
+            rc = r.returncode
+            ok = (rc == 0)
+            if not ok:
+                err = (r.stderr or r.stdout or '').strip()[:200]
+        except subprocess.TimeoutExpired:
+            err = 'systemctl timed out'
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
+            err = str(e)[:200]
+        _arsenal_audit('RUN' if ok else 'FAIL', peer, unit=unit,
+                       action=action, rc=rc, error=err or None)
+        out = {'ok': ok, 'unit': unit, 'action': action, 'rc': rc}
+        if err:
+            out['error'] = err
+        self._serve_json(out)
+
+    def _post_marauder_command(self):
+        """Thin relay to drifter/marauder/cmd — the marauder_bridge's risk
+        classifier + ConfirmRegistry is the authoritative second gate.
+
+        Body: {op, ...params}. `op` is the operation name (validated against
+        _MARAUDER_COMMANDS, which mirrors the bridge's action names). The
+        bridge dispatch reads its 'command' field, so we relay `op` as
+        `command` and pass through any `id`, `args`, and (crucially) any
+        `confirm_token` so the HIGH-risk confirm round-trip works END TO END
+        without the cockpit ever reimplementing tiers or auto-confirming.
+
+        _is_local_peer gated; 503 if mqtt offline. HIGH-risk ops are in the
+        allowlist ONLY so they can be relayed WITH a confirm token — the
+        bridge still refuses them without one.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'marauder: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        op = body.get('op') or body.get('command')
+        if op not in _MARAUDER_COMMANDS:
+            self.send_error(400, 'op')
+            return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        # Build the bridge-shaped payload. Preserve operator-supplied id /
+        # args / confirm_token verbatim; the bridge owns confirm semantics.
+        relay = {'command': op}
+        if isinstance(body.get('args'), dict):
+            relay['args'] = body['args']
+        if body.get('id') is not None:
+            relay['id'] = body['id']
+        if body.get('confirm_token') is not None:
+            relay['confirm_token'] = body['confirm_token']
+        topic = TOPICS.get('marauder_cmd', 'drifter/marauder/cmd')
+        ok = False
+        try:
+            state.mqtt_client.publish(topic, json.dumps(relay), qos=1)
+            ok = True
+        except Exception as e:
+            log.warning("marauder command publish failed: %s", e)
+        # Audit HIGH-risk relays (and confirms) with peer IP per the spec.
+        _arsenal_audit('MARAUDER', peer, op=op,
+                       confirm=bool(body.get('confirm_token')), ok=ok)
+        self._serve_json({'ok': ok, 'published': topic})
+
+    def _post_sentry_command(self):
+        """Thin relay to drifter/sentry/event — arm/disarm the sentry.
+
+        Body: {action: 'arm'|'disarm'}. _is_local_peer gated; allowlist
+        {arm,disarm}; 503 if mqtt offline.
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'sentry: local network only')
+            return
+        body = self._read_post_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self.send_error(400, 'body must be a JSON object')
+            return
+        action = body.get('action')
+        if action not in _SENTRY_COMMANDS:
+            self.send_error(400, 'action')
+            return
+        if state.mqtt_client is None:
+            self.send_error(503, 'mqtt offline')
+            return
+        topic = TOPICS.get('sentry_event', 'drifter/sentry/event')
+        ok = False
+        try:
+            state.mqtt_client.publish(
+                topic,
+                json.dumps({'action': action, 'ts': time.time()}),
+                qos=1,
+            )
+            ok = True
+        except Exception as e:
+            log.warning("sentry command publish failed: %s", e)
+        _arsenal_audit('SENTRY', peer, action=action, ok=ok)
+        self._serve_json({'ok': ok, 'published': topic})
 
     def _post_rf_command(self):
         """Forward a JSON body to drifter/rf/command via MQTT.
@@ -2009,6 +2915,21 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/can/discovery':         DashboardHandler._get_can_discovery,
     '/api/can/captures':          DashboardHandler._get_can_captures,
     '/api/airspace/aircraft':     DashboardHandler._get_airspace_aircraft,
+    # Arsenal read-side routes (BE-2, foot-mode toolkit)
+    '/api/kismet/devices':        DashboardHandler._get_kismet_devices,
+    '/api/marauder/status':       DashboardHandler._get_marauder_status,
+    '/api/marauder/scan':         DashboardHandler._get_marauder_scan,
+    '/api/flycatcher/aircraft':   DashboardHandler._get_flycatcher_aircraft,
+    '/api/ghost/status':          DashboardHandler._get_ghost_status,
+    '/api/mapconfig':             DashboardHandler._get_mapconfig,
+    '/api/alpr/plates':           DashboardHandler._get_alpr_plates,
+    '/api/vision/status':         DashboardHandler._get_vision_status,
+    '/api/sentry/status':         DashboardHandler._get_sentry_status,
+    # Arsenal aggregate (BE-3) — present derived from /healthz + hardware
+    '/api/arsenal':               DashboardHandler._get_arsenal,
+    # Rubber Ducky / BadUSB HID (BE-1) — Flipper backend; native=stage6
+    '/api/hid/status':            DashboardHandler._get_hid_status,
+    '/api/hid/payloads':          DashboardHandler._get_hid_payloads,
     '/preview/cockpit':           DashboardHandler._redirect_to_root,
     # Vivi 3D avatar viewer
     '/avatar':                    DashboardHandler._serve_avatar_page,

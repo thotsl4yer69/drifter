@@ -71,6 +71,10 @@ class TripState:
         self.idle_since: float | None = None
         self.idle_warned: bool = False
         self.events: list = []
+        # Enrichment overlays from weather_service / location_service.
+        self.weather: dict = {}
+        self.elevation_m: float | None = None
+        self.grade_pct: float | None = None
 
     def reset(self) -> None:
         log.info(f"Trip reset (was {self.distance_km:.1f} km, {self.fuel_l:.2f} L)")
@@ -127,6 +131,16 @@ class TripState:
         if self.distance_km > 0.1:
             avg_l_per_100 = round(self.fuel_l / self.distance_km * 100.0, 2)
         cost_gbp = round(self.fuel_l * self.fuel_price, 2)
+        # Compact weather overlay — the cockpit + reporter annotate trips with
+        # the conditions they were driven in.
+        weather = {}
+        if self.weather:
+            weather = {
+                'condition': self.weather.get('condition'),
+                'temp_c': self.weather.get('temp_c'),
+                'wind_kph': self.weather.get('wind_kph'),
+                'is_raining': self.weather.get('is_raining'),
+            }
         return {
             'duration_s': round(elapsed, 1),
             'distance_km': round(self.distance_km, 3),
@@ -136,6 +150,9 @@ class TripState:
             'cost_gbp': cost_gbp,
             'fuel_price_per_l': self.fuel_price,
             'speed_kph': round(self.last_speed_kph, 1),
+            'elevation_m': self.elevation_m,
+            'grade_pct': self.grade_pct,
+            'weather': weather,
             'ts': time.time(),
         }
 
@@ -184,6 +201,14 @@ def main() -> None:
                 data.get('speed'),
                 data.get('maf'),
             )
+        elif topic == TOPICS['weather_current'] and isinstance(data, dict):
+            state.weather = data
+        elif topic == TOPICS['location_elevation'] and isinstance(data, dict):
+            elev = data.get('elevation_m')
+            if isinstance(elev, (int, float)):
+                state.elevation_m = elev
+            grade = data.get('grade_pct')
+            state.grade_pct = grade if isinstance(grade, (int, float)) else None
         elif topic == TOPICS['drive_session'] and isinstance(data, dict):
             if data.get('event') == 'start':
                 state.reset()
@@ -217,6 +242,8 @@ def main() -> None:
     client.subscribe([
         (TOPICS['snapshot'], 0),
         (TOPICS['drive_session'], 0),
+        (TOPICS['weather_current'], 0),
+        (TOPICS['location_elevation'], 0),
     ])
     client.loop_start()
     log.info(f"Trip Computer LIVE — fuel £{state.fuel_price}/L, tank {state.tank_l}L")

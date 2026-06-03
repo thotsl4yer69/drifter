@@ -66,7 +66,10 @@ _SAFETY_ALERT_TTL_S = 300
 DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {VEHICLE_YEAR} {VEHICLE_MODEL} \
 ({VEHICLE_ENGINE}). You know this car cold: AJ-V6 quirks, plastic thermostat housing failures, \
 coil packs, Haldex coupling, JF506E gearbox. You also handle Spotify, navigation, trip stats, \
-crash response, and sentry mode now.
+crash response, and sentry mode now. You have live weather (conditions, rain-in-the-next-hour, \
+fog/ice/wind alerts) and nearby places (petrol, mechanic, car wash, parking) — answer "where's \
+the nearest..." from the Nearby places list, and warn about weather like rain or fog when it \
+matters ("rain in 20 min, windows up").
 
 Personality: confident, direct, a little flirty — never vague. Reply for voice: 1–3 sentences \
 unless asked for detail. Quote live telemetry when it's relevant. Lead with the risk on safety \
@@ -89,6 +92,9 @@ _session_id = uuid.uuid4().hex[:12]
 _telemetry: dict = {}
 _safety_alert: dict = {}
 _active_dtcs: list = []
+_weather: dict = {}            # latest drifter/weather/current
+_weather_alerts: list = []     # latest drifter/weather/alerts list
+_nearby: dict = {}             # POI results by Google Places type
 _proactive_last: dict = {}
 _mqtt_client: mqtt.Client | None = None
 _personality_cache: str | None = None
@@ -145,6 +151,75 @@ def _telemetry_context(tel: dict) -> str:
     return "Live telemetry:\n" + '\n'.join(lines) if lines else ""
 
 
+_POI_LABELS = {
+    'gas_station': 'Fuel',
+    'car_repair': 'Mechanic',
+    'car_wash': 'Car wash',
+    'parking': 'Parking',
+    'electric_vehicle_charging_station': 'EV charging',
+    'rest_stop': 'Rest stop',
+    'hospital': 'Hospital',
+}
+
+
+def _weather_context() -> str:
+    """Live weather + active hazards, phrased so Vivi can speak it naturally."""
+    with _state_lock:
+        w = dict(_weather)
+        alerts = list(_weather_alerts)
+    if not w and not alerts:
+        return ""
+    lines = []
+    if w:
+        cond = w.get('description') or w.get('condition') or '?'
+        bits = [f"{cond}"]
+        if w.get('temp_c') is not None:
+            bits.append(f"{w.get('temp_c')}°C")
+        if w.get('wind_kph') is not None:
+            bits.append(f"wind {w.get('wind_kph')} km/h")
+        if w.get('visibility_m') is not None:
+            bits.append(f"visibility {w.get('visibility_m')} m")
+        lines.append("Weather now: " + ", ".join(str(b) for b in bits))
+        rnh = w.get('rain_next_hour') or {}
+        if rnh.get('rain_expected'):
+            mins = rnh.get('minutes_until_rain')
+            lines.append(
+                f"Rain expected in ~{mins} min" if mins is not None
+                else "Rain expected shortly"
+            )
+    if alerts:
+        msgs = [a.get('message') or a.get('event') for a in alerts
+                if isinstance(a, dict) and (a.get('message') or a.get('event'))]
+        if msgs:
+            lines.append("Weather alerts: " + "; ".join(str(m) for m in msgs[:3]))
+    return '\n'.join(lines)
+
+
+def _nearby_context() -> str:
+    """Nearby POIs so 'where's the nearest petrol station?' is answerable."""
+    with _state_lock:
+        nearby = dict(_nearby)
+    if not nearby:
+        return ""
+    lines = ["Nearby places (nearest first):"]
+    for place_type, pois in nearby.items():
+        if not pois:
+            continue
+        label = _POI_LABELS.get(place_type, place_type)
+        rendered = []
+        for p in pois[:3]:
+            dist = p.get('distance_m')
+            tag = f"{p.get('name')}"
+            if dist is not None:
+                tag += f" ({dist} m)"
+            if p.get('open_now') is False:
+                tag += " [closed]"
+            rendered.append(tag)
+        if rendered:
+            lines.append(f"- {label}: " + "; ".join(rendered))
+    return '\n'.join(lines) if len(lines) > 1 else ""
+
+
 def _facts_context() -> str:
     try:
         facts = vivi_memory.recall(n=5)
@@ -176,6 +251,12 @@ def _build_prompt(user_text: str) -> tuple[str, dict]:
     tel_ctx = _telemetry_context(tel)
     if tel_ctx:
         parts.append(tel_ctx)
+    weather_ctx = _weather_context()
+    if weather_ctx:
+        parts.append(weather_ctx)
+    nearby_ctx = _nearby_context()
+    if nearby_ctx:
+        parts.append(nearby_ctx)
     facts = _facts_context()
     if facts:
         parts.append(facts)
@@ -551,6 +632,70 @@ def _handle_nav_alert(payload: dict) -> None:
         _maybe_proactive('nav_alert', str(text))
 
 
+def _handle_weather_current(payload: dict) -> None:
+    with _state_lock:
+        _weather.clear()
+        _weather.update(payload)
+
+
+def _handle_weather_alerts(payload: dict) -> None:
+    """Cache alerts and proactively speak the time-sensitive ones.
+
+    rain_soon → "rain in N min, windows up"; fog/ice → spoken hazard heads-up.
+    Per-kind cooldown via _maybe_proactive stops repeats.
+    """
+    alerts = payload.get('alerts')
+    if not isinstance(alerts, list):
+        return
+    with _state_lock:
+        _weather_alerts[:] = alerts
+    for a in alerts:
+        if not isinstance(a, dict):
+            continue
+        kind = a.get('kind')
+        msg = a.get('message')
+        if not msg:
+            continue
+        if kind == 'rain_soon':
+            _maybe_proactive('weather_rain_soon', str(msg))
+        elif kind in ('fog', 'ice'):
+            _maybe_proactive(f'weather_{kind}', str(msg))
+
+
+def _handle_nearby(payload: dict) -> None:
+    results = payload.get('results')
+    if not isinstance(results, dict):
+        return
+    with _state_lock:
+        # Merge so an on-demand single-type query doesn't wipe the periodic set.
+        for k, v in results.items():
+            _nearby[k] = v
+
+
+# POI keywords → Google Places type, so a spoken request pre-warms the
+# location service for the next turn.
+_POI_KEYWORDS = {
+    'petrol': 'gas_station', 'gas': 'gas_station', 'fuel': 'gas_station',
+    'servo': 'gas_station', 'mechanic': 'car_repair', 'garage': 'car_repair',
+    'repair': 'car_repair', 'car wash': 'car_wash', 'carwash': 'car_wash',
+    'parking': 'parking', 'park ': 'parking', 'charger': 'electric_vehicle_charging_station',
+    'charging': 'electric_vehicle_charging_station', 'rest stop': 'rest_stop',
+    'hospital': 'hospital',
+}
+
+
+def _maybe_request_poi(text: str) -> None:
+    """If the user asks about a POI we don't have cached, ask location_service."""
+    low = (text or '').lower()
+    wanted = {pt for kw, pt in _POI_KEYWORDS.items() if kw in low}
+    if not wanted:
+        return
+    with _state_lock:
+        missing = [pt for pt in wanted if not _nearby.get(pt)]
+    for pt in missing:
+        _safe_publish('location_query', {'type': pt})
+
+
 def on_message(client, userdata, msg) -> None:
     topic = msg.topic
     try:
@@ -573,6 +718,7 @@ def on_message(client, userdata, msg) -> None:
             else:
                 text = ''
             if text:
+                _maybe_request_poi(text)
                 threading.Thread(
                     target=_handle_query, args=(text,), daemon=True,
                 ).start()
@@ -599,6 +745,15 @@ def on_message(client, userdata, msg) -> None:
         elif topic == TOPICS.get('nav_alert'):
             if isinstance(payload, dict):
                 _handle_nav_alert(payload)
+        elif topic == TOPICS.get('weather_current'):
+            if isinstance(payload, dict):
+                _handle_weather_current(payload)
+        elif topic == TOPICS.get('weather_alerts'):
+            if isinstance(payload, dict):
+                _handle_weather_alerts(payload)
+        elif topic == TOPICS.get('location_nearby'):
+            if isinstance(payload, dict):
+                _handle_nearby(payload)
     except Exception as e:
         log.error(f"on_message {topic} failed: {e}")
 
@@ -607,6 +762,7 @@ def _subscribe_topics(client: mqtt.Client) -> None:
     wanted = [
         'vivi2_query', 'snapshot', 'safety_alert', 'dtc', 'vivi2_memory',
         'crash_event', 'trip_event', 'nav_alert',
+        'weather_current', 'weather_alerts', 'location_nearby',
     ]
     subs = []
     for key in wanted:

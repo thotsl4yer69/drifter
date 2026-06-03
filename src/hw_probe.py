@@ -175,7 +175,7 @@ def probe_speaker() -> dict[str, Any]:
     if cards:
         return _result('speaker', True, f'{len(cards)} playback device(s)')
     return _result('speaker', False, 'No ALSA playback device',
-                   'Plug in USB audio dongle — rfaudio + Piper TTS will have no output')
+                   'Plug in USB audio dongle (plughw:0,0)')
 
 
 def probe_flipper() -> dict[str, Any]:

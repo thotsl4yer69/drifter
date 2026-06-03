@@ -12,6 +12,30 @@ from pathlib import Path
 
 import paho.mqtt.client as _mqtt
 
+# Central API-key registry. Re-exported below so the rest of the fleet
+# imports credentials from config (`from config import GOOGLE_MAPS_API_KEY`)
+# rather than reaching into api_keys directly. Guarded so a missing
+# api_keys.py (older deploy) degrades to env vars instead of bricking every
+# service that imports config.
+try:
+    from api_keys import (
+        GOOGLE_EARTH_ENGINE_API_KEY,
+        GOOGLE_ELEVATION_API_KEY,
+        GOOGLE_MAPS_API_KEY,
+        GOOGLE_PLACES_API_KEY,
+        OPENWEATHERMAP_API_KEY,
+        have_key,
+    )
+except ImportError:  # pragma: no cover - fallback for partial deploys
+    OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY", "")
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    GOOGLE_ELEVATION_API_KEY = GOOGLE_MAPS_API_KEY
+    GOOGLE_PLACES_API_KEY = GOOGLE_MAPS_API_KEY
+    GOOGLE_EARTH_ENGINE_API_KEY = os.getenv("GOOGLE_EARTH_ENGINE_API_KEY", "")
+
+    def have_key(key: str | None) -> bool:
+        return bool(key and key.strip())
+
 _log = logging.getLogger(__name__)
 
 
@@ -788,6 +812,11 @@ TOPICS = {
     'flipper_command': 'drifter/flipper/command',
     'flipper_result': 'drifter/flipper/result',
     'flipper_subghz': 'drifter/flipper/subghz',
+    # HID injection (drifter-hid — Rubber Ducky / BadUSB, foot-only)
+    'hid_command': 'drifter/hid/command',
+    'hid_status': 'drifter/hid/status',
+    'hid_result': 'drifter/hid/result',
+    'hid_audit': 'drifter/hid/audit',
     # Tool Executor
     'tool_request': 'drifter/tool/request',
     'tool_result': 'drifter/tool/result',
@@ -871,6 +900,7 @@ TOPICS = {
     'learn_event': 'drifter/learn/event',
     'llm_query': 'drifter/llm/query',
     'llm_response': 'drifter/llm/response',
+    'marauder_cmd': 'drifter/marauder/cmd',
     'mesh_announce': 'drifter/mesh/announce',
     'mesh_bridge': 'drifter/mesh/bridge',
     'mesh_node': 'drifter/mesh/node',
@@ -932,6 +962,25 @@ TOPICS = {
     'ghost_stingray': 'drifter/ghost/stingray',   # IMSI-catcher / cell anomaly
     'ghost_alpr': 'drifter/ghost/alpr',           # ALPR camera awareness
     'ghost_rf': 'drifter/ghost/rf',               # anomalous RF / surveillance band
+
+    # ── Weather (weather_service.py — OpenWeatherMap One Call) ──
+    'weather_current': 'drifter/weather/current',   # temp/humidity/wind/visibility/condition
+    'weather_forecast': 'drifter/weather/forecast', # hourly outlook
+    'weather_alerts': 'drifter/weather/alerts',     # gov + derived (rain_soon/fog/ice/wind)
+
+    # ── Location enrichment (location_service.py — Google Elevation + Places) ──
+    'location_elevation': 'drifter/location/elevation',  # elevation_m + road grade %
+    'location_nearby': 'drifter/location/nearby',        # nearby POIs (fuel/mechanic/...)
+    'location_query': 'drifter/location/query',          # request: {"type": "gas_station"}
+
+    # ── In-car LCD + boot orchestration + Wi-Fi auto-connect ──
+    # The 3.5" SPI LCD dashboard, the headless boot sequencer, and the
+    # hotspot auto-connector all talk over these topics so the operator can
+    # triage the node at the car without dragging an HDMI monitor out.
+    'network_status': 'drifter/network/status',  # auto_connect → {ssid,ip,internet,ap_fallback,state}
+    'lcd_command': 'drifter/lcd/command',        # remote control: {"action":"next"|"prev"|"refresh"|"screen","screen":"network"}
+    'lcd_status': 'drifter/lcd/status',          # lcd_dashboard heartbeat → {screen,ts,fb}
+    'boot_status': 'drifter/boot/status',        # boot_manager stage progress → {stage,detail,ok,ts}
 }
 
 # ── LLM v2 cascade config ──
@@ -1045,6 +1094,8 @@ SERVICES = [
     "drifter-trip",         # per-trip distance + fuel computer
     "drifter-thresholds",   # adaptive baseline learner
     "drifter-reporter",     # post-drive markdown report via LLM
+    "drifter-weather",      # OpenWeatherMap → drifter/weather/*
+    "drifter-location",     # Google Elevation + Places → drifter/location/*
     # Recon / audit expansion (Agent B)
     "drifter-kismet",        # headless Wi-Fi/BLE recon daemon
     "drifter-kismet-bridge", # Kismet REST → MQTT bridge
@@ -1053,6 +1104,14 @@ SERVICES = [
     "drifter-fly-catcher",   # ADS-B ghost detector
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge
+    # Arsenal — Rubber Ducky / BadUSB HID injection (foot-only)
+    "drifter-hid",           # ARM→CONFIRM→RUN HID injector (Flipper + native)
+    # In-car triage console + network resilience
+    "drifter-lcd",           # 3.5" SPI LCD framebuffer dashboard (hw-optional)
+    "drifter-autoconnect",   # Wi-Fi hotspot auto-connector + AP fallback
+    # Counter-surveillance — Ghost Protocol (Shade Core hardware + sw correlator)
+    "drifter-ghost",         # ghost_protocol.py — tracker/IMSI/ALPR/RF correlator
+    "drifter-ghost-voice",   # speaks drifter/ghost/alert via alert_message
 ]
 
 # ── Modes ──
@@ -1089,6 +1148,7 @@ FOOT_ONLY_SERVICES = [
     "drifter-kismet-bridge",
     "drifter-wifi-audit",
     "drifter-marauder",      # NEW
+    "drifter-hid",           # Rubber Ducky / BadUSB HID injection (NEW)
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
@@ -1100,6 +1160,12 @@ SHARED_SERVICES = [
     "drifter-voicein",     # wake-word + STT
     "drifter-rfaudio",     # on-demand SDR → speaker (emergency-band listen)
     "drifter-fly-catcher", # ADS-B ghost detector (passive; runs in both modes)
+    "drifter-weather",     # OpenWeatherMap poller (network-only; runs in both modes)
+    "drifter-location",    # Elevation + Places (GPS-aware; runs in both modes)
+    "drifter-lcd",         # in-car SPI LCD triage console (runs in both modes)
+    "drifter-autoconnect", # Wi-Fi hotspot auto-connect + AP fallback (both modes)
+    "drifter-ghost",       # counter-surveillance correlator (runs in both modes)
+    "drifter-ghost-voice", # speaks ghost alerts (runs in both modes)
 ]
 MODES = {
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
@@ -1129,6 +1195,50 @@ BEACON_SPAM_RANDOM_REFUSE = True
 # Same reasoning for Rick Astley beacon spam. Flip plus add a wildcard
 # `marauder.wifi[].ssid: "*"` allowlist entry to enable.
 BEACON_SPAM_RICKROLL_REFUSE = True
+
+
+# ── Arsenal foot-mode control allowlists (BE-4 + command relays) ──────
+# The arsenal subset of units the dashboard's POST /api/service/<unit> route
+# is permitted to start/stop/restart. This is intersected at the route with
+# (FOOT_ONLY_SERVICES ∪ SHARED_SERVICES) so a DRIVE_ONLY unit can NEVER be
+# operated even if listed here — fail-closed, defence in depth. The matching
+# sudoers drop-in (services/drifter-service.sudoers) enumerates exactly these
+# units; keep the two in lock-step.
+ARSENAL_SERVICE_UNITS = [
+    "drifter-kismet",
+    "drifter-kismet-bridge",
+    "drifter-marauder",
+    "drifter-wardrive",
+    "drifter-wifi-audit",
+    "drifter-flipper",
+    "drifter-rf",
+    "drifter-rfaudio",
+    "drifter-fly-catcher",
+    "drifter-hid",
+]
+
+# Marauder command allowlist for POST /api/marauder/command. Mirrors the
+# marauder_bridge classifier's action names (LOW ∪ MED ∪ HIGH). HIGH-risk
+# ops ARE present so the cockpit can RELAY them WITH the bridge confirm
+# token — the dashboard never reimplements the risk tiers or bypasses the
+# bridge's ConfirmRegistry; the bridge is the authoritative second gate.
+MARAUDER_COMMANDS = [
+    # LOW
+    "scan_ap", "scan_sta", "scan_probes", "stop",
+    "deauth_detect", "ble_scan_all", "ble_scan_airtag", "ble_scan_skim",
+    "probe", "status",
+    # MED
+    "select_ap", "channel_hop", "scan_param",
+    # HIGH (relayed only with the bridge's confirm_token round-trip)
+    "deauth_attack", "beacon_spam_list", "beacon_spam_random",
+    "beacon_spam_rickroll", "probe_flood",
+    "ble_spam_swift_pair", "ble_spam_easy_setup",
+    "ble_spam_apple_proximity", "ble_spam_all",
+    "evilportal_start", "evilportal_stop",
+]
+
+# Sentry arm/disarm relay allowlist for POST /api/sentry/command.
+SENTRY_COMMANDS = ["arm", "disarm"]
 
 
 
@@ -1267,4 +1377,153 @@ VISION_YOLO_MODEL = "yolov8s.hef"
 VIVI2_PERSONALITY_FILE = DRIFTER_DIR / "vivi_personality.txt"
 VIVI2_PROACTIVE_COOLDOWN_S = 120
 VIVI2_STREAMING = True
-WEATHER_API_HOST = "api.open-meteo.com"
+WEATHER_API_HOST = "api.open-meteo.com"   # legacy: driver_assist fallback fetch
+
+# ═══════════════════════════════════════════════════════════════════
+#  External enrichment services — Weather + Location
+#  Keys come from api_keys.py (re-exported at the top of this file).
+#  weather_service.py and location_service.py are the ONLY modules that
+#  call these APIs; everyone else consumes the drifter/weather/* and
+#  drifter/location/* MQTT topics, so the real-time/safety path never
+#  blocks on the network.
+# ═══════════════════════════════════════════════════════════════════
+
+# Fallback position when no GPS fix is available yet. Bendigo, VIC — matches
+# the emergency-audio band defaults. Override per operating area.
+DEFAULT_LAT = float(os.getenv("DRIFTER_DEFAULT_LAT", "-36.7570"))
+DEFAULT_LON = float(os.getenv("DRIFTER_DEFAULT_LON", "144.2794"))
+
+# ── OpenWeatherMap (weather_service.py) ──
+OWM_BASE_URL = "https://api.openweathermap.org/data/3.0/onecall"
+OWM_FALLBACK_CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather"
+OWM_FALLBACK_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
+OWM_UNITS = "metric"                      # °C, m/s, etc.
+WEATHER_UPDATE_INTERVAL_SEC = int(os.getenv("WEATHER_UPDATE_INTERVAL_SEC", "900"))  # 15 min
+WEATHER_HTTP_TIMEOUT = 10
+WEATHER_FOG_VISIBILITY_M = 1000           # below this = fog advisory
+WEATHER_ICE_TEMP_C = 3.0                  # at/below this + moisture = ice risk
+WEATHER_HIGH_WIND_KPH = 60                # gusty-crosswind advisory
+WEATHER_RAIN_SOON_MIN = 30               # "rain within N min" → windows-up nudge
+
+# ── Google Elevation + Places (location_service.py) ──
+GOOGLE_ELEVATION_URL = "https://maps.googleapis.com/maps/api/elevation/json"
+GOOGLE_PLACES_NEARBY_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+LOCATION_HTTP_TIMEOUT = 10
+LOCATION_ELEVATION_INTERVAL_SEC = int(os.getenv("LOCATION_ELEVATION_INTERVAL_SEC", "30"))
+LOCATION_ELEVATION_MIN_MOVE_M = 25        # only re-sample grade after moving this far
+LOCATION_NEARBY_INTERVAL_SEC = int(os.getenv("LOCATION_NEARBY_INTERVAL_SEC", "300"))  # 5 min
+LOCATION_NEARBY_MIN_MOVE_M = 500          # re-poll POIs after moving this far
+LOCATION_POI_RADIUS_M = 5000
+LOCATION_GRADE_STEEP_PCT = 8.0            # |grade| above this = steep-grade warning
+# POI categories the location service keeps warm for Vivi. Keys are the
+# spoken-friendly aliases Vivi resolves; values are Google Places types.
+LOCATION_POI_TYPES = {
+    'fuel': 'gas_station',
+    'petrol': 'gas_station',
+    'mechanic': 'car_repair',
+    'car_wash': 'car_wash',
+    'parking': 'parking',
+    'charging': 'electric_vehicle_charging_station',
+    'rest_stop': 'rest_stop',
+    'hospital': 'hospital',
+}
+# Categories proactively refreshed each poll (the rest are on-demand via
+# the location_query topic).
+LOCATION_POI_DEFAULT_TYPES = ('gas_station', 'car_repair')
+
+# ═══════════════════════════════════════════════════════════════════
+#  In-car 3.5" SPI LCD dashboard (lcd_dashboard.py / drifter-lcd)
+#  Framebuffer-rendered triage console so the operator can see node
+#  state at the car without an HDMI monitor. Runs directly on /dev/fb1
+#  in CLI mode — NO X11/desktop. Distinct from drifter-fbmirror, which
+#  mirrors fb0→fb1; this OWNS fb1 with its own menu UI.
+# ═══════════════════════════════════════════════════════════════════
+LCD_ENABLED = os.getenv("LCD_ENABLED", "true").lower() in ("1", "true", "yes")
+LCD_FB_DEVICE = os.getenv("LCD_FB_DEVICE", "/dev/fb1")   # fb0 is HDMI; SPI LCD = fb1
+LCD_WIDTH = int(os.getenv("LCD_WIDTH", "480"))           # Waveshare 3.5" landscape
+LCD_HEIGHT = int(os.getenv("LCD_HEIGHT", "320"))
+# Software rotation applied to the rendered frame (0/90/180/270). Most SPI
+# panels are wired so the dtoverlay already rotates; leave at 0 and use the
+# overlay's rotate= unless the image lands sideways.
+LCD_ROTATE = int(os.getenv("LCD_ROTATE", "0"))
+LCD_REFRESH_HZ = float(os.getenv("LCD_REFRESH_HZ", "1.0"))  # status screens are slow-moving
+LCD_VEHICLE_REFRESH_HZ = float(os.getenv("LCD_VEHICLE_REFRESH_HZ", "4.0"))  # gauges want faster
+
+# Navigation buttons — active-low, internal pull-up (BCM numbering).
+# NOTE: LCD_BTN_PREV defaults to GPIO 17, which is ALSO PTT_GPIO_PIN used by
+# voice_input.py. Reading the same pin from two processes (both PUD_UP,
+# input-only) is electrically fine, but if you wire a dedicated PTT button
+# you MUST move one of them. Override via env on the drifter-lcd unit.
+LCD_BTN_PREV = int(os.getenv("LCD_BTN_PREV", "17"))    # previous screen
+LCD_BTN_NEXT = int(os.getenv("LCD_BTN_NEXT", "27"))    # next screen
+LCD_BTN_ACTION = int(os.getenv("LCD_BTN_ACTION", "22"))  # action / refresh
+LCD_BTN_DEBOUNCE_MS = int(os.getenv("LCD_BTN_DEBOUNCE_MS", "200"))
+
+# Screen order. 'vehicle' only renders meaningful data when OBD is connected;
+# it stays in the rotation regardless so the operator can confirm "No OBD".
+LCD_SCREENS = ("status", "services", "network", "diagnostics", "vehicle")
+
+# Dark "car dashboard" theme — high-contrast monospace, RGB tuples.
+LCD_THEME = {
+    'bg':       (8, 10, 14),       # near-black
+    'panel':    (18, 22, 30),      # slightly lifted panel
+    'fg':       (210, 220, 230),   # default text
+    'dim':      (120, 130, 140),   # secondary text
+    'ok':       (60, 220, 130),    # green
+    'warn':     (240, 190, 60),    # amber
+    'crit':     (235, 70, 70),     # red
+    'accent':   (80, 180, 240),    # MZ1312 cyan accent
+    'header_bg': (16, 28, 40),
+}
+LCD_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/opt/drifter/fonts/DejaVuSansMono.ttf",
+)
+# journalctl tail depth for the diagnostics screen.
+LCD_DIAG_LOG_LINES = int(os.getenv("LCD_DIAG_LOG_LINES", "10"))
+
+# ═══════════════════════════════════════════════════════════════════
+#  Wi-Fi hotspot auto-connect (auto_connect.py / drifter-autoconnect)
+#  Boots looking for the operator's phone hotspot; if none appears it
+#  falls back to bringing up the node's own MZ1312_DRIFTER AP so the
+#  operator can always SSH in to fix things.
+# ═══════════════════════════════════════════════════════════════════
+# Known client SSIDs to join, in priority order. The phone hotspot SSID is
+# read from env first so the operator can set it without editing source.
+PHONE_HOTSPOT_SSID = os.getenv("PHONE_HOTSPOT_SSID", "")
+PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "")
+AUTOCONNECT_KNOWN_SSIDS = [
+    s.strip() for s in os.getenv(
+        "AUTOCONNECT_KNOWN_SSIDS",
+        PHONE_HOTSPOT_SSID,
+    ).split(",") if s.strip()
+]
+AUTOCONNECT_RETRY_SEC = int(os.getenv("AUTOCONNECT_RETRY_SEC", "30"))
+AUTOCONNECT_SCAN_TIMEOUT = int(os.getenv("AUTOCONNECT_SCAN_TIMEOUT", "15"))
+# After this long with no known SSID joined, bring up our own AP so the
+# operator can SSH in. 0 disables the fallback (stay a pure client).
+AUTOCONNECT_AP_FALLBACK_SEC = int(os.getenv("AUTOCONNECT_AP_FALLBACK_SEC", "300"))
+# The NetworkManager connection name of our own hotspot (install.sh creates it).
+AP_FALLBACK_CONNECTION = os.getenv("AP_FALLBACK_CONNECTION", "MZ1312_DRIFTER")
+AUTOCONNECT_WIFI_IFACE = os.getenv("AUTOCONNECT_WIFI_IFACE", "wlan0")
+# Internet reachability probe (used by auto_connect + the LCD network screen).
+PING_HOST = os.getenv("PING_HOST", "8.8.8.8")
+PING_TIMEOUT_SEC = int(os.getenv("PING_TIMEOUT_SEC", "3"))
+
+# ═══════════════════════════════════════════════════════════════════
+#  Boot sequencer (boot_manager.py / drifter-boot-manager)
+#  One-shot orchestrator that paints the LCD splash, brings the network
+#  up, confirms the broker, then hands the LCD over to lcd_dashboard.
+# ═══════════════════════════════════════════════════════════════════
+BOOT_MQTT_WAIT_SEC = int(os.getenv("BOOT_MQTT_WAIT_SEC", "30"))
+BOOT_NETWORK_WAIT_SEC = int(os.getenv("BOOT_NETWORK_WAIT_SEC", "45"))
+# Core services the boot manager waits on (in dependency order) before it
+# declares the node ready and switches the LCD to the live dashboard. These
+# are a subset of SERVICES — the safety-critical / always-on spine.
+BOOT_CORE_SERVICES = [
+    "drifter-dashboard",   # /healthz + cockpit must be up
+    "drifter-canbridge",   # telemetry source (hw-optional)
+    "drifter-logger",
+    "drifter-watchdog",
+]

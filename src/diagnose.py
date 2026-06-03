@@ -102,6 +102,7 @@ _HARDWARE_OPTIONAL_SERVICES = frozenset({
     'drifter-rf',        # needs RTL-SDR dongle — TPMS sniffing only viable with hardware
     'drifter-bleconv',   # needs hci0 active (Pi 5 onboard BLE) + bleak in venv
     'drifter-gps',       # needs gpsd + a USB GPS dongle reporting fixes
+    'drifter-lcd',       # needs the 3.5" SPI LCD wired (/dev/fb1) + GPIO buttons
 })
 
 
@@ -264,6 +265,37 @@ def check_mqtt_broker() -> CheckResult:
         return CheckResult('mqtt', False, f'{MQTT_HOST}:{MQTT_PORT}: {e}')
 
 
+def check_hid_dr_mode() -> CheckResult:
+    """Warn LOUDLY if the USB dr_mode is NOT host while the node is in
+    'drive' mode.
+
+    The vehicle should boot in host mode: the Pi 5's only dwc2 port is the
+    USB-C POWER INPUT, and the native HID gadget profile flips it to
+    peripheral/otg. If a diagnose run in drive mode finds it in
+    peripheral/otg, the native boot profile was left enabled — that can
+    disturb power/enumeration on the live node. Warn-only / non-fatal (the
+    operator may have done it deliberately and just needs to revert with
+    'drifter hid disable-native' + reboot)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import hid_gadget  # type: ignore
+        dr_mode = hid_gadget.read_dr_mode()
+    except Exception as e:  # pragma: no cover - defensive import guard
+        return CheckResult('hid_dr_mode', False,
+                           f'could not read dr_mode: {e}', fatal=False)
+    mode = _active_mode()
+    if mode == 'drive' and dr_mode != 'host':
+        return CheckResult(
+            'hid_dr_mode', False,
+            f"WARNING: dr_mode={dr_mode} in DRIVE mode — the vehicle should "
+            f"boot 'host'. The native HID gadget profile is enabled and the "
+            f"USB-C power port role is changed. Run 'drifter hid "
+            f"disable-native' + reboot unless this is deliberate.",
+            fatal=False)
+    return CheckResult('hid_dr_mode', True,
+                       f'dr_mode={dr_mode} (mode={mode})')
+
+
 def check_dashboard_healthz() -> CheckResult:
     """Sanity-poke /healthz on the dashboard. This is the contract probe
     the fleet `mesh status` uses, so it has to round-trip locally too."""
@@ -301,6 +333,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
         check_realdash_socket,
         check_audio_devices,
         check_rf_sdr,
+        check_hid_dr_mode,
         check_mqtt_broker,
         check_dashboard_healthz,
     ]
