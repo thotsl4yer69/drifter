@@ -27,6 +27,7 @@ from config import (
     DEFAULT_MODE,
     DRIVE_ONLY_SERVICES,
     FOOT_ONLY_SERVICES,
+    GOOGLE_MAPS_API_KEY,
     MARAUDER_COMMANDS,
     MODE_STATE_PATH,
     MODES,
@@ -993,6 +994,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             'aircraft': aircraft,
             'classified': list(classified),
             'state': fc,
+        })
+
+    def _get_mapconfig(self, parsed):
+        """Map config for the cockpit's MZ1312 Google basemap.
+
+        Local-only — the Maps JS key never leaves the hotspot. An empty key
+        makes the cockpit hide the mz1312 basemap and fall back to dark/sat."""
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'mapconfig: local network only')
+            return
+        self._serve_json({
+            'google_maps_key': GOOGLE_MAPS_API_KEY or '',
+            'has_google': bool(GOOGLE_MAPS_API_KEY),
         })
 
     def _get_ghost_status(self, parsed):
@@ -2906,6 +2921,7 @@ DashboardHandler._EXACT_GET_ROUTES = {
     '/api/marauder/scan':         DashboardHandler._get_marauder_scan,
     '/api/flycatcher/aircraft':   DashboardHandler._get_flycatcher_aircraft,
     '/api/ghost/status':          DashboardHandler._get_ghost_status,
+    '/api/mapconfig':             DashboardHandler._get_mapconfig,
     '/api/alpr/plates':           DashboardHandler._get_alpr_plates,
     '/api/vision/status':         DashboardHandler._get_vision_status,
     '/api/sentry/status':         DashboardHandler._get_sentry_status,

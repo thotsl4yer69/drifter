@@ -6593,12 +6593,81 @@
       setTimeout(() => map.instance.invalidateSize(), 50);
     }
   }
+  // ── MZ1312 styled Google basemap (see docs/MAP_CUSTOMIZATION.md) ──
+  // Legacy Google Maps `styles` realization of the cloud taxonomy, rendered
+  // via GoogleMutant. Mirrors ui/map-style-mz1312.json — keep in sync.
+  const MZ1312_MAP_STYLE = [
+    { elementType:'geometry', stylers:[{color:'#0a0a0f'}] },
+    { elementType:'labels.text.fill', stylers:[{color:'#c9c9d6'}] },
+    { elementType:'labels.text.stroke', stylers:[{color:'#050507'},{weight:2}] },
+    { elementType:'labels.icon', stylers:[{visibility:'off'}] },
+    { featureType:'administrative', elementType:'geometry', stylers:[{color:'#2a2a3a'}] },
+    { featureType:'administrative.locality', elementType:'labels.text.fill', stylers:[{color:'#a78bfa'}] },
+    { featureType:'administrative.land_parcel', stylers:[{visibility:'off'}] },
+    { featureType:'landscape.natural', elementType:'geometry', stylers:[{color:'#0c0c12'}] },
+    { featureType:'landscape.man_made', elementType:'geometry', stylers:[{color:'#101018'}] },
+    { featureType:'poi', elementType:'geometry', stylers:[{color:'#12121a'}] },
+    { featureType:'poi', elementType:'labels.text.fill', stylers:[{color:'#5a5a70'}] },
+    { featureType:'poi.business', stylers:[{visibility:'off'}] },
+    { featureType:'poi.park', elementType:'geometry', stylers:[{color:'#0f1512'}] },
+    { featureType:'poi.park', elementType:'labels.text.fill', stylers:[{color:'#5c7a63'}] },
+    { featureType:'road', elementType:'geometry', stylers:[{color:'#15131f'}] },
+    { featureType:'road', elementType:'labels.text.fill', stylers:[{color:'#7a7a90'}] },
+    { featureType:'road.local', elementType:'geometry', stylers:[{color:'#101018'}] },
+    { featureType:'road.arterial', elementType:'geometry', stylers:[{color:'#1b1830'}] },
+    { featureType:'road.highway', elementType:'geometry', stylers:[{color:'#2a2350'}] },
+    { featureType:'road.highway', elementType:'geometry.stroke', stylers:[{color:'#8b5cf6'},{weight:0.5}] },
+    { featureType:'road.highway', elementType:'labels.text.fill', stylers:[{color:'#c4b5fd'}] },
+    { featureType:'road.highway.controlled_access', elementType:'geometry', stylers:[{color:'#3a2f6b'}] },
+    { featureType:'transit', elementType:'geometry', stylers:[{color:'#161620'}] },
+    { featureType:'transit.station', elementType:'labels.text.fill', stylers:[{color:'#8a7fb0'}] },
+    { featureType:'water', elementType:'geometry', stylers:[{color:'#06060c'}] },
+    { featureType:'water', elementType:'labels.text.fill', stylers:[{color:'#3a4a6a'}] },
+  ];
+  let _gmaps = null;  // promise → boolean: Google Maps JS + GoogleMutant ready
+  function _loadScript(src){
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true; s.onload = () => res(true); s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  async function _ensureGoogle(){
+    if (window.google && window.google.maps && L.gridLayer && L.gridLayer.googleMutant) return true;
+    if (_gmaps) return _gmaps;
+    _gmaps = (async () => {
+      const cfg = await safeFetch('/api/mapconfig');   // local-only; key never static
+      if (!cfg || !cfg.google_maps_key) return false;
+      if (!(window.google && window.google.maps))
+        await _loadScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(cfg.google_maps_key)}&v=quarterly`);
+      if (!(L.gridLayer && L.gridLayer.googleMutant))
+        await _loadScript('https://unpkg.com/leaflet.gridlayer.googlemutant@0.13.1/dist/Leaflet.GoogleMutant.js');
+      return !!(window.google && window.google.maps && L.gridLayer && L.gridLayer.googleMutant);
+    })().catch(() => false);
+    return _gmaps;
+  }
+  async function _applyBasemap(mode){
+    if (!map.instance) return;
+    if (mode === 'mz1312') {
+      const ok = await _ensureGoogle();
+      if (ok) {
+        if (map.layer) map.instance.removeLayer(map.layer);
+        map.layer = L.gridLayer.googleMutant({ type:'roadmap', styles: MZ1312_MAP_STYLE }).addTo(map.instance);
+        map.mode = 'mz1312';
+        return;
+      }
+      mode = 'dark';   // no key / offline → graceful fallback to CARTO dark
+    }
+    if (map.layer) map.instance.removeLayer(map.layer);
+    const t = TILES[mode];
+    map.layer = L.tileLayer(t.url, t).addTo(map.instance);
+    map.mode = mode;
+  }
   function toggleSatellite(){
     if (!map.instance) return;
-    map.mode = map.mode === 'dark' ? 'sat' : 'dark';
-    if (map.layer) map.instance.removeLayer(map.layer);
-    const t = TILES[map.mode];
-    map.layer = L.tileLayer(t.url, t).addTo(map.instance);
+    const order = ['dark', 'sat', 'mz1312'];
+    const next = order[(order.indexOf(map.mode) + 1) % order.length];
+    _applyBasemap(next);
   }
   function recenter(){
     if (!map.instance || !map.originMarker) return;
