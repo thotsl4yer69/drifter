@@ -172,6 +172,30 @@ def current_ip(iface: str = AUTOCONNECT_WIFI_IFACE) -> str | None:
     return None
 
 
+def disable_power_save(iface: str = AUTOCONNECT_WIFI_IFACE) -> bool:
+    """Turn off Wi-Fi power save before connecting. The brcmfmac power-save
+    cycle is what wedges boot on the Pi 5 (see scripts/fix-wifi-boot.sh); a
+    flapping power state also makes client joins drop. Best-effort: tries
+    `iw` first, then nmcli's per-connection setting. Never raises."""
+    ok = False
+    if shutil.which('iw'):
+        try:
+            r = _run(['iw', 'dev', iface, 'set', 'power_save', 'off'], timeout=8)
+            ok = r.returncode == 0
+        except Exception:
+            pass
+    if shutil.which('iwconfig'):
+        try:
+            _run(['iwconfig', iface, 'power', 'off'], timeout=8)
+        except Exception:
+            pass
+    if ok:
+        log.info(f"{iface} power save disabled")
+    else:
+        log.warning(f"could not disable power save on {iface} (iw missing?)")
+    return ok
+
+
 def internet_ok() -> bool:
     if not shutil.which('ping'):
         return False
@@ -215,6 +239,10 @@ def main() -> None:
         log.error("nmcli not found — NetworkManager required. Exiting.")
         return
 
+    # Kill Wi-Fi power save before doing anything — the brcmfmac power-save
+    # cycle both wedges boot and destabilises client joins.
+    disable_power_save()
+
     running = True
 
     def _stop(sig, frame):
@@ -239,6 +267,8 @@ def main() -> None:
         joined = active_client_ssid()
         if joined and (not known or joined in known or not ap_active):
             # Connected as a client to something (phone hotspot or saved net).
+            # NM re-enables power save on association — keep it off each pass.
+            disable_power_save()
             ip = current_ip()
             net = internet_ok()
             publish_status(client, 'connected', joined, ip, net, False)

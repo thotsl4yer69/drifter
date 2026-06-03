@@ -29,6 +29,21 @@ USER_HOME="$(getent passwd "$LOGIN_USER" | cut -d: -f6)"
 
 echo -e "${CYAN}DRIFTER auto-boot setup — user=${LOGIN_USER}${NC}"
 
+# ── 0. Wi-Fi boot-hang fix (brcmfmac power-save loop) ──
+# This is the ROOT CAUSE of "hangs before login": brcmfmac gets stuck cycling
+# Wi-Fi power management. Clear it FIRST — autologin is pointless if the kernel
+# never reaches getty. Delegated to the standalone fix script so it can also be
+# run on its own against an already-deployed Pi.
+step "Applying Wi-Fi boot-hang fix"
+WIFI_FIX="${REPO_DIR}/scripts/fix-wifi-boot.sh"
+if [ -x "$WIFI_FIX" ] || [ -f "$WIFI_FIX" ]; then
+    bash "$WIFI_FIX" && ok "Wi-Fi boot-hang fix applied" || warn "Wi-Fi fix script returned non-zero"
+else
+    warn "fix-wifi-boot.sh not found — applying inline fallback"
+    echo 'options brcmfmac roamoff=1 feature_disable=0x82000' > /etc/modprobe.d/brcmfmac.conf
+    systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
+fi
+
 # ── 1. Boot to multi-user (CLI), not graphical ──
 step "Setting default boot target to multi-user (headless CLI)"
 systemctl set-default multi-user.target 2>/dev/null && ok "default target = multi-user.target" \
