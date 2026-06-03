@@ -12,6 +12,30 @@ from pathlib import Path
 
 import paho.mqtt.client as _mqtt
 
+# Central API-key registry. Re-exported below so the rest of the fleet
+# imports credentials from config (`from config import GOOGLE_MAPS_API_KEY`)
+# rather than reaching into api_keys directly. Guarded so a missing
+# api_keys.py (older deploy) degrades to env vars instead of bricking every
+# service that imports config.
+try:
+    from api_keys import (
+        GOOGLE_EARTH_ENGINE_API_KEY,
+        GOOGLE_ELEVATION_API_KEY,
+        GOOGLE_MAPS_API_KEY,
+        GOOGLE_PLACES_API_KEY,
+        OPENWEATHERMAP_API_KEY,
+        have_key,
+    )
+except ImportError:  # pragma: no cover - fallback for partial deploys
+    OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY", "")
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    GOOGLE_ELEVATION_API_KEY = GOOGLE_MAPS_API_KEY
+    GOOGLE_PLACES_API_KEY = GOOGLE_MAPS_API_KEY
+    GOOGLE_EARTH_ENGINE_API_KEY = os.getenv("GOOGLE_EARTH_ENGINE_API_KEY", "")
+
+    def have_key(key: str | None) -> bool:
+        return bool(key and key.strip())
+
 _log = logging.getLogger(__name__)
 
 
@@ -938,6 +962,16 @@ TOPICS = {
     'ghost_stingray': 'drifter/ghost/stingray',   # IMSI-catcher / cell anomaly
     'ghost_alpr': 'drifter/ghost/alpr',           # ALPR camera awareness
     'ghost_rf': 'drifter/ghost/rf',               # anomalous RF / surveillance band
+
+    # ── Weather (weather_service.py — OpenWeatherMap One Call) ──
+    'weather_current': 'drifter/weather/current',   # temp/humidity/wind/visibility/condition
+    'weather_forecast': 'drifter/weather/forecast', # hourly outlook
+    'weather_alerts': 'drifter/weather/alerts',     # gov + derived (rain_soon/fog/ice/wind)
+
+    # ── Location enrichment (location_service.py — Google Elevation + Places) ──
+    'location_elevation': 'drifter/location/elevation',  # elevation_m + road grade %
+    'location_nearby': 'drifter/location/nearby',        # nearby POIs (fuel/mechanic/...)
+    'location_query': 'drifter/location/query',          # request: {"type": "gas_station"}
 }
 
 # ── LLM v2 cascade config ──
@@ -1051,6 +1085,8 @@ SERVICES = [
     "drifter-trip",         # per-trip distance + fuel computer
     "drifter-thresholds",   # adaptive baseline learner
     "drifter-reporter",     # post-drive markdown report via LLM
+    "drifter-weather",      # OpenWeatherMap → drifter/weather/*
+    "drifter-location",     # Google Elevation + Places → drifter/location/*
     # Recon / audit expansion (Agent B)
     "drifter-kismet",        # headless Wi-Fi/BLE recon daemon
     "drifter-kismet-bridge", # Kismet REST → MQTT bridge
@@ -1109,6 +1145,8 @@ SHARED_SERVICES = [
     "drifter-voicein",     # wake-word + STT
     "drifter-rfaudio",     # on-demand SDR → speaker (emergency-band listen)
     "drifter-fly-catcher", # ADS-B ghost detector (passive; runs in both modes)
+    "drifter-weather",     # OpenWeatherMap poller (network-only; runs in both modes)
+    "drifter-location",    # Elevation + Places (GPS-aware; runs in both modes)
 ]
 MODES = {
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
@@ -1320,4 +1358,56 @@ VISION_YOLO_MODEL = "yolov8s.hef"
 VIVI2_PERSONALITY_FILE = DRIFTER_DIR / "vivi_personality.txt"
 VIVI2_PROACTIVE_COOLDOWN_S = 120
 VIVI2_STREAMING = True
-WEATHER_API_HOST = "api.open-meteo.com"
+WEATHER_API_HOST = "api.open-meteo.com"   # legacy: driver_assist fallback fetch
+
+# ═══════════════════════════════════════════════════════════════════
+#  External enrichment services — Weather + Location
+#  Keys come from api_keys.py (re-exported at the top of this file).
+#  weather_service.py and location_service.py are the ONLY modules that
+#  call these APIs; everyone else consumes the drifter/weather/* and
+#  drifter/location/* MQTT topics, so the real-time/safety path never
+#  blocks on the network.
+# ═══════════════════════════════════════════════════════════════════
+
+# Fallback position when no GPS fix is available yet. Bendigo, VIC — matches
+# the emergency-audio band defaults. Override per operating area.
+DEFAULT_LAT = float(os.getenv("DRIFTER_DEFAULT_LAT", "-36.7570"))
+DEFAULT_LON = float(os.getenv("DRIFTER_DEFAULT_LON", "144.2794"))
+
+# ── OpenWeatherMap (weather_service.py) ──
+OWM_BASE_URL = "https://api.openweathermap.org/data/3.0/onecall"
+OWM_FALLBACK_CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather"
+OWM_FALLBACK_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
+OWM_UNITS = "metric"                      # °C, m/s, etc.
+WEATHER_UPDATE_INTERVAL_SEC = int(os.getenv("WEATHER_UPDATE_INTERVAL_SEC", "900"))  # 15 min
+WEATHER_HTTP_TIMEOUT = 10
+WEATHER_FOG_VISIBILITY_M = 1000           # below this = fog advisory
+WEATHER_ICE_TEMP_C = 3.0                  # at/below this + moisture = ice risk
+WEATHER_HIGH_WIND_KPH = 60                # gusty-crosswind advisory
+WEATHER_RAIN_SOON_MIN = 30               # "rain within N min" → windows-up nudge
+
+# ── Google Elevation + Places (location_service.py) ──
+GOOGLE_ELEVATION_URL = "https://maps.googleapis.com/maps/api/elevation/json"
+GOOGLE_PLACES_NEARBY_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+LOCATION_HTTP_TIMEOUT = 10
+LOCATION_ELEVATION_INTERVAL_SEC = int(os.getenv("LOCATION_ELEVATION_INTERVAL_SEC", "30"))
+LOCATION_ELEVATION_MIN_MOVE_M = 25        # only re-sample grade after moving this far
+LOCATION_NEARBY_INTERVAL_SEC = int(os.getenv("LOCATION_NEARBY_INTERVAL_SEC", "300"))  # 5 min
+LOCATION_NEARBY_MIN_MOVE_M = 500          # re-poll POIs after moving this far
+LOCATION_POI_RADIUS_M = 5000
+LOCATION_GRADE_STEEP_PCT = 8.0            # |grade| above this = steep-grade warning
+# POI categories the location service keeps warm for Vivi. Keys are the
+# spoken-friendly aliases Vivi resolves; values are Google Places types.
+LOCATION_POI_TYPES = {
+    'fuel': 'gas_station',
+    'petrol': 'gas_station',
+    'mechanic': 'car_repair',
+    'car_wash': 'car_wash',
+    'parking': 'parking',
+    'charging': 'electric_vehicle_charging_station',
+    'rest_stop': 'rest_stop',
+    'hospital': 'hospital',
+}
+# Categories proactively refreshed each poll (the rest are on-demand via
+# the location_query topic).
+LOCATION_POI_DEFAULT_TYPES = ('gas_station', 'car_repair')

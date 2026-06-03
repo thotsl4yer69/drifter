@@ -62,6 +62,7 @@ _last_window: dict = {}
 _active_dtcs: list = []
 _pending_dtcs: list = []
 _last_alert: dict = {}
+_last_weather: dict = {}   # latest drifter/weather/current snapshot
 _mqtt_connected = False
 
 # Token usage tracking — per UTC day
@@ -78,8 +79,11 @@ _worker_running = threading.Event()
 
 SYSTEM_PROMPT = (
     f"You are the in-vehicle diagnostic specialist for a {VEHICLE}. "
-    "You receive a 60s telemetry window plus any DTCs and the safety event that "
-    "triggered the request. Respond with JSON only — no prose around it.\n\n"
+    "You receive a 60s telemetry window plus any DTCs, current weather, and the "
+    "safety event that triggered the request. Factor weather into your reasoning — "
+    "this engine runs richer when cold, is prone to heat-soak in high ambient temps, "
+    "and humidity/IAT shifts move fuel trims. Respond with JSON only — no prose "
+    "around it.\n\n"
     "Schema:\n"
     "{\n"
     '  "primary_suspect": {"diagnosis": str, "confidence": int 0-100, '
@@ -158,6 +162,7 @@ def _build_prompt(reason: str) -> str:
         active = list(_active_dtcs)
         pending = list(_pending_dtcs)
         alert = dict(_last_alert) if isinstance(_last_alert, dict) else {}
+        weather = dict(_last_weather) if isinstance(_last_weather, dict) else {}
 
     metrics = window.get('metrics') or {}
     if not isinstance(metrics, dict):
@@ -204,6 +209,15 @@ def _build_prompt(reason: str) -> str:
         msg = str(alert.get('message', ''))[:300]
         parts.append("")
         parts.append(f"TRIGGERING ALERT: {msg}")
+    if weather:
+        parts.append("")
+        parts.append(
+            "WEATHER: "
+            f"{weather.get('description', weather.get('condition', '?'))}, "
+            f"{weather.get('temp_c')}°C (feels {weather.get('feels_like_c')}°C), "
+            f"humidity {weather.get('humidity')}%, "
+            f"wind {weather.get('wind_kph')} km/h"
+        )
 
     text = '\n'.join(parts)
     if len(text) > MAX_PROMPT_CHARS:
@@ -326,7 +340,7 @@ def _enqueue(reason: str, manual: bool) -> None:
 
 
 def on_message(client, userdata, msg) -> None:
-    global _last_window, _active_dtcs, _pending_dtcs, _last_alert
+    global _last_window, _active_dtcs, _pending_dtcs, _last_alert, _last_weather
     try:
         data = json.loads(msg.payload)
     except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
@@ -337,6 +351,12 @@ def on_message(client, userdata, msg) -> None:
         if isinstance(data, dict):
             with _state_lock:
                 _last_window = data
+        return
+
+    if topic == TOPICS['weather_current']:
+        if isinstance(data, dict):
+            with _state_lock:
+                _last_weather = data
         return
 
     if topic == TOPICS['dtc'] and isinstance(data, dict):
@@ -385,6 +405,7 @@ def on_connect(client, userdata, flags, rc) -> None:
         (TOPICS['dtc'], 1),
         (TOPICS['alert_message'], 1),
         (TOPICS['ai_diag_request'], 1),
+        (TOPICS['weather_current'], 0),
     ])
     log.info("MQTT connected — subscriptions active")
 
