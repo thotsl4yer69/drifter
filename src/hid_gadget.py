@@ -32,7 +32,6 @@ import glob
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -127,7 +126,7 @@ def read_dr_mode() -> str:
     return 'unknown'
 
 
-def list_udcs(udc_dir: Path = _UDC_DIR) -> List[str]:
+def list_udcs(udc_dir: Path = _UDC_DIR) -> list[str]:
     """Available USB Device Controllers (the bind targets). Empty if none."""
     try:
         if udc_dir.exists():
@@ -167,7 +166,7 @@ class GadgetController:
         self._dr_mode_reader = dr_mode_reader
 
     # ── safety gate ──
-    def gadget_mode_ok(self) -> Tuple[bool, str]:
+    def gadget_mode_ok(self) -> tuple[bool, str]:
         """(ok, reason). ok only when dr_mode ∈ {peripheral, otg}."""
         dr_mode = self._dr_mode_reader()
         if dr_mode not in GADGET_DR_MODES:
@@ -378,7 +377,7 @@ def _rmdir(path: Path) -> None:
 
 
 # Convenience for callers that want a single readiness verdict.
-def gadget_ready(controller: Optional[GadgetController] = None) -> Tuple[bool, str]:
+def gadget_ready(controller: GadgetController | None = None) -> tuple[bool, str]:
     """(ready, reason). ready only when dr_mode ∈ {peripheral,otg},
     /dev/hidg0 exists, and a UDC is bindable. Honest — never fakes ready."""
     ctrl = controller or GadgetController()

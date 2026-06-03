@@ -19,12 +19,11 @@ import pytest
 
 sys.path.insert(0, 'src')
 
+import diagnose
+import hid_boot as boot
 import hid_ducky as ducky
 import hid_gadget as gadget
 import hid_inject as hi
-import hid_boot as boot
-import diagnose
-
 
 # ═══════════════════════════════════════════════════════════════════
 #  Compiler

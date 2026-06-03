@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
 
 # ── USB HID boot-keyboard report ──────────────────────────────────────
 # Each report is 8 bytes: [modifier, reserved(0x00), k1, k2, k3, k4, k5, k6].
@@ -63,7 +62,7 @@ class DuckyParseError(ValueError):
 # ── 'us' layout keymap ────────────────────────────────────────────────
 # Maps a printable character → (usage_id, needs_shift). USB HID Usage IDs
 # for the boot keyboard (Usage Page 0x07).
-_US_UNSHIFTED: Dict[str, int] = {
+_US_UNSHIFTED: dict[str, int] = {
     'a': 0x04, 'b': 0x05, 'c': 0x06, 'd': 0x07, 'e': 0x08, 'f': 0x09,
     'g': 0x0A, 'h': 0x0B, 'i': 0x0C, 'j': 0x0D, 'k': 0x0E, 'l': 0x0F,
     'm': 0x10, 'n': 0x11, 'o': 0x12, 'p': 0x13, 'q': 0x14, 'r': 0x15,
@@ -80,7 +79,7 @@ _US_UNSHIFTED: Dict[str, int] = {
 
 # Shifted characters share the usage id of their unshifted partner with
 # the LSHIFT modifier set.
-_US_SHIFTED: Dict[str, str] = {
+_US_SHIFTED: dict[str, str] = {
     '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6',
     '&': '7', '*': '8', '(': '9', ')': '0',
     '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\',
@@ -88,7 +87,7 @@ _US_SHIFTED: Dict[str, str] = {
 }
 
 
-def _char_to_usage(ch: str, line: int) -> Tuple[int, bool]:
+def _char_to_usage(ch: str, line: int) -> tuple[int, bool]:
     """Return (usage_id, needs_shift) for a single character (us layout).
 
     HARD-ERRORS on any character outside the us keymap — never silently
@@ -108,7 +107,7 @@ def _char_to_usage(ch: str, line: int) -> Tuple[int, bool]:
 # ── Named keys (standalone or in modifier combos) ─────────────────────
 # Maps a DuckyScript key token → usage id. Modifier tokens are handled
 # separately (they contribute a bit, not a usage key).
-_NAMED_KEYS: Dict[str, int] = {
+_NAMED_KEYS: dict[str, int] = {
     'ENTER': 0x28, 'RETURN': 0x28,
     'ESC': 0x29, 'ESCAPE': 0x29,
     'BACKSPACE': 0x2A,
@@ -135,7 +134,7 @@ _NAMED_KEYS: Dict[str, int] = {
 }
 
 # Modifier tokens → (bitmask). GUI/WINDOWS/CTRL/CONTROL/ALT/SHIFT.
-_MODIFIER_TOKENS: Dict[str, int] = {
+_MODIFIER_TOKENS: dict[str, int] = {
     'GUI': MOD_LGUI, 'WINDOWS': MOD_LGUI, 'WIN': MOD_LGUI,
     'CTRL': MOD_LCTRL, 'CONTROL': MOD_LCTRL,
     'ALT': MOD_LALT,
@@ -156,7 +155,7 @@ class CompiledPayload:
     `keystrokes` counts key-down events (the human-meaningful number for
     the confirm preview). `line_count` is the source line count.
     """
-    reports: List[Tuple[bytes, int]] = field(default_factory=list)
+    reports: list[tuple[bytes, int]] = field(default_factory=list)
     keystrokes: int = 0
     line_count: int = 0
     default_delay_ms: int = 0
@@ -165,7 +164,7 @@ class CompiledPayload:
         return sum(1 for r, _ in self.reports if r is not None)
 
 
-def _down_up(usage: int, modifier: int) -> List[Tuple[bytes, int]]:
+def _down_up(usage: int, modifier: int) -> list[tuple[bytes, int]]:
     """Build a key-down + key-up report pair for one usage+modifier."""
     down = bytes([modifier & 0xFF, 0x00, usage & 0xFF, 0, 0, 0, 0, 0])
     up = bytes(REPORT_LEN)
@@ -185,9 +184,9 @@ def _parse_delay_arg(arg: str, line: int) -> int:
     return ms
 
 
-def _emit_string(text: str, line: int) -> Tuple[List[Tuple[bytes, int]], int]:
+def _emit_string(text: str, line: int) -> tuple[list[tuple[bytes, int]], int]:
     """Compile a STRING argument char-by-char. Returns (reports, keystrokes)."""
-    out: List[Tuple[bytes, int]] = []
+    out: list[tuple[bytes, int]] = []
     keystrokes = 0
     for ch in text:
         usage, shift = _char_to_usage(ch, line)
@@ -197,7 +196,7 @@ def _emit_string(text: str, line: int) -> Tuple[List[Tuple[bytes, int]], int]:
     return out, keystrokes
 
 
-def _emit_key_combo(tokens: List[str], line: int) -> Tuple[List[Tuple[bytes, int]], int]:
+def _emit_key_combo(tokens: list[str], line: int) -> tuple[list[tuple[bytes, int]], int]:
     """Compile a (modifier combo / named key) line.
 
     Examples: ['GUI','r'] ['CTRL','ALT','DELETE'] ['ENTER'] ['F5'].
@@ -257,7 +256,7 @@ def compile_ducky(source: str, layout: str = 'us') -> CompiledPayload:
     payload.line_count = len(lines)
     default_delay_ms = 0
     # REPEAT applies to the PREVIOUS instruction line's emitted reports.
-    last_emitted: List[Tuple[bytes, int]] = []
+    last_emitted: list[tuple[bytes, int]] = []
     last_keystrokes = 0
 
     for idx, raw_line in enumerate(lines, start=1):
@@ -274,7 +273,7 @@ def compile_ducky(source: str, layout: str = 'us') -> CompiledPayload:
         cmd = parts[0].upper()
         arg = parts[1] if len(parts) > 1 else ''
 
-        emitted: List[Tuple[bytes, int]] = []
+        emitted: list[tuple[bytes, int]] = []
         emitted_keystrokes = 0
 
         if cmd == 'REM':
@@ -347,7 +346,7 @@ def sha256_source(source: str) -> str:
     return hashlib.sha256(source.encode('utf-8')).hexdigest()
 
 
-def preview_lines(source: str, n: int = 1) -> Tuple[List[str], List[str]]:
+def preview_lines(source: str, n: int = 1) -> tuple[list[str], list[str]]:
     """Return (first_n, last_n) non-empty source lines for the ARM preview."""
     lines = [ln.strip() for ln in source.splitlines() if ln.strip()]
     if not lines:

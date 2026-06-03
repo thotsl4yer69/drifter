@@ -27,7 +27,6 @@ import shutil
 import socket
 import subprocess
 import time
-from pathlib import Path
 
 from config import (
     BOOT_CORE_SERVICES,

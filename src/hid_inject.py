@@ -46,12 +46,10 @@ import signal
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
-
-from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
 import hid_ducky
 import hid_gadget
+from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -107,7 +105,7 @@ def read_dr_mode() -> str:
     return 'unknown'
 
 
-def native_status() -> Dict:
+def native_status() -> dict:
     """Honest native-backend readiness. NEVER fakes ready.
 
     Stage 6: readiness is delegated to the hid_gadget configfs lifecycle.
@@ -125,11 +123,10 @@ def native_status() -> Dict:
     ready, ready_reason = hid_gadget.gadget_ready(_gadget_controller())
     if not configured:
         reason = (
-            "native backend not configured (requires boot profile) — "
-            "dr_mode=%s (need peripheral/otg). Run 'drifter hid enable-native' "
+            f"native backend not configured (requires boot profile) — "
+            f"dr_mode={dr_mode} (need peripheral/otg). Run 'drifter hid enable-native' "
             "+ reboot. The USB-C port is the Pi 5 power input; enabling is a "
             "deliberate reboot-gated opt-in."
-            % dr_mode
         )
     else:
         reason = ready_reason
@@ -144,7 +141,7 @@ def native_status() -> Dict:
     }
 
 
-def _gadget_controller() -> 'hid_gadget.GadgetController':
+def _gadget_controller() -> hid_gadget.GadgetController:
     """Build a GadgetController bound to this module's device paths.
 
     Kept tiny so tests can monkeypatch hid_gadget.read_dr_mode / paths and
@@ -166,7 +163,7 @@ def payload_paths(payload_id: str):
             HID_PAYLOAD_DIR / f'{payload_id}.meta.json')
 
 
-def load_payload(payload_id: str) -> Optional[Dict]:
+def load_payload(payload_id: str) -> dict | None:
     """Return {'script', 'meta'} for a stored payload, or None if absent.
 
     Path-traversal guarded: a payload_id with a path separator or '..' is
@@ -226,7 +223,7 @@ def audit(mqtt_client, event: str, peer: str = '', **fields) -> None:
 
 # Pending ARMED entries keyed by arm id:
 #   {id, payload_id, backend, line_count, keystrokes, sha256, ts, peer}
-pending_confirms: Dict[str, Dict] = {}
+pending_confirms: dict[str, dict] = {}
 
 
 class HidStateMachine:
@@ -247,7 +244,7 @@ class HidStateMachine:
         self._flipper_fire = flipper_fire or self._default_flipper_fire
 
     # ── readiness ──
-    def status_payload(self) -> Dict:
+    def status_payload(self) -> dict:
         armed = None
         # Surface the single most-recent pending entry (UI shows one at a time).
         if pending_confirms:
@@ -266,7 +263,7 @@ class HidStateMachine:
             'ts': time.time(),
         }
 
-    def _flipper_readiness(self) -> Dict:
+    def _flipper_readiness(self) -> dict:
         """Honest Flipper-backend readiness from the retained status topic.
 
         We do not fabricate a connection — absent/false reads as not ready.
@@ -280,7 +277,7 @@ class HidStateMachine:
         }
 
     # ── command entry point ──
-    def handle(self, data: Dict) -> None:
+    def handle(self, data: dict) -> None:
         command = (data.get('command') or '').strip()
         peer = data.get('peer') or ''
         if command == 'hid_arm':
@@ -302,7 +299,7 @@ class HidStateMachine:
             except Exception as e:
                 log.warning("hid status publish failed: %s", e)
 
-    def _publish_result(self, payload: Dict) -> None:
+    def _publish_result(self, payload: dict) -> None:
         if self.mqtt is not None:
             try:
                 self.mqtt.publish(TOPICS['hid_result'],
@@ -311,7 +308,7 @@ class HidStateMachine:
                 log.warning("hid result publish failed: %s", e)
 
     # ── ARM ──
-    def _arm(self, data: Dict, peer: str) -> None:
+    def _arm(self, data: dict, peer: str) -> None:
         payload_id = (data.get('payload_id') or '').strip()
         backend = (data.get('backend') or '').strip()
         if backend not in VALID_BACKENDS:
@@ -396,7 +393,7 @@ class HidStateMachine:
         self._publish_status()
 
     # ── CONFIRM (→ RUN) ──
-    def _confirm(self, data: Dict, peer: str) -> None:
+    def _confirm(self, data: dict, peer: str) -> None:
         arm_id = (data.get('id') or '').strip()
         if not arm_id:
             audit(self.mqtt, 'REJECT', peer, reason='empty id',
@@ -427,7 +424,7 @@ class HidStateMachine:
         self._run(entry, peer)
         self._publish_status()
 
-    def _run(self, entry: Dict, peer: str) -> None:
+    def _run(self, entry: dict, peer: str) -> None:
         backend = entry['backend']
         payload_id = entry['payload_id']
         loaded = load_payload(payload_id)
@@ -456,7 +453,7 @@ class HidStateMachine:
             'duration_ms': duration_ms, 'detail': detail,
         })
 
-    def _run_native(self, entry: Dict, script: str, peer: str) -> None:
+    def _run_native(self, entry: dict, script: str, peer: str) -> None:
         """RUN on the NATIVE Pi-gadget backend (Stage 6).
 
         Reachable ONLY after a native ARM (which itself only succeeds when
@@ -533,7 +530,7 @@ class HidStateMachine:
         })
 
     # ── CANCEL ──
-    def _cancel(self, data: Dict, peer: str) -> None:
+    def _cancel(self, data: dict, peer: str) -> None:
         arm_id = (data.get('id') or '').strip()
         if not arm_id:
             audit(self.mqtt, 'REJECT', peer, reason='empty id',

@@ -20,6 +20,8 @@ import yaml
 
 import ble_history
 import ble_persistence
+import hid_ducky
+import hid_inject
 import web_dashboard_state as state
 from ble_map_html import BLE_MAP_HTML
 from config import (
@@ -42,8 +44,6 @@ from config import (
     save_settings,
     validate_settings_payload,
 )
-import hid_ducky
-import hid_inject
 from corpus import corpus_search, dtc_lookup
 from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
