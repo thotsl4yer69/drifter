@@ -562,7 +562,7 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid drifter-lcd drifter-autoconnect drifter-boot-manager"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid drifter-lcd drifter-autoconnect drifter-boot-manager drifter-ghost drifter-ghost-voice"
 # NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
 # both drive the SPI LCD — they are mutually exclusive. The deploy enables both
 # here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
