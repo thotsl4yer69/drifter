@@ -60,6 +60,15 @@ SAFETY_CFG = {
     # Coolant overheat — local rule, distinct from diagnostic AMBER/RED window
     'coolant_amber_c': 108.0,
     'coolant_red_c': 115.0,
+    # Weather-adjusted safety (fed by drifter/weather/current). When the
+    # road is wet we tighten the hard-brake threshold (shorter grip margin)
+    # and warn for speed in low visibility.
+    'wet_hard_brake_kph_per_s': 16,   # vs dry 22 — flag gentler decels in the wet
+    'fog_visibility_m': 1000,         # below this, speed warnings engage
+    'fog_speed_kph': 80,              # too fast for fog above this
+    # Steep grade (fed by drifter/location/elevation). Descents load brakes,
+    # climbs load the cooling system.
+    'grade_steep_pct': 8.0,
 }
 
 ALERT_COOLDOWN_S = 3.0
@@ -85,6 +94,12 @@ class SafetyState:
     fcw_ts: float = 0.0
     fatigue_active: bool = False
     fatigue_ts: float = 0.0
+    # Weather + grade context (from weather_service / location_service).
+    is_raining: bool = False
+    is_foggy: bool = False
+    visibility_m: float | None = None
+    grade_pct: float | None = None
+    weather_ts: float = 0.0
     last_alert_ts: float = 0.0
     last_alert_key: str = ""
     mqtt_connected: bool = False
@@ -161,9 +176,13 @@ def rule_hard_brake(s: SafetyState):
     if delta is None:
         return None
     decel = -delta
-    if decel >= SAFETY_CFG['hard_brake_kph_per_s']:
+    # Tighten the threshold in the wet — less grip margin before a slide.
+    threshold = (SAFETY_CFG['wet_hard_brake_kph_per_s'] if s.is_raining
+                 else SAFETY_CFG['hard_brake_kph_per_s'])
+    if decel >= threshold:
+        wet = " on a wet road" if s.is_raining else ""
         return (LEVEL_AMBER, 'hard_brake',
-                f"HARD BRAKING: -{decel:.0f} km/h/s. Easy on the pedal.")
+                f"HARD BRAKING: -{decel:.0f} km/h/s{wet}. Easy on the pedal.")
     return None
 
 
@@ -227,6 +246,32 @@ def rule_fatigue(s: SafetyState):
     return None
 
 
+def rule_low_visibility(s: SafetyState):
+    """Fog + speed too high for the visibility ahead."""
+    if not s.is_foggy:
+        return None
+    vis = s.visibility_m
+    if vis is None or vis >= SAFETY_CFG['fog_visibility_m']:
+        return None
+    kph = s.speed_hist[-1] if s.speed_hist else 0.0
+    if kph >= SAFETY_CFG['fog_speed_kph']:
+        return (LEVEL_AMBER, 'low_visibility',
+                f"FOG: {vis:.0f} m visibility at {kph:.0f} km/h. Slow down, lights on.")
+    return None
+
+
+def rule_steep_grade(s: SafetyState):
+    """Steep descent loads the brakes; steep climb loads cooling."""
+    g = s.grade_pct
+    if g is None or abs(g) < SAFETY_CFG['grade_steep_pct']:
+        return None
+    if g < 0:
+        return (LEVEL_INFO, 'steep_descent',
+                f"Steep descent {g:.0f}%. Engine-brake — don't ride the pedal.")
+    return (LEVEL_INFO, 'steep_climb',
+            f"Steep climb {g:.0f}%. Watch coolant under sustained load.")
+
+
 # Order matters for ties — first wins at equal level. Crash/FCW first.
 ALL_RULES: list[Callable[[SafetyState], tuple | None]] = [
     rule_crash,
@@ -237,6 +282,8 @@ ALL_RULES: list[Callable[[SafetyState], tuple | None]] = [
     rule_stall,
     rule_hard_brake,
     rule_hard_accel,
+    rule_low_visibility,
+    rule_steep_grade,
     rule_fatigue,
 ]
 
@@ -291,6 +338,16 @@ def on_message(client, userdata, msg) -> None:
 
     now = time.time()
     with _state_lock:
+        if topic == TOPICS['weather_current']:
+            _state.is_raining = bool(data.get('is_raining'))
+            _state.is_foggy = bool(data.get('is_foggy'))
+            vis = _safe_float(data.get('visibility_m'))
+            _state.visibility_m = vis
+            _state.weather_ts = now
+            return
+        if topic == TOPICS['location_elevation']:
+            _state.grade_pct = _safe_float(data.get('grade_pct'))
+            return
         if topic == TOPICS['crash_event']:
             _state.crash_active = bool(data.get('active', True))
             _state.crash_ts = now
@@ -320,6 +377,8 @@ def on_connect(client, userdata, flags, rc) -> None:
         (TOPICS['crash_event'], SAFETY_QOS),
         (TOPICS['fcw_warning'], SAFETY_QOS),
         (TOPICS['driver_fatigue'], 0),
+        (TOPICS['weather_current'], 0),
+        (TOPICS['location_elevation'], 0),
     ])
     log.info("MQTT connected — subscriptions active")
 

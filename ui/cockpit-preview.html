@@ -25,7 +25,7 @@
 
     --glass-bg: rgba(22, 27, 36, 0.62);
     --glass-bg-strong: rgba(22, 27, 36, 0.88);
-    --glass-stroke: rgba(255, 255, 255, 0.06);
+    --glass-stroke: rgba(255, 255, 255, 0.09);
     --glass-stroke-2: rgba(255, 255, 255, 0.10);
     --glass-stroke-amber: rgba(255, 174, 66, 0.45);
     --glass-stroke-cyan: rgba(125, 211, 252, 0.35);
@@ -38,6 +38,9 @@
     --fg-deep: #38414e;
 
     --amber: #ffae42;
+    /* FE-C3: focus-ring accent — tracks --amber so the keyboard ring
+       follows the active theme (amber is redefined per data-theme). */
+    --accent: var(--amber);
     --amber-deep: #b87a1f;
     --amber-glow: 0 0 24px rgba(255, 174, 66, 0.30);
     --amber-glow-strong: 0 0 32px rgba(255, 174, 66, 0.55);
@@ -328,6 +331,11 @@
     width: 2px; background: var(--amber); box-shadow: 0 0 10px var(--amber);
     border-radius: 0 2px 2px 0;
   }
+  /* Arsenal rail entry: recedes in drive, promotes to the top in foot/both. */
+  .rail-btn[data-rail="arsenal"] { order: 5; opacity: 0.6; }
+  .shell.mode-foot .rail-btn[data-rail="arsenal"] {
+    order: -1; opacity: 1; box-shadow: 0 0 14px -4px var(--amber);
+  }
   .rail-spacer { flex: 1; }
   .rail-vivi {
     width: 46px; height: 46px; border-radius: 50%;
@@ -415,8 +423,11 @@
   }
   .awaiting {
     position: absolute; inset: 0; display: grid; place-items: center;
-    background: radial-gradient(ellipse at center, transparent 30%, rgba(10,13,18,0.7) 100%);
-    pointer-events: none; z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(10,13,18,0.78) 100%);
+    /* Above Leaflet's tile/marker panes (z 200-700) and controls (z ~1000)
+       so the card is never buried under the world map. pointer-events:none
+       keeps the map controls beneath it clickable. */
+    pointer-events: none; z-index: 1200;
   }
   .awaiting-card { text-align: center; color: var(--fg); }
   .awaiting-card .glyph {
@@ -472,6 +483,13 @@
     position: relative;
     overflow: hidden;
     min-height: 0;
+    /* Layered depth: inset top highlight reads as a lit bevel, soft drop
+       shadow lifts the tile off the near-black background. Static — no Pi
+       GPU cost (paints once, not per frame). */
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 8px 24px rgba(0, 0, 0, 0.30);
   }
   .tile::before {
     content:''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
@@ -501,8 +519,8 @@
     padding: 12px 16px 4px; position: relative;
   }
   .tile-label {
-    font-family: 'Major Mono Display', monospace; font-size: 9.5px;
-    letter-spacing: 0.28em; color: var(--amber-deep);
+    font-family: 'Major Mono Display', monospace; font-size: 12px;
+    letter-spacing: 0.24em; color: var(--amber);
   }
   .tile-meta {
     font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -510,7 +528,15 @@
   }
 
   /* ── HERO GAUGES ──────────────────────────────────────────── */
-  .row-hero { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; min-height: 0; position: relative; }
+  .row-hero { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 10px; min-height: 0; position: relative; }
+  /* Safety hierarchy: SPEED is the most-glanced datum, so it leads (top-left,
+     widest track) with rpm next; coolant/voltage follow. Reordered via grid
+     `order` rather than moving markup — gauges are bound by id, and this also
+     pulls speed into the first row at the 2-col phone breakpoint. */
+  .row-hero > #g-speed   { order: 1; }
+  .row-hero > #g-rpm     { order: 2; }
+  .row-hero > #g-coolant { order: 3; }
+  .row-hero > #g-voltage { order: 4; }
   .hero-empty-banner {
     position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%);
     font-family: 'Major Mono Display', monospace; font-size: 9.5px;
@@ -534,6 +560,9 @@
     overflow: hidden;
   }
   .gauge .val.dim { color: var(--fg-deep); }
+  /* No-data state: hide the needle so the bar doesn't read as a real
+     "reading pinned at minimum" before any telemetry frame arrives. */
+  .gauge .val.dim ~ .bar .needle { opacity: 0; }
   .gauge .val .unit {
     font-size: 14px; color: var(--fg-mute);
     font-weight: 400; letter-spacing: 0.06em;
@@ -556,8 +585,8 @@
   }
   .gauge .ladder {
     display: flex; justify-content: space-between; padding: 0 16px;
-    font-size: 9px; font-family: 'JetBrains Mono', monospace;
-    color: var(--fg-dim); letter-spacing: 0.06em;
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-mute); letter-spacing: 0.06em;
   }
   .gauge .ladder .peg { color: var(--amber); }
   .gauge.warn .val { color: var(--amber); text-shadow: var(--amber-glow); }
@@ -870,6 +899,141 @@
   .health-row .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
   .health-row .h-status.warn { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
   .health-row .h-status.bad { color: var(--red); border: 1px solid rgba(231,76,60,0.5); }
+  .health-row .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+  .h-action { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--amber);
+    padding: 2px 8px 4px 26px; letter-spacing: 0.04em; }
+  /* Arsenal overlay — stencil/CRT amber-on-glass, extends the health-row tokens. */
+  .opsec-banner {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+    border: 1px solid var(--glass-stroke-amber); border-radius: var(--r-sm);
+    background: linear-gradient(180deg, rgba(255,174,66,0.07), rgba(0,0,0,0.25));
+    padding: 8px 12px; margin-bottom: 12px;
+  }
+  .opsec-banner .opsec-summary { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg); }
+  .opsec-banner .opsec-summary .sub { display: block; color: var(--fg-mute); font-size: 9.5px; margin-top: 2px; letter-spacing: 0.04em; }
+  .arsenal-grid { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .arsenal-card {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px;
+    padding: 7px 4px; border-top: 1px dashed var(--glass-stroke); font-size: 11px;
+  }
+  .arsenal-card .h-glyph { font-family: 'Major Mono Display', monospace; color: var(--amber); width: 18px; text-align: center; }
+  .arsenal-card .ac-id { min-width: 0; }
+  .arsenal-card .h-name { font-family: 'JetBrains Mono', monospace; color: var(--fg); font-size: 11px; }
+  .arsenal-card .h-meta { font-family: 'JetBrains Mono', monospace; color: var(--fg-mute); font-size: 10px; display: block; }
+  .arsenal-card.absent { opacity: 0.55; }
+  .arsenal-card .ac-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .arsenal-card .ghost-btn { font-size: 9px; padding: 3px 8px; letter-spacing: 0.08em; }
+  .arsenal-card .h-status { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.08em; }
+  .arsenal-card .h-status.ok { color: var(--teal); border: 1px solid rgba(64,196,220,0.5); }
+  .arsenal-card .h-status.missing { color: var(--amber); border: 1px solid rgba(255,174,66,0.5); }
+
+  /* ── HID INJECT panel (Rubber Ducky / BadUSB) — Stage 5 ── */
+  /* Segmented backend selector: NATIVE (Pi) | FLIPPER. Mirrors the
+     stencil/glass aesthetic of the rest of the drawer. */
+  .hid-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 8px 0;
+    border: 1px solid var(--glass-stroke); border-radius: var(--r-pill); overflow: hidden;
+    background: rgba(0,0,0,0.25); }
+  .hid-seg .seg {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; text-align: center; padding: 7px 6px; cursor: pointer;
+    color: var(--fg-mute); border: none; background: transparent;
+    transition: color 150ms, background 150ms; }
+  .hid-seg .seg:first-child { border-right: 1px solid var(--glass-stroke); }
+  .hid-seg .seg.active { color: var(--amber); background: rgba(255,174,66,0.12);
+    box-shadow: inset 0 0 10px rgba(255,174,66,0.10); }
+  .hid-seg .seg[aria-disabled="true"] { opacity: 0.4; pointer-events: none; cursor: default; }
+  .hid-seg .seg .seg-state { display: block; font-size: 8px; letter-spacing: 0.04em;
+    color: var(--fg-dim); margin-top: 3px; text-transform: none; }
+  .hid-seg .seg.active .seg-state { color: var(--amber-deep); }
+  /* readiness hint line under the selector */
+  .hid-hint { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-dim);
+    letter-spacing: 0.03em; padding: 2px 0 6px; }
+  .hid-hint.warn { color: var(--amber); }
+  /* payload list + editor split */
+  .hid-split { display: grid; grid-template-columns: minmax(110px, 0.8fr) 1.4fr; gap: 8px;
+    margin: 6px 0; align-items: start; }
+  @media (max-width: 560px) { .hid-split { grid-template-columns: 1fr; } }
+  .hid-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+  .hid-pl {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--fg-mute);
+    padding: 5px 7px; border: 1px solid var(--glass-stroke); border-radius: var(--r-sm);
+    background: rgba(0,0,0,0.22); cursor: pointer; display: grid; gap: 2px; }
+  .hid-pl:hover { border-color: var(--glass-stroke-amber); color: var(--fg); }
+  .hid-pl.sel { border-color: var(--glass-stroke-amber); color: var(--amber);
+    background: rgba(255,174,66,0.08); }
+  .hid-pl .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hid-pl .pl-meta { color: var(--fg-dim); font-size: 9px; letter-spacing: 0.04em; }
+  .hid-pl .pl-del { color: var(--red); font-size: 9px; opacity: 0.7; justify-self: end; }
+  .hid-pl .pl-del:hover { opacity: 1; }
+  .hid-editor-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .hid-name-in {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg);
+    background: rgba(0,0,0,0.3); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 5px 7px; width: 100%; box-sizing: border-box; }
+  .hid-script {
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.45;
+    color: var(--fg); background: rgba(0,0,0,0.35); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 7px 8px; width: 100%; min-height: 150px; resize: vertical;
+    box-sizing: border-box; white-space: pre; tab-size: 4; }
+  .hid-script:focus { outline: none; border-color: var(--glass-stroke-amber); }
+  .hid-parse-err {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
+    border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; }
+  .hid-parse-err .ln { color: var(--amber); }
+  /* ARM preview card + countdown ring */
+  .hid-arm-card {
+    border: 1px solid var(--glass-stroke-amber); border-radius: var(--r-sm);
+    background: linear-gradient(180deg, rgba(255,174,66,0.08), rgba(0,0,0,0.28));
+    padding: 8px 10px; margin: 8px 0; display: grid; grid-template-columns: auto 1fr;
+    gap: 10px; align-items: center; }
+  .hid-ring { width: 46px; height: 46px; transform: rotate(-90deg); }
+  .hid-ring circle { fill: none; stroke-width: 4; }
+  .hid-ring .track { stroke: var(--glass-stroke); }
+  .hid-ring .prog { stroke: var(--amber); stroke-linecap: round;
+    transition: stroke-dashoffset 250ms linear; }
+  .hid-ring-wrap { position: relative; width: 46px; height: 46px; }
+  .hid-ring-wrap .secs { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    color: var(--amber); }
+  .hid-arm-meta { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-mute);
+    display: grid; gap: 2px; min-width: 0; }
+  .hid-arm-meta .pm-name { color: var(--amber); font-size: 11px; }
+  .hid-arm-meta .pm-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hid-confirm-btn {
+    border: 1px solid rgba(231,76,60,0.6); background: rgba(231,76,60,0.12);
+    color: var(--red); box-shadow: var(--red-glow);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 8px 14px; border-radius: var(--r-pill);
+    cursor: pointer; text-align: center; }
+  .hid-confirm-btn:hover { background: rgba(231,76,60,0.2); }
+  /* live audit tail */
+  .hid-audit-toggle {
+    font-family: 'Major Mono Display', monospace; font-size: 9.5px; letter-spacing: 0.18em;
+    text-transform: lowercase; color: var(--amber-deep); cursor: pointer;
+    padding: 4px 0; border-top: 1px dashed var(--glass-stroke); margin-top: 8px;
+    display: flex; justify-content: space-between; align-items: center; }
+  .hid-audit-list { max-height: 160px; overflow-y: auto; }
+  .hid-audit-row {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--fg-mute);
+    padding: 3px 0; border-bottom: 1px dashed var(--glass-stroke);
+    display: grid; grid-template-columns: 16px auto 1fr auto; gap: 6px; align-items: baseline; }
+  .hid-audit-row .ev { letter-spacing: 0.06em; }
+  .hid-audit-row .ev.run { color: var(--red); }
+  .hid-audit-row .ev.confirm { color: var(--amber); }
+  .hid-audit-row .ev.arm { color: var(--cyan); }
+  .hid-audit-row .ev.reject, .hid-audit-row .ev.expire, .hid-audit-row .ev.blocked { color: var(--red); }
+  .hid-audit-row .a-peer { color: var(--fg-dim); }
+  .hid-audit-row .a-age { color: var(--fg-dim); text-align: right; }
+  .rfa-crit-banner { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--red);
+    border: 1px solid rgba(231,76,60,0.5); border-radius: 3px; padding: 4px 8px; margin: 4px 0; }
+  .rfa-now { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal);
+    letter-spacing: 0.06em; padding: 2px 0 4px; }
+  .rfa-manual { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; margin: 4px 0; }
+  .rfa-manual input, .rfa-manual select { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    background: rgba(0,0,0,0.3); color: var(--fg); border: 1px solid var(--glass-stroke);
+    border-radius: 3px; padding: 4px 6px; min-width: 0; }
+  .rfa-note { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-mute);
+    letter-spacing: 0.03em; padding: 4px 0 2px; }
   .health-popover { padding: 6px 8px; border-top: 1px dashed var(--glass-stroke);
     background: rgba(0,0,0,0.25); font-family: 'JetBrains Mono', monospace;
     font-size: 10px; color: var(--fg-mute); white-space: pre-wrap; }
@@ -1518,6 +1682,10 @@
     display: flex; gap: 2px; padding: 6px;
     border-bottom: 1px solid var(--glass-stroke);
     overflow-x: auto; scrollbar-width: none;
+    /* FE-C4: edge-fade affordance hints there are more tabs to scroll
+       past the right (and left) overflow boundary on the 16-tab strip. */
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
   }
   .drawer-tabs::-webkit-scrollbar { display: none; }
   .drawer-tab {
@@ -1553,6 +1721,11 @@
   .drawer-body::-webkit-scrollbar { width: 4px; }
   .drawer-body::-webkit-scrollbar-thumb { background: var(--glass-stroke-2); border-radius: 4px; }
 
+  /* ARSENAL tab-gate (stage 1): the 8 foot-mode arsenal tabs stay hidden
+     in DRIVE mode so the strip keeps its current 16 tabs (no overflow
+     regression). FOOT/BOTH mode adds the .mode-foot shell class and the
+     extra tabs appear. */
+  .shell:not(.mode-foot) .drawer-tab[data-arsenal="1"]{display:none}
   .shell.drawer-collapsed .drawer-tabs { display: none; }
   .shell.drawer-collapsed .drawer-body { display: none; }
   .shell.drawer-collapsed .drawer-foot { padding: 0; justify-content: center; }
@@ -1741,7 +1914,7 @@
   .overlay-root.open { display: flex; align-items: center; justify-content: center; opacity: 1; }
   .overlay-card {
     width: min(680px, calc(100vw - 48px));
-    max-height: min(760px, calc(100vh - 96px));
+    max-height: min(760px, calc(100dvh - 96px));
     background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
     border: 1px solid rgba(255,174,66,0.22);
     border-radius: var(--r-lg);
@@ -2066,11 +2239,11 @@
 
   @media (max-width: 640px) {
     .top { padding: 0 6px; }
-    .top .pill.vitals { font-size: 8.5px; padding: 2px 5px; }
+    .top .pill.vitals { font-size: 10px; padding: 2px 5px; }
     .row-hero { gap: 6px; }
     .gauge { padding: 8px; }
     .gauge .val { font-size: 30px; }
-    .gauge .ladder { font-size: 8px; }
+    .gauge .ladder { font-size: 10px; }
     /* Phone — alerts + RF as a swipe-tab strip. JS adds .tab-strip /
        .tab-active classes; CSS hides whichever isn't active. */
     .row-split { display: block; position: relative; }
@@ -2120,6 +2293,40 @@
     .row-split .tile.tab-active.slide-from-left  { animation: rowSplitSlideFromLeft  180ms ease-out; }
   }
 
+  /* ── FE-C3: honest disabled controls + keyboard focus ring ──────
+     aria-disabled controls (absent-hardware buttons) read as inert:
+     dimmed, not-allowed cursor, and non-interactive. The global
+     focus-visible ring restores keyboard discoverability that the
+     ghost-btn reset removed. */
+  [aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── FE-C1: prefers-reduced-motion ─────────────────────────────
+     Operators with vestibular sensitivity (or a moving vehicle) can
+     suppress all CSS animation. rAF canvas loops are paused in JS by
+     the same media query so the radar sweep / spectrum phosphor stop
+     too — gauges still update on real data. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ── FE-C2: landscape phone / short-viewport packing ───────────
+     A 360px-tall landscape phone has no room for the full 48px top +
+     64px rail + tall drawer. Collapse chrome and cap the data sheet so
+     gauges stay visible without overlap. */
+  @media (orientation: landscape) and (max-height: 480px) {
+    .shell { grid-template-rows: 36px 1fr; }
+    .top { height: 36px; }
+    .rail { width: 52px; }
+    .rail-btn .rail-label { display: none; }
+    .data-sheet, .sheet { max-height: min(70vh, 320px); }
+    .drawer-body { max-height: min(70dvh, 320px); }
+    .overlay-card { max-height: min(94dvh, calc(100dvh - 24px)); }
+  }
   /* ── Gear Indicator ─────────────────────────────────────── */
   .gear-ind {
     position: absolute; right: 16px; top: 50%;
@@ -2245,10 +2452,10 @@
         <div class="sub">uncaged technology / est 1991</div>
       </div>
     </div>
-    <div class="reg" id="reg-id">REG. <b>N7-DRFT-X25</b></div>
+    <div class="reg" id="reg-id">REG. <b>—</b></div>
     <div class="top-spacer"></div>
 
-    <span class="pill driver" id="pill-driver"><span class="dot"></span>OPERATOR · MAZ</span>
+    <span class="pill driver" id="pill-driver"><span class="dot"></span>OPERATOR</span>
     <span class="pill" id="pill-gps"><span class="dot" style="background:var(--fg-deep);box-shadow:none"></span>GPS · <span class="mono v">—</span></span>
     <span class="pill idle" id="pill-health"><span class="dot"></span>HEALTHZ · <span class="v">—</span></span>
     <span class="pill clickable" id="pill-mode" role="button" tabindex="0"
@@ -2269,8 +2476,6 @@
       <span class="rail-glyph">⊞</span><span class="rail-label">Cock</span></div>
     <div class="rail-btn" data-rail="map" id="rail-map-tab" title="Map — full-bleed">
       <span class="rail-glyph">⌖</span><span class="rail-label">Map</span></div>
-    <div class="rail-btn" data-rail="mechanic" title="Mechanic — ask the LLM">
-      <span class="rail-glyph">⚙</span><span class="rail-label">Mech</span></div>
     <div class="rail-btn" data-rail="hardware" title="Hardware — focus drawer">
       <span class="rail-glyph">▤</span><span class="rail-label">HW</span></div>
     <div class="rail-btn" data-rail="sessions" title="Sessions — recent drives">
@@ -2279,6 +2484,8 @@
       <span class="rail-glyph">⊚</span><span class="rail-label">RF</span></div>
     <div class="rail-btn" data-rail="settings" title="Settings">
       <span class="rail-glyph">◌</span><span class="rail-label">Set</span></div>
+    <div class="rail-btn" data-rail="arsenal" title="Arsenal — foot-mode toolkit">
+      <span class="rail-glyph">⊗</span><span class="rail-label">Arms</span></div>
     <div class="rail-spacer"></div>
     <div class="rail-vivi" data-rail="vivi" title="Talk to Vivi"></div>
   </nav>
@@ -2291,7 +2498,7 @@
       <div class="awaiting-card">
         <div class="glyph"></div>
         <h2>Awaiting GPS Fix</h2>
-        <p>No live position yet. Allow location in your browser, or wait for the USB GPS dongle to acquire.</p>
+        <p>No live position yet. Plug in the USB GPS dongle, or tap ⌖ to use this device's location — only accepted if accurate to ≤100&nbsp;m. Coarse network/Wi-Fi location is intentionally rejected so the map never shows a fake position.</p>
       </div>
     </div>
     <div class="map-controls" id="map-controls" style="display:none">
@@ -2503,7 +2710,7 @@
         </div>
         <div class="vivi-actions">
           <span class="ghost-btn live" id="btn-talk"><span class="dot"></span>HOLD TO TALK <span class="kbd">SPC</span></span>
-          <span class="ghost-btn" id="btn-mech">ASK MECHANIC <span class="kbd">M</span></span>
+          <span class="ghost-btn" id="btn-mech">ASK VIVI <span class="kbd">M</span></span>
           <span class="ghost-btn conv-toggle" id="btn-conv" role="button" tabindex="0" title="Conversation mode — Vivi keeps listening after each reply">CONV</span>
         </div>
       </div>
@@ -2527,7 +2734,7 @@
 
   <!-- ── DRAWER ───────────────────────────────────────────── -->
   <aside class="drawer">
-    <div class="drawer-tabs" id="drawer-tabs">
+    <div class="drawer-tabs" id="drawer-tabs" role="tablist" aria-label="Data panels">
       <div class="drawer-tab active" data-tab="sensors">SENSORS <span class="count" data-count="sensors">0</span></div>
       <div class="drawer-tab" data-tab="tires">TIRES <span class="count" data-count="tires">0/4</span></div>
       <div class="drawer-tab" data-tab="dtcs">DTCS <span class="count" data-count="dtcs">0</span></div>
@@ -2542,16 +2749,24 @@
       <div class="drawer-tab" data-tab="airspace">AIRSPACE <span class="count" data-count="airspace">0</span></div>
       <div class="drawer-tab" data-tab="sessions">SESSIONS <span class="count" data-count="sessions">0</span></div>
       <div class="drawer-tab" data-tab="playback">PLAYBACK <span class="count" data-count="playback">0</span></div>
+      <div class="drawer-tab" data-tab="kismet" data-arsenal="1">KISMET <span class="count" data-count="kismet">0</span></div>
+      <div class="drawer-tab" data-tab="marauder" data-arsenal="1">MARAUDER <span class="count" data-count="marauder">—</span></div>
+      <div class="drawer-tab" data-tab="flycatcher" data-arsenal="1">FLYCATCHER <span class="count" data-count="flycatcher">0</span></div>
+      <div class="drawer-tab" data-tab="ghost" data-arsenal="1">GHOST <span class="count" data-count="ghost">—</span></div>
+      <div class="drawer-tab" data-tab="alpr" data-arsenal="1">ALPR <span class="count" data-count="alpr">0</span></div>
+      <div class="drawer-tab" data-tab="vision" data-arsenal="1">VISION <span class="count" data-count="vision">0</span></div>
+      <div class="drawer-tab" data-tab="sentry" data-arsenal="1">SENTRY <span class="count" data-count="sentry">—</span></div>
+      <div class="drawer-tab" data-tab="ducky" data-arsenal="1">DUCKY <span class="count" data-count="ducky">—</span></div>
       <div class="drawer-tab" data-tab="audit">AUDIT <span class="count" data-count="audit">0</span></div>
       <div class="drawer-tab" data-tab="health">HEALTH <span class="count" data-count="health">—</span></div>
     </div>
 
-    <div class="drawer-body" id="drawer-body">
+    <div class="drawer-body" id="drawer-body" role="tabpanel" tabindex="0" aria-label="Active data panel">
       <div class="empty"><span class="gl">◌</span>Loading…</div>
     </div>
 
     <div class="drawer-foot">
-      <span>driver · <span class="driver" id="foot-driver">MAZ</span></span>
+      <span>driver · <span class="driver" id="foot-driver">—</span></span>
       <span class="mono" id="foot-session">session —</span>
     </div>
   </aside>
@@ -2698,7 +2913,31 @@
     wifiAudit: null,        // drifter/wifi/audit (handshakes/PMKIDs)
     signalIntelRows: [],    // last N classifications (with novel flag) for the RF tile
     replay: { active: false, session_id: null, speed: 1.0, paused: false },
+    // ── HID INJECT (Rubber Ducky / BadUSB) — Stage 5 (FLIPPER backend) ──
+    // hidStatus mirrors GET /api/hid/status; null until the backend answers
+    // (REAL-DATA: never assume ready). hidPayloads mirrors GET /api/hid/payloads.
+    // hidAudit is a bounded ring fanned out from drifter/hid/audit over WS
+    // (newest first) so the panel's collapsible tail shows live events.
+    hidStatus: null,
+    hidPayloads: null,
+    hidAudit: [],
   };
+  const HID_AUDIT_MAX = 40;
+  // Backend selected in the ducky panel ('flipper' | 'native'). Persisted so
+  // the operator's choice survives re-render. NATIVE is disabled this stage
+  // (requires boot profile — stage 6); flipper is the only fireable backend.
+  let hidBackend = localStorage.getItem('drifter.hid.backend') || 'flipper';
+  // The payload id currently open in the editor (null = new/unsaved). Editor
+  // text + last parse error live on these module vars so a re-render (from a
+  // status poll) does not stomp what the operator is typing.
+  let hidEditorId = null;
+  let hidEditorName = '';
+  let hidEditorScript = '';
+  let hidEditorError = null;   // {error, line} from a 400, or null
+  let hidEditorDirty = false;  // operator typed since last load/save
+  // Payload id pending a delete-confirm (small inline confirm, like flipper).
+  const pendingHidDelete = new Set();
+  let hidAuditOpen = localStorage.getItem('drifter.hid.auditOpen') === '1';
 
   // Per-aircraft short trail history for the enriched radar overlay
   // (Agent A · TASK 1.3). Keyed by ICAO hex, value = list of {lat, lon, ts}.
@@ -2708,6 +2947,15 @@
 
   // Capture IDs in pending-confirm state for inline replay confirm rows.
   const pendingReplays = new Set();
+  // FE-C6: destructive CAN/RF ops require a second confirm tap. Keys:
+  // 'fuzz' (FUZZ ID RANGE) and 'tpms_clear' (clear TPMS assignments).
+  const pendingConfirm = new Set();
+  // Stage-3 arsenal: HIGH-risk marauder ops + sentry arm/disarm each require
+  // a second explicit confirm tap (mirrors the sub-GHz REPLAY confirm-row).
+  // Keys are the marauder op name (e.g. 'deauth_attack') or 'sentry:arm' /
+  // 'sentry:disarm'. The bridge's own classifier/confirm is the authoritative
+  // second gate — the cockpit only surfaces these behind a confirm-row.
+  const pendingArsenalConfirm = new Set();
   // Set to the unix-ms when FORCE SPECTRUM SCAN was last clicked. The button
   // stays in .busy until either the next drifter/rf/spectrum frame lands via
   // WS or this deadline expires (rtl_power sweeps usually finish in 60–90s).
@@ -2739,7 +2987,7 @@
   const AIRCRAFT_FRESH_WINDOW_SEC = 60;
 
   // ── Active tab ─────────────────────────────────────────────────
-  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions','playback','audit','health'];
+  const VALID_TABS = ['sensors','tires','dtcs','trip','rf','ble','wardrive','weather','flipper','adsb','candisc','airspace','sessions','playback','audit','health','kismet','marauder','flycatcher','ghost','alpr','vision','sentry','ducky'];
   const _urlTab = new URLSearchParams(location.search).get('tab');
   let activeTab = (_urlTab && VALID_TABS.includes(_urlTab))
     ? _urlTab
@@ -2784,6 +3032,11 @@
   const SPARK_LEN = 60;
   const gaugeBuf = { coolant: [], voltage: [], rpm: [], speed: [] };
   const gaugeLastTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
+  // Source timestamp (seconds) of the last real value per gauge. Drives
+  // client-side staleness expiry so a frozen needle can never read as live
+  // after a CAN dropout. 0 = never seen.
+  const GAUGE_STALE_SEC = 8;
+  const gaugeValueTs = { coolant: 0, voltage: 0, rpm: 0, speed: 0 };
 
   // ── Hero gauge live-state ───────────────────────────────────────
   // Counts gauges that have received a value (have .live class) and
@@ -2960,6 +3213,10 @@
     if (!tile) return;
     if (typeof value !== 'number' || !isFinite(value)) return;
 
+    // Record the source freshness of this real datum (used by the staleness
+    // sweep). Done before the throttle return so buffered values still count.
+    gaugeValueTs[name] = ts || Date.now() / 1000;
+
     // Throttle to 4Hz max so a high-rate CAN topic doesn't repaint constantly.
     const now = Date.now();
     if (now - gaugeLastTs[name] < 200) {
@@ -2990,6 +3247,7 @@
       else if (value >= cfg.warn) tile.classList.add('warn');
     }
     tile.classList.add('live');
+    everSeenTelemetry = true;
     updateHeroLiveState();
 
     // Needle position
@@ -3033,11 +3291,41 @@
     }
   }
 
+  // Client-side staleness expiry: a gauge whose source value stopped
+  // updating must lose .live and dim within GAUGE_STALE_SEC. We dim the
+  // number (do NOT zero it) and park the needle/ghost — re-arming on the
+  // next real value clears the dim. Runs alongside the poll loop.
+  function sweepGaugeStaleness(){
+    const now = Date.now() / 1000;
+    for (const name in GAUGES){
+      const cfg = GAUGES[name];
+      const tile = document.getElementById(cfg.id);
+      if (!tile) continue;
+      const seenTs = gaugeValueTs[name];
+      if (!seenTs) continue;            // never armed — leave untouched
+      if (now - seenTs > GAUGE_STALE_SEC && tile.classList.contains('live')){
+        tile.classList.remove('live');
+        const valEl = tile.querySelector('.val');
+        if (valEl) valEl.classList.add('dim');
+        updateHeroLiveState();
+      }
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // ALERTS / DTC tile
   // ═══════════════════════════════════════════════════════════════
   const alertsRing = [];   // max 5, newest first
   const ALERT_RING_MAX = 5;
+  // Real-data-only: never invent a "last clear" time. Stamp it only when we
+  // actually observe alerts transition from present → none (a genuine clear
+  // event the running UI witnessed). Null until then → renders as an em-dash.
+  let alertsLastClearTs = null;
+  let alertsPrevActive = 0;
+  // True once any real datum has arrived (a gauge went live, or an alert/DTC
+  // exists). Until then the summary chips show "—" instead of a hard 0 so the
+  // bench/cold-boot state reads as "no data yet" rather than "connected, clear".
+  let everSeenTelemetry = false;
 
   function pushAlert(a){
     // Dedupe by ts+message
@@ -3064,14 +3352,23 @@
     const active = alertsRing.length;
     const crit = alertsRing.filter(a => (a.level||0) >= 3).length;
     const anomalies = alertsRing.filter(isAnomaly).length;
-    document.getElementById('al-active').textContent = active;
-    document.getElementById('al-crit').textContent = crit;
+    // Any real alert/DTC datum counts as telemetry seen.
+    if (active > 0 || dtcList.length > 0) everSeenTelemetry = true;
+    // Show real counts once any data has arrived; "—" on a cold/bench start so
+    // a hard 0 can't be mistaken for "connected and clear".
+    const chip = n => everSeenTelemetry ? String(n) : '—';
+    document.getElementById('al-active').textContent = chip(active);
+    document.getElementById('al-crit').textContent = chip(crit);
     const anomEl = document.getElementById('al-anomaly');
-    if (anomEl) anomEl.textContent = anomalies;
-    document.getElementById('al-dtcs').textContent = dtcList.length;
-    const lastClear = alertsRing.length === 0 ? new Date()
-      .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : '—';
-    document.getElementById('al-last').textContent = lastClear;
+    if (anomEl) anomEl.textContent = chip(anomalies);
+    document.getElementById('al-dtcs').textContent = chip(dtcList.length);
+    // Stamp "last clear" only on a genuine present → none transition.
+    if (alertsPrevActive > 0 && active === 0) {
+      alertsLastClearTs = new Date()
+        .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false});
+    }
+    alertsPrevActive = active;
+    document.getElementById('al-last').textContent = alertsLastClearTs || '—';
 
     const tile = document.getElementById('alerts-tile');
     tile.classList.toggle('crit', crit > 0);
@@ -3172,7 +3469,7 @@
       if (v) v.textContent = val || (on ? 'on' : '—');
     };
     setMod('rtl_433',  !!status.rtl_433_active,  status.rtl_433_active ? 'TRX' : 'idle');
-    setMod('dump1090', !!status.dump1090_active, status.dump1090_active ? 'ADSB' : 'idle');
+    setMod('dump1090', !!status.dump1090_active, status.dump1090_active ? 'ADSB' : (status.dump1090_active == null ? '—' : 'idle'));
     const specAge = cache.rfSpec && cache.rfSpec.ts ? fmtAge(cache.rfSpec.ts) : '—';
     setMod('spectrum', !!(cache.rfSpec && cache.rfSpec.ts), specAge);
     setMod('rfaudio',  !!status.rfaudio_active, status.rfaudio_active ? 'on' : 'idle');
@@ -3294,6 +3591,10 @@
     const bandEl = document.getElementById('spectrum-bandplan');
     const heatWrap = document.getElementById('spectrum-heat-wrap');
     if (!heatCanvas || !waveCanvas) return;
+    // FE-C5: match backing store to displayed width × DPR (heights are
+    // fixed by CSS: wave 50px, heat 22px). Done before any geometry read.
+    fitCanvasDpr(waveCanvas, 50);
+    fitCanvasDpr(heatCanvas, 22);
     if (!bins || !bins.length) {
       if (empty) empty.style.display = '';
       if (heatWrap) heatWrap.style.display = 'none';
@@ -3625,12 +3926,12 @@
     { key: 'run_time',   label: 'Run time',  id: 'PID 0x1F', unit: 's' },
   ];
 
-  // ADS-B radar — rings at 1/3/10/30 km. If no GPS fix yet, falls
-  // back to a Melbourne placeholder FOR VISUALIZATION ONLY, never
-  // persisted/republished. Producer: /api/aircraft/recent (drifter-feeds).
+  // ADS-B radar — rings at 1/3/10/30 km. If no GPS fix yet (or the
+  // snapshot is stale), the scope draws empty with an AWAITING GPS FIX
+  // label and plots no blips — never a fabricated origin.
+  // Producer: /api/aircraft/recent (drifter-feeds).
   const ADSB_RADAR_RANGE_KM = 30;
   const ADSB_RADAR_RINGS = [1, 3, 10, 30];
-  const ADSB_PLACEHOLDER_ORIGIN = { lat: -37.85, lon: 144.96 };
   // Tracks: hex → { trail: [{x,y,t}], firstSeen }. Trail dots fade
   // behind each contact so motion is legible between updates.
   const _adsbRadarState = {
@@ -3687,16 +3988,21 @@
       ctx.fillStyle = `rgba(94,234,212,${alpha.toFixed(3)})`;
       ctx.fill();
     }
-    // Bright leading edge
+    // Bright leading edge — two solid strokes (a wider translucent base under
+    // a bright core) fake the glow without per-frame shadowBlur, which is one
+    // of the most expensive Canvas2D ops on the Pi's limited-GL stack.
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -radius);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(94,234,212,0.35)';
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(0, -radius);
     ctx.lineWidth = 1.6;
-    ctx.strokeStyle = 'rgba(160,255,240,0.9)';
-    ctx.shadowColor = 'rgba(94,234,212,0.9)';
-    ctx.shadowBlur = 12;
+    ctx.strokeStyle = 'rgba(190,255,245,0.95)';
     ctx.stroke();
-    ctx.shadowBlur = 0;
     ctx.restore();
 
     // ── Ping rings ───────────────────────────────────────────────
@@ -3708,20 +4014,58 @@
       const t = (nowMs - p.t0) / PING_MS;
       if (t > 1) { pings.splice(i, 1); continue; }
       const r = 4 + t * 28;
+      const a = 1 - t;
+      // Soft halo + bright core, no per-frame shadowBlur.
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(255,210,140,${(1 - t).toFixed(3)})`;
-      ctx.lineWidth = 1.4;
-      ctx.shadowColor = 'rgba(255,174,66,0.7)';
-      ctx.shadowBlur = 8;
+      ctx.strokeStyle = `rgba(255,174,66,${(a * 0.35).toFixed(3)})`;
+      ctx.lineWidth = 3;
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,210,140,${a.toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
     // Continue animation if anything is moving.
     _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
   }
 
+  // FE-C1: honor OS reduce-motion — the rotating radar sweep is the one
+  // rAF loop that runs continuously, so gate it. The static rings + blips
+  // (renderAdsbRadar) still draw; only the animated beam is suppressed.
+  function prefersReducedMotion(){
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (_) { return false; }
+  }
+  // FE-C5: size a canvas backing store to its displayed CSS size × DPR so
+  // the spectrum + ADS-B scope stay crisp on hi-DPI screens and never
+  // overflow the mobile drawer. Returns true if dimensions changed (caller
+  // may need a full redraw). The render code reads canvas.width/height for
+  // its pixel geometry, so growing the backing store is all that's needed —
+  // CSS keeps the displayed size at 100%. cssH may be omitted to derive it
+  // from the rendered client height (keeps aspect for the square radar).
+  function fitCanvasDpr(canvas, cssH){
+    if (!canvas) return false;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cssW = canvas.clientWidth || canvas.width;
+    const h = cssH != null ? cssH : (canvas.clientHeight || canvas.height);
+    const wantW = Math.max(1, Math.round(cssW * dpr));
+    const wantH = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW; canvas.height = wantH;
+      return true;
+    }
+    return false;
+  }
   function _adsbEnsureSweep(){
+    if (prefersReducedMotion()) {
+      // Clear any beam already drawn and never schedule the loop.
+      const sweep = document.getElementById('adsb-radar-sweep');
+      if (sweep) { const sc = sweep.getContext('2d'); sc.clearRect(0, 0, sweep.width, sweep.height); }
+      if (_adsbRadarState.sweepRaf) { cancelAnimationFrame(_adsbRadarState.sweepRaf); _adsbRadarState.sweepRaf = 0; }
+      return;
+    }
     if (!_adsbRadarState.sweepRaf) {
       _adsbRadarState.sweepRaf = requestAnimationFrame(_adsbDrawSweepFrame);
     }
@@ -3730,6 +4074,13 @@
   function renderAdsbRadar(){
     const canvas = document.getElementById('adsb-radar');
     if (!canvas) return;
+    // FE-C5: square scope — size both stacked canvases to the displayed
+    // box × DPR so the rings/blips and sweep beam share one pixel grid
+    // and stay sharp without overflowing the mobile drawer.
+    const cssSide = canvas.clientWidth || canvas.width;
+    fitCanvasDpr(canvas, cssSide);
+    const sweepCv = document.getElementById('adsb-radar-sweep');
+    if (sweepCv) fitCanvasDpr(sweepCv, cssSide);
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     const cx = w/2, cy = h/2, radius = Math.min(w,h)/2 - 18;
@@ -3813,10 +4164,23 @@
     const snap = cache.aircraft || {};
     const list = Array.isArray(snap.aircraft) ? snap.aircraft : [];
     const oSnap = snap.origin || {};
-    const oLat = oSnap.lat != null ? oSnap.lat : ADSB_PLACEHOLDER_ORIGIN.lat;
-    const oLon = oSnap.lon != null ? oSnap.lon : ADSB_PLACEHOLDER_ORIGIN.lon;
     const now = Date.now() / 1000;
     const nowMs = performance.now();
+
+    // ── Freshness + real-origin gate ─────────────────────────────
+    // Plot ONLY against a real GPS origin from a fresh snapshot. No
+    // fabricated/placeholder origin, ever. Stale or no fix → empty
+    // scope (rings already drawn above) + AWAITING GPS FIX, no blips.
+    const fresh = snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
+    if (!fresh || oSnap.lat == null || oSnap.lon == null) {
+      ctx.fillStyle = 'rgba(245,245,245,0.7)';
+      ctx.font = '600 11px "Major Mono Display", "JetBrains Mono", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('AWAITING GPS FIX', cx, cy + radius * 0.45);
+      return;
+    }
+    const oLat = oSnap.lat;
+    const oLon = oSnap.lon;
 
     _adsbRadarState.hits = [];
     const seenHexes = new Set();
@@ -4037,7 +4401,7 @@
         </span>
         <span class="ghost-btn crit" id="tpms-clear-learn" role="button" tabindex="0">CLEAR LEARN</span>
         <span class="ghost-btn crit" id="tpms-clear-assignments" role="button" tabindex="0" title="Wipe per-corner assignment file">CLEAR ASSIGNMENTS</span>
-      </div>`;
+      </div>${pendingConfirm.has('tpms_clear') ? `<div class="confirm-row high-risk-confirm" data-confirm-row="tpms_clear"><span class="high-risk-badge">TPMS CLEAR</span>Wipe all per-corner sensor assignments? <span class="ghost-btn crit" data-confirm-tpms-clear role="button" tabindex="0">CONFIRM CLEAR</span><span class="ghost-btn" data-cancel-confirm="tpms_clear" role="button" tabindex="0">CANCEL</span></div>` : ''}`;
 
       // Per-sensor harvest table: shows each sensor ID seen since
       // HARVEST start, last pressure/temp/RSSI, plus a corner-assignment
@@ -4086,7 +4450,7 @@
       const list = Array.isArray(snap.codes) ? snap.codes
                  : Array.isArray(snap) ? snap : [];
       if (!list.length) {
-        return `<div class="section-head"><span>diagnostic codes</span><span class="tag">/api/dtcs/recent</span></div>` +
+        return `<div class="section-head"><span>diagnostic codes</span><span class="tag">diagnostic ring</span></div>` +
           emptyState('◇', 'No stored DTCs. Diagnostic ring is clean.');
       }
       const rows = list.map(d => {
@@ -4131,28 +4495,43 @@
       const out = [];
       out.push(`<div class="section-head"><span>rf · pipeline</span><span class="tag">drifter-rf · rfaudio</span></div>`);
       const modKv = (k, v) => `<div class="kv"><div class="k">${esc(k)}</div><div class="v ${v && v !== '—' ? 'teal' : 'dim'}">${esc(v || '—')}</div></div>`;
-      out.push(modKv('rtl_433',  status.rtl_433_active  ? 'active' : 'idle'));
-      out.push(modKv('dump1090', status.dump1090_active ? 'active' : 'idle'));
-      out.push(modKv('rfaudio',  status.rfaudio_active  ? 'active' : 'idle'));
+      // Build the body separately so the empty-state can fire honestly.
+      // The earlier `out.join('') || emptyState(...)` was unreachable
+      // because the section-head above always made `out` truthy (FE-B4).
+      const body = [];
+      body.push(modKv('rtl_433',  status.rtl_433_active  ? 'active' : 'idle'));
+      // dump1090: render `—` until an independent flag arrives (R6 — no
+      // mirror-faking from rtl_433). null/undefined → `—`, false → idle.
+      body.push(modKv('dump1090', status.dump1090_active ? 'active' : (status.dump1090_active == null ? '—' : 'idle')));
+      body.push(modKv('rfaudio',  status.rfaudio_active  ? 'active' : 'idle'));
       if (sp.ts) {
-        out.push(modKv('spectrum', `${fmtAge(sp.ts)} ago`));
+        body.push(modKv('spectrum', `${fmtAge(sp.ts)} ago`));
         const strongest = sp.strongest_signal || {};
         if (strongest.freq != null) {
           const p = strongest.power_db != null ? strongest.power_db : strongest.power;
-          out.push(modKv('peak', `${strongest.freq} MHz · ${p != null ? p+' dB' : '—'}`));
+          body.push(modKv('peak', `${strongest.freq} MHz · ${p != null ? p+' dB' : '—'}`));
         }
       }
       const emerBands = (emer.bands && Object.keys(emer.bands)) || [];
       if (emerBands.length) {
-        out.push(`<div class="section-head" style="margin-top:6px"><span>emergency bands</span><span class="tag">${emerBands.length} watched</span></div>`);
+        body.push(`<div class="section-head" style="margin-top:6px"><span>emergency bands</span><span class="tag">${emerBands.length} watched</span></div>`);
         for (const k of emerBands) {
           const entry = emer.bands[k] || {};
           const dbm = entry.power_db != null ? entry.power_db
                     : entry.dbm != null ? entry.dbm : null;
-          out.push(`<div class="kv"><div class="k">${esc(k)}</div><div class="v">${dbm != null ? dbm.toFixed(1)+' dBm' : '—'}</div></div>`);
+          body.push(`<div class="kv"><div class="k">${esc(k)}</div><div class="v">${dbm != null ? dbm.toFixed(1)+' dBm' : '—'}</div></div>`);
         }
       }
-      return out.join('') || emptyState('⊚', 'RF service idle. Plug in RTL-SDR or start drifter-rf.');
+      // "Meaningful" body = any live pipeline flag, spectrum data, or
+      // watched emergency bands. The 3 always-present idle mod rows alone
+      // do not count — when everything is idle/empty, show the friendly
+      // empty state instead of a wall of `idle`.
+      const meaningful = !!(status.rtl_433_active || status.dump1090_active ||
+                            status.rfaudio_active || sp.ts || emerBands.length);
+      if (meaningful) {
+        return out.concat(body).join('');
+      }
+      return out.join('') + emptyState('⊚', 'RF service idle. Plug in RTL-SDR or start drifter-rf.');
     },
 
     ble(){
@@ -4401,16 +4780,81 @@
       const rfa = cache.rfaudioStatus || {};
       const activeFreq = rfa.freq_mhz;
       const bands = Array.isArray(rfa.bands) && rfa.bands.length ? rfa.bands : EMERGENCY_BANDS_FALLBACK;
-      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · quick tune</span><span class="tag">${rfa.state || 'idle'}${activeFreq ? ' · '+activeFreq+' MHz' : ''}</span></div>`);
+      // Honest hardware gating (FE-B2). BE-2 merges probe presence into
+      // /api/rfaudio/status. Treat an *absent* presence flag as "unknown
+      // → assume present" so a stale/old backend doesn't dim everything;
+      // only an explicit `false` disables controls.
+      const sdrAbsent     = rfa.sdr_present === false;
+      const speakerAbsent = rfa.speaker_present === false;
+      const sdrAction     = rfa.sdr_action || 'plug in RTL-SDR';
+      const speakerAction = rfa.speaker_action || 'plug in USB audio dongle';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · quick tune</span><span class="tag">${esc(rfa.state || 'idle')}${activeFreq ? ' · '+activeFreq+' MHz' : ''}</span></div>`);
+
+      // FE-B2 — surface a backend error as a crit banner; cleared when
+      // the next clean status carries no error.
+      if (rfa.error) {
+        out.push(`<div class="rfa-crit-banner crit">⚠ ${esc(String(rfa.error))}</div>`);
+      }
+
+      // FE-B3 — compact NOW readout + scan progress when scanning.
+      const nowParts = [];
+      if (rfa.state === 'playing' || rfa.state === 'scanning') {
+        if (rfa.freq_mhz != null) nowParts.push(`${rfa.freq_mhz} MHz`);
+        if (rfa.mode) nowParts.push(esc(rfa.mode));
+      }
+      let scanProg = '';
+      if (rfa.state === 'scanning') {
+        // Match current freq against the band list for a friendly name.
+        const cur = Array.isArray(rfa.bands)
+          ? rfa.bands.find(b => activeFreq != null && Math.abs((b.freq_mhz || 0) - activeFreq) < 0.01)
+          : null;
+        if (cur && cur.name) scanProg += ` · ${esc(cur.name)}`;
+        if (rfa.scan_index != null && rfa.scan_total != null) {
+          scanProg += ` · ${rfa.scan_index + 1}/${rfa.scan_total}`;
+        }
+      }
+      out.push(`<div class="rfa-now">NOW ${nowParts.length ? nowParts.join(' ') : '—'}${scanProg}</div>`);
+
       const bandBtns = bands.map(b => {
         const active = activeFreq != null && Math.abs((b.freq_mhz || 0) - activeFreq) < 0.01;
-        const cls = active ? 'ghost-btn live band-btn' : 'ghost-btn band-btn';
-        return `<span class="${cls}" data-rfaudio-band data-freq="${b.freq_mhz}" data-mode="${esc(b.mode || 'nfm')}" role="button" tabindex="0">
+        let cls = active ? 'ghost-btn live band-btn' : 'ghost-btn band-btn';
+        const dis = sdrAbsent || speakerAbsent;
+        if (dis) cls += ' dim';
+        return `<span class="${cls}" data-rfaudio-band data-freq="${b.freq_mhz}" data-mode="${esc(b.mode || 'nfm')}" role="button" tabindex="0"${dis ? ' aria-disabled="true"' : ''}>
           ${active ? '<span class="dot"></span>' : ''}${esc(b.name)}<span class="freq">${b.freq_mhz} MHz · ${esc(b.mode || 'nfm')}</span>
         </span>`;
       }).join('');
       out.push(`<div class="btn-grid">${bandBtns}</div>`);
-      out.push(`<div class="btn-row"><span class="ghost-btn crit" id="rfaudio-band-stop" role="button" tabindex="0">STOP</span></div>`);
+      if (sdrAbsent) {
+        out.push(emptyState('∿', sdrAction));
+      } else if (speakerAbsent) {
+        out.push(emptyState('🔇', speakerAction));
+      }
+
+      // FE-B2 — manual tune sub-panel. Numeric freq + mode + gain (auto=0).
+      const tuneDis = sdrAbsent || speakerAbsent;
+      out.push(`<div class="section-head" style="margin-top:8px"><span>rfaudio · manual tune</span><span class="tag">24–1766 MHz</span></div>`);
+      out.push(`<div class="rfa-manual">
+        <input type="number" id="rfa-freq" min="24" max="1766" step="0.001" placeholder="MHz" aria-label="frequency MHz">
+        <select id="rfa-mode" aria-label="mode">
+          <option value="nfm">nfm</option>
+          <option value="wfm">wfm</option>
+          <option value="fm">fm</option>
+          <option value="am">am</option>
+          <option value="usb">usb</option>
+          <option value="lsb">lsb</option>
+          <option value="raw">raw</option>
+        </select>
+        <input type="number" id="rfa-gain" min="0" max="49.6" step="0.1" value="0" placeholder="gain (0=auto)" aria-label="gain">
+      </div>`);
+      out.push(`<div class="btn-row">
+        <span class="ghost-btn${tuneDis ? ' dim' : ''}" id="rfaudio-manual-tune" role="button" tabindex="0"${tuneDis ? ' aria-disabled="true"' : ''}>TUNE</span>
+        <span class="ghost-btn${speakerAbsent ? ' dim' : ''}" id="rfaudio-test-tone" role="button" tabindex="0"${speakerAbsent ? ' aria-disabled="true"' : ''}>TEST TONE</span>
+        <span class="ghost-btn" id="rfaudio-refresh-bands" role="button" tabindex="0">REFRESH BANDS</span>
+        <span class="ghost-btn crit" id="rfaudio-band-stop" role="button" tabindex="0">STOP</span>
+      </div>`);
+      // Shared-SDR note — always visible (FE-B3).
+      out.push(`<div class="rfa-note">Starting audio pauses TPMS/spectrum (shared SDR)</div>`);
       return out.join('');
     },
 
@@ -4526,6 +4970,11 @@
         </select>
         <span class="ghost-btn crit" id="candisc-fuzz-range" role="button" tabindex="0" title="Brute-force a range of CAN IDs and log replies">FUZZ ID RANGE</span>
       </div>`);
+      // FE-C6: FUZZ floods the bus — require a second confirm tap before
+      // any command leaves the UI (mirrors the sub-GHz REPLAY confirm row).
+      if (pendingConfirm.has('fuzz')) {
+        out.push(`<div class="confirm-row high-risk-confirm" data-confirm-row="fuzz"><span class="high-risk-badge">CAN FUZZ</span>Brute-force the selected CAN ID range? <span class="ghost-btn crit" data-confirm-fuzz role="button" tabindex="0">CONFIRM FUZZ</span><span class="ghost-btn" data-cancel-confirm="fuzz" role="button" tabindex="0">CANCEL</span></div>`);
+      }
 
       // Results table — sortable by header click (lightweight, no library).
       out.push(`<div class="section-head" style="margin-top:8px"><span>results</span><span class="tag">${discoveries.length} run${discoveries.length === 1 ? '' : 's'} · last ${Math.min(8, discoveries.length)}</span></div>`);
@@ -4594,7 +5043,7 @@
       </div>`);
       out.push(`<iframe id="tar1090-frame" src="http://${location.hostname}:8504/"
         sandbox="allow-scripts allow-same-origin allow-popups"
-        style="width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
+        style="width:100%; height:calc(100dvh - 220px); min-height:480px; border:1px solid var(--glass-stroke); border-radius:var(--r-sm); background:rgba(0,0,0,0.35)"
         loading="lazy"></iframe>`);
       // Defer the probe — if it fails, flip the cache flag and re-render.
       setTimeout(probeTar1090, 0);
@@ -4606,7 +5055,7 @@
       const out = [];
       out.push(`<div class="section-head"><span>sessions · recent</span><span class="tag">${list.length} of last 10</span></div>`);
       if (!list.length) {
-        out.push(emptyState('∿', 'No sessions yet. Drives auto-record when CAN traffic begins (ignition ON). drifter-logger writes one .jsonl per drive to /opt/drifter/state/sessions/.'));
+        out.push(emptyState('∿', 'No sessions yet. Drives auto-record when CAN traffic begins (ignition ON). One log per drive.'));
       } else {
         for (const s of list) {
           const startTs = s.start_ts || s.started_at || s.ts;
@@ -4695,7 +5144,7 @@
       const targets = Array.isArray(a.recent_targets) ? a.recent_targets.slice(0, 5) : [];
       out.push(`<div class="section-head" style="margin-top:8px"><span>recent targets</span><span class="tag">last ${targets.length}</span></div>`);
       if (!targets.length) {
-        out.push(emptyState('∿', 'ALLOWLIST EMPTY OR AUDIT IDLE — edit /opt/drifter/etc/audit_targets.yaml'));
+        out.push(emptyState('∿', 'No audit targets configured.'));
       } else {
         for (const t of targets) {
           const typ = (t.type || '').toLowerCase();
@@ -4718,7 +5167,7 @@
       const sw = st.system_watchdog || {};
       const sys = sw.system || {};
       const out = [];
-      out.push(`<div class="section-head"><span>hardware health</span><span class="tag">composed · /healthz + /api/state</span></div>`);
+      out.push(`<div class="section-head"><span>hardware health</span><span class="tag">system health</span></div>`);
       // Top chip row
       const overall = sw.overall || hz.status || '—';
       const chipCls = overall === 'ok' || overall === 'online' ? 'cyan' : (overall === 'degraded' ? 'red' : 'amber');
@@ -4739,14 +5188,14 @@
       rows.push({ glyph: '⌁', name: 'usb tree', meta: `${usbCount} known devices · rtl-sdr ${sdrOn ? 'on' : 'off'} · mic ${mic.detected ? 'on' : 'off'} · bt ${bt.detected ? 'on' : 'off'}`, status: usbCount ? 'ok' : 'warn', detail: JSON.stringify({rtl_sdr: sdr, microphone: mic, bluetooth: bt}, null, 2) });
       // RTL-SDR row
       const rfStatus = cache.rfStatus || st.rf_status || {};
-      rows.push({ glyph: '∿', name: 'rtl-sdr', meta: `${rfStatus.state || 'idle'} · gain ${sdr.gain != null ? sdr.gain : 'auto'} · sr ${sdr.sample_rate || '2.4M'} · f ${sdr.frequency_mhz != null ? sdr.frequency_mhz.toFixed(2)+' MHz' : '—'}`, status: rfStatus.state === 'online' ? 'ok' : 'warn', detail: JSON.stringify(rfStatus, null, 2) });
+      rows.push({ glyph: '∿', name: 'rtl-sdr', meta: `${rfStatus.state || 'idle'} · gain ${sdr.gain != null ? sdr.gain : '—'} · sr ${sdr.sample_rate || '—'} · f ${sdr.frequency_mhz != null ? sdr.frequency_mhz.toFixed(2)+' MHz' : '—'}`, status: rfStatus.state === 'online' ? 'ok' : 'warn', detail: JSON.stringify(rfStatus, null, 2) });
       // Flipper row
       const fh = cache.flipperHardware || st.flipper_hardware || {};
       const fs = cache.flipperStatus   || st.flipper_status   || {};
       rows.push({ glyph: '⌬', name: 'flipper', meta: `fw ${esc(fs.firmware || fh.firmware || '—')} · batt ${fh.battery_percent != null ? fh.battery_percent+'%' : '—'} · module ${esc(fh.module || 'none')}`, status: fs.state === 'connected' ? 'ok' : 'warn', detail: JSON.stringify({status: fs, hardware: fh}, null, 2) });
       // CAN row
       const candisc = cache.canDiscovery || st.can_discovery_status || {};
-      rows.push({ glyph: '◈', name: 'can bus', meta: `${esc(candisc.state || 'unknown')} · ${candisc.bitrate || '500k'} · err ${candisc.error_count != null ? candisc.error_count : 0} · last ${candisc.last_frame_ts ? fmtAge(candisc.last_frame_ts)+' ago' : '—'}`, status: candisc.state === 'active' ? 'ok' : 'warn', detail: JSON.stringify(candisc, null, 2) });
+      rows.push({ glyph: '◈', name: 'can bus', meta: `${esc(candisc.state || 'unknown')} · ${candisc.bitrate || '—'} · err ${candisc.error_count != null ? candisc.error_count : 0} · last ${candisc.last_frame_ts ? fmtAge(candisc.last_frame_ts)+' ago' : '—'}`, status: candisc.state === 'active' ? 'ok' : 'warn', detail: JSON.stringify(candisc, null, 2) });
       // GPS row — pull from state if present
       const gps = st.gps || st.gps_fix || {};
       const gpsFix = gps.fix || gps.mode || (gps.lat != null ? '3d' : 'none');
@@ -4772,6 +5221,452 @@
         </div>
         <div class="health-popover" id="health-pop-${i}" hidden>${esc(r.detail)}</div>`);
       }
+      // ── Hardware affordances (FE-B1) — from /api/hardware. Renders the
+      // backend's actionable summary + probe rows. Probes with
+      // connected:false stay visible as `missing` + remediation; never
+      // hidden, never faked.
+      const hw = cache.hardware || {};
+      const summary = Array.isArray(hw.summary) ? hw.summary : [];
+      const probes = (hw.probes && typeof hw.probes === 'object') ? hw.probes : {};
+      const hwRows = [];
+      const STATUS_OK = { ok: 1, missing: 1, warn: 1 };
+      for (const s of summary) {
+        if (!s || !s.item) continue;
+        const status = STATUS_OK[s.status] ? s.status : 'warn';
+        hwRows.push({ item: s.item, status, detail: s.detail || '', action: s.action || '' });
+      }
+      // Probe rows not already covered by summary — keep disconnected ones visible.
+      const summaryItems = new Set(summary.map(s => s && s.item).filter(Boolean));
+      for (const [dev, p] of Object.entries(probes)) {
+        if (summaryItems.has(dev) || !p || typeof p !== 'object') continue;
+        const connected = !!p.connected;
+        hwRows.push({ item: dev, status: connected ? 'ok' : 'missing',
+                      detail: p.detail || '', action: connected ? '' : (p.action || '') });
+      }
+      if (hwRows.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>hardware affordances</span><span class="tag">${hwRows.length} probe(s)</span></div>`);
+        for (const hr of hwRows) {
+          out.push(`<div class="health-row">
+            <div class="h-glyph">∷</div>
+            <div>
+              <div class="h-name">${esc(hr.item)}</div>
+              <div class="h-meta">${esc(hr.detail || '—')}</div>
+            </div>
+            <div class="h-status ${hr.status}">${esc(hr.status)}</div>
+          </div>` + (hr.action ? `<div class="h-action">${esc(hr.action)}</div>` : ''));
+        }
+      }
+      return out.join('');
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // ARSENAL renderers (stage 1 — read-only). Each is driven by a
+    // cache.<tool> populated by a loadX() that safeFetch()es the BE-2
+    // GET route. ALWAYS falls back to emptyState() when data is empty
+    // or absent — never fabricates tool status or demo rows.
+    // No start/stop controls this stage (those land in stage 3).
+    // ═══════════════════════════════════════════════════════════════
+
+    // KISMET — Wi-Fi + BLE device discovery (/api/kismet/devices)
+    kismet(){
+      const k = cache.kismet || {};
+      const wifi = Array.isArray(k.wifi) ? k.wifi : [];
+      const ble = Array.isArray(k.ble) ? k.ble : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>kismet</span><span class="tag">${wifi.length} wifi · ${ble.length} ble</span></div>`);
+      if (!wifi.length && !ble.length) {
+        return out.join('') + emptyState('▦', 'No Kismet devices. Start drifter-kismet (Wi-Fi/BLE capture) to populate this list.');
+      }
+      if (wifi.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>wifi</span><span class="tag">last ${Math.min(wifi.length,20)}</span></div>`);
+        for (const d of wifi.slice(0, 20)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">▦</div>
+            <div class="name">${esc(d.ssid || d.bssid || d.mac || '(hidden)')}<span class="sub">${esc(d.bssid || d.mac || '')}${d.channel != null ? ' · ch '+esc(d.channel) : ''}${d.signal != null ? ' · '+esc(d.signal)+' dBm' : ''}</span></div>
+            <div class="ts">${d.ts ? fmtAge(d.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      if (ble.length) {
+        out.push(`<div class="section-head" style="margin-top:8px"><span>ble</span><span class="tag">last ${Math.min(ble.length,20)}</span></div>`);
+        for (const d of ble.slice(0, 20)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">▦</div>
+            <div class="name">${esc(d.name || d.mac || d.addr || '(unknown)')}<span class="sub">${esc(d.mac || d.addr || '')}${d.rssi != null ? ' · '+esc(d.rssi)+' dBm' : ''}</span></div>
+            <div class="ts">${d.ts ? fmtAge(d.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // MARAUDER — ESP32 Marauder status (/api/marauder/status)
+    marauder(){
+      const m = cache.marauder || {};
+      const state = m.state || '';
+      const out = [];
+      out.push(`<div class="section-head"><span>marauder</span><span class="tag">esp32</span></div>`);
+      const noHw = !state || state === 'no_hardware';
+      // Honest empty when no hardware / no status at all — but still render the
+      // control surface (aria-disabled) so the operator sees what plugging in
+      // the ESP32 would enable, never a fabricated "ready".
+      if (!noHw) {
+        out.push(`<div class="kv"><div class="k">State</div><div class="v ${state === 'idle' || state === 'scanning' || state === 'ready' ? 'teal' : 'dim'}">${esc(state)}</div></div>`);
+        if (m.mode != null) out.push(`<div class="kv"><div class="k">Mode</div><div class="v">${esc(m.mode)}</div></div>`);
+        if (m.channel != null) out.push(`<div class="kv"><div class="k">Channel</div><div class="v">${esc(m.channel)}</div></div>`);
+        if (m.aps != null) out.push(`<div class="kv"><div class="k">APs</div><div class="v">${esc(m.aps)}</div></div>`);
+        if (m.stations != null) out.push(`<div class="kv"><div class="k">Stations</div><div class="v">${esc(m.stations)}</div></div>`);
+        if (m.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(m.ts)} ago</div></div>`);
+      }
+      // ── LOW-tier recon controls (scan/sniff/stop) — POST /api/marauder/command
+      // {op}. The marauder_bridge classifier is the authoritative second gate;
+      // the cockpit only relays these allowlisted op names.
+      const dis = noHw ? ' aria-disabled="true"' : '';
+      const disTitle = noHw ? ' title="connect ESP32 marauder"' : '';
+      out.push(`<div class="section-head" style="margin-top:8px"><span>recon</span><span class="tag">low-risk</span></div>`);
+      out.push(`<div class="btn-row">
+        <span class="ghost-btn" data-marauder-op="scan_ap"${dis}${disTitle} role="button" tabindex="0">SCAN AP</span>
+        <span class="ghost-btn" data-marauder-op="scan_sta"${dis}${disTitle} role="button" tabindex="0">SCAN STA</span>
+        <span class="ghost-btn" data-marauder-op="scan_probes"${dis}${disTitle} role="button" tabindex="0">SNIFF PROBES</span>
+        <span class="ghost-btn" data-marauder-op="deauth_detect"${dis}${disTitle} role="button" tabindex="0">DEAUTH DETECT</span>
+        <span class="ghost-btn crit" data-marauder-op="stop"${dis}${disTitle} role="button" tabindex="0">STOP</span>
+      </div>`);
+      if (noHw) {
+        out.push(`<div class="kv"><div class="k">Hardware</div><div class="v dim">connect ESP32 marauder</div></div>`);
+      }
+      // ── HIGH-risk ops — never one-click. Each arms an inline confirm-row
+      // (mirrors the sub-GHz REPLAY confirm). The bridge still demands its own
+      // confirm-token round-trip; this is purely the cockpit-side guard so a
+      // single tap can't launch deauth/beacon-spam/evil-portal.
+      out.push(`<div class="section-head" style="margin-top:8px"><span>active attack</span><span class="tag high">high-risk · confirm</span></div>`);
+      const HIGH = [
+        ['deauth_attack', 'DEAUTH ATTACK'],
+        ['beacon_spam_random', 'BEACON SPAM (RANDOM)'],
+        ['beacon_spam_rickroll', 'BEACON SPAM (RICKROLL)'],
+        ['evilportal_start', 'EVIL PORTAL'],
+      ];
+      const arm = noHw ? ' aria-disabled="true"' : '';
+      for (const [op, label] of HIGH) {
+        if (pendingArsenalConfirm.has(op)) {
+          out.push(`<div class="confirm-row high-risk-confirm" data-confirm-row="${esc(op)}"><span class="high-risk-badge">HIGH RISK</span><span class="high-risk-cmd">${esc(label)}</span> — bridge will demand its own confirm token. <span class="ghost-btn crit" data-confirm-marauder="${esc(op)}" role="button" tabindex="0">CONFIRM</span><span class="ghost-btn" data-cancel-arsenal="${esc(op)}" role="button" tabindex="0">CANCEL</span></div>`);
+        } else {
+          out.push(`<div class="btn-row"><span class="ghost-btn crit" data-marauder-arm="${esc(op)}"${arm}${disTitle} role="button" tabindex="0">${esc(label)}</span></div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // FLYCATCHER — aircraft / IMSI-catcher airspace (/api/flycatcher/aircraft)
+    flycatcher(){
+      const f = cache.flycatcher || {};
+      const aircraft = Array.isArray(f.aircraft) ? f.aircraft : [];
+      const classified = Array.isArray(f.classified) ? f.classified : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>flycatcher</span><span class="tag">${aircraft.length} ac · ${classified.length} classified</span></div>`);
+      if (!aircraft.length && !classified.length) {
+        return out.join('') + emptyState('☎', 'No fly-catcher data. Start drifter-fly-catcher to classify airspace activity.');
+      }
+      const rows = classified.length ? classified : aircraft;
+      for (const a of rows.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">☎</div>
+          <div class="name">${esc(a.callsign || a.icao || a.hex || a.id || '(unknown)')}<span class="sub">${esc(a.classification || a.type || '')}${a.altitude != null ? ' · '+esc(a.altitude)+' ft' : ''}${a.distance_km != null ? ' · '+esc(a.distance_km)+' km' : ''}</span></div>
+          <div class="ts">${a.ts ? fmtAge(a.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // GHOST — tracker / stingray / ALPR / RF aggregation (/api/ghost/status)
+    ghost(){
+      const g = cache.ghost || {};
+      const trackers = Array.isArray(g.trackers) ? g.trackers : [];
+      const stingray = Array.isArray(g.stingray) ? g.stingray : [];
+      const alpr = Array.isArray(g.alpr) ? g.alpr : [];
+      const rf = Array.isArray(g.rf) ? g.rf : [];
+      const total = trackers.length + stingray.length + alpr.length + rf.length;
+      const out = [];
+      out.push(`<div class="section-head"><span>ghost</span><span class="tag">${total} signals</span></div>`);
+      if (!g.status && !total) {
+        return out.join('') + emptyState('◬', 'No ghost-protocol data. No drifter-ghost service is running on this node yet.');
+      }
+      if (g.status) out.push(`<div class="kv"><div class="k">Status</div><div class="v">${esc(g.status)}</div></div>`);
+      const groups = [['trackers', trackers], ['stingray', stingray], ['alpr', alpr], ['rf', rf]];
+      for (const [label, arr] of groups) {
+        if (!arr.length) continue;
+        out.push(`<div class="section-head" style="margin-top:8px"><span>${label}</span><span class="tag">${arr.length}</span></div>`);
+        for (const x of arr.slice(0, 15)) {
+          out.push(`<div class="feed-row">
+            <div class="icon">◬</div>
+            <div class="name">${esc(x.name || x.id || x.plate || x.mac || x.label || '(signal)')}<span class="sub">${esc(x.detail || x.type || '')}</span></div>
+            <div class="ts">${x.ts ? fmtAge(x.ts) : ''}</div>
+          </div>`);
+        }
+      }
+      return out.join('');
+    },
+
+    // ALPR — license plate reads (/api/alpr/plates)
+    alpr(){
+      const a = cache.alpr || {};
+      const plates = Array.isArray(a.plates) ? a.plates : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>alpr</span><span class="tag">${plates.length} plates</span></div>`);
+      if (!plates.length) {
+        return out.join('') + emptyState('▢', 'No plate reads. Camera/ALPR model absent or drifter-alpr idle.');
+      }
+      for (const p of plates.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">▢</div>
+          <div class="name">${esc(p.plate || '(unread)')}<span class="sub">${p.confidence != null ? 'conf '+esc(p.confidence) : ''}</span></div>
+          <div class="ts">${p.ts ? fmtAge(p.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // VISION — object detection (/api/vision/status)
+    vision(){
+      const v = cache.vision || {};
+      const objects = Array.isArray(v.objects) ? v.objects : [];
+      const out = [];
+      out.push(`<div class="section-head"><span>vision</span><span class="tag">${objects.length} objects</span></div>`);
+      if (!v.status && !objects.length) {
+        return out.join('') + emptyState('◉', 'No vision data. Camera absent or drifter-vision idle.');
+      }
+      if (v.status) out.push(`<div class="kv"><div class="k">Status</div><div class="v ${v.status === 'online' || v.status === 'active' ? 'teal' : 'dim'}">${esc(v.status)}</div></div>`);
+      if (!objects.length) {
+        return out.join('') + emptyState('◉', 'Vision online but no objects detected.');
+      }
+      out.push(`<div class="section-head" style="margin-top:8px"><span>objects</span><span class="tag">last ${Math.min(objects.length,30)}</span></div>`);
+      for (const o of objects.slice(0, 30)) {
+        out.push(`<div class="feed-row">
+          <div class="icon">◉</div>
+          <div class="name">${esc(o.label || o.cls || o.name || '(object)')}<span class="sub">${o.confidence != null ? 'conf '+esc(o.confidence) : ''}</span></div>
+          <div class="ts">${o.ts ? fmtAge(o.ts) : ''}</div>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // SENTRY — motion/tilt sentry (/api/sentry/status) — status display only
+    sentry(){
+      const s = cache.sentry || {};
+      const out = [];
+      out.push(`<div class="section-head"><span>sentry</span><span class="tag">guard</span></div>`);
+      const known = s.armed != null || s.ts != null;
+      if (!known) {
+        out.push(emptyState('◈', 'No sentry status. Start drifter-sentry to monitor for tamper/motion.'));
+      } else {
+        out.push(`<div class="kv"><div class="k">Armed</div><div class="v ${s.armed ? 'teal' : 'dim'}">${s.armed ? 'armed' : 'disarmed'}</div></div>`);
+        if (s.threshold_g != null) out.push(`<div class="kv"><div class="k">Threshold</div><div class="v">${esc(s.threshold_g)} g</div></div>`);
+        if (s.auto_arm != null) out.push(`<div class="kv"><div class="k">Auto-arm</div><div class="v">${s.auto_arm ? 'on' : 'off'}</div></div>`);
+        if (s.ts != null) out.push(`<div class="kv"><div class="k">Updated</div><div class="v">${fmtAge(s.ts)} ago</div></div>`);
+      }
+      // ── ARM / DISARM via the confirm-row pattern → POST /api/sentry/command
+      // {action}. State is NOT flipped optimistically; the next /api/sentry/status
+      // poll reconciles the Armed line against the bridge's retained status.
+      out.push(`<div class="section-head" style="margin-top:8px"><span>guard control</span><span class="tag">confirm</span></div>`);
+      const dis = known ? '' : ' aria-disabled="true"';
+      const disTitle = known ? '' : ' title="start drifter-sentry first"';
+      const arm = pendingArsenalConfirm.has('sentry:arm');
+      const disarm = pendingArsenalConfirm.has('sentry:disarm');
+      if (arm) {
+        out.push(`<div class="confirm-row" data-confirm-row="sentry:arm"><span class="tx-badge">SENTRY</span>Arm the motion/tilt guard? <span class="ghost-btn live" data-confirm-sentry="arm" role="button" tabindex="0">CONFIRM ARM</span><span class="ghost-btn" data-cancel-arsenal="sentry:arm" role="button" tabindex="0">CANCEL</span></div>`);
+      } else if (disarm) {
+        out.push(`<div class="confirm-row" data-confirm-row="sentry:disarm"><span class="tx-badge">SENTRY</span>Disarm the guard? <span class="ghost-btn live" data-confirm-sentry="disarm" role="button" tabindex="0">CONFIRM DISARM</span><span class="ghost-btn" data-cancel-arsenal="sentry:disarm" role="button" tabindex="0">CANCEL</span></div>`);
+      } else {
+        out.push(`<div class="btn-row">
+          <span class="ghost-btn" data-sentry-arm="arm"${dis}${disTitle} role="button" tabindex="0">ARM</span>
+          <span class="ghost-btn crit" data-sentry-arm="disarm"${dis}${disTitle} role="button" tabindex="0">DISARM</span>
+        </div>`);
+      }
+      return out.join('');
+    },
+
+    // DUCKY — USB Rubber Ducky / BadUSB (Stage 5 — FLIPPER backend).
+    // ARM → CONFIRM → RUN. NOTHING is typed by this panel: every fire goes
+    // through POST /api/hid/command and the drifter-hid service's own
+    // ARM/CONFIRM gate (and, on the flipper path, the bridge HIGH-risk gate).
+    // REAL-DATA: readiness/armed/injected come ONLY from /api/hid/status —
+    // never claimed optimistically. NATIVE backend is disabled this stage
+    // (requires a boot profile — stage 6); we read dr_mode and refuse.
+    ducky(){
+      const st = cache.hidStatus;            // null until backend answers
+      const native = (st && st.native) || {};
+      const flip = (st && st.flipper) || {};
+      const armed = (st && st.armed) || null;
+      const payloads = (cache.hidPayloads && Array.isArray(cache.hidPayloads))
+        ? cache.hidPayloads
+        : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads : []);
+      const out = [];
+
+      // No backend / status route not present yet → honest empty state.
+      if (st == null) {
+        out.push(`<div class="section-head"><span>hid · inject</span><span class="tag">drifter-hid · badusb</span></div>`);
+        out.push(emptyState('⌨', 'HID inject service not responding. Start drifter-hid (foot mode) to manage Rubber Ducky / BadUSB payloads.'));
+        return out.join('');
+      }
+
+      out.push(`<div class="section-head"><span>hid · inject</span><span class="tag">drifter-hid · badusb</span></div>`);
+
+      // ── Backend selector — NATIVE (Pi) | FLIPPER ──
+      // Stage 6: NATIVE becomes SELECTABLE only when /api/hid/status reports
+      // native.ready === true (post `drifter hid enable-native` + reboot). The
+      // UI NEVER edits boot config or flips dr_mode — it only reflects status.
+      const drMode = native.dr_mode || 'unknown';
+      const nativeReady = native.ready === true;     // strict: only the backend's truth
+      const nativeDisabled = !nativeReady;
+      const flipReady = !!(flip.connected && flip.badusb_ready);
+      const flipDisabled = !flipReady;
+      // Live reason for the NATIVE segment when not ready (e.g. 'native backend
+      // not configured (requires boot profile — stage 6)'), straight from status.
+      const nativeReason = native.reason || (nativeReady
+        ? 'native HID ready (boot profile active)'
+        : 'native backend not configured (requires boot profile)');
+      // Honor the persisted choice, but never present a disabled backend as
+      // selected: if native is the saved pick but isn't ready, fall back to flipper.
+      let sel = (hidBackend === 'native') ? 'native' : 'flipper';
+      if (sel === 'native' && nativeDisabled) sel = 'flipper';
+      const nativeState = nativeReady ? `ready · dr_mode=${esc(drMode)}` : `dr_mode=${esc(drMode)}`;
+      const flipState = flip.connected
+        ? (flip.badusb_ready ? 'connected · badusb ready' : 'connected · badusb not ready')
+        : 'not connected';
+      out.push(`<div class="hid-seg">
+        <div class="seg${sel === 'native' ? ' active' : ''}" data-hid-backend="native" aria-disabled="${nativeDisabled ? 'true' : 'false'}" role="button" tabindex="${nativeDisabled ? -1 : 0}">
+          NATIVE (Pi)<span class="seg-state">${esc(nativeState)}</span>
+        </div>
+        <div class="seg${sel === 'flipper' ? ' active' : ''}" data-hid-backend="flipper" aria-disabled="${flipDisabled ? 'true' : 'false'}" role="button" tabindex="${flipDisabled ? -1 : 0}">
+          FLIPPER<span class="seg-state">${esc(flipState)}</span>
+        </div>
+      </div>`);
+      // NATIVE hint: when not ready, restate the live reason + the exact opt-in
+      // path (UI never edits boot config). When ready, restate the USB-C hazard.
+      if (nativeDisabled) {
+        out.push(`<div class="hid-hint warn">NATIVE: ${esc(nativeReason)}</div>`);
+        out.push(`<div class="hid-hint">run: drifter hid enable-native, then reboot (USB-C becomes the typed-into port — also power; see warning)</div>`);
+      } else {
+        out.push(`<div class="hid-hint">NATIVE: Pi USB-C is the typed-into device — cable must reach the target. WARNING: USB-C is also power. Native HID armed at boot.</div>`);
+      }
+      if (flipDisabled) {
+        out.push(`<div class="hid-hint warn">FLIPPER: connect Flipper Zero (BadUSB) — plug the Flipper's USB into the target, not the Pi</div>`);
+      } else {
+        out.push(`<div class="hid-hint">FLIPPER: Flipper USB must be plugged into the TARGET. The Pi only relays the BadUSB file + run over serial.</div>`);
+      }
+
+      // ── Payload editor: list (left) + monospace editor (right) ──
+      out.push(`<div class="section-head" style="margin-top:8px"><span>payloads</span><span class="tag">duckyscript · ${payloads.length} stored</span></div>`);
+      const listRows = [];
+      if (!payloads.length) {
+        listRows.push(`<div class="hid-pl" style="cursor:default;opacity:.7"><span class="pl-name">no payloads</span><span class="pl-meta">Save one →</span></div>`);
+      } else {
+        for (const p of payloads) {
+          const pid = String(p.id || '');
+          const lc = (p.line_count != null) ? p.line_count : '—';
+          const isSel = pid && pid === hidEditorId;
+          if (pendingHidDelete.has(pid)) {
+            listRows.push(`<div class="hid-pl sel"><span class="pl-name">${esc(p.name || pid)}</span><span class="pl-meta">delete? <span class="ghost-btn crit" data-hid-del-confirm="${esc(pid)}" role="button" tabindex="0" style="font-size:8px;padding:2px 6px">YES</span> <span class="ghost-btn" data-hid-del-cancel="${esc(pid)}" role="button" tabindex="0" style="font-size:8px;padding:2px 6px">NO</span></span></div>`);
+          } else {
+            listRows.push(`<div class="hid-pl${isSel ? ' sel' : ''}" data-hid-open="${esc(pid)}" role="button" tabindex="0">
+              <span class="pl-name">${esc(p.name || pid)}</span>
+              <span class="pl-meta">${esc(lc)} lines${p.target_layout ? ' · '+esc(p.target_layout) : ''}<span class="pl-del" data-hid-del="${esc(pid)}" role="button" tabindex="0" title="delete"> ✕</span></span>
+            </div>`);
+          }
+        }
+      }
+      const editorName = esc(hidEditorName || '');
+      const editorScript = esc(hidEditorScript || '');
+      const newCls = hidEditorId == null ? ' sel' : '';
+      out.push(`<div class="hid-split">
+        <div class="hid-list">
+          <div class="hid-pl${newCls}" data-hid-open="" role="button" tabindex="0" style="text-align:center"><span class="pl-name">+ new payload</span></div>
+          ${listRows.join('')}
+        </div>
+        <div class="hid-editor-wrap">
+          <input class="hid-name-in" id="hid-name" placeholder="payload name" value="${editorName}" autocomplete="off" spellcheck="false">
+          <textarea class="hid-script" id="hid-script" placeholder="REM example&#10;DELAY 500&#10;GUI r&#10;DELAY 200&#10;STRING notepad&#10;ENTER" spellcheck="false" autocomplete="off" autocapitalize="off">${editorScript}</textarea>
+          ${hidEditorError ? `<div class="hid-parse-err">parse error${hidEditorError.line != null ? ` <span class="ln">line ${esc(hidEditorError.line)}</span>` : ''}: ${esc(hidEditorError.error || 'invalid DuckyScript')}</div>` : ''}
+          <div class="btn-row">
+            <span class="ghost-btn" id="hid-save" role="button" tabindex="0">SAVE</span>
+            ${hidEditorId ? `<span class="ghost-btn crit" data-hid-del="${esc(hidEditorId)}" role="button" tabindex="0">DELETE</span>` : ''}
+          </div>
+        </div>
+      </div>`);
+
+      // ── ARM → CONFIRM → RUN ──
+      out.push(`<div class="section-head" style="margin-top:8px"><span>arm · confirm · inject</span><span class="tag">${armed ? 'ARMED' : 'idle'}</span></div>`);
+      if (armed && armed.id) {
+        // Reconcile from /api/hid/status ONLY — the armed object is the
+        // backend's truth. Show preview + countdown ring from expires_in.
+        const total = 60; // ARM window (matches the service's 60s expiry)
+        const rem = Math.max(0, Math.min(total, Number(armed.expires_in) || 0));
+        const frac = rem / total;
+        const R = 19, C = 2 * Math.PI * R;
+        const off = (C * (1 - frac)).toFixed(1);
+        const firstLine = armed.first_line != null ? armed.first_line : (Array.isArray(armed.preview) ? armed.preview[0] : '');
+        const lastLine = armed.last_line != null ? armed.last_line : (Array.isArray(armed.preview) ? armed.preview[armed.preview.length-1] : '');
+        const ksEst = armed.keystrokes != null ? armed.keystrokes
+                    : (armed.keystroke_estimate != null ? armed.keystroke_estimate : null);
+        out.push(`<div class="hid-arm-card" data-hid-armed-id="${esc(armed.id)}">
+          <div class="hid-ring-wrap">
+            <svg class="hid-ring" viewBox="0 0 46 46">
+              <circle class="track" cx="23" cy="23" r="${R}"></circle>
+              <circle class="prog" cx="23" cy="23" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off}"></circle>
+            </svg>
+            <span class="secs">${Math.ceil(rem)}</span>
+          </div>
+          <div class="hid-arm-meta">
+            <span class="pm-name">${esc(armed.name || armed.payload_id || 'armed payload')}</span>
+            <span class="pm-line">backend: ${esc(armed.backend || '—')} · ${armed.line_count != null ? esc(armed.line_count)+' lines' : '— lines'}${ksEst != null ? ' · ~'+esc(ksEst)+' keys' : ''}</span>
+            ${firstLine ? `<span class="pm-line">first: ${esc(String(firstLine).slice(0,48))}</span>` : ''}
+            ${lastLine ? `<span class="pm-line">last: ${esc(String(lastLine).slice(0,48))}</span>` : ''}
+          </div>
+        </div>`);
+        // Separate, clearly destructive CONFIRM — only this fires. Plus CANCEL.
+        out.push(`<div class="btn-row">
+          <span class="hid-confirm-btn" data-hid-confirm="${esc(armed.id)}" role="button" tabindex="0">CONFIRM — INJECT</span>
+          <span class="ghost-btn" data-hid-cancel="${esc(armed.id)}" role="button" tabindex="0">CANCEL</span>
+        </div>`);
+      } else {
+        // Not armed. The single primary ARM button. ARM posts the SELECTED
+        // backend (native vs flipper) — the ARM→CONFIRM→RUN flow is identical
+        // either way. Disabled unless the selected backend is ready AND a saved
+        // payload is selected (ARM addresses a payload_id).
+        const backendReady = sel === 'native' ? nativeReady : flipReady;
+        const canArm = backendReady && hidEditorId != null;
+        const armTitle = !backendReady
+          ? (sel === 'native'
+              ? ' title="native HID not ready — run drifter hid enable-native + reboot"'
+              : ' title="connect Flipper Zero (BadUSB) first"')
+          : (hidEditorId == null ? ' title="select a saved payload to arm"' : '');
+        out.push(`<div class="btn-row">
+          <span class="ghost-btn live" id="hid-arm" data-hid-payload="${esc(hidEditorId || '')}" data-hid-backend-sel="${esc(sel)}" role="button" tabindex="0" aria-disabled="${canArm ? 'false' : 'true'}"${armTitle}>ARM (${sel === 'native' ? 'NATIVE' : 'FLIPPER'})</span>
+        </div>`);
+        if (hidEditorDirty && hidEditorId != null) {
+          out.push(`<div class="hid-hint warn">unsaved edits — SAVE before ARM so the injected payload matches what you see</div>`);
+        }
+      }
+
+      // ── Collapsible live audit tail (drifter/hid/audit fan-out) ──
+      const auditRows = cache.hidAudit || [];
+      out.push(`<div class="hid-audit-toggle" id="hid-audit-toggle" role="button" tabindex="0"><span>audit · live tail</span><span class="tag">${auditRows.length} event${auditRows.length === 1 ? '' : 's'} ${hidAuditOpen ? '▾' : '▸'}</span></div>`);
+      if (hidAuditOpen) {
+        if (!auditRows.length) {
+          out.push(emptyState('▤', 'No HID audit events this session. UPLOAD / ARM / CONFIRM / RUN appear here as they happen.'));
+        } else {
+          const list = [];
+          for (const a of auditRows.slice(0, HID_AUDIT_MAX)) {
+            const ev = String(a.event || '').toLowerCase();
+            const age = a.ts ? fmtAge(a.ts) : '';
+            const who = a.peer ? esc(a.peer) : '';
+            const lbl = esc(String(a.event || '—').toUpperCase());
+            const detail = a.payload_id ? esc(String(a.payload_id)) : (a.id ? esc(String(a.id)) : '');
+            list.push(`<div class="hid-audit-row"><span class="ev ${esc(ev)}">●</span><span class="ev ${esc(ev)}">${lbl}</span><span class="a-peer">${detail}${who ? ' · '+who : ''}</span><span class="a-age">${esc(age)}</span></div>`);
+          }
+          out.push(`<div class="hid-audit-list">${list.join('')}</div>`);
+        }
+      }
+
       return out.join('');
     },
   };
@@ -4788,9 +5683,17 @@
     activeTab = name;
     localStorage.setItem('drifter.drawer.tab', name);
     document.querySelectorAll('.drawer-tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.tab === name);
+      const sel = t.dataset.tab === name;
+      t.classList.toggle('active', sel);
+      // FE-C4: keep ARIA tab state in sync with the visual active state.
+      t.setAttribute('aria-selected', sel ? 'true' : 'false');
+      t.tabIndex = sel ? 0 : -1;
     });
     render();
+    // ARSENAL (stage 1): when an arsenal tab is activated, fetch its
+    // BE-2 route once so the panel shows live data (or its honest
+    // empty-state) immediately rather than waiting for the slow tick.
+    applyArsenalTabs();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -4977,6 +5880,102 @@
     reconcileRfOpsButtons();
     if (activeTab === 'flipper') render();
   }
+  async function loadHardware(){
+    cache.hardware = await safeFetch('/api/hardware') || cache.hardware;
+    if (activeTab === 'health') render();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ARSENAL loaders (stage 1 — read-only). Each safeFetch()es the
+  // matching BE-2 GET route and re-renders if its tab is active. The
+  // renderers fall back to emptyState() whenever a fetch returns null
+  // or an empty shape — never fabricated status. ducky has no backend
+  // this stage (empty-state-only renderer), so no loader is wired.
+  // ═══════════════════════════════════════════════════════════════
+  async function loadKismet(){
+    cache.kismet = await safeFetch('/api/kismet/devices') || cache.kismet;
+    const k = cache.kismet || {};
+    const n = (Array.isArray(k.wifi) ? k.wifi.length : 0) + (Array.isArray(k.ble) ? k.ble.length : 0);
+    setCount('kismet', `${n}`, { live: n > 0 });
+    if (activeTab === 'kismet') render();
+  }
+  async function loadMarauder(){
+    cache.marauder = await safeFetch('/api/marauder/status') || cache.marauder;
+    const st = (cache.marauder && cache.marauder.state) || '';
+    const present = st && st !== 'no_hardware';
+    setCount('marauder', present ? esc(st) : 'off', { live: !!present });
+    if (activeTab === 'marauder') render();
+  }
+  async function loadFlycatcher(){
+    cache.flycatcher = await safeFetch('/api/flycatcher/aircraft') || cache.flycatcher;
+    const f = cache.flycatcher || {};
+    const n = (Array.isArray(f.classified) && f.classified.length) ? f.classified.length
+            : (Array.isArray(f.aircraft) ? f.aircraft.length : 0);
+    setCount('flycatcher', `${n}`, { live: n > 0 });
+    if (activeTab === 'flycatcher') render();
+  }
+  async function loadGhost(){
+    cache.ghost = await safeFetch('/api/ghost/status') || cache.ghost;
+    const g = cache.ghost || {};
+    const n = ['trackers','stingray','alpr','rf'].reduce((s,k)=> s + (Array.isArray(g[k]) ? g[k].length : 0), 0);
+    setCount('ghost', g.status || n ? `${n}` : 'off', { live: n > 0 });
+    if (activeTab === 'ghost') render();
+  }
+  async function loadAlpr(){
+    cache.alpr = await safeFetch('/api/alpr/plates') || cache.alpr;
+    const n = (cache.alpr && Array.isArray(cache.alpr.plates)) ? cache.alpr.plates.length : 0;
+    setCount('alpr', `${n}`, { live: n > 0 });
+    if (activeTab === 'alpr') render();
+  }
+  async function loadVision(){
+    cache.vision = await safeFetch('/api/vision/status') || cache.vision;
+    const v = cache.vision || {};
+    const n = Array.isArray(v.objects) ? v.objects.length : 0;
+    setCount('vision', v.status || n ? `${n}` : 'off', { live: n > 0 });
+    if (activeTab === 'vision') render();
+  }
+  async function loadSentry(){
+    cache.sentry = await safeFetch('/api/sentry/status') || cache.sentry;
+    const s = cache.sentry || {};
+    const known = s.armed != null || s.ts != null;
+    setCount('sentry', known ? (s.armed ? 'armed' : 'off') : '—', { live: !!s.armed });
+    if (activeTab === 'sentry') render();
+  }
+  // ── HID INJECT (Stage 5) ──
+  // Polls /api/hid/status (readiness + armed snapshot) and /api/hid/payloads
+  // (stored DuckyScript metas). REAL-DATA: a null fetch leaves cache.hidStatus
+  // null, so the renderer shows the honest "service not responding" empty
+  // state — never a fabricated ready/armed. State is reconciled from
+  // /api/hid/status; the panel never optimistically claims injection.
+  async function loadHid(){
+    const s = await safeFetch('/api/hid/status');
+    cache.hidStatus = (s !== null) ? s : cache.hidStatus;
+    const p = await safeFetch('/api/hid/payloads');
+    if (p !== null) cache.hidPayloads = p;
+    const st = cache.hidStatus || {};
+    const armed = st.armed && st.armed.id;
+    const flip = st.flipper || {};
+    const nat = st.native || {};
+    // Either backend being ready counts as ready for the tab badge: NATIVE is
+    // ready only when /api/hid/status reports native.ready (post enable-native
+    // + reboot); FLIPPER when connected + badusb enumerated.
+    const ready = !!(nat.ready === true || (flip.connected && flip.badusb_ready));
+    const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
+              : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
+    // Count badge: ARMED (live) > payload count > ready/off.
+    if (cache.hidStatus == null) setCount('ducky', '—', { live: false });
+    else if (armed) setCount('ducky', 'ARMED', { live: true });
+    else setCount('ducky', ready ? `${plc}` : 'off', { live: ready });
+    if (activeTab === 'ducky') render();
+  }
+  // Tab → loader map for applyArsenalTabs() (fires on tab-activation /
+  // mode change). ducky now has a backend (Stage 5 — FLIPPER); native is
+  // disabled/read-only until stage 6.
+  const ARSENAL_LOADERS = {
+    kismet: loadKismet, marauder: loadMarauder, flycatcher: loadFlycatcher,
+    ghost: loadGhost, alpr: loadAlpr, vision: loadVision, sentry: loadSentry,
+    ducky: loadHid,
+  };
   async function loadBle(){
     cache.ble = await safeFetch('/api/ble/recent') || cache.ble;
     const allDets = (cache.ble && cache.ble.detections) || [];
@@ -5106,22 +6105,24 @@
   async function loadDriver(){
     // /api/driver returns {preferred_name, name, registration_plate} —
     // all may be null on a fresh bench Pi. Patch the topbar pill, drawer
-    // foot, and reg plate so a hardcoded "MAZ" / "N7-DRFT-X25" never
+    // foot, and reg plate so a hardcoded operator name / plate never
     // ships as the operator identity.
     const j = await safeFetch('/api/driver');
     const dn = (j && (j.preferred_name || j.name) || '').trim();
-    const label = dn ? dn.toUpperCase() : 'OPERATOR';
+    const label = dn ? dn.toUpperCase() : '';
     const pill = document.getElementById('pill-driver');
     if (pill) {
       // Preserve the leading status dot; replace the text node only.
-      pill.innerHTML = '<span class="dot"></span>OPERATOR · ' + esc(label);
+      // No real name yet → bare "OPERATOR" (never a fabricated identity).
+      pill.innerHTML = '<span class="dot"></span>OPERATOR' + (label ? ' · ' + esc(label) : '');
     }
     const foot = document.getElementById('foot-driver');
-    if (foot) foot.textContent = label;
+    if (foot) foot.textContent = label || 'OPERATOR';
     const reg = (j && j.registration_plate || '').trim();
-    if (reg) {
-      const regEl = document.getElementById('reg-id');
-      if (regEl) regEl.innerHTML = 'REG. <b>' + esc(reg) + '</b>';
+    const regEl = document.getElementById('reg-id');
+    if (regEl) {
+      const b = regEl.querySelector('b');
+      if (b) b.textContent = reg || '—';
     }
   }
   async function loadRfStatus(){
@@ -5130,7 +6131,14 @@
       const svc = cache.healthz.services;
       cache.rfStatus = cache.rfStatus || {};
       cache.rfStatus.rtl_433_active  = !!svc['drifter-rf'];
-      cache.rfStatus.dump1090_active = !!svc['drifter-rf'];
+      // dump1090 liveness is NOT the drifter-rf service flag (R6: no
+      // mirror-faking). Use an independent flag only if the backend
+      // exposes one (BE-4); otherwise leave null so the UI renders `—`.
+      if (svc['drifter-dump1090'] !== undefined) {
+        cache.rfStatus.dump1090_active = !!svc['drifter-dump1090'];
+      } else if (cache.rfStatus.dump1090_active === undefined) {
+        cache.rfStatus.dump1090_active = null;
+      }
       cache.rfStatus.rfaudio_active  = !!svc['drifter-rfaudio'];
       renderRfTile();
     }
@@ -5182,6 +6190,20 @@
       modePill.classList.remove('idle'); modePill.classList.add('live');
       md.style.background = 'var(--amber)';
     }
+    // ARSENAL mode hook (stage 1): toggle foot-mode shell class so the
+    // tab-gate CSS reveals the 8 arsenal tabs only in foot/both modes.
+    const shell = document.querySelector('.shell');
+    if (shell) shell.classList.toggle('mode-foot', cache.mode === 'foot' || cache.mode === 'both');
+    applyArsenalTabs();
+  }
+
+  // ARSENAL (stage 1): re-fire the loaders for whichever arsenal tab is
+  // active so its panel refreshes when foot-mode reveals it. Read-only —
+  // no rail button / overlay this stage. Each loader falls back to its
+  // honest empty-state when the BE-2 route returns nothing.
+  function applyArsenalTabs(){
+    const fn = ARSENAL_LOADERS[activeTab];
+    if (fn) fn();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5391,6 +6413,39 @@
     if (topic === 'drifter/flipper/subghz') {
       // New capture — refresh captures list.
       loadFlipper();
+    }
+
+    // ── HID INJECT (Stage 5) — status / result / audit fan-out ──
+    // drifter/hid/status carries the authoritative ARM state + backend
+    // readiness; we mirror it verbatim (REAL-DATA — never synthesize).
+    if (topic === 'drifter/hid/status') {
+      if (data && typeof data === 'object') {
+        cache.hidStatus = data;
+        const armed = data.armed && data.armed.id;
+        const flip = data.flipper || {};
+        const nat = data.native || {};
+        const ready = !!(nat.ready === true || (flip.connected && flip.badusb_ready));
+        const plc = Array.isArray(cache.hidPayloads) ? cache.hidPayloads.length
+                  : (cache.hidPayloads && Array.isArray(cache.hidPayloads.payloads) ? cache.hidPayloads.payloads.length : 0);
+        if (armed) setCount('ducky', 'ARMED', { live: true });
+        else setCount('ducky', ready ? `${plc}` : 'off', { live: ready });
+        if (activeTab === 'ducky') render();
+      }
+    }
+    // hid/result — an injection (or its failure) reported by the service.
+    // We do NOT claim success on our own; refresh status so the panel
+    // reconciles (the armed entry is single-shot and will have been popped).
+    if (topic === 'drifter/hid/result') {
+      loadHid();
+    }
+    // hid/audit (retained=false) — append to the bounded session ring,
+    // newest first, for the collapsible live tail.
+    if (topic === 'drifter/hid/audit') {
+      if (data && typeof data === 'object' && data.event) {
+        cache.hidAudit.unshift(data);
+        if (cache.hidAudit.length > HID_AUDIT_MAX) cache.hidAudit.length = HID_AUDIT_MAX;
+        if (activeTab === 'ducky') render();
+      }
     }
 
     // ── Vivi ──
@@ -5752,6 +6807,11 @@
     const origin = cache.feeds && cache.feeds.origin;
     if (origin && origin.lat != null && origin.lon != null) _setOrigin(origin.lat, origin.lon);
     else _clearOrigin();
+    // Keep the AWAITING GPS FIX card in sync with live origin so it
+    // auto-hides the moment a real fix lands (and re-shows if lost),
+    // not only when the map tab is (re)opened via setMapMode.
+    const aw = document.getElementById('awaiting-overlay');
+    if (aw) aw.style.display = (mapMode && !(origin && origin.lat != null)) ? '' : 'none';
     const now = Date.now()/1000;
     const snap = cache.aircraft;
     const fresh = snap && snap.ts && (now - snap.ts) <= AIRCRAFT_FRESH_WINDOW_SEC;
@@ -5761,12 +6821,81 @@
       setTimeout(() => map.instance.invalidateSize(), 50);
     }
   }
+  // ── MZ1312 styled Google basemap (see docs/MAP_CUSTOMIZATION.md) ──
+  // Legacy Google Maps `styles` realization of the cloud taxonomy, rendered
+  // via GoogleMutant. Mirrors ui/map-style-mz1312.json — keep in sync.
+  const MZ1312_MAP_STYLE = [
+    { elementType:'geometry', stylers:[{color:'#0a0a0f'}] },
+    { elementType:'labels.text.fill', stylers:[{color:'#c9c9d6'}] },
+    { elementType:'labels.text.stroke', stylers:[{color:'#050507'},{weight:2}] },
+    { elementType:'labels.icon', stylers:[{visibility:'off'}] },
+    { featureType:'administrative', elementType:'geometry', stylers:[{color:'#2a2a3a'}] },
+    { featureType:'administrative.locality', elementType:'labels.text.fill', stylers:[{color:'#a78bfa'}] },
+    { featureType:'administrative.land_parcel', stylers:[{visibility:'off'}] },
+    { featureType:'landscape.natural', elementType:'geometry', stylers:[{color:'#0c0c12'}] },
+    { featureType:'landscape.man_made', elementType:'geometry', stylers:[{color:'#101018'}] },
+    { featureType:'poi', elementType:'geometry', stylers:[{color:'#12121a'}] },
+    { featureType:'poi', elementType:'labels.text.fill', stylers:[{color:'#5a5a70'}] },
+    { featureType:'poi.business', stylers:[{visibility:'off'}] },
+    { featureType:'poi.park', elementType:'geometry', stylers:[{color:'#0f1512'}] },
+    { featureType:'poi.park', elementType:'labels.text.fill', stylers:[{color:'#5c7a63'}] },
+    { featureType:'road', elementType:'geometry', stylers:[{color:'#15131f'}] },
+    { featureType:'road', elementType:'labels.text.fill', stylers:[{color:'#7a7a90'}] },
+    { featureType:'road.local', elementType:'geometry', stylers:[{color:'#101018'}] },
+    { featureType:'road.arterial', elementType:'geometry', stylers:[{color:'#1b1830'}] },
+    { featureType:'road.highway', elementType:'geometry', stylers:[{color:'#2a2350'}] },
+    { featureType:'road.highway', elementType:'geometry.stroke', stylers:[{color:'#8b5cf6'},{weight:0.5}] },
+    { featureType:'road.highway', elementType:'labels.text.fill', stylers:[{color:'#c4b5fd'}] },
+    { featureType:'road.highway.controlled_access', elementType:'geometry', stylers:[{color:'#3a2f6b'}] },
+    { featureType:'transit', elementType:'geometry', stylers:[{color:'#161620'}] },
+    { featureType:'transit.station', elementType:'labels.text.fill', stylers:[{color:'#8a7fb0'}] },
+    { featureType:'water', elementType:'geometry', stylers:[{color:'#06060c'}] },
+    { featureType:'water', elementType:'labels.text.fill', stylers:[{color:'#3a4a6a'}] },
+  ];
+  let _gmaps = null;  // promise → boolean: Google Maps JS + GoogleMutant ready
+  function _loadScript(src){
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true; s.onload = () => res(true); s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  async function _ensureGoogle(){
+    if (window.google && window.google.maps && L.gridLayer && L.gridLayer.googleMutant) return true;
+    if (_gmaps) return _gmaps;
+    _gmaps = (async () => {
+      const cfg = await safeFetch('/api/mapconfig');   // local-only; key never static
+      if (!cfg || !cfg.google_maps_key) return false;
+      if (!(window.google && window.google.maps))
+        await _loadScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(cfg.google_maps_key)}&v=quarterly`);
+      if (!(L.gridLayer && L.gridLayer.googleMutant))
+        await _loadScript('https://unpkg.com/leaflet.gridlayer.googlemutant@0.13.1/dist/Leaflet.GoogleMutant.js');
+      return !!(window.google && window.google.maps && L.gridLayer && L.gridLayer.googleMutant);
+    })().catch(() => false);
+    return _gmaps;
+  }
+  async function _applyBasemap(mode){
+    if (!map.instance) return;
+    if (mode === 'mz1312') {
+      const ok = await _ensureGoogle();
+      if (ok) {
+        if (map.layer) map.instance.removeLayer(map.layer);
+        map.layer = L.gridLayer.googleMutant({ type:'roadmap', styles: MZ1312_MAP_STYLE }).addTo(map.instance);
+        map.mode = 'mz1312';
+        return;
+      }
+      mode = 'dark';   // no key / offline → graceful fallback to CARTO dark
+    }
+    if (map.layer) map.instance.removeLayer(map.layer);
+    const t = TILES[mode];
+    map.layer = L.tileLayer(t.url, t).addTo(map.instance);
+    map.mode = mode;
+  }
   function toggleSatellite(){
     if (!map.instance) return;
-    map.mode = map.mode === 'dark' ? 'sat' : 'dark';
-    if (map.layer) map.instance.removeLayer(map.layer);
-    const t = TILES[map.mode];
-    map.layer = L.tileLayer(t.url, t).addTo(map.instance);
+    const order = ['dark', 'sat', 'mz1312'];
+    const next = order[(order.indexOf(map.mode) + 1) % order.length];
+    _applyBasemap(next);
   }
   function recenter(){
     if (!map.instance || !map.originMarker) return;
@@ -5837,31 +6966,27 @@
   };
 
   function openChat(kind){
+    // Vivi is the single assistant. She answers vehicle-diagnostic
+    // questions (live MQTT state, DTCs, adaptive thresholds, trip) AND
+    // copilot/intel questions (RF, ADS-B, BLE). 'mechanic' is a legacy
+    // alias so older entry points (cockpit chips, ?overlay=mechanic,
+    // the ASK VIVI button) all resolve to the one Vivi overlay.
+    if (kind === 'mechanic') kind = 'vivi';
     const META = {
-      mechanic: {
-        glyph: '⚙', title: 'MECHANIC', channel: 'CH-01',
-        sub: 'diagnostic LLM',
+      vivi: {
+        glyph: '✦', title: 'VIVI', channel: 'CH-01',
+        sub: 'co-pilot · diagnostics + intel',
         prompts: [
           "Any DTCs right now?",
           "What's STFT doing?",
-          "Coolant trend last 5 min?",
-          "Trip cost so far?",
-        ],
-      },
-      vivi: {
-        glyph: '✦', title: 'VIVI', channel: 'CH-02',
-        sub: 'voice assistant',
-        prompts: [
-          "Is rtl_433 scanning?",
-          "Any RF alerts?",
           "Aircraft overhead?",
-          "What can you see right now?",
+          "Any RF alerts?",
         ],
       },
     }[kind] || { glyph: '?', title: kind.toUpperCase(), channel: 'CH-??', sub: '', prompts: [] };
-    const introBullets = (kind === 'mechanic')
-      ? ['Live MQTT vehicle state', 'Adaptive thresholds + last anomalies', 'Recent DTCs and trip summary']
-      : ['Live RF intel + ADS-B', 'Last Vivi voice turns', 'BLE / wardrive context'];
+    const introBullets = ['Live vehicle state · DTCs · thresholds · trip',
+                          'RF intel · ADS-B · BLE / wardrive context',
+                          'Grounded on real telemetry — never invents readings'];
     overlay.open(`
       <div class="overlay-head">
         <div class="overlay-glyph">${META.glyph}</div>
@@ -6122,7 +7247,7 @@
     overlay.open(`
       <div class="overlay-head">
         <div class="overlay-glyph">◌</div>
-        <div class="overlay-title">Settings<span class="sub">GET/POST /api/settings · live</span></div>
+        <div class="overlay-title">Settings<span class="sub">live</span></div>
         <div class="overlay-close" title="Close (Esc)">×</div>
       </div>
       <div class="overlay-body" id="settings-body"><div class="empty"><span class="gl">◌</span>Loading…</div></div>
@@ -6268,6 +7393,162 @@
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // ARSENAL — foot-mode toolkit launcher. Mirrors openRf(): overlay +
+  // 3s self-poll off /api/arsenal. REAL-DATA: a tool's "present" flag is
+  // derived server-side from /healthz + hardware-presence; present:false
+  // renders a disabled/absent card — never a fabricated "up". START/STOP
+  // POST to /api/service/<unit> (service control = BE-4). Buttons are
+  // aria-disabled when the card has no controllable unit, or whenever the
+  // node is in 'drive' mode (foot-gate mirrors the route-level foot-gate).
+  // OPEN PANEL routes to the tool's drawer tab.
+  // ═══════════════════════════════════════════════════════════════
+  // Glyph + drawer-tab mapping by tool name. Tools without a tab omit it.
+  const ARSENAL_TOOLS = {
+    kismet:    { glyph: '▦', tab: 'kismet' },
+    marauder:  { glyph: '⌬', tab: 'marauder' },
+    flipper:   { glyph: '⌬', tab: 'flipper' },
+    flycatcher:{ glyph: '☎', tab: 'flycatcher' },
+    ghost:     { glyph: '◬', tab: 'ghost' },
+    alpr:      { glyph: '▢', tab: 'alpr' },
+    vision:    { glyph: '◉', tab: 'vision' },
+    sentry:    { glyph: '◈', tab: 'sentry' },
+    rf:        { glyph: '⊚', tab: 'rf' },
+    wardrive:  { glyph: '◇', tab: 'wardrive' },
+  };
+  function arsenalCardHTML(t, mode){
+    const meta = ARSENAL_TOOLS[t.name] || {};
+    const glyph = meta.glyph || '⊗';
+    const present = !!t.present;
+    // Foot-gate mirror: service control is refused server-side when the node
+    // is in 'drive' mode. We disable the buttons + show a hint here too so the
+    // operator never fires a POST that the route would 403/409.
+    const driveLocked = mode === 'drive';
+    // live_meta is the backend's {unit_active, hardware_ok} object — render
+    // it as an honest one-liner, never the raw [object Object]. Falls back
+    // to the state string / presence word when no structured meta is sent.
+    let liveMeta;
+    if (t.live_meta && typeof t.live_meta === 'object') {
+      const m = t.live_meta;
+      const bits = [];
+      bits.push(m.unit_active ? 'unit active' : 'unit inactive');
+      if (m.hardware_ok === false) bits.push('hardware absent');
+      liveMeta = bits.join(' · ');
+    } else {
+      liveMeta = t.live_meta || (present ? (t.state || 'ready') : 'not present');
+    }
+    const pill = present
+      ? `<span class="h-status ok">${esc(t.state || 'present')}</span>`
+      : `<span class="h-status missing">absent</span>`;
+    // START/STOP drive /api/service/<unit>. Only controllable when the card
+    // carries a unit; disabled (with a hint) when there's no unit to control
+    // or when the node is in drive mode (route-level foot-gate mirror).
+    // State is NOT flipped optimistically — the next /api/arsenal poll
+    // reconciles the pill/meta against systemctl reality.
+    let startStop;
+    if (!t.unit) {
+      const noUnitHint = 'no controllable unit';
+      startStop = `
+        <span class="ghost-btn" aria-disabled="true" title="${noUnitHint}">START</span>
+        <span class="ghost-btn" aria-disabled="true" title="${noUnitHint}">STOP</span>`;
+    } else if (driveLocked) {
+      const footHint = 'foot mode only';
+      startStop = `
+        <span class="ghost-btn" aria-disabled="true" title="${footHint}">START</span>
+        <span class="ghost-btn" aria-disabled="true" title="${footHint}">STOP</span>
+        <span class="h-meta" style="width:100%;text-align:right">foot mode only</span>`;
+    } else {
+      const unit = esc(t.unit);
+      startStop = `
+        <span class="ghost-btn" data-arsenal-svc="${unit}" data-arsenal-action="start" role="button" tabindex="0" title="systemctl start ${unit}">START</span>
+        <span class="ghost-btn crit" data-arsenal-svc="${unit}" data-arsenal-action="stop" role="button" tabindex="0" title="systemctl stop ${unit}">STOP</span>`;
+    }
+    // OPEN PANEL only for tools that have a drawer tab (and only useful in foot).
+    const openPanel = meta.tab
+      ? `<span class="ghost-btn" data-arsenal-tab="${esc(meta.tab)}" title="Open ${esc(t.name)} drawer">OPEN PANEL</span>`
+      : '';
+    return `<div class="arsenal-card${present ? '' : ' absent'}">
+      <div class="h-glyph">${glyph}</div>
+      <div class="ac-id">
+        <span class="h-name">${esc(t.name)}${t.unit ? ' · '+esc(t.unit) : ''}</span>
+        <span class="h-meta">${esc(liveMeta)}</span>
+      </div>
+      <div class="ac-controls">${pill}${startStop}${openPanel}</div>
+    </div>`;
+  }
+  async function openArsenal(){
+    overlay.open(`
+      <div class="overlay-head">
+        <div class="overlay-glyph">⊗</div>
+        <div class="overlay-title">ARSENAL<span class="sub">foot-mode toolkit · live presence</span></div>
+        <div class="overlay-close" title="Close (Esc)">×</div>
+      </div>
+      <div class="overlay-body">
+        <div class="opsec-banner">
+          <div class="opsec-summary" id="arsenal-opsec">
+            checking posture…
+            <span class="sub">curated, parameter-validated actions — full ad-hoc console lives on :8090</span>
+          </div>
+          <span class="ghost-btn" id="arsenal-opsec-open" title="Open full OPSEC console (:8090)">OPEN FULL OPSEC</span>
+        </div>
+        <div class="section-head"><span>tools</span><span class="tag" id="arsenal-mode">—</span></div>
+        <div class="arsenal-grid" id="arsenal-grid"><div class="empty"><span class="gl">⊗</span>Loading arsenal…</div></div>
+      </div>`);
+    // OPEN FULL OPSEC → same host, port 8090, new tab. Never a fabricated URL.
+    const opsecBtn = document.getElementById('arsenal-opsec-open');
+    if (opsecBtn) opsecBtn.onclick = () => {
+      const host = location.hostname || '127.0.0.1';
+      window.open(`http://${host}:8090`, '_blank', 'noopener');
+    };
+    const grid = document.getElementById('arsenal-grid');
+    const opsecEl = document.getElementById('arsenal-opsec');
+    const modeEl = document.getElementById('arsenal-mode');
+    let arsenalMode = '';
+    // Grid clicks: OPEN PANEL routes to the drawer tab; START/STOP drive the
+    // service-control route then re-poll so state reconciles against reality.
+    grid.addEventListener('click', async e => {
+      const tab = e.target.closest('[data-arsenal-tab]');
+      if (tab) {
+        overlay.close();
+        setTab(tab.dataset.arsenalTab);
+        return;
+      }
+      const svc = e.target.closest('[data-arsenal-svc]');
+      if (svc) {
+        if (svc.getAttribute('aria-disabled') === 'true') return;
+        const unit = svc.dataset.arsenalSvc;
+        const action = svc.dataset.arsenalAction;
+        if (!unit || !action) return;
+        markBusy(svc);
+        // REAL-DATA: do not optimistically flip the card. Just fire the
+        // control and let the next /api/arsenal poll show systemctl truth.
+        await postJSON('/api/service/' + encodeURIComponent(unit), { action });
+        setTimeout(poll, 600);
+        return;
+      }
+    });
+    async function poll(){
+      try {
+        const a = await fetch('/api/arsenal').then(x => x.ok ? x.json() : null);
+        if (a && Array.isArray(a.tools)) {
+          if (modeEl) modeEl.textContent = a.mode || '—';
+          const present = a.tools.filter(t => t.present).length;
+          if (opsecEl) opsecEl.innerHTML =
+            `${present}/${a.tools.length} tools present · mode ${esc(a.mode || '—')}`
+            + `<span class="sub">curated, parameter-validated actions — full ad-hoc console lives on :8090</span>`;
+          arsenalMode = a.mode || '';
+          grid.innerHTML = a.tools.length
+            ? a.tools.map(t => arsenalCardHTML(t, arsenalMode)).join('')
+            : `<div class="empty"><span class="gl">⊗</span>No arsenal tools reported.</div>`;
+        } else if (opsecEl) {
+          opsecEl.innerHTML = `arsenal unavailable<span class="sub">/api/arsenal not reachable</span>`;
+        }
+      } catch(_){}
+      if (document.getElementById('arsenal-grid')) setTimeout(poll, 3000);
+    }
+    poll();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // HOLD TO TALK — POSTs to drifter/voice/listen_now via dashboard
   // ═══════════════════════════════════════════════════════════════
   let talkActive = false;
@@ -6354,8 +7635,250 @@
 
   // Single delegated click listener — every preset button is data-driven.
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel]');
+    const t = e.target.closest('[id], [data-rfaudio-band], [data-tpms-pair], [data-tpms-assign], [data-replay], [data-confirm], [data-confirm-replay], [data-cancel], [data-confirm-fuzz], [data-confirm-tpms-clear], [data-cancel-confirm], [data-marauder-op], [data-marauder-arm], [data-confirm-marauder], [data-sentry-arm], [data-confirm-sentry], [data-cancel-arsenal], [data-hid-backend], [data-hid-open], [data-hid-del], [data-hid-del-confirm], [data-hid-del-cancel], [data-hid-confirm], [data-hid-cancel], [data-hid-payload]');
     if (!t) return;
+
+    // ── FE-C6: destructive-confirm cancel (any pending key) ─────────
+    if (t.hasAttribute('data-cancel-confirm')) {
+      pendingConfirm.delete(t.getAttribute('data-cancel-confirm'));
+      render();
+      return;
+    }
+    // ── Stage-3 arsenal: cancel a pending marauder/sentry confirm-row ──
+    if (t.hasAttribute('data-cancel-arsenal')) {
+      pendingArsenalConfirm.delete(t.getAttribute('data-cancel-arsenal'));
+      render();
+      return;
+    }
+    // ── Marauder LOW-tier recon op → relay to /api/marauder/command {op} ──
+    if (t.dataset.marauderOp) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      markBusy(t);
+      await postJSON('/api/marauder/command', { op: t.dataset.marauderOp });
+      setTimeout(loadMarauder, 600);
+      return;
+    }
+    // ── Marauder HIGH-risk op: first tap arms the inline confirm-row ──
+    if (t.dataset.marauderArm) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingArsenalConfirm.add(t.dataset.marauderArm);
+      if (activeTab === 'marauder') render();
+      return;
+    }
+    // ── Marauder HIGH-risk confirmed: relay the op. The bridge classifier
+    // still requires its own confirm-token round-trip — we do NOT bypass it.
+    if (t.dataset.confirmMarauder) {
+      const op = t.dataset.confirmMarauder;
+      pendingArsenalConfirm.delete(op);
+      markBusy(t);
+      await postJSON('/api/marauder/command', { op });
+      if (activeTab === 'marauder') render();
+      setTimeout(loadMarauder, 600);
+      return;
+    }
+    // ── Sentry ARM/DISARM: first tap arms the inline confirm-row ──
+    if (t.dataset.sentryArm) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingArsenalConfirm.add('sentry:' + t.dataset.sentryArm);
+      if (activeTab === 'sentry') render();
+      return;
+    }
+    // ── Sentry confirmed → relay to /api/sentry/command {action} ──
+    if (t.dataset.confirmSentry) {
+      const action = t.dataset.confirmSentry;
+      pendingArsenalConfirm.delete('sentry:' + action);
+      markBusy(t);
+      await postJSON('/api/sentry/command', { action });
+      if (activeTab === 'sentry') render();
+      setTimeout(loadSentry, 600);
+      return;
+    }
+    // ═══════════════════════════════════════════════════════════════
+    // HID INJECT (Rubber Ducky / BadUSB — FLIPPER + NATIVE Pi backends).
+    // ARM → CONFIRM → RUN. NOTHING here injects a keystroke directly:
+    // ARM posts hid_arm (the service validates + stages a pending entry,
+    // types nothing); CONFIRM posts hid_confirm (the service alone fires,
+    // single-shot, and on the flipper path the bridge HIGH-risk gate must
+    // also agree). State is reconciled from /api/hid/status — never claimed
+    // optimistically. NATIVE is only selectable when status reports
+    // native.ready (post enable-native + reboot); the UI never edits boot config.
+    // ═══════════════════════════════════════════════════════════════
+    // Backend segment select. A disabled segment (aria-disabled) cannot be
+    // chosen — NATIVE is disabled until /api/hid/status reports native.ready.
+    if (t.hasAttribute('data-hid-backend')) {
+      if (t.getAttribute('aria-disabled') === 'true') return; // backend not ready
+      hidBackend = t.dataset.hidBackend;
+      localStorage.setItem('drifter.hid.backend', hidBackend);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Open a stored payload into the editor (or '+ new' = blank). Pulls the
+    // full source from GET /api/hid/payloads/<id> so the editor is real data.
+    if (t.hasAttribute('data-hid-open')) {
+      const pid = t.getAttribute('data-hid-open');
+      hidEditorError = null;
+      hidEditorDirty = false;
+      if (!pid) {                       // new/blank payload
+        hidEditorId = null; hidEditorName = ''; hidEditorScript = '';
+        if (activeTab === 'ducky') render();
+        return;
+      }
+      const full = await safeFetch('/api/hid/payloads/' + encodeURIComponent(pid));
+      if (full) {
+        hidEditorId = pid;
+        hidEditorName = (full.meta && full.meta.name) || full.name || pid;
+        hidEditorScript = full.script || full.source || '';
+      }
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Delete: first tap arms a small inline confirm.
+    if (t.hasAttribute('data-hid-del')) {
+      pendingHidDelete.add(t.getAttribute('data-hid-del'));
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    if (t.hasAttribute('data-hid-del-cancel')) {
+      pendingHidDelete.delete(t.getAttribute('data-hid-del-cancel'));
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    if (t.hasAttribute('data-hid-del-confirm')) {
+      const pid = t.getAttribute('data-hid-del-confirm');
+      pendingHidDelete.delete(pid);
+      markBusy(t);
+      await fetch('/api/hid/payloads/' + encodeURIComponent(pid), { method: 'DELETE' });
+      if (hidEditorId === pid) { hidEditorId = null; hidEditorName = ''; hidEditorScript = ''; }
+      setTimeout(loadHid, 400);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // Save → POST /api/hid/payload. The handler compiles via hid_ducky; a
+    // 400 returns {error,line} which we surface inline (no fake "saved").
+    if (t.id === 'hid-save') {
+      const nameEl = document.getElementById('hid-name');
+      const scriptEl = document.getElementById('hid-script');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const script = scriptEl ? scriptEl.value : '';
+      hidEditorName = name; hidEditorScript = script;
+      if (!name || !script.trim()) {
+        hidEditorError = { error: 'name and script are both required', line: null };
+        if (activeTab === 'ducky') render();
+        return;
+      }
+      markBusy(t);
+      const body = { name, script };
+      if (hidEditorId) body.id = hidEditorId;
+      let resp = null;
+      try {
+        const r = await fetch('/api/hid/payload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        try { resp = await r.json(); } catch(_) { resp = null; }
+        if (!r.ok || (resp && resp.ok === false)) {
+          // Render parse error inline with the line number from the backend.
+          hidEditorError = {
+            error: (resp && resp.error) || ('save failed (HTTP ' + r.status + ')'),
+            line: resp ? resp.line : null,
+          };
+        } else {
+          hidEditorError = null;
+          hidEditorDirty = false;
+          if (resp && resp.id) hidEditorId = resp.id;
+        }
+      } catch(_) {
+        hidEditorError = { error: 'network error during save', line: null };
+      }
+      setTimeout(loadHid, 400);
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // ARM (primary) → POST hid_arm {payload_id, backend}. backend is the
+    // SELECTED segment ('native' | 'flipper'); native is only offered when
+    // /api/hid/status reports native.ready. The service validates + stages a
+    // pending entry and publishes ARMED; NOTHING is typed. The panel
+    // reconciles the armed preview from /api/hid/status.
+    if (t.id === 'hid-arm') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      const pid = t.dataset.hidPayload;
+      if (!pid) return;
+      const backend = t.dataset.hidBackendSel === 'native' ? 'native' : 'flipper';
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_arm', payload_id: pid, backend });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // CONFIRM — INJECT (separate, destructive) → POST hid_confirm {id}.
+    // Only this fires. The service is single-shot and the bridge HIGH-risk
+    // gate must also agree on the flipper path.
+    if (t.hasAttribute('data-hid-confirm')) {
+      const id = t.getAttribute('data-hid-confirm');
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_confirm', id });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // CANCEL armed (always available while armed) → POST hid_cancel {id}.
+    if (t.hasAttribute('data-hid-cancel')) {
+      const id = t.getAttribute('data-hid-cancel');
+      markBusy(t);
+      await postJSON('/api/hid/command', { command: 'hid_cancel', id });
+      setTimeout(loadHid, 500);
+      return;
+    }
+    // Collapsible audit tail toggle.
+    if (t.id === 'hid-audit-toggle') {
+      hidAuditOpen = !hidAuditOpen;
+      localStorage.setItem('drifter.hid.auditOpen', hidAuditOpen ? '1' : '0');
+      if (activeTab === 'ducky') render();
+      return;
+    }
+    // ── FE-C6: FUZZ ID RANGE — first tap arms the confirm row ───────
+    if (t.id === 'candisc-fuzz-range') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      pendingConfirm.add('fuzz');
+      if (activeTab === 'candisc') render();
+      return;
+    }
+    // ── FE-C6: FUZZ confirmed — perform the range fuzz ──────────────
+    // Matches the backend contract: POST /api/can/command
+    // { command:'fuzz_range', id_start, id_end } (hex strings accepted).
+    if (t.hasAttribute('data-confirm-fuzz')) {
+      pendingConfirm.delete('fuzz');
+      const startEl = document.getElementById('candisc-fuzz-start');
+      const endEl = document.getElementById('candisc-fuzz-end');
+      const id_start = startEl && startEl.value;
+      const id_end = endEl && endEl.value;
+      markBusy(t);
+      await postJSON('/api/can/command', { command: 'fuzz_range', id_start, id_end });
+      if (activeTab === 'candisc') render();
+      return;
+    }
+    // ── FE-C6: TPMS clear confirmed ─────────────────────────────────
+    if (t.hasAttribute('data-confirm-tpms-clear')) {
+      pendingConfirm.delete('tpms_clear');
+      markBusy(t);
+      await postJSON('/api/rf/command', { command: 'tpms_clear_assignments' });
+      tpmsAssignments = {};
+      if (activeTab === 'tires' || activeTab === 'tpms') render();
+      return;
+    }
+
+    // ── FE-C6: vitals popover — tap-to-toggle on touch ──────────────
+    // Hover opens it on desktop; phones have no hover, so tapping the
+    // CPU/MEM/TEMP pill toggles .popover-open. Tapping a different pill
+    // (or anywhere else, see the document handler below) closes others.
+    const vitalsPill = t.closest && t.closest('.pill.vitals');
+    if (vitalsPill) {
+      const wasOpen = vitalsPill.classList.contains('popover-open');
+      document.querySelectorAll('.pill.vitals.popover-open').forEach(p => {
+        if (p !== vitalsPill) p.classList.remove('popover-open');
+      });
+      vitalsPill.classList.toggle('popover-open', !wasOpen);
+      return;
+    }
 
     // ── CONV (conversation mode) — toggle vivi's "keep listening" flag ──
     if (t.id === 'btn-conv') {
@@ -6447,9 +7970,8 @@
       return;
     }
     if (t.id === 'tpms-clear-assignments') {
-      markBusy(t);
-      await postJSON('/api/rf/command', { command: 'tpms_clear_assignments' });
-      tpmsAssignments = {};
+      // FE-C6: arm the confirm row — actual wipe runs on data-confirm-tpms-clear.
+      pendingConfirm.add('tpms_clear');
       if (activeTab === 'tires' || activeTab === 'tpms') render();
       return;
     }
@@ -6533,16 +8055,81 @@
 
     // ── rfaudio quick-tune presets ──
     if (t.dataset.rfaudioBand != null) {
+      if (t.getAttribute('aria-disabled') === 'true') return;
       const freq = parseFloat(t.dataset.freq);
       const mode = t.dataset.mode || 'nfm';
       if (!isFinite(freq)) return;
       markBusy(t);
       await postJSON('/api/rfaudio/command', {
-        action: 'start', freq_mhz: freq, mode, gain: 40,
+        action: 'start', freq_mhz: freq, mode, gain: 0,
       });
       loadRfaudio();
       return;
     }
+    // ── rfaudio manual tune (FE-B2) ──
+    if (t.id === 'rfaudio-manual-tune') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      const freqEl = document.getElementById('rfa-freq');
+      const modeEl = document.getElementById('rfa-mode');
+      const gainEl = document.getElementById('rfa-gain');
+      const freq = parseFloat(freqEl && freqEl.value);
+      const mode = (modeEl && modeEl.value) || 'nfm';
+      let gain = parseFloat(gainEl && gainEl.value);
+      if (!isFinite(gain)) gain = 0;
+      // Client-validate the same 24–1766 MHz envelope the backend enforces.
+      if (!isFinite(freq) || freq < 24 || freq > 1766) {
+        if (freqEl) { freqEl.classList.add('crit'); setTimeout(() => freqEl.classList.remove('crit'), 1500); }
+        return;
+      }
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', {
+        action: 'start', freq_mhz: freq, mode, gain,
+      });
+      loadRfaudio();
+      return;
+    }
+    // ── rfaudio TEST TONE (FE-B2) — stays live whenever a speaker is present ──
+    if (t.id === 'rfaudio-test-tone') {
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', { action: 'test_tone' });
+      loadRfaudio();
+      return;
+    }
+    // ── rfaudio REFRESH BANDS (FE-B2) ──
+    if (t.id === 'rfaudio-refresh-bands') {
+      markBusy(t);
+      await postJSON('/api/rfaudio/command', { action: 'list_bands' });
+      loadRfaudio();
+      return;
+    }
+  });
+
+  // HID editor (Stage 5): mirror keystrokes into module state so a status
+  // poll re-render doesn't stomp what the operator is typing, and flag the
+  // payload dirty so ARM warns when edits are unsaved. Does NOT re-render
+  // (would lose caret position); render() reads these vars on the next paint.
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.id === 'hid-script') { hidEditorScript = t.value; hidEditorDirty = true; }
+    else if (t.id === 'hid-name') { hidEditorName = t.value; hidEditorDirty = true; }
+  });
+
+  // FE-C4: keyboard activation for the custom role="button" controls.
+  // The ghost-btn / pill spans are not native <button>s, so Enter/Space
+  // would otherwise do nothing. Synthesize a click so every delegated
+  // click handler above also fires from the keyboard. aria-disabled
+  // controls are inert (CSS sets pointer-events:none; we mirror it here).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const btn = t.closest('[role="button"][tabindex="0"]');
+    if (!btn) return;
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    e.preventDefault();
+    btn.click();
   });
 
   // TPMS per-corner dropdown — POSTs tpms_assign_corner on each change.
@@ -6584,12 +8171,18 @@
   // Init wiring
   // ═══════════════════════════════════════════════════════════════
   function initRail(){
+    // Highlight the clicked rail button (only map/cockpit were synced before,
+    // so HW/RF/Trip/etc. never lit up — making them feel inert).
+    const _railActive = (name) => {
+      document.querySelectorAll('.rail-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.rail === name));
+    };
     document.querySelectorAll('[data-rail]').forEach(el => {
       el.addEventListener('click', () => {
         const target = el.dataset.rail;
         switch (target) {
-          case 'cockpit':  setMapMode(false); break;
-          case 'map':      setMapMode(true); refreshMap(); break;
+          case 'cockpit':  setMapMode(false); _railActive('cockpit'); break;
+          case 'map':      setMapMode(true); refreshMap(); _railActive('map'); break;
           case 'mechanic': openChat('mechanic'); break;
           case 'vivi':     openChat('vivi'); break;
           case 'hardware':
@@ -6597,18 +8190,40 @@
             if (drawerCollapsed) { drawerCollapsed = false;
               document.getElementById('shell').classList.remove('drawer-collapsed');
               localStorage.setItem('drifter.drawer.collapsed','0'); }
-            setTab('sensors');
+            setTab('health');
+            // The HEALTH tab sits far right in a 24-tab scroller; bring it into
+            // view so the jump is visible even when the drawer was already open.
+            { const ht = document.querySelector('.drawer-tab[data-tab="health"]');
+              if (ht) ht.scrollIntoView({ inline: 'center', block: 'nearest' }); }
+            _railActive('hardware');
             break;
-          case 'sessions': openSessions(); break;
-          case 'settings': openSettings(); break;
-          case 'rf':       openRf(); break;
+          case 'sessions': openSessions(); _railActive('sessions'); break;
+          case 'settings': openSettings(); _railActive('settings'); break;
+          case 'rf':       openRf(); _railActive('rf'); break;
+          case 'arsenal':  openArsenal(); _railActive('arsenal'); break;
         }
       });
     });
   }
   function initTabs(){
-    document.querySelectorAll('.drawer-tab').forEach(t => {
+    const tabs = Array.from(document.querySelectorAll('.drawer-tab'));
+    tabs.forEach((t, i) => {
+      // FE-C4: full tablist semantics — role/tab id + keyboard activation.
+      t.setAttribute('role', 'tab');
+      if (!t.id) t.id = 'drawer-tab-' + t.dataset.tab;
+      t.setAttribute('aria-selected', t.classList.contains('active') ? 'true' : 'false');
+      t.tabIndex = t.classList.contains('active') ? 0 : -1;
       t.addEventListener('click', () => setTab(t.dataset.tab));
+      t.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault(); setTab(t.dataset.tab);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const next = tabs[(i + dir + tabs.length) % tabs.length];
+          if (next) { setTab(next.dataset.tab); next.focus(); }
+        }
+      });
     });
   }
   function initMapControls(){
@@ -6796,6 +8411,7 @@
   loadState();
   loadAlerts(); loadDtcs(); loadTpms(); loadTpmsAssignments(); loadTrip();
   loadRfSpec(); loadRfEmer(); loadRfClassification(); loadFlipper(); loadRfaudio();
+  loadHardware();
   loadBle(); loadPersistent(); loadWardrive();
   loadAircraft(); loadAdsb(); loadSessions(); loadCanDiscovery();
   loadOrigin(); loadMode(); loadDriver();
@@ -6805,6 +8421,35 @@
 
   tickClock();
   setInterval(tickClock, 1000);
+  // HID ARM countdown (Stage 5): when an armed entry exists, decrement its
+  // expires_in locally each second for a smooth ring, and reconcile from the
+  // backend when it lapses. This is display-only — the authoritative ARM
+  // state is /api/hid/status; the service EXPIRES the pending entry itself.
+  setInterval(() => {
+    const st = cache.hidStatus;
+    if (!st || !st.armed || !st.armed.id) return;
+    const e = Number(st.armed.expires_in);
+    if (!isFinite(e)) return;
+    if (e <= 0) { loadHid(); return; }   // lapsed — let the backend confirm EXPIRE
+    st.armed.expires_in = Math.max(0, e - 1);
+    if (activeTab === 'ducky') render();
+  }, 1000);
+  // Hero gauge staleness sweep — dims any gauge whose source value
+  // stopped arriving (CAN dropout) within GAUGE_STALE_SEC. Independent
+  // of the WS fan-out / scheduleRender batching.
+  setInterval(sweepGaugeStaleness, 2000);
+  // FE-C5: re-fit DPR-scaled canvases on resize / orientation change so
+  // they stay sharp and don't overflow when the drawer width changes.
+  // Debounced; the render functions call fitCanvasDpr() themselves, so we
+  // just trigger a repaint of the two scopes.
+  let _canvasResizeT = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(_canvasResizeT);
+    _canvasResizeT = setTimeout(() => {
+      if (document.getElementById('spectrum-canvas')) renderSpectrumStrip();
+      if (document.getElementById('adsb-radar')) renderAdsbRadar();
+    }, 200);
+  });
   // Audited pollers (US-2): the previous 22 setInterval pollers caused
   // primary UI sluggishness on Pi 5 chromium. Replaced with ONE 30s
   // refresh tick that fires the long-tail HTTP loaders sequentially.
@@ -6821,7 +8466,12 @@
       loadRfSpec, loadRfEmer, loadFlipper, loadBle, loadPersistent,
       loadWardrive, loadAircraft, loadAdsb, loadSessions, loadOrigin,
       loadMode, loadRfStatus, loadRfaudio, loadRfClassification,
-      loadCanDiscovery,
+      loadCanDiscovery, loadHardware,
+      // ARSENAL (stage 1) backfill — read-only count refresh.
+      loadKismet, loadMarauder, loadFlycatcher, loadGhost,
+      loadAlpr, loadVision, loadSentry,
+      // ARSENAL (stage 5) HID inject — readiness + armed reconcile.
+      loadHid,
     ];
     const fn = slowLoaders[_slowTick % slowLoaders.length];
     if (fn) fn();
@@ -6834,6 +8484,11 @@
   document.addEventListener('click', (ev) => {
     const t = ev.target;
     if (!(t instanceof Element)) return;
+    // FE-C6: dismiss any tap-opened vitals popover when tapping outside
+    // its own pill (the toggle itself is handled in the main listener).
+    if (!t.closest('.pill.vitals')) {
+      document.querySelectorAll('.pill.vitals.popover-open').forEach(p => p.classList.remove('popover-open'));
+    }
     // REPLAY start
     const startBtn = t.closest('[data-replay-start]');
     if (startBtn) {

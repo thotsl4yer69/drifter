@@ -1,0 +1,20 @@
+[Unit]
+Description=MZ1312 DRIFTER Wi-Fi Hotspot Auto-Connector
+After=NetworkManager.service nanomq.service
+Wants=NetworkManager.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+# nmcli connection changes need root (NetworkManager polkit). Configure the
+# phone hotspot via /opt/drifter/.env: PHONE_HOTSPOT_SSID / PHONE_HOTSPOT_PSK.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_connect.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
+
+[Install]
+WantedBy=multi-user.target

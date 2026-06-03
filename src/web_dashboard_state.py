@@ -113,6 +113,16 @@ def on_message(client, userdata, msg) -> None:
         if topic == 'drifter/flipper/subghz' and isinstance(data, dict):
             recent_flipper_captures.append(data)
 
+        # BE-4: dump1090 liveness must be independently sourced, never
+        # mirrored from rtl_433. rf_monitor publishes `dump1090_installed`
+        # (binary present) but no live-process flag, so we cannot prove
+        # dump1090 is *running*. Surface `dump1090_active: None` (→ FE
+        # renders `—`/idle) unless the publisher supplies a real flag.
+        # NEVER set dump1090_active = rtl_433_active (R6: no mirror-faking).
+        if topic == 'drifter/rf/status' and isinstance(data, dict):
+            if 'dump1090_active' not in data:
+                data['dump1090_active'] = None
+
         # URH classification ring (Agent A — Signal Intel sub-tile).
         if topic == 'drifter/rf/classification' and isinstance(data, dict):
             try:

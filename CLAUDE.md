@@ -217,6 +217,45 @@ drifter-batcher        drifter-trip         drifter-thresholds
 drifter-reporter
 ```
 
+### Weather + Location enrichment (feature/drifter-v2)
+
+Wired the third-party API keys (OpenWeatherMap + Google Maps/Elevation/Places)
+into the v2 brain. Keys live in **`src/api_keys.py`** (hardcoded by design for
+this private node; every key still honours an env/`.env` override) and are
+re-exported from `config.py` so the rest of the fleet imports from one place.
+
+Two new services own *all* external API traffic and fan the results out over
+MQTT — every consumer reads the topics, so the real-time/safety path never
+blocks on the network and Google/OWM are hit from exactly one place each:
+
+- `drifter-weather` (`weather_service.py`) — OpenWeatherMap One Call (degrades
+  to the 2.5 endpoints if the key lacks One Call 3.0). Polls every 15 min for
+  the live GPS position (falls back to `DEFAULT_LAT/LON` = Bendigo VIC).
+  Publishes `drifter/weather/{current,forecast,alerts}`. Derives actionable
+  advisories — `rain_soon` (minutely "windows-up" nudge), `fog`, `ice`,
+  `high_wind`.
+- `drifter-location` (`location_service.py`) — Google Elevation (current road
+  grade %, from consecutive samples) + Places (nearby fuel/mechanic/…).
+  Publishes `drifter/location/{elevation,nearby}`; on-demand POI lookups via
+  the `drifter/location/query` request topic.
+
+Consumers wired to the new topics:
+- `nav_engine` → forwards weather hazards + steep-grade warnings as `nav_alert`.
+- `safety_engine` → wet-road tightens the hard-brake threshold; fog speed
+  warning; steep descent/climb advisories (all deterministic, no network).
+- `trip_computer` → weather + elevation/grade overlay on trip stats.
+- `ai_diagnostics` → weather folded into the LLM diagnosis prompt (cold/heat/
+  humidity correlation).
+- `driver_assist` → prefers the OWM feed over its Open-Meteo fallback; sets a
+  `rain`/`fog`/`ice` driving mode.
+- `vivi_v2` → answers "nearest petrol/mechanic/car wash" from cached Places
+  results, speaks proactive rain/fog/ice warnings, and pre-warms the location
+  service via `location_query` when asked about a POI it hasn't cached.
+
+Both new services are SHARED-mode (run in drive + foot) and auto-installed via
+the `services/*.service` glob + the `SERVICES` list in `install.sh`. Offline
+tests in `tests/test_weather_location.py`.
+
 ### Security hardening (2026-05-18, commit `eed90b9`)
 
 Pre-deploy review of the rfaudio surface found two issues that have been fixed and re-verified on this Pi with the RTL-SDR plugged in:

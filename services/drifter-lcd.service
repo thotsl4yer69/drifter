@@ -1,0 +1,20 @@
+[Unit]
+Description=MZ1312 DRIFTER 3.5" SPI LCD Dashboard
+After=nanomq.service drifter-boot-manager.service
+Wants=nanomq.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+# Needs /dev/fb1 (video group) + GPIO buttons (gpio group) — runs as root so a
+# fresh deploy works before group membership/udev settle. Override pins via env.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/lcd_dashboard.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
+
+[Install]
+WantedBy=multi-user.target

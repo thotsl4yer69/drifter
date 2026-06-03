@@ -1,0 +1,27 @@
+[Unit]
+Description=MZ1312 DRIFTER HID Injection Service — Rubber Ducky / BadUSB (ARM→CONFIRM→RUN)
+After=network.target nanomq.service mosquitto.service
+Wants=nanomq.service
+
+# Pi crash-loop guard (project rule — the Pi has crash-looped twice
+# without these). MUST stay present.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/hid_inject.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Native backend (Stage 6) needs root to write configfs + /dev/hidg0.
+# The service starts CLEAN when the native backend is unconfigured — it
+# simply reports native: not ready and only the Flipper backend is
+# selectable. The Flipper backend carries zero Pi-side USB risk.
+User=root
+AmbientCapabilities=CAP_DAC_OVERRIDE
+
+[Install]
+WantedBy=multi-user.target

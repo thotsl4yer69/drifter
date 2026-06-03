@@ -362,8 +362,19 @@ def test_get_rfaudio_status_route_registered():
     assert callable(routes['/api/rfaudio/status'])
 
 
+def _patch_rfaudio_probes(monkeypatch, sdr=True, speaker=True):
+    """Stub hw_probe probes so rfaudio-status tests don't shell out."""
+    monkeypatch.setattr(h, 'probe_rtl_sdr', lambda: {
+        'connected': sdr, 'action': '' if sdr else 'Plug in RTL-SDR dongle'})
+    monkeypatch.setattr(h, 'probe_speaker', lambda: {
+        'connected': speaker,
+        'action': '' if speaker else 'Plug in USB audio dongle (plughw:0,0)'})
+
+
 def test_get_rfaudio_status_serves_latest(monkeypatch):
-    """The handler must surface latest_state['rfaudio_status'] verbatim."""
+    """The handler must surface latest_state['rfaudio_status'] verbatim,
+    plus the merged hardware-presence echo (BE-2)."""
+    _patch_rfaudio_probes(monkeypatch, sdr=True, speaker=True)
     state.latest_state.clear()
     state.latest_state['rfaudio_status'] = {
         'state': 'playing', 'freq_mhz': 476.525, 'mode': 'nfm',
@@ -378,14 +389,75 @@ def test_get_rfaudio_status_serves_latest(monkeypatch):
     assert payload['state'] == 'playing'
     assert payload['freq_mhz'] == 476.525
     assert len(payload['bands']) == 1
+    assert payload['sdr_present'] is True
+    assert payload['speaker_present'] is True
 
 
-def test_get_rfaudio_status_serves_empty_when_no_publish_yet():
+def test_get_rfaudio_status_serves_empty_when_no_publish_yet(monkeypatch):
+    """Even with no retained status, the presence echo (BE-2) is always
+    present so the cockpit can gate honestly from a cold start."""
+    _patch_rfaudio_probes(monkeypatch, sdr=False, speaker=False)
     state.latest_state.clear()
     handler = _build_post_handler(b'')
     handler._serve_json = MagicMock()
     h.DashboardHandler._get_rfaudio_status(handler, None)
-    handler._serve_json.assert_called_once_with({})
+    handler._serve_json.assert_called_once()
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['sdr_present'] is False
+    assert payload['speaker_present'] is False
+    assert payload['sdr_action']
+    assert payload['speaker_action']
+
+
+def test_rfaudio_status_includes_presence(monkeypatch):
+    """BE-2 regression: monkeypatch probes, assert sdr_present/speaker_present
+    keys are present and latest_state is NOT mutated by building the echo."""
+    _patch_rfaudio_probes(monkeypatch, sdr=False, speaker=True)
+    state.latest_state.clear()
+    base = {'state': 'idle', 'freq_mhz': None, 'mode': None,
+            'error': 'rtl_fm exited', 'ts': 12.0}
+    state.latest_state['rfaudio_status'] = base
+    handler = _build_post_handler(b'')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_rfaudio_status(handler, None)
+    payload = handler._serve_json.call_args[0][0]
+    assert 'sdr_present' in payload and 'speaker_present' in payload
+    assert payload['sdr_present'] is False
+    assert payload['speaker_present'] is True
+    assert payload['sdr_action']
+    # error passes through verbatim
+    assert payload['error'] == 'rtl_fm exited'
+    # latest_state untouched — no presence keys leaked into the retained copy.
+    assert 'sdr_present' not in state.latest_state['rfaudio_status']
+    assert state.latest_state['rfaudio_status'] is base
+
+
+def test_dump1090_not_mirrored_from_rtl433():
+    """BE-4 regression: the RF status capture path must NOT derive
+    dump1090_active from rtl_433. An incoming rf/status with no independent
+    dump1090 flag yields dump1090_active=None (FE renders '—'), never a
+    mirror of the rtl_433 state."""
+    # Behavioural check: rtl_433 up, no independent dump1090 flag →
+    # dump1090_active is None, NOT mirrored from rtl_433_active=True.
+    state.latest_state.clear()
+    msg = _FakeMsg('drifter/rf/status', {
+        'state': 'online', 'sdr_detected': True,
+        'rtl433_installed': True, 'dump1090_installed': True,
+        'rtl_433_active': True, 'ts': 1.0,
+    })
+    state.on_message(None, None, msg)
+    captured = state.latest_state['rf_status']
+    assert captured['dump1090_active'] is None
+    assert captured['dump1090_active'] != captured['rtl_433_active']
+
+    # When the publisher DOES supply an independent flag, it is respected
+    # verbatim (not overwritten).
+    state.latest_state.clear()
+    msg2 = _FakeMsg('drifter/rf/status', {
+        'rtl_433_active': True, 'dump1090_active': False, 'ts': 2.0,
+    })
+    state.on_message(None, None, msg2)
+    assert state.latest_state['rf_status']['dump1090_active'] is False
 
 
 # ── /api/alerts/recent ────────────────────────────────────────────────
@@ -1194,3 +1266,687 @@ def test_mechanic_history_route_registered():
 
 def test_rf_commands_allowlist_includes_tpms_delta_capture():
     assert 'tpms_delta_capture' in h._RF_COMMANDS
+
+
+# ─── Arsenal read-side routes (BE-2) ──────────────────────────────────
+# Each route: 200 + an HONEST empty shape with an empty latest_state
+# (never a fabricated 'up'/'idle'/demo-row status), and 403 for a
+# non-local peer (mirrors the rfaudio ACL tests above).
+
+class _FakeParsed:
+    """Minimal urlparse() stand-in carrying just a query string."""
+    def __init__(self, query=''):
+        self.query = query
+
+
+def _call_get(method_name, peer='127.0.0.1', query=''):
+    """Invoke an Arsenal GET handler with an empty latest_state and a
+    captured _serve_json. Returns (handler, payload_or_None)."""
+    state.latest_state.clear()
+    handler = _build_post_handler(b'', peer=peer)
+    handler._serve_json = MagicMock()
+    method = getattr(h.DashboardHandler, method_name)
+    method(handler, _FakeParsed(query))
+    payload = (handler._serve_json.call_args[0][0]
+               if handler._serve_json.called else None)
+    return handler, payload
+
+
+_ARSENAL_ROUTES = {
+    '/api/kismet/devices':      '_get_kismet_devices',
+    '/api/marauder/status':     '_get_marauder_status',
+    '/api/marauder/scan':       '_get_marauder_scan',
+    '/api/flycatcher/aircraft': '_get_flycatcher_aircraft',
+    '/api/ghost/status':        '_get_ghost_status',
+    '/api/alpr/plates':         '_get_alpr_plates',
+    '/api/vision/status':       '_get_vision_status',
+    '/api/sentry/status':       '_get_sentry_status',
+}
+
+
+def test_arsenal_routes_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    for path, fn in _ARSENAL_ROUTES.items():
+        assert path in routes, path
+        assert routes[path] is getattr(h.DashboardHandler, fn)
+
+
+@pytest.mark.parametrize('method_name', list(_ARSENAL_ROUTES.values()))
+def test_arsenal_route_rejects_remote_peer(method_name):
+    """Capture/recon data must 403 outside 127.0.0.1 / 10.42.0.0/24."""
+    handler, payload = _call_get(method_name, peer='192.168.1.50')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    handler._serve_json.assert_not_called()
+
+
+def test_arsenal_route_allows_hotspot_peer():
+    """10.42.0.0/24 hotspot peer is allowed through (no 403)."""
+    handler, payload = _call_get('_get_marauder_status', peer='10.42.0.7')
+    handler.send_error.assert_not_called()
+    handler._serve_json.assert_called_once()
+
+
+def test_kismet_devices_honest_empty():
+    handler, payload = _call_get('_get_kismet_devices')
+    assert payload == {'wifi': [], 'ble': [], 'ts': None}
+
+
+def test_marauder_status_honest_no_hardware():
+    handler, payload = _call_get('_get_marauder_status')
+    assert payload == {'state': 'no_hardware'}
+
+
+def test_marauder_scan_honest_empty_default_stream():
+    handler, payload = _call_get('_get_marauder_scan')
+    assert payload == {'stream': 'ap', 'rows': []}
+
+
+def test_marauder_scan_honours_stream_querystring():
+    handler, payload = _call_get('_get_marauder_scan', query='stream=sta&n=5')
+    assert payload == {'stream': 'sta', 'rows': []}
+
+
+def test_marauder_scan_rejects_unknown_stream_falls_back_to_ap():
+    handler, payload = _call_get('_get_marauder_scan', query='stream=bogus')
+    assert payload['stream'] == 'ap'
+    assert payload['rows'] == []
+
+
+def test_flycatcher_aircraft_honest_empty():
+    handler, payload = _call_get('_get_flycatcher_aircraft')
+    assert payload == {'aircraft': [], 'classified': [], 'state': None}
+
+
+def test_ghost_status_honest_empty():
+    handler, payload = _call_get('_get_ghost_status')
+    assert payload == {'status': None, 'trackers': [], 'stingray': [],
+                       'alpr': [], 'rf': []}
+
+
+def test_alpr_plates_honest_empty():
+    handler, payload = _call_get('_get_alpr_plates')
+    assert payload == {'plates': []}
+
+
+def test_vision_status_honest_empty():
+    handler, payload = _call_get('_get_vision_status')
+    assert payload == {'status': None, 'objects': []}
+
+
+def test_sentry_status_honest_empty():
+    handler, payload = _call_get('_get_sentry_status')
+    assert payload == {'armed': None, 'threshold_g': None,
+                       'auto_arm': None, 'ts': None}
+
+
+def test_marauder_scan_returns_live_rows_when_present():
+    """When the scan ring has rows, they pass through (n caps newest)."""
+    state.latest_state.clear()
+    state.latest_state['marauder_scan_ap'] = {
+        'rows': [{'ssid': 'a'}, {'ssid': 'b'}, {'ssid': 'c'}]}
+    handler = _build_post_handler(b'', peer='127.0.0.1')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_marauder_scan(handler, _FakeParsed('stream=ap&n=2'))
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['stream'] == 'ap'
+    assert payload['rows'] == [{'ssid': 'b'}, {'ssid': 'c'}]
+
+
+def test_sentry_status_passes_live_payload_through():
+    """A retained sentry status is surfaced verbatim, not the empty shape."""
+    state.latest_state.clear()
+    live = {'armed': True, 'threshold_g': 2.5, 'auto_arm': False, 'ts': 99.0}
+    state.latest_state['sentry_status'] = live
+    handler = _build_post_handler(b'', peer='127.0.0.1')
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_sentry_status(handler, _FakeParsed())
+    assert handler._serve_json.call_args[0][0] == live
+
+
+# ─── /api/arsenal aggregate (BE-3) ────────────────────────────────────
+
+def _call_arsenal(monkeypatch, tmp_path, active_units, peer='127.0.0.1'):
+    """Drive _get_arsenal with a mocked /healthz services source.
+
+    `active_units` is the set of units `_systemctl_active` reports active;
+    everything else is inactive. Forces 'both' mode so every arsenal unit
+    is "expected" and the healthz reading isn't mode-suppressed. Returns
+    (handler, payload_or_None)."""
+    _reset_healthz_cache()
+    monkeypatch.setattr(h, '_systemctl_active',
+                        lambda u: u in active_units)
+    monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: True)
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text('both')
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
+    handler = _build_post_handler(b'', peer=peer)
+    handler._serve_json = MagicMock()
+    h.DashboardHandler._get_arsenal(handler, _FakeParsed())
+    payload = (handler._serve_json.call_args[0][0]
+               if handler._serve_json.called else None)
+    return handler, payload
+
+
+def test_arsenal_route_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert '/api/arsenal' in routes
+    assert routes['/api/arsenal'] is h.DashboardHandler._get_arsenal
+
+
+def test_arsenal_rejects_remote_peer(monkeypatch, tmp_path):
+    """Aggregate exposes recon posture — must 403 off the hotspot."""
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set(),
+                                     peer='192.168.1.50')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    handler._serve_json.assert_not_called()
+
+
+def test_arsenal_shape_and_mode(monkeypatch, tmp_path):
+    """200 + contract shape: {ts, mode, tools:[{name,unit,present,state,
+    live_meta,actions}]} with one entry per declared foot-mode tool."""
+    state.latest_state.clear()
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set())
+    handler.send_error.assert_not_called()
+    assert set(payload) == {'ts', 'mode', 'tools'}
+    assert payload['mode'] == 'both'
+    assert isinstance(payload['ts'], (int, float))
+    names = [t['name'] for t in payload['tools']]
+    assert names == [s['name'] for s in h._ARSENAL_TOOLS]
+    for t in payload['tools']:
+        assert set(t) >= {'name', 'unit', 'present', 'state',
+                          'live_meta', 'actions'}
+        assert isinstance(t['present'], bool)
+        assert isinstance(t['actions'], list)
+
+
+def test_arsenal_inactive_unit_is_not_present(monkeypatch, tmp_path):
+    """REAL-DATA: a tool whose unit is inactive must report present:false
+    and an honest 'absent' state — never a fabricated 'up'."""
+    state.latest_state.clear()
+    # No units active at all.
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, set())
+    by_name = {t['name']: t for t in payload['tools']}
+    kismet = by_name['kismet']
+    assert kismet['unit'] == 'drifter-kismet'
+    assert kismet['present'] is False
+    assert kismet['state'] == 'absent'
+    assert kismet['live_meta']['unit_active'] is False
+
+
+def test_arsenal_active_unit_without_hw_gate_is_present(monkeypatch, tmp_path):
+    """A unit-only tool (no hardware gate) is present once its unit is
+    active, and surfaces 'idle' until it publishes a live state."""
+    state.latest_state.clear()
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-kismet'})
+    kismet = {t['name']: t for t in payload['tools']}['kismet']
+    assert kismet['present'] is True
+    assert kismet['live_meta']['unit_active'] is True
+    assert kismet['state'] == 'idle'
+
+
+def test_arsenal_marauder_no_hardware_blocks_presence(monkeypatch, tmp_path):
+    """Active unit + ESP32 reporting state:'no_hardware' => present:false.
+    The hardware signal vetoes presence even though the unit is up."""
+    state.latest_state.clear()
+    state.latest_state['marauder_status'] = {'state': 'no_hardware'}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-marauder'})
+    marauder = {t['name']: t for t in payload['tools']}['marauder']
+    assert marauder['live_meta']['unit_active'] is True
+    assert marauder['live_meta']['hardware_ok'] is False
+    assert marauder['present'] is False
+    assert marauder['state'] == 'no_hardware'
+
+
+def test_arsenal_ghost_never_present_without_unit(monkeypatch, tmp_path):
+    """ghost has no service unit shipped — it stays present:false even
+    when 'every' unit is reported active."""
+    state.latest_state.clear()
+    all_units = {s['unit'] for s in h._ARSENAL_TOOLS if s['unit']}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path, all_units)
+    ghost = {t['name']: t for t in payload['tools']}['ghost']
+    assert ghost['unit'] is None
+    assert ghost['present'] is False
+
+
+def test_arsenal_live_state_surfaced_when_present(monkeypatch, tmp_path):
+    """A present tool surfaces its published `state` verbatim."""
+    state.latest_state.clear()
+    state.latest_state['rfaudio_status'] = {'state': 'playing'}
+    handler, payload = _call_arsenal(monkeypatch, tmp_path,
+                                     {'drifter-rfaudio'})
+    rfaudio = {t['name']: t for t in payload['tools']}['rfaudio']
+    assert rfaudio['present'] is True
+    assert rfaudio['state'] == 'playing'
+
+
+# ─── BE-4: /api/service/<unit> start/stop + marauder/sentry relays ─────
+# The whole point of this stage is the SAFETY MODEL: local-peer ACL, unit
+# allowlist (never DRIVE_ONLY / arbitrary), action allowlist, drive-mode
+# foot-gate at the route, audit on every call. Marauder/sentry are thin
+# relays (allowlist + 403 + 503 + publish), never reimplementing tiers.
+
+def _service_handler(monkeypatch, tmp_path, body, peer='127.0.0.1',
+                     mode='foot', audit=None):
+    """Build a handler for _post_service with mode + audit isolated to tmp."""
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text(mode)
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
+    monkeypatch.setattr(h, '_ARSENAL_AUDIT_LOG',
+                        audit if audit is not None else tmp_path / 'arsenal_audit.log')
+    handler = _build_post_handler(body, peer=peer)
+    handler._serve_json = MagicMock()
+    return handler
+
+
+def _a_foot_unit():
+    """A unit guaranteed to be in the arsenal allowlist (foot/shared)."""
+    return sorted(h._SERVICE_UNITS)[0]
+
+
+def test_post_service_rejects_drive_only_unit(monkeypatch, tmp_path):
+    """A DRIVE_ONLY unit must be refused 403 — never reaches systemctl."""
+    from config import DRIVE_ONLY_SERVICES
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    drive_unit = DRIVE_ONLY_SERVICES[0]
+    assert drive_unit not in h._SERVICE_UNITS
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}')
+    handler._post_service(drive_unit)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_rejects_unknown_unit(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}')
+    handler._post_service('drifter-nonexistent')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_rejects_bad_action(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"enable"}')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    run.assert_not_called()
+
+
+def test_post_service_refuses_in_drive_mode(monkeypatch, tmp_path):
+    """Foot-gate AT THE ROUTE: 409 when the node is in drive mode."""
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               mode='drive')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 409
+    run.assert_not_called()
+
+
+def test_post_service_rejects_remote_peer(monkeypatch, tmp_path):
+    run = MagicMock()
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               peer='192.168.1.50')
+    handler._post_service(_a_foot_unit())
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    run.assert_not_called()
+
+
+def test_post_service_happy_path_invokes_systemctl_and_audits(monkeypatch, tmp_path):
+    """A valid start in foot mode runs `sudo -n systemctl start <unit>`,
+    returns {ok,unit,action,rc}, and writes an audit record."""
+    audit_log = tmp_path / 'arsenal_audit.log'
+    completed = MagicMock()
+    completed.returncode = 0
+    completed.stdout = ''
+    completed.stderr = ''
+    run = MagicMock(return_value=completed)
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    unit = _a_foot_unit()
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"start"}',
+                               audit=audit_log)
+    handler._post_service(unit)
+    # systemctl invoked with sudo -n and the exact unit/action.
+    args = run.call_args[0][0]
+    assert args == ['sudo', '-n', 'systemctl', 'start', unit]
+    # response shape
+    handler._serve_json.assert_called_once()
+    out = handler._serve_json.call_args[0][0]
+    assert out == {'ok': True, 'unit': unit, 'action': 'start', 'rc': 0}
+    # audit written with peer + unit + action + rc
+    assert audit_log.exists()
+    rec = _json.loads(audit_log.read_text().strip().splitlines()[-1])
+    assert rec['peer'] == '127.0.0.1'
+    assert rec['unit'] == unit
+    assert rec['action'] == 'start'
+    assert rec['rc'] == 0
+    assert rec['event'] == 'RUN'
+
+
+def test_post_service_audits_blocked_unit(monkeypatch, tmp_path):
+    """A refused (non-allowlisted) unit is audited as BLOCKED with peer IP."""
+    audit_log = tmp_path / 'arsenal_audit.log'
+    monkeypatch.setattr(h.subprocess, 'run', MagicMock())
+    handler = _service_handler(monkeypatch, tmp_path, b'{"action":"stop"}',
+                               audit=audit_log)
+    handler._post_service('drifter-canbridge')
+    assert audit_log.exists()
+    rec = _json.loads(audit_log.read_text().strip().splitlines()[-1])
+    assert rec['event'] == 'BLOCKED'
+    assert rec['unit'] == 'drifter-canbridge'
+    assert rec['peer'] == '127.0.0.1'
+
+
+def test_service_allowlist_excludes_all_drive_only_units():
+    """Structural invariant — no DRIVE_ONLY unit can ever be controllable."""
+    from config import DRIVE_ONLY_SERVICES
+    assert not (h._SERVICE_UNITS & set(DRIVE_ONLY_SERVICES))
+
+
+# ─── Marauder command relay ────────────────────────────────────────────
+
+def test_post_marauder_command_allowlist_relays(monkeypatch):
+    """A LOW-tier op publishes to drifter/marauder/cmd as `command`."""
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"scan_ap"}')
+    handler._post_marauder_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/marauder/cmd'
+    assert _json.loads(payload)['command'] == 'scan_ap'
+
+
+def test_post_marauder_command_high_risk_relays_with_confirm_token(monkeypatch):
+    """HIGH-risk op is in the allowlist and relays a confirm_token verbatim —
+    the bridge owns the confirm gate; the handler never strips it."""
+    state.mqtt_client = MagicMock()
+    body = b'{"op":"deauth_attack","confirm_token":"tok-123","args":{"bssid":"AA"}}'
+    handler = _build_post_handler(body)
+    handler._post_marauder_command()
+    _topic, payload = state.mqtt_client.publish.call_args[0]
+    parsed = _json.loads(payload)
+    assert parsed['command'] == 'deauth_attack'
+    assert parsed['confirm_token'] == 'tok-123'
+    assert parsed['args'] == {'bssid': 'AA'}
+
+
+def test_post_marauder_command_rejects_unknown_op(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"rm_rf_slash"}')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_marauder_command_rejects_remote_peer(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"op":"scan_ap"}', peer='8.8.8.8')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_marauder_command_503_without_mqtt(monkeypatch):
+    state.mqtt_client = None
+    handler = _build_post_handler(b'{"op":"scan_ap"}')
+    handler._post_marauder_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+# ─── Sentry command relay ──────────────────────────────────────────────
+
+def test_post_sentry_command_arm_relays(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"arm"}')
+    handler._post_sentry_command()
+    state.mqtt_client.publish.assert_called_once()
+    topic, payload = state.mqtt_client.publish.call_args[0]
+    assert topic == 'drifter/sentry/event'
+    assert _json.loads(payload)['action'] == 'arm'
+
+
+def test_post_sentry_command_rejects_unknown_action(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"detonate"}')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_sentry_command_rejects_remote_peer(monkeypatch):
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"action":"disarm"}', peer='172.16.0.1')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_post_sentry_command_503_without_mqtt(monkeypatch):
+    state.mqtt_client = None
+    handler = _build_post_handler(b'{"action":"arm"}')
+    handler._post_sentry_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Rubber Ducky / BadUSB HID API (BE-1)
+# ═══════════════════════════════════════════════════════════════════
+
+def _build_get_handler(peer: str = '127.0.0.1'):
+    """A DashboardHandler wired enough to call a GET/DELETE route method."""
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler.wfile = io.BytesIO()
+    handler.client_address = (peer, 0)
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.send_error = MagicMock()
+    handler._serve_json = MagicMock()
+    return handler
+
+
+def test_hid_routes_registered():
+    routes = h.DashboardHandler._EXACT_GET_ROUTES
+    assert routes['/api/hid/status'] is h.DashboardHandler._get_hid_status
+    assert routes['/api/hid/payloads'] is h.DashboardHandler._get_hid_payloads
+
+
+def test_hid_command_allowlist_accepts_three_commands():
+    state.mqtt_client = MagicMock()
+    for body in (
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}',
+        b'{"command":"hid_confirm","id":"arm-1"}',
+        b'{"command":"hid_cancel","id":"arm-1"}',
+    ):
+        handler = _build_post_handler(body)
+        handler._post_hid_command()
+        handler.send_error.assert_not_called()
+    # All three relay to drifter/hid/command.
+    topics = {c[0][0] for c in state.mqtt_client.publish.call_args_list}
+    assert topics == {'drifter/hid/command'}
+
+
+def test_hid_command_arm_stamps_peer_ip():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}',
+        peer='10.42.0.9')
+    handler._post_hid_command()
+    _, payload = state.mqtt_client.publish.call_args[0]
+    assert _json.loads(payload)['peer'] == '10.42.0.9'
+
+
+def test_hid_command_rejects_unknown_command():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"hid_nuke"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_arm_rejects_bad_backend():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"usb"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_arm_rejects_empty_payload_id():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"","backend":"flipper"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_command_confirm_rejects_empty_id():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(b'{"command":"hid_confirm","id":""}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_command_rejects_remote_peer():
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"command":"hid_cancel","id":"arm-1"}', peer='192.168.1.50')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    state.mqtt_client.publish.assert_not_called()
+
+
+def test_hid_command_503_when_no_mqtt():
+    state.mqtt_client = None
+    handler = _build_post_handler(
+        b'{"command":"hid_arm","payload_id":"ducky-1","backend":"flipper"}')
+    handler._post_hid_command()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 503
+
+
+def test_hid_status_native_not_configured_on_this_host(monkeypatch):
+    state.latest_state.clear()
+    handler = _build_get_handler()
+    handler._get_hid_status(None)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['native']['ready'] is False
+    assert payload['native']['dr_mode'] != 'peripheral'
+    # Flipper honestly not connected when nothing published.
+    assert payload['flipper']['connected'] is False
+
+
+def test_hid_status_rejects_remote_peer():
+    handler = _build_get_handler(peer='8.8.8.8')
+    handler._get_hid_status(None)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+
+
+def test_hid_payload_upload_compiles_and_persists(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"recon","script":"STRING whoami\\nENTER"}')
+    handler._post_hid_payload()
+    handler.send_error.assert_not_called()
+    # The real _serve_json wrote {ok:true,...} to wfile; the payload landed.
+    body = _json.loads(handler.wfile.getvalue())
+    assert body['ok'] is True
+    txts = list(tmp_path.glob('ducky-*.txt'))
+    metas = list(tmp_path.glob('ducky-*.meta.json'))
+    assert len(txts) == 1 and len(metas) == 1
+
+
+def test_hid_payload_upload_parse_error_returns_400_with_line(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"bad","script":"STRING ok\\nFOOBAR x"}')
+    handler._post_hid_payload()
+    # Body is written via wfile with a 400 status; nothing persisted.
+    handler.send_response.assert_called_with(400)
+    body = _json.loads(handler.wfile.getvalue())
+    assert body['ok'] is False
+    assert body['line'] == 2
+    assert list(tmp_path.glob('*.txt')) == []
+
+
+def test_hid_payload_upload_rejects_remote_peer(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    state.mqtt_client = MagicMock()
+    handler = _build_post_handler(
+        b'{"name":"x","script":"STRING a"}', peer='1.2.3.4')
+    handler._post_hid_payload()
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+
+
+def test_hid_payload_delete_removes_files_and_audits(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h, '_HID_AUDIT_LOG', tmp_path / 'audit.log')
+    state.mqtt_client = MagicMock()
+    (tmp_path / 'ducky-9.txt').write_text('STRING a')
+    (tmp_path / 'ducky-9.meta.json').write_text('{"id":"ducky-9"}')
+    handler = _build_get_handler()
+    handler._delete_hid_payload('ducky-9')
+    assert not (tmp_path / 'ducky-9.txt').exists()
+    assert not (tmp_path / 'ducky-9.meta.json').exists()
+    events = [_json.loads(l)['event']
+              for l in (tmp_path / 'audit.log').read_text().splitlines()]
+    assert 'DELETE' in events
+
+
+def test_hid_payload_delete_404_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    state.mqtt_client = MagicMock()
+    handler = _build_get_handler()
+    handler._delete_hid_payload('ducky-absent')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 404
+
+
+def test_hid_payload_delete_path_traversal_400(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    handler = _build_get_handler()
+    handler._delete_hid_payload('../config')
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 400
+
+
+def test_hid_get_single_payload(monkeypatch, tmp_path):
+    monkeypatch.setattr(h, '_HID_PAYLOAD_DIR', tmp_path)
+    monkeypatch.setattr(h.hid_inject, 'HID_PAYLOAD_DIR', tmp_path)
+    (tmp_path / 'ducky-3.txt').write_text('STRING hi')
+    (tmp_path / 'ducky-3.meta.json').write_text('{"id":"ducky-3"}')
+    handler = _build_get_handler()
+    handler._serve_hid_payload('ducky-3')
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['script'] == 'STRING hi'
+    assert payload['meta']['id'] == 'ducky-3'

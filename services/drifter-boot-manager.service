@@ -1,0 +1,19 @@
+[Unit]
+Description=MZ1312 DRIFTER Boot Sequence Manager (LCD splash)
+After=NetworkManager.service
+Before=drifter-lcd.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+WorkingDirectory=/opt/drifter
+# Paints boot progress on /dev/fb1, waits for the spine, then exits so
+# drifter-lcd can take the screen. Always exits 0 — never wedges boot.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/boot_manager.py
+TimeoutStartSec=180
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
+
+[Install]
+WantedBy=multi-user.target
