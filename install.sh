@@ -251,7 +251,11 @@ pip install --quiet \
     requests \
     numpy \
     pyserial \
-    pyyaml
+    pyyaml \
+    Pillow
+# Pillow: lcd_dashboard.py / boot_manager.py render the in-car 3.5" SPI LCD with
+#   PIL + numpy straight to the framebuffer. numpy is already above; Pillow is a
+#   prebuilt arm64 wheel so it's safe in the core block.
 # pyserial: flipper_bridge.py imports `serial` at module load (drifter-flipper
 #   is enabled) and marauder_transport/realdash also need it — without it the
 #   service crash-loops on ModuleNotFoundError. pyyaml: config.py imports `yaml`
@@ -275,6 +279,10 @@ pip install --quiet faster-whisper piper-tts sounddevice 2>/dev/null && ok "Vivi
     || (pip install --quiet "bleak>=0.21.0" \
         && ok "bleak installed (passive BLE scanner)") \
     || warn "bleak install failed — drifter-bleconv disabled"
+# In-car SPI LCD GPIO buttons (drifter-lcd). RPi.GPIO only builds on a Pi, so
+# keep it best-effort — the LCD dashboard auto-cycles/MQTT-controls without it.
+pip install --quiet RPi.GPIO 2>/dev/null && ok "RPi.GPIO installed (LCD buttons)" || \
+    warn "RPi.GPIO install failed — LCD buttons disabled (run scripts/setup-lcd.sh on the Pi)"
 ok "Python venv ready at ${DRIFTER_DIR}/venv"
 
 # ── 7. Deploy Application ──
@@ -554,7 +562,11 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid"
+SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid drifter-lcd drifter-autoconnect drifter-boot-manager"
+# NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
+# both drive the SPI LCD — they are mutually exclusive. The deploy enables both
+# here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
+# the lcd_dashboard menu UI, or disable drifter-lcd to keep the mirror.
 if command -v nanomq &>/dev/null; then
     systemctl enable nanomq 2>/dev/null || true
 else

@@ -132,6 +132,8 @@ def _healthz_payload() -> tuple[dict, int]:
         'drifter-can-discovery', 'drifter-fly-catcher',
         'drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
         'drifter-rf-baseline', 'drifter-session-recorder',
+        # In-car SPI LCD: inactive (exits hw-pending) until /dev/fb1 is wired.
+        'drifter-lcd',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]
