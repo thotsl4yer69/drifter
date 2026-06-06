@@ -23,6 +23,7 @@ from config import (
     REPLAY_DEFAULT_SPEED,
     REPLAY_DIR,
     TOPICS,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -130,7 +131,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-replay")
+    client = make_mqtt_client("drifter-replay")
 
     def on_message(_c, _u, msg) -> None:
         try:

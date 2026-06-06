@@ -25,6 +25,7 @@ from config import (
     RECORDER_MAX_GB,
     RECORDER_SEGMENT_SECONDS,
     TOPICS,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -164,7 +165,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-recorder")
+    client = make_mqtt_client("drifter-recorder")
     client.on_message = _on_message
 
     connected = False

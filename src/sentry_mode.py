@@ -26,6 +26,7 @@ from config import (
     SENTRY_DIR,
     SENTRY_MAX_CLIPS,
     TOPICS,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -104,7 +105,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-sentry")
+    client = make_mqtt_client("drifter-sentry")
 
     def on_message(_c, _u, msg) -> None:
         try:
@@ -117,10 +118,13 @@ def main() -> None:
             if cmd == 'arm':
                 state.armed = True
                 log.info("Armed")
+                _publish_status(client, state)
             elif cmd == 'disarm':
                 state.armed = False
                 log.info("Disarmed")
-            _publish_status(client, state)
+                _publish_status(client, state)
+            # Non-command payloads (e.g. our own bump event echoed back on this
+            # topic) are not arm/disarm requests — don't republish status for them.
         elif topic == TOPICS['drive_session'] and isinstance(data, dict):
             # Auto-arm on session end (parked), disarm on session start (driving)
             if state.auto_arm:
