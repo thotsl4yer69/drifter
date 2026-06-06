@@ -47,7 +47,7 @@ def _query_llm(arb_id: str, samples: list[dict]) -> dict | None:
         f"Sample count: {len(samples)}\n"
         f"Average frequency (Hz): {samples[-1].get('hz', 0):.2f}\n"
         f"Recent payloads (hex):\n"
-        + "\n".join(s['last_data'] for s in samples[-12:])
+        + "\n".join(s.get('last_data', '') for s in samples[-12:])
         + "\n\nReturn JSON with: signal_name (one of rpm, speed, coolant, throttle, "
           "voltage, brake, steering, gear, fuel, unknown), confidence (0-1), "
           "byte_layout (string like '0-1 BE *0.25'), reason (one sentence)."

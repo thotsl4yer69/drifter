@@ -75,7 +75,11 @@ def find_no_data_invention(response: str,
     if not response:
         return None
     for sensor in no_data_sensors:
-        pat = _SENSOR_PATTERNS.get(sensor)
+        # Labels can carry a bank suffix (e.g. 'STFT B1', 'LTFT B2') while the
+        # pattern table is keyed by the base sensor ('STFT', 'LTFT'). Fall back
+        # to the first word so the fuel-trim sensors aren't silently exempted
+        # from the grounding check.
+        pat = _SENSOR_PATTERNS.get(sensor) or _SENSOR_PATTERNS.get(sensor.split()[0])
         if pat is None:
             continue
         m = pat.search(response)

@@ -162,3 +162,24 @@ def test_canonical_reply_mentions_sensor():
     # Crucially: no number that the operator could mistake for a reading.
     import re
     assert not re.search(r'\d', reply)
+
+
+# ── Bank-suffixed fuel-trim labels (regression) ────────────────────
+# 'STFT B1'/'LTFT B2' labels must still resolve to the STFT/LTFT
+# patterns — otherwise the four fuel-trim sensors silently bypass the
+# grounding check (the pattern table is keyed by the base sensor).
+
+@pytest.mark.parametrize('label,response', [
+    ('STFT B1', 'Your STFT is running at +8.5% which is a bit lean'),
+    ('STFT B2', 'short-term fuel trim is 6, looks ok'),
+    ('LTFT B1', 'LTFT B1 is at +12%, trending rich-correcting'),
+    ('LTFT B2', 'long term fuel trim sits around -4'),
+])
+def test_intercepts_invented_fuel_trim_with_bank_suffix(label, response):
+    assert find_no_data_invention(response, [label]) == label
+
+
+def test_fuel_trim_label_not_falsely_flagged_without_number():
+    # A reply that doesn't cite a fuel-trim number must not be intercepted.
+    assert find_no_data_invention("I can't see the fuel trims right now",
+                                  ['STFT B1', 'LTFT B1']) is None
