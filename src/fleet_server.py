@@ -123,11 +123,18 @@ def _jwt_decode(token: str, secret: str) -> dict | None:
     def unb64(d: str) -> bytes:
         return base64.urlsafe_b64decode(d + '=' * (-len(d) % 4))
 
-    signing_input = f"{h}.{p}".encode()
-    expected = hmac.new(secret.encode(), signing_input, hashlib.sha256).digest()
-    if not hmac.compare_digest(expected, unb64(s)):
+    # Everything below decodes attacker-controlled input: a malformed base64
+    # segment (binascii.Error) or a valid-base64-but-non-JSON payload
+    # (JSONDecodeError) must yield a clean auth failure, not a 500. Both are
+    # ValueError subclasses.
+    try:
+        signing_input = f"{h}.{p}".encode()
+        expected = hmac.new(secret.encode(), signing_input, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, unb64(s)):
+            return None
+        payload = json.loads(unb64(p))
+    except (ValueError, TypeError):
         return None
-    payload = json.loads(unb64(p))
     if payload.get('exp', 0) < time.time():
         return None
     return payload
