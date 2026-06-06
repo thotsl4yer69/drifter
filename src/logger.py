@@ -14,7 +14,6 @@ import shutil
 import signal
 import threading
 import time
-from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -61,7 +60,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = 0
-        self.rpm_history = deque(maxlen=600)  # Last 600 RPM readings (~60s at 10Hz)
+        self.low_rpm_streak = 0  # consecutive sub-ENGINE_ON_RPM samples
 
     def start(self):
         self.active = True
@@ -76,6 +75,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = time.time()
+        self.low_rpm_streak = 0
         log.info(f"Drive session started: {self.session_id}")
 
     def stop(self):
@@ -90,16 +90,19 @@ class DriveSession:
 
         if topic.endswith('/rpm'):
             self.max_rpm = max(self.max_rpm, value)
-            self.rpm_history.append(value)
         elif topic.endswith('/speed'):
             self.max_speed = max(self.max_speed, value)
-            # Estimate distance: speed (km/h) × time (h)
-            now = time.time()
-            dt_hours = (now - self.last_speed_time) / 3600.0
-            avg_speed = (self.last_speed + value) / 2.0
-            self.distance_km += avg_speed * dt_hours
+            # Estimate distance: speed (km/h) × time (h). Cap the step so a
+            # stalled or bursting feed (or a mid-drive restart) can't inject
+            # phantom kilometres — without the cap a 10-min speed gap would
+            # integrate avg_speed × 600s in a single step.
+            if self.last_speed_time:
+                dt_hours = min(ts - self.last_speed_time, 5.0) / 3600.0
+                if dt_hours > 0:
+                    avg_speed = (self.last_speed + value) / 2.0
+                    self.distance_km += avg_speed * dt_hours
             self.last_speed = value
-            self.last_speed_time = now
+            self.last_speed_time = ts
         elif topic.endswith('/coolant'):
             self.max_coolant = max(self.max_coolant, value)
         elif topic.endswith('/voltage'):
@@ -262,36 +265,41 @@ def detect_session_change(rpm, mqtt_client):
     """Detect engine on/off transitions."""
     global session
 
-    if rpm > ENGINE_ON_RPM and not session.active:
-        session.start()
-        # Publish session start
-        try:
-            mqtt_client.publish(TOPICS.get('drive_session', 'drifter/session'),
-                                json.dumps({
-                                    'event': 'start',
-                                    'session_id': session.session_id,
-                                    'ts': time.time()
-                                }))
-        except Exception:
-            pass
+    if rpm > ENGINE_ON_RPM:
+        # Engine running — reset the off-streak and start a session if needed.
+        session.low_rpm_streak = 0
+        if not session.active:
+            session.start()
+            # Publish session start
+            try:
+                mqtt_client.publish(TOPICS.get('drive_session', 'drifter/session'),
+                                    json.dumps({
+                                        'event': 'start',
+                                        'session_id': session.session_id,
+                                        'ts': time.time()
+                                    }))
+            except Exception:
+                pass
 
-    elif rpm < ENGINE_ON_RPM and session.active:
-        # Check if RPM has been low for ENGINE_OFF_SAMPLES
-        if session.rpm_history:
-            recent = list(session.rpm_history)[-ENGINE_OFF_SAMPLES:]
-            if len(recent) >= ENGINE_OFF_SAMPLES and all(r < ENGINE_ON_RPM for r in recent):
-                session.stop()
-                session.save_summary()
-                # Publish session end
-                try:
-                    mqtt_client.publish(
-                        TOPICS.get('drive_session', 'drifter/session'),
-                        json.dumps({
-                            'event': 'end',
-                            **session.summary()
-                        }))
-                except Exception:
-                    pass
+    elif session.active:
+        # rpm <= ENGINE_ON_RPM. Count consecutive low samples; end the session
+        # once the engine has been off for ENGINE_OFF_SAMPLES in a row. A plain
+        # streak counter (vs the old fixed-size ring buffer) ends short drives
+        # correctly and isn't reset by total drive length.
+        session.low_rpm_streak += 1
+        if session.low_rpm_streak >= ENGINE_OFF_SAMPLES:
+            session.stop()
+            session.save_summary()
+            # Publish session end
+            try:
+                mqtt_client.publish(
+                    TOPICS.get('drive_session', 'drifter/session'),
+                    json.dumps({
+                        'event': 'end',
+                        **session.summary()
+                    }))
+            except Exception:
+                pass
 
 
 def main():

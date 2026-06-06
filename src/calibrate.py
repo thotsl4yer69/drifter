@@ -53,6 +53,7 @@ class CalibrationCollector:
 
     def __init__(self):
         self.rpm = deque(maxlen=2000)
+        self.rpm_idle = deque(maxlen=2000)  # only sub-IDLE_RPM_MAX samples
         self.coolant = deque(maxlen=2000)
         self.stft1 = deque(maxlen=2000)
         self.stft2 = deque(maxlen=2000)
@@ -75,6 +76,7 @@ class CalibrationCollector:
                 self.rpm.append(value)
                 if value < IDLE_RPM_MAX:
                     self.idle_samples += 1
+                    self.rpm_idle.append(value)
             elif topic.endswith('/coolant'):
                 self.coolant.append(value)
             elif topic.endswith('/stft1'):
@@ -133,7 +135,10 @@ class CalibrationCollector:
         cal['stft2_baseline'] = round(trimmed_mean(self.stft2), 2)
         cal['ltft1_baseline'] = round(trimmed_mean(self.ltft1), 2) if self.ltft1 else 0.0
         cal['ltft2_baseline'] = round(trimmed_mean(self.ltft2), 2) if self.ltft2 else 0.0
-        cal['idle_rpm_baseline'] = round(trimmed_mean(self.rpm), 0)
+        # Idle baseline must come from idle-only samples, not every RPM reading
+        # (a blip or rev during the window would otherwise pull it upward and
+        # mask real idle-instability faults downstream).
+        cal['idle_rpm_baseline'] = round(trimmed_mean(self.rpm_idle or self.rpm), 0)
         cal['voltage_baseline'] = round(trimmed_mean(self.voltage), 2)
         cal['coolant_normal'] = round(trimmed_mean(self.coolant), 1)
         cal['calibrated'] = True
