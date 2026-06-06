@@ -21,6 +21,7 @@ from config import (
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -119,7 +120,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-home-bridge")
+    client = make_mqtt_client("drifter-home-bridge")
 
     sensor_topic_map = {TOPICS[key]: ha_id for key, ha_id, *_ in PUBLISHED_SENSORS if key in TOPICS}
 
@@ -152,6 +153,11 @@ def main() -> None:
                 client.publish(TOPICS['recorder_command'], json.dumps({'action': 'start'}))
             elif action == 'stop_recording':
                 client.publish(TOPICS['recorder_command'], json.dumps({'action': 'stop'}))
+            elif action == 'start_sentry':
+                # sentry_mode subscribes to sentry_event and arms on {'command':'arm'}
+                client.publish(TOPICS['sentry_event'], json.dumps({'command': 'arm'}))
+            elif action == 'stop_sentry':
+                client.publish(TOPICS['sentry_event'], json.dumps({'command': 'disarm'}))
 
     client.on_message = on_message
 

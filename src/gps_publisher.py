@@ -108,6 +108,7 @@ def main() -> int:
 
     backoff = 1
     while _running:
+        sock = None
         try:
             sock = connect_gpsd()
             backoff = 1
@@ -127,11 +128,20 @@ def main() -> int:
                         mqtt.publish(PUBLISH_TOPIC, json.dumps(fix), retain=True)
                     except Exception as e:
                         log.warning(f"publish failed: {e}")
-            sock.close()
         except (TimeoutError, ConnectionRefusedError, ConnectionError, OSError) as e:
             log.info(f"gpsd unreachable ({e}) — retrying in {backoff}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, RECONNECT_BACKOFF_MAX)
+        finally:
+            # Always close the socket — the previous `sock.close()` sat after the
+            # inner loop and was unreachable on the exception path, leaking one
+            # fd per gpsd reconnect until the process hit EMFILE on a long drive
+            # with intermittent GPS.
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
 
     log.info("shutting down")
     mqtt.loop_stop()

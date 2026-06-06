@@ -14,8 +14,6 @@ import logging
 import signal
 import time
 
-import paho.mqtt.client as mqtt
-
 from config import (
     MQTT_HOST,
     MQTT_PORT,
@@ -23,6 +21,7 @@ from config import (
     OBD_SERIAL_BAUD,
     OBD_SERIAL_DEV,
     TOPICS,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -128,7 +127,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-obdbridge")
+    client = make_mqtt_client("drifter-obdbridge")
     connected = False
     while not connected and running:
         try:
