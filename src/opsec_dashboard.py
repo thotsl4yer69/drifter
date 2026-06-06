@@ -1102,6 +1102,9 @@ class OpsecHandler(BaseHTTPRequestHandler):
                 return
             try:
                 length = int(self.headers.get('Content-Length', '0'))
+                if length > MAX_POST_BODY:
+                    self._send_json(413, {'ok': False, 'response': 'body too large'})
+                    return
                 body = json.loads(self.rfile.read(length).decode() or '{}')
             except Exception as e:
                 self._send_json(400, {'ok': False, 'response': f'bad body: {e}'})
