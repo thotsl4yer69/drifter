@@ -357,8 +357,13 @@ def ping_ok(host: str = PING_HOST, timeout: int = PING_TIMEOUT_SEC) -> bool:
     """One ICMP echo. Linux ping: -c1 -W<sec>."""
     if not shutil.which('ping'):
         return False
-    r = subprocess.run(['ping', '-c', '1', '-W', str(timeout), host],
-                       capture_output=True, timeout=timeout + 2)
+    try:
+        r = subprocess.run(['ping', '-c', '1', '-W', str(timeout), host],
+                           capture_output=True, timeout=timeout + 2)
+    except (subprocess.TimeoutExpired, OSError):
+        # A stuck ping must not bubble out of collect_network and drop the
+        # whole LCD frame — every other subprocess here is guarded too.
+        return False
     return r.returncode == 0
 
 

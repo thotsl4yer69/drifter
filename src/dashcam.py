@@ -37,6 +37,17 @@ log = logging.getLogger(__name__)
 DEFAULT_VIDEO_DEV = "/dev/video0"
 
 
+def _safe_mtime(p: Path) -> float:
+    """mtime for sorting, tolerant of files that vanish mid-scan. ffmpeg
+    rotates segments continuously, so a file can disappear between glob() and
+    stat() — an unguarded stat() in a sort key would raise FileNotFoundError
+    and kill the prune loop, letting the disk overflow past the cap."""
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _disk_used_bytes(path: Path) -> int:
     total = 0
     if not path.exists():
@@ -50,7 +61,7 @@ def _disk_used_bytes(path: Path) -> int:
 
 
 def _prune(path: Path, max_bytes: int) -> None:
-    files = sorted(path.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+    files = sorted(path.glob("*.mp4"), key=_safe_mtime)
     used = _disk_used_bytes(path)
     while files and used > max_bytes:
         victim = files.pop(0)
@@ -93,7 +104,7 @@ def _start_ffmpeg(device: str, out_pattern: str) -> subprocess.Popen | None:
 
 
 def _tag_latest_segment(reason: str) -> Path | None:
-    files = sorted(DASHCAM_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+    files = sorted(DASHCAM_DIR.glob("*.mp4"), key=_safe_mtime)
     if not files:
         return None
     target = files[-1]
