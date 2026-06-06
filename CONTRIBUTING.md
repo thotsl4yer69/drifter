@@ -19,27 +19,41 @@ author email is not the same thing as a signature.
 
 ### Practical policy
 
-- **Land changes through pull requests**, and **merge with _Rebase and merge_**
-  (not _Squash_). Rebase-merge replays each commit onto `main` via GitHub, so
-  the commits are GitHub-signed (Verified) while preserving the original author.
-- Squash merges produce a single commit committed by `GitHub`, which is signed
-  (Verified on GitHub) but collapses authorship — prefer rebase when individual
-  commit attribution matters.
-- For fully verified *local* commits, configure signing:
+GitHub signs the commit it *creates* during a merge, but only for some merge
+methods. Verified empirically on this repo (`git log --format='%G? %ce'`):
+
+| Merge method | Resulting commit on `main` | Signature |
+|---|---|---|
+| **Squash** | one new commit committed by `GitHub` | **signed → Verified** |
+| **Merge commit** | a merge commit by `GitHub` (+ the PR's own commits as parents) | merge commit **signed → Verified** |
+| **Rebase** | your commits *replayed* onto `main`, **not re-signed** | **unsigned → Unverified** |
+
+- **Land changes through pull requests and merge with _Squash_ or _Create a
+  merge commit_ — not _Rebase and merge_.** Rebase replays your branch commits
+  without re-signing them, so anything pushed from an unsigned environment lands
+  Unverified.
+- **Squash** is the simplest path to a Verified `main`: one GitHub-signed commit
+  per PR (authorship collapses into that commit; preserve attribution with
+  `Co-authored-by:` trailers in the commit message).
+- To keep **per-commit authorship _and_** Verified status, author the commits
+  through the **GitHub API / web UI** (those are web-flow signed) and merge with
+  **Create a merge commit** so the signed commits are preserved as parents.
+- For fully verified commits authored *locally*, configure signing and register
+  the key with GitHub (*Settings → SSH and GPG keys*):
   ```bash
   git config --global user.signingkey <KEY_ID>
   git config --global commit.gpgsign true   # or gpg.format=ssh for SSH signing
   ```
-  and add the public key to GitHub under *Settings → SSH and GPG keys*.
 
 ## Repository settings (require admin in the GitHub UI)
 
 These cannot be set from a CLI session and must be toggled by a maintainer:
 
-- **Allowed merge methods** — *Settings → General → Pull Requests*: enable
-  *Rebase merging* (and/or *Merge commits*); optionally disable *Squash merging*.
+- **Allowed merge methods** — *Settings → General → Pull Requests*: keep
+  *Squash merging* and/or *Merge commits* enabled; **disable _Rebase merging_**
+  so a rebase can't silently land Unverified commits.
 - **Require signed commits** — *Settings → Branches → Branch protection rules*
-  for `main`: enable *Require signed commits*.
+  for `main`: enable *Require signed commits* to enforce the above.
 
 ## Tests & lint
 
