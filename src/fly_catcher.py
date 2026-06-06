@@ -206,8 +206,12 @@ class FlyCatcher:
                 genuine = max(0.0, min(1.0, genuine))
             elif hasattr(self.model, 'predict_proba'):
                 proba = self.model.predict_proba([features])[0]
-                # binary classifier: assume class 1 == genuine
-                genuine = float(proba[-1])
+                # Same convention as the tflite paths: label 1 == spoofed, so
+                # class 0 == genuine. sklearn orders predict_proba columns by
+                # sorted classes_ ([0, 1]), so proba[0] is P(genuine). (Was
+                # proba[-1], which is P(spoofed) — it inverted the verdict,
+                # clearing real ghosts and flagging genuine aircraft.)
+                genuine = float(proba[0])
             elif hasattr(self.model, 'predict'):
                 pred = self.model.predict([features])
                 genuine = float(pred[0])

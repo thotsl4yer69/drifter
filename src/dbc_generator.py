@@ -32,19 +32,30 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_observed: dict[str, dict] = {}     # arb_id -> {hz, dlc, last_data}
-_classified: dict[str, dict] = {}   # arb_id -> {signal_name, byte_layout, ...}
+# Keyed by canonical int arbitration id so the two feeds join regardless of
+# whether a producer emits "0x7E8", "2024", or 2024.
+_observed: dict[int, dict] = {}     # arb_id -> {hz, dlc, last_data}
+_classified: dict[int, dict] = {}   # arb_id -> {signal_name, byte_layout, ...}
 
 
-def _parse_id(arb_id: str) -> int:
+def _parse_id(arb_id) -> int | None:
+    """Normalise an arbitration id to int. Returns None on garbage rather than
+    raising — an unparseable id from a malformed payload must not kill the emit
+    thread (this runs as a sort key over live MQTT data)."""
     if isinstance(arb_id, int):
         return arb_id
-    if arb_id.startswith('0x') or arb_id.startswith('0X'):
-        return int(arb_id, 16)
+    if not isinstance(arb_id, str):
+        return None
+    s = arb_id.strip()
     try:
-        return int(arb_id)
+        if s.lower().startswith('0x'):
+            return int(s, 16)
+        return int(s)
     except ValueError:
-        return int(arb_id, 16)
+        try:
+            return int(s, 16)
+        except ValueError:
+            return None
 
 
 def _emit_dbc(path: Path) -> None:
@@ -60,17 +71,17 @@ def _emit_dbc(path: Path) -> None:
         '',
     ]
     with _lock:
-        ids = sorted(_observed.keys(), key=_parse_id)
-        for arb_id in ids:
-            obs = _observed[arb_id]
-            cls = _classified.get(arb_id, {})
+        ids = sorted(_observed.keys())  # keys are already canonical ints
+        for id_int in ids:
+            obs = _observed[id_int]
+            cls = _classified.get(id_int, {})
             signal_name = (cls.get('signal_name') or 'UNKNOWN').upper()
-            id_int = _parse_id(arb_id)
-            dlc = obs.get('dlc', 8)
+            dlc = obs.get('dlc') or 8
             msg_name = f"DRIFTER_{signal_name}_{id_int:X}"
             lines.append(f"BO_ {id_int} {msg_name}: {dlc} DRIFTER")
-            # crude: one signal across the first 2 bytes BE
-            lines.append(f" SG_ {signal_name} : 0|16@0+ (1,0) [0|0] \"\" Vector__XXX")
+            # crude: one signal across the first 2 bytes, little-endian (@1) to
+            # match can_native's generator and load in strict DBC parsers.
+            lines.append(f" SG_ {signal_name} : 0|16@1+ (1,0) [0|65535] \"\" Vector__XXX")
             lines.append('')
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines))
@@ -87,19 +98,20 @@ def _on_message(client: mqtt.Client, _u, msg) -> None:
     if msg.topic == TOPICS['can_sniff_summary']:
         with _lock:
             for entry in data.get('ids', []):
-                aid = entry.get('id')
-                if aid:
-                    _observed[aid] = {
-                        'hz': entry.get('hz', 0),
-                        'count': entry.get('count', 0),
-                        'last_data': entry.get('last_data', ''),
-                        'dlc': len(entry.get('last_data', '')) // 2,
-                    }
+                key = _parse_id(entry.get('id'))
+                if key is None:
+                    continue
+                _observed[key] = {
+                    'hz': entry.get('hz', 0),
+                    'count': entry.get('count', 0),
+                    'last_data': entry.get('last_data', ''),
+                    'dlc': len(entry.get('last_data', '')) // 2,
+                }
     elif msg.topic == TOPICS['can_decode_response']:
-        aid = data.get('id')
-        if aid:
+        key = _parse_id(data.get('id'))
+        if key is not None:
             with _lock:
-                _classified[aid] = data
+                _classified[key] = data
 
 
 def _emit_loop(client: mqtt.Client, running: list) -> None:

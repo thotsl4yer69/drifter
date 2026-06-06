@@ -35,6 +35,13 @@ log = logging.getLogger(__name__)
 
 CONFIG_PATH = DRIFTER_DIR / "comms.yaml"
 
+# The modem serial port is shared between the inbound-SMS reader thread and
+# _send_sms (called from the MQTT callback thread). Serialise all access so an
+# outbound send can't have its +CMGS/OK response stolen by the reader (which
+# would misreport an SMS — including a crash SOS — as failed) and so the
+# inbound parser never sees interleaved AT traffic.
+_serial_lock = threading.Lock()
+
 
 def _load_config() -> dict:
     if not CONFIG_PATH.exists():
@@ -69,15 +76,16 @@ def _send_sms(ser, number: str, text: str) -> bool:
     if ser is None or not number:
         return False
     try:
-        ser.write(b'AT+CMGF=1\r')
-        time.sleep(0.3)
-        ser.read(64)
-        ser.write(f'AT+CMGS="{number}"\r'.encode())
-        time.sleep(0.3)
-        ser.read(64)
-        ser.write(text.encode() + b'\x1a')
-        time.sleep(2)
-        resp = ser.read(256).decode('ascii', errors='replace')
+        with _serial_lock:
+            ser.write(b'AT+CMGF=1\r')
+            time.sleep(0.3)
+            ser.read(64)
+            ser.write(f'AT+CMGS="{number}"\r'.encode())
+            time.sleep(0.3)
+            ser.read(64)
+            ser.write(text.encode() + b'\x1a')
+            time.sleep(2)
+            resp = ser.read(256).decode('ascii', errors='replace')
         ok = '+CMGS' in resp or 'OK' in resp
         log.info(f"SMS {'sent' if ok else 'failed'}: {number}")
         return ok
@@ -157,19 +165,21 @@ def _read_inbound_loop(ser, client: mqtt.Client, running_ref: list) -> None:
     if ser is None:
         return
     try:
-        ser.write(b'AT+CMGF=1\r')
-        time.sleep(0.3)
-        ser.read(64)
-        ser.write(b'AT+CNMI=2,2,0,0,0\r')  # forward incoming SMS to TE
-        time.sleep(0.3)
-        ser.read(64)
+        with _serial_lock:
+            ser.write(b'AT+CMGF=1\r')
+            time.sleep(0.3)
+            ser.read(64)
+            ser.write(b'AT+CNMI=2,2,0,0,0\r')  # forward incoming SMS to TE
+            time.sleep(0.3)
+            ser.read(64)
     except Exception as e:
         log.warning(f"Inbound config failed: {e}")
         return
     buf = b''
     while running_ref[0]:
         try:
-            data = ser.read(256)
+            with _serial_lock:
+                data = ser.read(256)
             if not data:
                 time.sleep(0.3)
                 continue

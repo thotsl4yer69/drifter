@@ -1017,7 +1017,10 @@ class OpsecHandler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs
             qs = parse_qs(urlparse(self.path).query)
             stream = qs.get('stream', ['ap'])[0]
-            n = int(qs.get('n', ['200'])[0])
+            try:
+                n = int(qs.get('n', ['200'])[0])
+            except ValueError:
+                n = 200  # bad ?n= must yield a clean response, not a 500
             events = marauder_client.get_scan_recent(stream, n=n)
             self._send_json(200, {'stream': stream, 'count': len(events), 'events': events})
             return
