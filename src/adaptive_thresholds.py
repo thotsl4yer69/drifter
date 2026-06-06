@@ -111,7 +111,7 @@ class Learner:
         updated = False
         for key, baseline_key in LEARNED_KEYS.items():
             buf = self.samples.get(key)
-            if not buf or len(buf) < ADAPTIVE_LEARN_MIN_SAMPLES // len(LEARNED_KEYS):
+            if not buf or len(buf) < ADAPTIVE_LEARN_MIN_SAMPLES:
                 continue
             values = list(buf)
             mean = sum(values) / len(values)

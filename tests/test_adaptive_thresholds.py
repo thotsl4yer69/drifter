@@ -78,6 +78,20 @@ def test_end_session_insufficient_samples_no_change(fresh_learner):
     assert baselines['idle_rpm_baseline'] == DEFAULT_BASELINES['idle_rpm_baseline']
 
 
+def test_end_session_requires_full_min_samples_per_key(fresh_learner):
+    """The per-key gate must require the full ADAPTIVE_LEARN_MIN_SAMPLES, not a
+    fraction of it. A handful of warm-idle samples must NOT be enough to shift a
+    safety/diagnostic baseline (which would silently loosen alert thresholds)."""
+    from adaptive_thresholds import DEFAULT_BASELINES
+    from config import ADAPTIVE_LEARN_MIN_SAMPLES
+    _warm_idle_learner(fresh_learner)
+    # One short below the minimum — must not move the baseline.
+    for _ in range(ADAPTIVE_LEARN_MIN_SAMPLES - 1):
+        fresh_learner.ingest('voltage', 13.0)
+    baselines = fresh_learner.end_session()
+    assert baselines['voltage_baseline'] == DEFAULT_BASELINES['voltage_baseline']
+
+
 def test_end_session_increments_session_count(fresh_learner):
     from config import ADAPTIVE_LEARN_MIN_SAMPLES
     _warm_idle_learner(fresh_learner)

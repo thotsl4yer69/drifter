@@ -256,6 +256,32 @@ def test_handle_command_stop_resumes_rtl_433():
     assert rfaudio._state == 'idle'
 
 
+def test_scan_natural_completion_resumes_rtl_433():
+    """When a scan cycles through every band to natural completion (no early
+    stop), it must still publish resume_rtl_433 — otherwise drifter-rf stays
+    paused forever after every finished scan."""
+    client = MagicMock()
+    publish_calls = []
+    client.publish.side_effect = lambda topic, payload, **kw: publish_calls.append((topic, payload))
+
+    # Make the worker run to completion instantly: no dwell, and _stream.start
+    # mocked out so no real rtl_fm is spawned.
+    with patch.object(rfaudio, 'SCAN_DWELL_SEC', 0.0), \
+         patch.object(rfaudio._stream, 'start', return_value=True), \
+         patch.object(rfaudio._stream, 'stop'):
+        rfaudio._start_scan(client)
+        rfaudio._scan_thread.join(timeout=5)
+
+    assert rfaudio._scan_thread is None or not rfaudio._scan_thread.is_alive()
+    resume_published = any(
+        topic == 'drifter/rf/command'
+        and json.loads(payload).get('command') == 'resume_rtl_433'
+        for topic, payload in publish_calls
+    )
+    assert resume_published, 'natural scan completion must publish resume_rtl_433'
+    assert rfaudio._state == 'idle'
+
+
 def test_handle_command_unknown_action_does_not_crash():
     client = MagicMock()
     rfaudio._handle_command(client, {'action': 'fly_to_the_moon'})
