@@ -39,7 +39,9 @@ from can_bridge import (
     decode_obd_response,
 )
 from config import (
+    CAN_AI_COLLECT_MAX_SEC,
     CAN_AI_MIN_SAMPLES,
+    CAN_AI_MIN_SATURATED_IDS,
     CAN_SNIFF_BUFFER,
     DBC_OUTPUT_DIR,
     FUZZ_DEFAULT_HZ,
@@ -381,14 +383,17 @@ def run_decoder_ai(samples: int = CAN_AI_MIN_SAMPLES) -> None:
 
     log.info("collecting %d frames per ID before AI inference...", samples)
     history: dict = defaultdict(list)
-    while running[0] and min((len(v) for v in history.values()), default=0) < samples:
+    # Bound the collection window. Requiring EVERY observed ID to reach
+    # `samples` never completes on a live bus — new IDs keep appearing and
+    # low-rate IDs (DTC, door modules) emit only a few frames/min — so the old
+    # min()/all() conditions left this running until SIGTERM with no inference.
+    # Stop on a time budget, or early once a healthy spread of IDs is saturated.
+    deadline = time.time() + CAN_AI_COLLECT_MAX_SEC
+    while running[0] and time.time() < deadline:
         msg = bus.recv(timeout=1.0)
         if msg is not None and len(history[msg.arbitration_id]) < samples:
             history[msg.arbitration_id].append(bytes(msg.data).hex())
-        if not running[0]:
-            break
-        # Stop once we have a reasonable spread to analyse.
-        if history and all(len(v) >= samples for v in history.values()) and len(history) >= 1:
+        if sum(1 for v in history.values() if len(v) >= samples) >= CAN_AI_MIN_SATURATED_IDS:
             break
 
     observed = {f"0x{aid:X}": frames[:samples] for aid, frames in history.items()}

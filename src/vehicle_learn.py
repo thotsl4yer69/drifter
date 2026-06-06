@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 # Rolling event buffer kept in memory
 _events: deque = deque(maxlen=200)
 _lock = threading.Lock()
+_learning_lock = threading.Lock()  # serialises _run_learning passes
 _last_learn_ts = 0.0
 LEARN_INTERVAL_S = 600.0   # at most once every 10 minutes
 
@@ -82,43 +83,51 @@ def _serialise(events: list) -> str:
 
 def _run_learning(client: mqtt.Client) -> None:
     global _last_learn_ts
-    events = _snapshot()
-    if len(events) < 8:
+    # Only one pass at a time. The periodic timer and the trip-end handler (a
+    # separate thread) can both fire; without this guard both clear the <8 gate
+    # and double-publish the same observations to the KB.
+    if not _learning_lock.acquire(blocking=False):
         return
-    _last_learn_ts = time.time()
-    log.info(f"Learning pass over {len(events)} events")
     try:
-        result = llm_client_v2.query_json(
-            _serialise(events), LEARN_SYSTEM, max_tokens=500,
-        )
-    except Exception as e:
-        log.warning(f"Learn LLM call failed: {e}")
-        return
-    if result.get('parse_error') or not result.get('json'):
-        log.warning("Learn response did not parse")
-        return
+        events = _snapshot()
+        if len(events) < 8:
+            return
+        _last_learn_ts = time.time()
+        log.info(f"Learning pass over {len(events)} events")
+        try:
+            result = llm_client_v2.query_json(
+                _serialise(events), LEARN_SYSTEM, max_tokens=500,
+            )
+        except Exception as e:
+            log.warning(f"Learn LLM call failed: {e}")
+            return
+        if result.get('parse_error') or not result.get('json'):
+            log.warning("Learn response did not parse")
+            return
 
-    observations = result['json'].get('observations') or []
-    for obs in observations:
-        topic = obs.get('topic', 'learned')
-        question = obs.get('question', 'observation')
-        text = obs.get('text', '')
-        if not text:
-            continue
-        client.publish(TOPICS['kb_update'], json.dumps({
-            'topic': topic,
-            'question': question,
-            'text': text,
-            'confidence': obs.get('confidence', 60),
-            'sources': obs.get('sources', []),
-            'source': 'continuous_learning',
-            'ts': time.time(),
-        }))
-        client.publish(TOPICS['learn_event'], json.dumps({
-            'observation': obs,
-            'ts': time.time(),
-        }))
-    log.info(f"Emitted {len(observations)} observations")
+        observations = result['json'].get('observations') or []
+        for obs in observations:
+            topic = obs.get('topic', 'learned')
+            question = obs.get('question', 'observation')
+            text = obs.get('text', '')
+            if not text:
+                continue
+            client.publish(TOPICS['kb_update'], json.dumps({
+                'topic': topic,
+                'question': question,
+                'text': text,
+                'confidence': obs.get('confidence', 60),
+                'sources': obs.get('sources', []),
+                'source': 'continuous_learning',
+                'ts': time.time(),
+            }))
+            client.publish(TOPICS['learn_event'], json.dumps({
+                'observation': obs,
+                'ts': time.time(),
+            }))
+        log.info(f"Emitted {len(observations)} observations")
+    finally:
+        _learning_lock.release()
 
 
 def on_message(client, userdata, msg) -> None:
