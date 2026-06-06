@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import signal
 import subprocess
@@ -59,15 +60,32 @@ log = logging.getLogger(__name__)
 
 # ── Pure helpers (unit-tested) ────────────────────────────────────────
 
+def _unescape_terse(field: str) -> str:
+    """nmcli -t escapes ':' as '\\:' and '\\' as '\\\\' inside fields."""
+    return re.sub(r'\\(.)', r'\1', field)
+
+
+def _split_terse(line: str) -> list[str]:
+    """Split an nmcli -t line on unescaped ':' and unescape each field."""
+    return [_unescape_terse(f) for f in re.split(r'(?<!\\):', line)]
+
+
 def parse_wifi_scan(nmcli_out: str) -> set[str]:
-    """SSIDs visible in `nmcli -t -f SSID dev wifi`. Drops blanks/hidden."""
-    return {ln.strip() for ln in nmcli_out.splitlines() if ln.strip()}
+    """SSIDs visible in `nmcli -t -f SSID dev wifi`. Drops blanks/hidden.
+
+    A single field per line, but an SSID containing ':' arrives escaped as
+    '\\:' — unescape so it matches the configured name exactly."""
+    return {_unescape_terse(ln).strip()
+            for ln in nmcli_out.splitlines() if ln.strip()}
 
 
 def parse_active_ssid(nmcli_out: str) -> str | None:
-    """From `nmcli -t -f ACTIVE,SSID dev wifi`, the joined SSID (client)."""
+    """From `nmcli -t -f ACTIVE,SSID dev wifi`, the joined SSID (client).
+
+    Split on the *unescaped* field separator so an SSID with a ':' (emitted
+    as '\\:') isn't truncated."""
     for line in nmcli_out.splitlines():
-        parts = line.split(':')
+        parts = _split_terse(line)
         if parts and parts[0] == 'yes' and len(parts) > 1 and parts[1]:
             return parts[1]
     return None

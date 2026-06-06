@@ -77,8 +77,10 @@ FOLLOWER_TTL_SEC = 3600
 # anomalous energy in these ranges from the rtl_power sweep. Heuristic only.
 SURVEILLANCE_BANDS_MHZ = [
     {'name': 'GSM900-DL', 'lo': 935.0, 'hi': 960.0},
-    {'name': 'GSM1800-DL', 'lo': 1805.0, 'hi': 1880.0},
-    {'name': 'LTE-B3-DL', 'lo': 1805.0, 'hi': 1880.0},
+    # 1805–1880 MHz is shared by GSM1800 DL and LTE Band 3 DL — one physical
+    # range, one entry. Listing it twice made every anomalous peak there fire
+    # the IMSI-catcher alert twice.
+    {'name': 'DL1800-GSM/LTE-B3', 'lo': 1805.0, 'hi': 1880.0},
     {'name': 'LTE-B28-DL', 'lo': 758.0, 'hi': 803.0},
 ]
 # dBm above the rolling band median that counts as anomalous.

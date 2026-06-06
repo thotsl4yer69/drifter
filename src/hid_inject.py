@@ -498,8 +498,12 @@ class HidStateMachine:
         detail = ''
         written = 0
         try:
-            written = ctrl.write_reports(
-                compiled.reports, default_delay_ms=compiled.default_delay_ms)
+            # compile_ducky already bakes the default delay onto each
+            # instruction's last report, so don't pass it again — doing so made
+            # write_reports re-apply the default to every zero-delay frame
+            # (between each key-down/up and every keystroke), ~N× slowing the
+            # injection and inserting unintended holds.
+            written = ctrl.write_reports(compiled.reports)
             detail = f'wrote {written} HID frames to {ctrl.hidg_path}'
         except hid_gadget.GadgetError as e:
             ok = False

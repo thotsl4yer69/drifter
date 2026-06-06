@@ -57,6 +57,12 @@ def generate_audio_wav(text: str) -> bytes | None:
                                       timeout=_PIPER_TIMEOUT)
             if raw:
                 return _raw_to_wav(raw, rate=22050, channels=1, width=2)
+        except subprocess.TimeoutExpired:
+            # communicate(timeout=...) does NOT kill the child — reap it, or a
+            # hung piper leaks a process holding the model in RAM on every
+            # timed-out alert until the Pi runs out of memory/process slots.
+            proc.kill()
+            proc.communicate()
         except Exception:
             pass
 
