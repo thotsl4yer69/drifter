@@ -215,7 +215,10 @@ async def broadcast_audio(wav_bytes: bytes) -> None:
     if not wav_bytes or not state.audio_ws_clients:
         return
     dead = set()
-    for ws in state.audio_ws_clients:
+    # Snapshot the client set: `await ws.send` yields control, during which a
+    # disconnecting client's handler can `discard()` from the live set and raise
+    # "Set changed size during iteration", aborting the whole broadcast.
+    for ws in list(state.audio_ws_clients):
         try:
             await ws.send(wav_bytes)
         except Exception:

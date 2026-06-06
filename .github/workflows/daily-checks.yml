@@ -1,0 +1,38 @@
+name: daily-checks
+
+# Daily lint + test sweep. The main deploy workflow only runs on push/PR/tags;
+# this catches regressions from dependency drift or flaky/time-sensitive tests
+# even when nobody has pushed. Same lint+test steps as deploy-drifter.yml's
+# lint-and-test job, minus the build/push so it stays cheap.
+on:
+  schedule:
+    # 14:00 UTC daily ≈ midnight Australia/Melbourne (the node's home tz).
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff
+        run: ruff check src tests
+
+      - name: pytest
+        run: pytest -q
