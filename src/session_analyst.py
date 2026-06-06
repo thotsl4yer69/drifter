@@ -6,6 +6,7 @@ Triggered automatically on drive end via MQTT, or manually via /api/analyse.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import gzip
 import json
 import logging
 import signal
@@ -55,8 +56,17 @@ def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[
     """
     sums: dict[str, float] = {}
     counts: dict[str, int] = {}
+    # logger.cleanup_old_logs compresses every non-today drive_*.jsonl to
+    # .jsonl.gz and deletes the original, so analysing a session from a prior
+    # day (or a re-analyse after the daily compress) must fall back to the gz
+    # copy — otherwise all SESSION AVERAGES silently vanish from the report.
+    gz_file = Path(str(log_file) + '.gz')
+    if not log_file.exists() and gz_file.exists():
+        opener = lambda: gzip.open(gz_file, 'rt')  # noqa: E731
+    else:
+        opener = lambda: open(log_file)  # noqa: E731
     try:
-        with open(log_file) as f:
+        with opener() as f:
             for line in f:
                 try:
                     rec = json.loads(line)

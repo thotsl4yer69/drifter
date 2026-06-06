@@ -172,3 +172,14 @@ class TestIsTargetAllowedEvilPortal:
         ok, reason = ma.is_target_allowed(scope, "evilportal",
                                            ssid="OTHER", template="acme-guest")
         assert ok is False
+
+    def test_bridge_gate_template_name_key_matches(self):
+        """The bridge allowlist gate forwards raw command args, whose template
+        key is `template_name` (not `template`). An authorized pair must still
+        match via that key — otherwise the gate refuses every authorized portal
+        before the feature-level gate is reached."""
+        scope = {"wifi": [], "ble": [],
+                 "evilportal": [{"ssid": "ACME-Guest", "template": "acme-guest"}]}
+        ok, reason = ma.is_target_allowed(scope, "evilportal",
+                                           ssid="ACME-Guest", template_name="acme-guest")
+        assert ok is True, reason

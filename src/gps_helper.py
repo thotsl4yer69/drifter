@@ -41,7 +41,11 @@ def current_fix(max_age_sec: float = _MAX_FIX_AGE_SEC) -> dict | None:
     geo fields rather than fabricating a position.
     """
     now = time.time()
-    if _cache['fix'] is not None and (now - _cache['ts']) < _CACHE_TTL_SEC:
+    # Serve the cached result (including a cached "no fix" None) within the TTL.
+    # Gating on `fix is not None` meant the no-fix case — file missing/stale, or
+    # before lock / inside a tunnel — re-read and re-parsed gps.json on *every*
+    # call, the exact 50Hz disk-thrash the cache exists to prevent.
+    if _cache['ts'] > 0 and (now - _cache['ts']) < _CACHE_TTL_SEC:
         return _cache['fix']
     fix = _read_fix(max_age_sec, now)
     _cache['ts'] = now

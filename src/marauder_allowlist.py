@@ -13,7 +13,11 @@ ALLOWLIST_PATH = Path(os.environ.get(
     "MARAUDER_ALLOWLIST", "/opt/drifter/etc/audit_targets.yaml"
 ))
 
-_EMPTY = {"wifi": [], "ble": [], "evilportal": []}
+def _empty_scope() -> dict:
+    """Fresh empty scope. Returns NEW lists each call — never share mutable
+    list objects across callers (a shared list would let one consumer's
+    append() permanently poison the 'safe empty scope' for everyone)."""
+    return {"wifi": [], "ble": [], "evilportal": []}
 
 
 def load_marauder_allowlist(path: Path | str | None = None) -> dict:
@@ -26,20 +30,20 @@ def load_marauder_allowlist(path: Path | str | None = None) -> dict:
     p = Path(path) if path else ALLOWLIST_PATH
     if not p.exists():
         log.warning("allowlist not found at %s — treating as empty", p)
-        return dict(_EMPTY)
+        return _empty_scope()
 
     try:
         import yaml
     except ImportError:
         log.error("PyYAML missing — cannot parse allowlist; treating as empty")
-        return dict(_EMPTY)
+        return _empty_scope()
 
     try:
         with p.open() as fh:
             data = yaml.safe_load(fh) or {}
     except yaml.YAMLError as e:
         log.error("allowlist YAML parse error: %s — treating as empty", e)
-        return dict(_EMPTY)
+        return _empty_scope()
 
     block = (data or {}).get("marauder") or {}
     return {
@@ -111,7 +115,14 @@ def _check_ble(entries: list[dict], fields: dict) -> tuple[bool, str]:
 
 def _check_evilportal(entries: list[dict], fields: dict) -> tuple[bool, str]:
     ssid = fields.get("ssid", "")
-    template = fields.get("template", "")
+    # Two call sites reach here: the bridge gate forwards the raw command args
+    # (key `template_name`), while the feature-level call passes `template`.
+    # Accept either so an authorized (ssid, template) pair matches from both —
+    # otherwise the bridge gate always reads "" and refuses every authorized
+    # portal before the feature gate is even reached.
+    template = fields.get("template")
+    if template is None:
+        template = fields.get("template_name", "")
     for entry in entries:
         if entry.get("ssid") == ssid and entry.get("template") == template:
             return True, f"matched evilportal (ssid={ssid}, template={template})"

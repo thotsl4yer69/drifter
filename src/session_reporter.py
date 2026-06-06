@@ -27,6 +27,7 @@ from config import (
     TOPICS,
     VEHICLE,
     VEHICLE_YEAR,
+    make_mqtt_client,
 )
 
 logging.basicConfig(
@@ -207,7 +208,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-reporter")
+    client = make_mqtt_client("drifter-reporter")
     client.on_message = on_message
 
     connected = False
