@@ -86,6 +86,7 @@ class AssistState:
         self.weather: dict = {}
         self.driving_mode: str = 'normal'      # normal | rain | fog | ice
         self.last_mqtt_weather: float = 0.0     # ts of last drifter/weather/current
+        self.last_snap_ts: float | None = None  # ts of last snapshot, for dt
 
 
 def _is_night(now: datetime | None = None) -> bool:
@@ -173,17 +174,27 @@ def main() -> None:
             if speed is not None:
                 try:
                     s = float(speed)
+                    now = time.time()
                     if state.drive_start is None and s > 5:
-                        state.drive_start = time.time()
+                        state.drive_start = now
                     if state.last_speed > 0:
-                        # Rolling distance for window scoring
-                        state.distance_km += (s / 3600.0) * 1.0
+                        # Rolling distance for window scoring. Use the real
+                        # interval between snapshots, not a hardcoded 1 s —
+                        # snapshot cadence varies and a fixed tick made the
+                        # distance (and thus the score window + odometer) wrong
+                        # by whatever the true rate was. Clamp to 5 s to drop
+                        # telemetry-stall spikes.
+                        if state.last_snap_ts is not None:
+                            dt = now - state.last_snap_ts
+                            if 0 < dt <= 5.0:
+                                state.distance_km += (s / 3600.0) * dt
                         delta = state.last_speed - s
                         if delta >= 22:
                             _record_event(state, 'hard_brake', {'delta_kph_per_s': round(delta, 1)})
                         if (s - state.last_speed) >= 14:
                             _record_event(state, 'hard_accel', {'delta_kph_per_s': round(s - state.last_speed, 1)})
                     state.last_speed = s
+                    state.last_snap_ts = now
                 except (TypeError, ValueError):
                     pass
         elif topic == TOPICS['weather_current'] and isinstance(data, dict):

@@ -157,13 +157,14 @@ def on_message(client, userdata, msg) -> None:
         # republishes the same retained payload on every cooldown tick and
         # we'd otherwise pile up duplicates.
         if topic == 'drifter/alert/message' and isinstance(data, dict):
-            msg = data.get('message')
-            if msg and (not recent_alerts or recent_alerts[-1].get('message') != msg):
+            alert_text = data.get('message')
+            if alert_text and (not recent_alerts
+                               or recent_alerts[-1].get('message') != alert_text):
                 recent_alerts.append({
                     'ts': data.get('ts') or time.time(),
                     'level': data.get('level'),
                     'name': data.get('name'),
-                    'message': msg,
+                    'message': alert_text,
                 })
 
         key = topic.replace('drifter/', '').replace('/', '_')

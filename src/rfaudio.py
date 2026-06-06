@@ -242,6 +242,11 @@ def _start_scan(client) -> None:
         _stream.stop()
         _state = 'idle'
         _publish_status(client)
+        # A scan pauses drifter-rf (rtl_433/TPMS/ADS-B) up front; resume it when
+        # the scan ends — whether it was stopped early or cycled every band to
+        # natural completion. Without this the natural-completion path leaves
+        # rtl_433 paused forever after every finished scan.
+        _resume_rtl_433(client)
 
     _stop_scan()
     _scan_thread = threading.Thread(target=worker, name='rfaudio-scan', daemon=True)

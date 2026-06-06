@@ -54,6 +54,7 @@ def _load_config() -> dict:
 class CrashState:
     def __init__(self, grace: int, sos_number: str) -> None:
         self.speed_hist: deque = deque(maxlen=10)
+        self.last_speed_ts: float | None = None  # ts of last speed sample, for dt
         self.accel_peak_g: float = 0.0
         self.event_active: bool = False
         self.cancelled: bool = False
@@ -192,14 +193,29 @@ def main() -> None:
         if topic == TOPICS['snapshot'] and isinstance(data, dict):
             speed = data.get('speed')
             if speed is not None:
+                now = time.time()
+                appended = False
                 try:
                     state.speed_hist.append(float(speed))
+                    appended = True
                 except (TypeError, ValueError):
                     pass
-                if len(state.speed_hist) >= 2:
-                    decel = state.speed_hist[-2] - state.speed_hist[-1]
-                    if decel >= CRASH_DECEL_KPH_PER_S and not state.event_active:
-                        on_event(reason=f"hard decel -{decel:.0f} km/h/s")
+                if appended and len(state.speed_hist) >= 2:
+                    # Normalise the speed drop by the real interval between
+                    # snapshots. The threshold is per-second (km/h/s); comparing
+                    # the raw per-sample drop against it fired a false-positive
+                    # SOS when two snapshots arrived close together (e.g. buffered
+                    # redelivery after an MQTT reconnect) and missed real crashes
+                    # when samples were spaced out. Only trust intervals in a
+                    # plausible band; a min-dt floor stops sub-second bursts from
+                    # being amplified into a phantom crash.
+                    if state.last_speed_ts is not None:
+                        dt = now - state.last_speed_ts
+                        if 0 < dt <= 3.0:
+                            decel = (state.speed_hist[-2] - state.speed_hist[-1]) / max(dt, 0.5)
+                            if decel >= CRASH_DECEL_KPH_PER_S and not state.event_active:
+                                on_event(reason=f"hard decel -{decel:.0f} km/h/s")
+                state.last_speed_ts = now
         elif topic == TOPICS['crash_event'] and isinstance(data, dict):
             if data.get('cancel'):
                 state.cancelled = True

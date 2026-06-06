@@ -443,7 +443,10 @@ def ask(user_text: str, stream: bool = VIVI2_STREAMING) -> dict:
 
     # If we already streamed sentence-by-sentence, the user has heard it.
     # In the non-streaming path or fallback, speak the whole thing now.
-    if (not stream or fallback) and response:
+    # `not sentences` covers the case where stream() internally fell back to a
+    # non-streaming backend (e.g. Claude down, cascade serves Ollama): on_token
+    # never fired, so nothing was spoken — speak the full response here.
+    if (not stream or fallback or not sentences) and response:
         speak(response)
 
     return {**result, 'response': response, 'streamed_sentences': len(sentences)}
