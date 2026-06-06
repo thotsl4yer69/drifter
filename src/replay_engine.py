@@ -93,7 +93,9 @@ def _replay_session(client: mqtt.Client, path: Path, speed: float, stop_event: t
                     # chop sleeps so we can stop quickly
                     end = time.time() + wait
                     while time.time() < end and not stop_event.is_set():
-                        time.sleep(min(0.2, end - time.time()))
+                        # clamp: time can cross `end` between the check and here,
+                        # and sleep() raises ValueError on a negative argument.
+                        time.sleep(max(0.0, min(0.2, end - time.time())))
                 if stop_event.is_set():
                     break
                 if isinstance(payload, (dict, list)):
