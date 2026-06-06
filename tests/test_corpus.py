@@ -149,3 +149,27 @@ def test_parse_frontmatter_missing_returns_empty_fm():
     fm, body = corpus_mod._parse_frontmatter(text)
     assert fm == {}
     assert body == text
+
+
+def test_rebuild_prunes_orphaned_chunks_for_deleted_files(_patch_paths_and_embed):
+    """An incremental rebuild must drop chunks whose source file was deleted —
+    otherwise stale content keeps showing up in search/stats forever."""
+    corpus_dir = _patch_paths_and_embed
+    _write_md(corpus_dir, 'keep.md', {'topic': 'keep'}, '# Keep\nkeep body')
+    _write_md(corpus_dir, 'gone.md', {'topic': 'gone'}, '# Gone\ngone body')
+    corpus_mod.rebuild(force=True)
+    assert corpus_mod.stats()['files'] == 2
+
+    # Delete one source file and do an incremental rebuild.
+    (corpus_dir / 'gone.md').unlink()
+    corpus_mod.rebuild(force=False)
+
+    s = corpus_mod.stats()
+    assert s['files'] == 1
+    # No chunk should reference the deleted file any more.
+    import sqlite3
+    conn = sqlite3.connect(corpus_mod.DB_PATH)
+    paths = {r[0] for r in conn.execute("SELECT DISTINCT source_path FROM chunks")}
+    conn.close()
+    assert 'gone.md' not in paths
+    assert 'keep.md' in paths

@@ -202,6 +202,17 @@ def rebuild(force: bool = False) -> dict:
             embedded += 1
         conn.commit()
 
+    # Prune chunks whose source file no longer exists on disk. The incremental
+    # path only DELETEs chunks for files it re-processes, so a deleted/renamed
+    # corpus file would otherwise leave orphaned chunks (and stale search hits)
+    # in the DB forever.
+    present = {str(p.relative_to(CORPUS_DIR)) for p in files}
+    db_paths = {row[0] for row in
+                cur.execute("SELECT DISTINCT source_path FROM chunks").fetchall()}
+    for gone in db_paths - present:
+        cur.execute("DELETE FROM chunks WHERE source_path = ?", (gone,))
+    conn.commit()
+
     cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
                 ('last_rebuild_ts', str(time.time())))
     conn.commit()

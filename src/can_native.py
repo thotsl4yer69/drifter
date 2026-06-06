@@ -271,7 +271,7 @@ def run_sniffer() -> None:
         return
 
     buf: deque = deque(maxlen=CAN_SNIFF_BUFFER)
-    id_stats: dict = defaultdict(lambda: {'count': 0, 'first': 0.0, 'last': 0.0})
+    id_stats: dict = defaultdict(lambda: {'count': 0, 'first': 0.0, 'last': 0.0, 'data': ''})
     last_summary = 0.0
     client.publish(TOPICS['can_sniff_status'], json.dumps({
         'status': 'up', 'channel': backend.channel, 'fd': backend.fd, 'ts': time.time(),
@@ -288,6 +288,7 @@ def run_sniffer() -> None:
             if s['first'] == 0.0:
                 s['first'] = now
             s['last'] = now
+            s['data'] = bytes(msg.data).hex()
             client.publish(TOPICS['can_sniff_frame'], json.dumps({
                 'id': f"0x{msg.arbitration_id:X}", 'dlc': msg.dlc,
                 'data': bytes(msg.data).hex(), 'fd': bool(getattr(msg, 'is_fd', False)),
@@ -297,6 +298,7 @@ def run_sniffer() -> None:
             ids = [{
                 'id': f"0x{aid:X}", 'count': s['count'],
                 'hz': s['count'] / max(s['last'] - s['first'], 0.001),
+                'last_data': s['data'],
             } for aid, s in id_stats.items()]
             client.publish(TOPICS['can_sniff_summary'], json.dumps({
                 'ts': now, 'buffer': len(buf), 'unique_ids': len(ids), 'ids': ids,

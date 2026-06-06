@@ -81,7 +81,10 @@ def _scan_arp() -> set[str]:
 
 def main() -> None:
     log.info("DRIFTER Presence Detect starting...")
-    known = _load_known()
+    # Normalise MAC keys to lowercase: scanned MACs and presence_state are all
+    # lowercased, so a mixed/upper-case MAC in the config file would otherwise
+    # be tracked but never appear in the published `present` roster.
+    known = {k.lower(): v for k, v in _load_known().items()}
     if not known:
         log.warning(f"no known devices — populate {PRESENCE_KNOWN_DEVICES_FILE} with {{mac: label}}")
 
