@@ -562,7 +562,12 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-rfaudio drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps drifter-batcher drifter-trip drifter-thresholds drifter-reporter drifter-weather drifter-location drifter-db-checkpoint drifter-boot-reason drifter-marauder drifter-hid drifter-lcd drifter-autoconnect drifter-boot-manager drifter-ghost drifter-ghost-voice"
+# The first 38 entries are config.py SERVICES verbatim (the set /healthz
+# monitors); the trailing three are boot/oneshot aux units that run but aren't
+# health-checked. tests/test_deploy_service_lists.py enforces that this list is
+# a superset of config.SERVICES so the deploy always enables what /healthz
+# expects.
+SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-dashboard drifter-fbmirror drifter-flipper drifter-fly-catcher drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-realdash drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
 # NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
 # both drive the SPI LCD — they are mutually exclusive. The deploy enables both
 # here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
