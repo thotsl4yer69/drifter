@@ -136,12 +136,21 @@ stage_ok 30
 # STAGE 40 — enable services
 # ════════════════════════════════════════════════════════════════
 stage_start 40 "systemctl enable + start"
+# Source of truth for the monitored service set is config.py SERVICES (the
+# same list /healthz checks). Keep this array in sync — tests/test_deploy_
+# service_lists.py enforces oneshot == config.SERVICES so the final /healthz
+# gate can't come back 'degraded' just because a new service was never started.
 SERVICES=(
-    drifter-canbridge drifter-alerts drifter-logger drifter-anomaly
-    drifter-analyst drifter-voice drifter-vivi drifter-hotspot drifter-homesync
-    drifter-watchdog drifter-realdash drifter-rf drifter-wardrive
-    drifter-dashboard drifter-fbmirror drifter-voicein drifter-flipper
-    drifter-opsec
+    drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect
+    drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge
+    drifter-dashboard drifter-fbmirror drifter-flipper drifter-fly-catcher
+    drifter-ghost drifter-ghost-voice drifter-gps drifter-hid
+    drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge
+    drifter-lcd drifter-location drifter-logger drifter-marauder
+    drifter-opsec drifter-realdash drifter-reporter drifter-rf
+    drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi
+    drifter-voice drifter-voicein drifter-wardrive drifter-watchdog
+    drifter-weather drifter-wifi-audit
 )
 systemctl daemon-reload
 for svc in "${SERVICES[@]}"; do
