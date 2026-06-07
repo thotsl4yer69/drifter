@@ -93,12 +93,13 @@ class OnnxYolo:
     def infer(self, frame_bgr) -> list:
         if self.session is None:
             return []
-        # Caller resizes/normalises frame; returns raw detections (xyxy, conf, cls)
-        try:
-            outputs = self.session.run(None, {self.input_name: frame_bgr})
-            return [outputs]
-        except Exception:
-            return []
+        # NOTE: raw YOLO output decoding (grid/anchor → xyxy boxes + NMS) is not
+        # implemented yet, so the model output can't be turned into the
+        # detection dicts the capture loop consumes — it filters out anything
+        # that isn't a dict. Return [] instead of running an expensive
+        # per-frame inference whose result is always discarded; plug the
+        # decoder in here when wiring real inference.
+        return []
 
 
 def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:

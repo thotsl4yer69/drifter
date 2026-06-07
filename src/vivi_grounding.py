@@ -85,10 +85,12 @@ def find_no_data_invention(response: str,
         m = pat.search(response)
         if not m:
             continue
-        # If the response includes a 'no current reading' style
-        # disclaimer somewhere, accept the cite — the model is
-        # quoting a static range responsibly.
-        if _DISCLAIMER_RE.search(response):
+        # Accept the cite only if a 'no current reading' disclaimer sits in the
+        # matched sensor's vicinity (±80 chars). Scoping it here — rather than
+        # searching the whole response — stops a disclaimer about one sensor
+        # from licensing an invented number for a different sensor elsewhere.
+        window = response[max(0, m.start() - 80):m.end() + 80]
+        if _DISCLAIMER_RE.search(window):
             continue
         return sensor
     return None

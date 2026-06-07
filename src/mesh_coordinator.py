@@ -110,6 +110,13 @@ def main() -> None:
 
     client = mqtt.Client(client_id="drifter-mesh-coordinator")
     client.on_message = _on_message
+    # Last-will: if the coordinator dies unexpectedly, the broker clears the
+    # retained 'up' with 'down' so subscribers don't see a stale online state.
+    client.will_set(
+        TOPICS['mesh_status'],
+        json.dumps({'status': 'down', 'reason': 'lwt'}),
+        retain=True,
+    )
 
     connected = False
     while not connected and running[0]:
@@ -128,6 +135,9 @@ def main() -> None:
         (TOPICS['mesh_node'], 0),
     ])
     client.loop_start()
+    # Publish a retained 'up' to clear any stale 'down' left by a prior run.
+    client.publish(TOPICS['mesh_status'],
+                   json.dumps({'status': 'up', 'ts': time.time()}), retain=True)
     log.info("Mesh Coordinator LIVE")
 
     threading.Thread(target=_expire_loop, args=(client, running), daemon=True).start()
