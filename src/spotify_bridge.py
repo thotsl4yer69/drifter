@@ -342,10 +342,14 @@ def main() -> None:
             return
         if payload.get('command') in ('duck', 'unduck'):
             res = _execute(sp, ducker, creds, payload)
+            ok = isinstance(res, dict) and res.get('ok', False)
+            # Only assert (retain) a duck state we actually achieved — a failed
+            # duck/unduck must not leave a sticky wrong 'ducked'/'normal' state.
             client.publish(TOPICS['spotify_duck'], json.dumps({
-                'state': 'ducked' if payload['command'] == 'duck' else 'normal',
+                'state': ('ducked' if payload['command'] == 'duck' else 'normal')
+                         if ok else 'error',
                 'result': res, 'ts': time.time(),
-            }), retain=True)
+            }), retain=ok)
         else:
             res = _execute(sp, ducker, creds, payload)
         client.publish(TOPICS['spotify_status'], json.dumps({
