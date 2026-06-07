@@ -107,17 +107,20 @@ def _tag_latest_segment(reason: str) -> Path | None:
     files = sorted(DASHCAM_DIR.glob("*.mp4"), key=_safe_mtime)
     if not files:
         return None
-    target = files[-1]
-    tag_path = target.with_suffix('.tag.json')
-    try:
-        tag_path.write_text(json.dumps({
-            'reason': reason,
-            'segment': target.name,
-            'ts': time.time(),
-        }))
-    except Exception as e:
-        log.warning(f"tag write failed: {e}")
-    return target
+    # Tag the two most recent segments: the crash moment may be in the segment
+    # ffmpeg is currently writing OR the one just finalised at a boundary, so
+    # preserve both. The published pointer still references the latest.
+    for target in files[-2:]:
+        tag_path = target.with_suffix('.tag.json')
+        try:
+            tag_path.write_text(json.dumps({
+                'reason': reason,
+                'segment': target.name,
+                'ts': time.time(),
+            }))
+        except Exception as e:
+            log.warning(f"tag write failed: {e}")
+    return files[-1]
 
 
 def main() -> None:

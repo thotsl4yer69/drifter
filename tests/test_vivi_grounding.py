@@ -183,3 +183,22 @@ def test_fuel_trim_label_not_falsely_flagged_without_number():
     # A reply that doesn't cite a fuel-trim number must not be intercepted.
     assert find_no_data_invention("I can't see the fuel trims right now",
                                   ['STFT B1', 'LTFT B1']) is None
+
+
+# ── Disclaimer is scoped to the matched sensor (regression) ────────
+def test_disclaimer_for_one_sensor_does_not_exempt_a_distant_other():
+    resp = ("I don't have a current coolant reading right now. "
+            "Everything else on the car looks completely normal today and "
+            "nothing stands out at all in the diagnostics. "
+            "Your battery is sitting at 14.1V.")
+    # Coolant: no number cited for it -> nothing to intercept.
+    assert find_no_data_invention(resp, ['Coolant']) is None
+    # Battery: invented number, with the only disclaimer far away (about a
+    # different sensor) -> must still be intercepted.
+    assert find_no_data_invention(resp, ['Battery']) == 'Battery'
+
+
+def test_adjacent_disclaimer_still_exempts():
+    # The disclaimer right next to the cite must still license it.
+    resp = "Battery voltage 14.1V — but I don't have a current reading."
+    assert find_no_data_invention(resp, ['Battery']) is None
