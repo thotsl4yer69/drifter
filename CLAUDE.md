@@ -108,10 +108,20 @@ forms. `restart` with no argument restarts every unit in `SERVICES`.
 
 Exit `0` if every fatal check passes; warnings (audio, rf_sdr) don't fail the run.
 
-## Service inventory (19)
+## Service inventory (38 — source of truth: `src/config.py` `SERVICES`)
 
-Canonical list lives in [`src/config.py`](src/config.py) — `SERVICES`. Keep in sync with
-[`services/`](services/) and the `SERVICES` array in [`install.sh`](install.sh).
+The canonical monitored list lives in [`src/config.py`](src/config.py) — `SERVICES`
+(currently **38**; run `python3 -c "import sys;sys.path.insert(0,'src');import config;print(len(config.SERVICES))"`
+for the live count). `/healthz` checks exactly this set; `scripts/oneshot.sh`
+starts exactly it; [`install.sh`](install.sh) enables it plus a few boot/aux
+units (`boot-manager`, `boot-reason`, `db-checkpoint`).
+[`services/`](services/) holds **all** unit files (67), a superset that
+includes mode-specific and mutually-exclusive alternatives (e.g.
+`fbmirror` vs `lcd`) — so the unit-file count is intentionally larger than
+`SERVICES`. `tests/test_deploy_service_lists.py` enforces that every `SERVICES`
+entry has a unit file and that `oneshot.sh`/`install.sh` stay in sync. The
+older "(19)"/"(25)" inventories below are historical snapshots — trust
+`config.py`, not the prose.
 
 ```
 drifter-canbridge   drifter-alerts      drifter-logger
