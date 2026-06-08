@@ -186,6 +186,25 @@ def test_healthz_payload_hw_optional_inactive(monkeypatch):
     assert payload['services_failed'] == []
 
 
+def test_healthz_payload_fbmirror_inactive_is_hw_pending(monkeypatch):
+    """fbmirror needs the SPI LCD framebuffer (/dev/fb1); on a bench it exits
+    'fb1 not found'. It must classify as hardware-optional so the deploy gate
+    stays 200 — and so does the documented 'disable fbmirror to use lcd' step.
+    """
+    _reset_healthz_cache()
+    monkeypatch.setattr(
+        h, '_systemctl_active',
+        lambda u: u != 'drifter-fbmirror',
+    )
+    state.mqtt_client = None
+    state.latest_state.clear()
+    payload, status = h._healthz_payload()
+    assert status == 200
+    assert payload['status'] == 'ok-hw-pending'
+    assert 'drifter-fbmirror' in payload['services_hw_pending']
+    assert payload['services_failed'] == []
+
+
 def test_healthz_payload_caches(monkeypatch):
     """Within TTL, repeat calls don't re-poke systemctl."""
     _reset_healthz_cache()

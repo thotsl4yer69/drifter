@@ -105,8 +105,8 @@ sudo ./install.sh && sudo reboot
 - **No hardcoded MQTT host/port** — always use `MQTT_HOST`, `MQTT_PORT` from config
 - **No class-based services** — flat `main()` + `if __name__ == '__main__': main()` pattern
 - **Signal handlers inside `main()`** — never at module level (prevents import side effects)
-- **systemd services** in the `SERVICES` list (config.py) must match `services/*.service` files
-- **install.sh** `SRC_FILES` variable must list every `.py` file in `src/` that should be deployed
+- **systemd services**: every name in the `SERVICES` list (config.py) must have a matching `services/<name>.service` file. `config.py SERVICES` is the single source of truth — `oneshot.sh` starts exactly it and `install.sh` enables it (∪ a few boot/aux units); `tests/test_deploy_service_lists.py` enforces this so the lists can't drift
+- **install.sh** deploys the whole `src/` tree (`cp src/*.py` + subpackages) — there is no `SRC_FILES` manifest to maintain (a hand-maintained manifest previously went stale and orphaned new modules; do not reintroduce one)
 - **RealDash XML** frame IDs and conversions must match `realdash_bridge.py` pack functions exactly
 - **DTC codes**: add to `XTYPE_DTC_LOOKUP` in config with `desc`, `cause`, `action`, `severity` keys
 - **TPMS thresholds**: tuned for 205/55R16 at factory 30 PSI (warn 26, crit 20)
