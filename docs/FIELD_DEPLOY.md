@@ -143,10 +143,13 @@ unplug-replug at the connector under the steering column.
 **`drifter: command not found`** — `oneshot.sh` didn't finish stage 10.
 Re-run it.
 
-**`/healthz` returns 503** — one or more services failed. Run
-`drifter status`. Likely candidates after a reboot: `drifter-canbridge`
-(no CAN adapter plugged in) and `drifter-rf` (no RTL-SDR plugged in).
-Both warn-only at the diagnose level.
+**`/healthz` returns 503** — a *non-hardware* service is down. Run
+`drifter status`. Note that hardware-optional units being inactive
+(`canbridge`, `rf`, `vivi`, `voicein`, `flipper`, `bleconv`, `gps`,
+`lcd`/`fbmirror`, `kismet`, `wifi-audit`, `fly-catcher`, `can-discovery`)
+return **`ok-hw-pending` (200)**, not 503 — that's the dongle simply not being
+plugged in, not a failure. A 503 means something like `dashboard`, `logger`,
+`watchdog`, or `alerts` actually failed; check that unit's `journalctl`.
 
 **`STAGE 40 FAIL — systemctl restart drifter-X failed`** — that unit
 file is broken or its dependency isn't met. Check
@@ -156,6 +159,32 @@ file is broken or its dependency isn't met. Check
 or `systemctl status mosquitto` (fallback). `install.sh` enables one
 or the other depending on which apt source is reachable.
 
-**`can0` doesn't exist** — USB CAN adapter not plugged in or kernel
-module not loaded. `lsusb | grep -i CAN` and check
-`/etc/udev/rules.d/80-can.rules`.
+**`can0` doesn't exist** — the bench-validated adapter is a **CANable/slcan**
+(`0483:5740`), which comes up as **`slcan0`**, *not* `can0`. So `candump can0`
+showing nothing usually means you're looking at the wrong interface, not that
+CAN is dead. Check both: `ip -brief link show slcan0` / `ip -brief link show
+can0`, and `lsusb | grep -i 0483:5740`. `drifter diagnose` already checks
+`slcan0` as a fallback. If neither interface exists, the adapter isn't plugged
+in or the kernel module/udev rule didn't load (`/etc/udev/rules.d/80-can.rules`).
+
+## First-drive CAN decision (do this in the car, engine running)
+
+The 2004 X-Type 2.5 is **not yet confirmed to speak CAN on the OBD-II pins** —
+some of that era are **K-line** (ISO 9141 / KWP2000) instead. Settle it before
+trusting empty gauges:
+
+```bash
+candump slcan0          # NOT can0 — see above
+```
+
+- **See `7E8` frames (ECU responses)?** ✅ CAN works — gauges will populate.
+- **Only `7DF` requests, no `7E8` responses?** → the car is **K-line**, and the
+  CANable **cannot** read OBD here. Switch to an **ELM327 (K-line)** adapter and
+  run `drifter-obdbridge` (`src/obd_bridge.py`) instead of `drifter-canbridge`.
+
+**Do not plug the Flipper Zero and the CANable in at the same time** — they
+share USB ID `0483:5740`, so the bridges will grab the wrong device. Unplug one
+before testing the other.
+
+See [`FIRST_DRIVE.md`](../FIRST_DRIVE.md) for the full hardware-validated
+walkthrough.
