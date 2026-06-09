@@ -10,7 +10,7 @@ drifter:
   ssh_host:    kali@<pi-ip>                  # last known: 10.246.228.156
   ssh_user:    kali
   repo:        git@github.com:thotsl4yer69/drifter.git
-  branch:      claude/drifter-fleet-compliant-GSdKl   # → main once merged
+  branch:      main
   workdir:     /home/kali/drifter
 
   # ── DEPLOY_CONTRACT artefacts ──────────────────────────────────────
@@ -51,7 +51,7 @@ drifter:
   # ── Status: yellow until end-to-end mesh deploy round-trips ────────
   status: yellow
   notes: |
-    Contract layer landed in branch claude/drifter-fleet-compliant-GSdKl.
+    Contract layer is on main (merged).
     Spec-vs-code discrepancies documented in CLAUDE.md:
       - dashboard is http.server (not FastAPI) — /healthz added inline
       - RealDash is TCP 35000 (not UDP)

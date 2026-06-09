@@ -175,7 +175,7 @@ need to happen there (and on the live Pi) for the node to flip from
    ```bash
    cd /home/kali/drifter
    git remote add origin git@github.com:thotsl4yer69/drifter.git  # if missing
-   git fetch && git checkout claude/drifter-fleet-compliant-GSdKl
+   git fetch && git checkout main
    ```
 2. **Run the contract deploy locally on the Pi:**
    ```bash
