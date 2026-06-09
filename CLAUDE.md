@@ -230,9 +230,12 @@ drifter-reporter
 ### Weather + Location enrichment (feature/drifter-v2)
 
 Wired the third-party API keys (OpenWeatherMap + Google Maps/Elevation/Places)
-into the v2 brain. Keys live in **`src/api_keys.py`** (hardcoded by design for
-this private node; every key still honours an env/`.env` override) and are
-re-exported from `config.py` so the rest of the fleet imports from one place.
+into the v2 brain. Keys are read from the environment (or `/opt/drifter/.env`,
+git-ignored; see [`.env.example`](.env.example)) via **`src/api_keys.py`** —
+they default to empty and the owning service idles when a key is absent. No
+secrets live in source. `config.py` re-exports the values so the rest of the
+fleet imports from one place. (Earlier revisions hardcoded live keys; those are
+in git history and must be rotated provider-side — treat them as compromised.)
 
 Two new services own *all* external API traffic and fan the results out over
 MQTT — every consumer reads the topics, so the real-time/safety path never
