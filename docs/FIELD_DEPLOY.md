@@ -39,7 +39,7 @@ truth.
 ssh kali@<pi-ip>
 cd /home/kali/drifter || git clone git@github.com:thotsl4yer69/drifter.git /home/kali/drifter && cd /home/kali/drifter
 git fetch origin
-git checkout claude/drifter-fleet-compliant-GSdKl
+git checkout main
 git pull --ff-only
 ```
 
