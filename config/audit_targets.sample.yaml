@@ -14,7 +14,7 @@ networks: []
 #    bssid: "aa:bb:cc:dd:ee:ff"
 
 # Used by drifter-marauder for deauth / beacon spam / BLE / EvilPortal.
-# See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §5.3
+# See docs/MARAUDER.md
 # for the full schema.
 marauder:
   wifi: []

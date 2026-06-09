@@ -1,6 +1,6 @@
 """MZ1312 DRIFTER — Marauder bridge module: Marauder CLI command builders + line-event parser.
 
-See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §3.
+See docs/MARAUDER.md for the design overview and authorization model.
 """
 
 # ── Command builders ──────────────────────────────────────────────────

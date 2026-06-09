@@ -4,11 +4,7 @@ DRIFTER's foot-mode arsenal includes a Marauder bridge that talks to ESP32
 Marauder firmware over USB serial, either directly via a Marauder-flashed
 ESP32 dev board or via the Flipper Zero GPIO ESP32 module. The bridge surfaces
 **both passive and active** Marauder capabilities; the offensive surface is
-gated by the three-layer authorization model defined in the design spec.
-
-**Design spec:** [`superpowers/specs/2026-05-24-marauder-bridge-design.md`](superpowers/specs/2026-05-24-marauder-bridge-design.md)
-
-**Implementation plan:** [`superpowers/plans/2026-05-24-marauder-bridge.md`](superpowers/plans/2026-05-24-marauder-bridge.md)
+gated by the three-layer authorization model described below.
 
 ## Change of stance (2026-05-24)
 

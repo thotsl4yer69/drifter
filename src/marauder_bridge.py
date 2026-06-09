@@ -1,6 +1,6 @@
 """MZ1312 DRIFTER — Marauder bridge module: service entry point, main loop, command dispatch.
 
-See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §1, §5.2, §6.
+See docs/MARAUDER.md for the capability overview and authorization model.
 """
 
 import logging
