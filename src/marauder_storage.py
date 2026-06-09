@@ -1,6 +1,6 @@
 """MZ1312 DRIFTER — Marauder bridge module: session JSONL writer + sessions.json index.
 
-See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §4.3, §6.
+See docs/MARAUDER.md for the design overview and authorization model.
 """
 
 import json

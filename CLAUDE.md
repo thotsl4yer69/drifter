@@ -231,7 +231,7 @@ drifter-reporter
 
 Wired the third-party API keys (OpenWeatherMap + Google Maps/Elevation/Places)
 into the v2 brain. Keys are read from the environment (or `/opt/drifter/.env`,
-git-ignored; see [`.env.example`](.env.example)) via **`src/api_keys.py`** —
+git-ignored; see [`config/.env.example`](config/.env.example)) via **`src/api_keys.py`** —
 they default to empty and the owning service idles when a key is absent. No
 secrets live in source. `config.py` re-exports the values so the rest of the
 fleet imports from one place. (Earlier revisions hardcoded live keys; those are

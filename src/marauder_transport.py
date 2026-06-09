@@ -1,6 +1,6 @@
 """MZ1312 DRIFTER — Marauder bridge module: transport autodetect + serial I/O.
 
-See docs/superpowers/specs/2026-05-24-marauder-bridge-design.md §2.
+See docs/MARAUDER.md for the design overview and authorization model.
 """
 
 import logging
