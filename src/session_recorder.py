@@ -13,7 +13,7 @@ import logging
 import signal
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
@@ -48,7 +48,7 @@ _state = {
 
 def _open_segment() -> Path:
     Path(RECORDER_DIR).mkdir(parents=True, exist_ok=True)
-    name = datetime.utcnow().strftime('drifter-%Y%m%dT%H%M%S.jsonl.gz')
+    name = datetime.now(UTC).strftime('drifter-%Y%m%dT%H%M%S.jsonl.gz')
     path = Path(RECORDER_DIR) / name
     fh = gzip.open(path, 'wt')
     _state['fh'] = fh

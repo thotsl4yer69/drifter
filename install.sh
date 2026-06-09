@@ -297,6 +297,12 @@ step 7 "Deploying DRIFTER application"
 # This also auto-deploys the hid_* modules (drifter-hid) — no manifest to update.
 cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"
 chmod +x "${DRIFTER_DIR}"/*.py 2>/dev/null || true
+# Dashboard HTML assets served from disk (e.g. web_dashboard's vivi_avatar.html,
+# which looks beside the module / under /opt/drifter). Without these the route
+# 404s "not deployed". nullglob so it's a no-op if none exist.
+shopt -s nullglob
+for html in "${REPO_DIR}"/src/*.html; do cp "$html" "${DRIFTER_DIR}/"; done
+shopt -u nullglob
 # Local subpackages imported by services (e.g. marauder_bridge -> marauder_features).
 for pkg in marauder_features; do
     if [ -d "${REPO_DIR}/src/${pkg}" ]; then

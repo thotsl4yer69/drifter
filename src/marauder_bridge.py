@@ -336,9 +336,31 @@ def main(argv=None) -> int:
     state_root.mkdir(parents=True, exist_ok=True)
     storage = SessionWriter(state_root=state_root)
 
-    # 4) MQTT
+    # 4) Signal handling — installed before the broker connect so a SIGTERM
+    #    during the startup retry loop is honoured (not the default handler).
+    stop_event = threading.Event()
+
+    def handle_signal(signum, frame):
+        log.info("signal %s received — shutting down", signum)
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    # 5) MQTT — retry the initial connect like every other service; the broker
+    #    may not be up yet at boot. A bare connect() previously raised and
+    #    exited, leaving systemd to crash-loop the unit until the broker came up.
     mqtt_client, host, port = _make_mqtt_client("drifter-marauder")
-    mqtt_client.connect(host, port, keepalive=60)
+    connected = False
+    while not connected and not stop_event.is_set():
+        try:
+            mqtt_client.connect(host, port, keepalive=60)
+            connected = True
+        except Exception as e:
+            log.warning("broker not ready (%s) — retrying in 3s", e)
+            stop_event.wait(3)
+    if stop_event.is_set():
+        return 0
 
     bridge = Bridge(transport=transport, mqtt_client=mqtt_client,
                     allowlist_scope=scope, session_writer=storage)
@@ -379,16 +401,6 @@ def main(argv=None) -> int:
     # 7) Initial status publish
     initial_state = "no_hardware" if transport.mode == "none" else "idle"
     _publish_status(bridge, initial_state)
-
-    # 8) Signal handling
-    stop_event = threading.Event()
-
-    def handle_signal(signum, frame):
-        log.info("signal %s received — shutting down", signum)
-        stop_event.set()
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
 
     # 9) Background loop — status heartbeat every 30s, sweep stale confirms
     last_status = 0.0

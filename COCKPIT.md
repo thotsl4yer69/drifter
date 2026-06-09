@@ -9,8 +9,10 @@ For the agent/architecture handoff see `AGENTS.md`; for deploy contract see
 Every endpoint the cockpit calls returns 200. Every retained MQTT topic
 that used to leak phantom/stale data is now non-retained. No baked-in
 placeholder strings remain in the UI (the wordmark serial reads
-`/etc/hostname` via `/healthz.node_id`). Cold-start of all 24 services
-reaches `status: ok` in under 60s with zero ERROR-level journal entries.
+`/etc/hostname` via `/healthz.node_id`). Cold-start of every expected
+service (the `config.py` `SERVICES` set — 38; `/healthz` is the live count)
+reaches `status: ok`/`ok-hw-pending` in under 60s with zero ERROR-level
+journal entries.
 
 | Surface          | Source of truth                         | Empty state                            |
 |------------------|-----------------------------------------|----------------------------------------|
