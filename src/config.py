@@ -1491,10 +1491,11 @@ LCD_DIAG_LOG_LINES = int(os.getenv("LCD_DIAG_LOG_LINES", "10"))
 #  falls back to bringing up the node's own MZ1312_DRIFTER AP so the
 #  operator can always SSH in to fix things.
 # ═══════════════════════════════════════════════════════════════════
-# Known client SSIDs to join, in priority order. The phone hotspot SSID is
-# read from env first so the operator can set it without editing source.
-PHONE_HOTSPOT_SSID = os.getenv("PHONE_HOTSPOT_SSID", "")
-PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "")
+# Known client SSIDs to join, in priority order. The phone hotspot SSID/PSK
+# default to the operator's "Drifter" phone hotspot so the node auto-joins it
+# out of the box; both still honour an env override for a different phone.
+PHONE_HOTSPOT_SSID = os.getenv("PHONE_HOTSPOT_SSID", "Drifter")
+PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "54232105")
 AUTOCONNECT_KNOWN_SSIDS = [
     s.strip() for s in os.getenv(
         "AUTOCONNECT_KNOWN_SSIDS",
