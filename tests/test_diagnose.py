@@ -391,3 +391,41 @@ def test_version_subcommand_prints_something(capsys):
     out = capsys.readouterr().out
     assert 'drifter' in out
     assert 'UNCAGED' in out
+
+
+def test_can_protocol_probe_unknown_without_tools(monkeypatch):
+    """No can-utils → probe is a safe no-op returning 'unknown' (the CI path)."""
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _name: None)
+    assert diagnose._probe_can_protocol('can0') == 'unknown'
+
+
+def test_can_protocol_probe_detects_can(monkeypatch):
+    """A 7E8-family reply on candump → 'can' (ISO-15765 confirmed)."""
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _name: '/usr/bin/' + _name)
+
+    class _Dump:
+        def communicate(self, timeout=0):
+            return ('  can0  7E8   [8]  03 41 05 5A 00 00 00 00\n', '')
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(diagnose.subprocess, 'Popen', lambda *a, **k: _Dump())
+    monkeypatch.setattr(diagnose.subprocess, 'run', lambda *a, **k: None)
+    monkeypatch.setattr(diagnose.time, 'sleep', lambda *_a: None)
+    assert diagnose._probe_can_protocol('can0') == 'can'
+
+
+def test_can_protocol_probe_silent_when_no_reply(monkeypatch):
+    """Query sent, no reply → 'silent' (engine off, or K-line car)."""
+    monkeypatch.setattr(diagnose.shutil, 'which', lambda _name: '/usr/bin/' + _name)
+
+    class _Dump:
+        def communicate(self, timeout=0):
+            return ('', '')
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(diagnose.subprocess, 'Popen', lambda *a, **k: _Dump())
+    monkeypatch.setattr(diagnose.subprocess, 'run', lambda *a, **k: None)
+    monkeypatch.setattr(diagnose.time, 'sleep', lambda *_a: None)
+    assert diagnose._probe_can_protocol('can0') == 'silent'

@@ -81,12 +81,14 @@ Returns JSON shaped like:
 `mode` reflects the current persona; `MODES` in `config.py` decides which
 services count as "expected" per mode. Cached for 2s server-side so high-rate
 probing is cheap. Modes:
-- `diag` — **lean RAM safety valve.** Vehicle telemetry + driver-safety only;
-  stops every heavy consumer (LLM `vivi`/`analyst`/`reporter`, STT `voicein`,
-  the `fly-catcher` ML model, all recon). Switch here when the node is
-  memory-pressured — diagnostics and the safety pipeline keep running on a
-  fraction of the RAM: `sudo drifter mode diag`.
-- `drive` — telemetry stack + the assistant/LLM/voice features (heavier).
+- `diag` — **the default lean floor** (`DEFAULT_MODE`). Vehicle telemetry +
+  driver-safety only; no LLM (`vivi`/`analyst`/`reporter`), no STT (`voicein`),
+  no `fly-catcher` ML, no recon. A fresh deploy settles here (`oneshot.sh`
+  stage 45) so the node comes up guaranteed-light, and the watchdog
+  auto-demotes back to it under memory/thermal pressure. Diagnostics and the
+  safety pipeline run on a fraction of the RAM.
+- `drive` — telemetry stack **+** the assistant/LLM/voice features (heavier).
+  Switch up once the node is stable: `sudo drifter mode drive`.
 - `foot` — recon/offsec persona.
 - `both` — every service (bench/lab only; will not fit comfortably in 8 GB).
 

@@ -123,8 +123,9 @@ def _fresh_heartbeats(monkeypatch, tmp_path):
     tests don't trip the capability override or the mode-aware failure filter.
     Tests that exercise those code paths opt back in explicitly."""
     monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: True)
-    # MODE_STATE_PATH points to a non-existent file → DEFAULT_MODE ('drive')
-    # is used, which expects every drive+shared service running. Mirrors the
+    # MODE_STATE_PATH points to a non-existent file → DEFAULT_MODE ('diag', the
+    # lean floor) is used; tests that need a wider expected set pin their own
+    # mode.state. Mirrors the
     # original assumption these tests were written under.
     monkeypatch.setattr(h, 'MODE_STATE_PATH', tmp_path / 'mode.state')
 
@@ -272,12 +273,17 @@ def test_healthz_foot_mode_ignores_drive_only_inactive(monkeypatch, tmp_path):
     assert payload['services']['drifter-canbridge'] is False
 
 
-def test_healthz_voicein_stale_heartbeat_marks_hw_pending(monkeypatch):
+def test_healthz_voicein_stale_heartbeat_marks_hw_pending(monkeypatch, tmp_path):
     """systemd reports voicein active, but its mic loop has stalled — the
     capability override marks it inactive and surfaces it on
     services_hw_pending. Voicein is hardware-optional (mic might not be
     plugged in on the bench), so this is HTTP 200 with status=ok-hw-pending,
     not a fatal 503 — but the broken-mic state IS visible to operators."""
+    # voicein only exists in drive/foot (not the lean diag default), so pin a
+    # persona that expects it.
+    state_path = tmp_path / 'mode.state'
+    state_path.write_text('drive\n')
+    monkeypatch.setattr(h, 'MODE_STATE_PATH', state_path)
     _reset_healthz_cache()
     monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
     monkeypatch.setattr(h, '_heartbeat_fresh', lambda *_a, **_kw: False)

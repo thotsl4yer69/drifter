@@ -128,6 +128,38 @@ def check_systemd_units() -> list[CheckResult]:
     return results
 
 
+def _probe_can_protocol(iface: str) -> str:
+    """Fire a standard OBD-II request (mode 01 PID 05, coolant) and watch for a
+    7E8-family ECU response. Returns:
+      'can'     — a 7E8 reply arrived → CAN / ISO-15765 confirmed
+      'silent'  — query sent, no reply (engine off, or the car is K-line)
+      'unknown' — can-utils not present, or the probe errored
+
+    A read-only OBD query, safe to transmit. This is what settles the
+    CAN-vs-K-line question on a pre-2008 car without the operator hand-running
+    candump."""
+    if not (shutil.which('candump') and shutil.which('cansend')):
+        return 'unknown'
+    dump = None
+    try:
+        # Listen for a 7E0-7EF response while we fire the query.
+        dump = subprocess.Popen(
+            ['candump', '-T', '1200', '-n', '1', f'{iface},7E0:7F0'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        time.sleep(0.1)
+        subprocess.run(['cansend', iface, '7DF#0201050000000000'],
+                       timeout=2, stderr=subprocess.DEVNULL)
+        out, _ = dump.communicate(timeout=2)
+        return 'can' if (out or '').strip() else 'silent'
+    except Exception:
+        if dump is not None:
+            try:
+                dump.kill()
+            except Exception:
+                pass
+        return 'unknown'
+
+
 def check_can_bridge() -> CheckResult:
     """can0 must exist + be UP. If candump is available, sniff briefly for
     any frame as a soft round-trip indicator (the ECU on the OBD-II bus
@@ -162,20 +194,24 @@ def check_can_bridge() -> CheckResult:
     if not shutil.which('candump'):
         return CheckResult('can0', True, f'link {state} (no candump for round-trip)')
     iface = parts[0].rstrip(':') if parts else 'can0'
+    # Passive: any frame in 750ms = the wire is alive.
+    saw_frame = False
     try:
         r = _run(['candump', '-T', '750', '-n', '1', iface], timeout=3)
-        # candump exits 0 when -n 1 fires; non-zero when timeout — that's fine,
-        # we treat absence of frames as "warn" not "fail" since the ECU may
-        # be off (key out of ignition).
         saw_frame = bool(r.stdout.strip())
+    except subprocess.SubprocessError:
+        pass
+    # Active protocol probe: an unanswered OBD query on a running engine means
+    # the car is K-line (ISO 9141/KWP2000), which the CANable can't read —
+    # switch drifter-canbridge → drifter-obdbridge (ELM327). See FIELD_DEPLOY.md.
+    proto = _probe_can_protocol(iface)
+    if proto == 'can':
         return CheckResult(
-            'can0', True,
-            f'link {state}, frames {"seen" if saw_frame else "none in 750ms (ECU may be off)"}',
-        )
-    except subprocess.TimeoutExpired:
-        return CheckResult('can0', True, f'link {state} (no frames in 3s)')
-    except subprocess.SubprocessError as e:
-        return CheckResult('can0', True, f'link {state} ({e})')
+            'can0', True, f'link {state}; CAN/ISO-15765 confirmed (ECU answered 7E8)')
+    detail = f'link {state}, frames {"seen" if saw_frame else "none (ECU may be off)"}'
+    if proto == 'silent':
+        detail += '; no 7E8 OBD response — engine off, or K-line: use drifter-obdbridge'
+    return CheckResult('can0', True, detail)
 
 
 def check_realdash_socket() -> CheckResult:

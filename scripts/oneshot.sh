@@ -167,6 +167,25 @@ done
 stage_ok 40
 
 # ════════════════════════════════════════════════════════════════
+# STAGE 45 — settle into the resolved persona
+# ════════════════════════════════════════════════════════════════
+# Stage 40 enabled+started the whole monitored set so this run proves every
+# unit installs and launches. Now settle into the persona: a first deploy
+# (no mode.state) drops to the lean `diag` floor (config DEFAULT_MODE) so the
+# node comes up guaranteed-light — switch up with `sudo drifter mode drive`
+# once it's stable. A re-run respects whatever mode the operator last set.
+# Non-fatal: a mode-settle hiccup must not fail the deploy.
+stage_start 45 "settle into persona"
+TARGET_MODE="$(tr -d '[:space:]' < "$DRIFTER_DIR/mode.state" 2>/dev/null || true)"
+TARGET_MODE="${TARGET_MODE:-diag}"
+if /usr/local/bin/drifter mode "$TARGET_MODE" >/dev/null 2>&1; then
+    ok "persona: $TARGET_MODE"
+else
+    note "mode settle skipped (drifter mode unavailable) — staying full"
+fi
+stage_ok 45
+
+# ════════════════════════════════════════════════════════════════
 # Final — curl /healthz
 # ════════════════════════════════════════════════════════════════
 stage_start FINAL "curl http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/healthz"
