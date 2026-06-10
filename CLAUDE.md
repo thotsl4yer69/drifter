@@ -78,7 +78,17 @@ Returns JSON shaped like:
 - `ok-hw-pending` — only hardware-dependent services (`canbridge`, `rf`, `vivi`, `voicein`, `flipper`, `bleconv`) are inactive; the dongle isn't plugged in yet. Still HTTP **200** so deploy doesn't block on a bench Pi awaiting OBD-II.
 - `degraded` — a non-hardware service is down. HTTP **503**.
 
-`mode` reflects the current persona (`drive` / `foot`); `MODES` in `config.py` decides which services count as "expected" per mode. Cached for 2s server-side so high-rate probing is cheap.
+`mode` reflects the current persona; `MODES` in `config.py` decides which
+services count as "expected" per mode. Cached for 2s server-side so high-rate
+probing is cheap. Modes:
+- `diag` — **lean RAM safety valve.** Vehicle telemetry + driver-safety only;
+  stops every heavy consumer (LLM `vivi`/`analyst`/`reporter`, STT `voicein`,
+  the `fly-catcher` ML model, all recon). Switch here when the node is
+  memory-pressured — diagnostics and the safety pipeline keep running on a
+  fraction of the RAM: `sudo drifter mode diag`.
+- `drive` — telemetry stack + the assistant/LLM/voice features (heavier).
+- `foot` — recon/offsec persona.
+- `both` — every service (bench/lab only; will not fit comfortably in 8 GB).
 
 ## `drifter` operator CLI
 

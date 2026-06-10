@@ -1167,7 +1167,40 @@ SHARED_SERVICES = [
     "drifter-ghost",       # counter-surveillance correlator (runs in both modes)
     "drifter-ghost-voice", # speaks ghost alerts (runs in both modes)
 ]
+# Lean diagnostics floor (RAM safety valve). A curated SUBSET of SERVICES —
+# vehicle telemetry + driver-safety only, deliberately excluding every heavy
+# RAM consumer (LLM via vivi/analyst/reporter, whisper STT via voicein, the
+# fly-catcher ML model, and all recon/offsec). Switch here with
+# `sudo drifter mode diag` when the node is memory-pressured; diagnostics and
+# the safety pipeline keep running on a fraction of the RAM.
+DIAG_SERVICES = [
+    "drifter-canbridge",   # CAN telemetry (swap to drifter-obdbridge on K-line cars)
+    "drifter-batcher",     # rolling telemetry window
+    "drifter-thresholds",  # adaptive baseline learner
+    "drifter-anomaly",     # telemetry anomaly detector
+    "drifter-alerts",      # driver-safety alert engine
+    "drifter-voice",       # cabin TTS for safety alerts (lightweight)
+    "drifter-trip",        # trip distance + fuel computer
+    "drifter-rf",          # RTL-SDR TPMS (passive vehicle telemetry)
+    "drifter-gps",         # GPS feed
+    "drifter-realdash",    # RealDash app feed
+    "drifter-fbmirror",    # SPI LCD dash mirror
+    "drifter-logger",      # telemetry log writer
+    "drifter-dashboard",   # operator HUD + /healthz
+    "drifter-hotspot",     # Wi-Fi AP
+    "drifter-autoconnect", # Wi-Fi uplink / AP fallback
+    "drifter-watchdog",    # service health monitor
+    "drifter-homesync",    # background rsync to home node
+    "drifter-weather",     # OpenWeatherMap poller (network-only, light)
+    "drifter-location",    # Elevation + Places (network-only, light)
+]
+
 MODES = {
+    # Lean diagnostics floor — vehicle telemetry + driver-safety ONLY. No LLM
+    # (vivi/analyst/reporter), no STT (voicein), no ML (fly-catcher), no recon.
+    # This is the RAM safety valve: `sudo drifter mode diag` stops the heavy
+    # services so diagnostics keep working when fuller modes drown the Pi.
+    "diag":  set(DIAG_SERVICES),
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
     "foot":  set(FOOT_ONLY_SERVICES)  | set(SHARED_SERVICES),
     "both":  set(SERVICES),
@@ -1180,6 +1213,9 @@ assert _classified == set(SERVICES), (
 )
 assert not (set(DRIVE_ONLY_SERVICES) & set(FOOT_ONLY_SERVICES)), \
     "service cannot be both DRIVE_ONLY and FOOT_ONLY"
+# The lean diag mode must be a strict subset of real services.
+assert set(DIAG_SERVICES) <= set(SERVICES), \
+    f"DIAG_SERVICES not in SERVICES: {set(DIAG_SERVICES) - set(SERVICES)}"
 
 # Persistent mode marker — read by the dashboard and CLI to render which
 # persona is currently armed. Updated by `drifter mode <name>`.

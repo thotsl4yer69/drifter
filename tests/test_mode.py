@@ -205,3 +205,28 @@ def test_no_source_references_legacy_state_mode_path():
         f"Legacy mode-state path {legacy!r} reappeared in: {offenders}. "
         f"Use config.MODE_STATE_PATH (/opt/drifter/mode.state) instead."
     )
+
+
+# ── Lean diag mode (RAM safety valve) ───────────────────────────────
+def test_diag_is_a_subset_of_services():
+    assert set(config.MODES['diag']) <= set(config.SERVICES)
+
+
+def test_diag_excludes_heavy_ram_consumers():
+    """diag must stop every LLM/STT/ML/recon service so it stays lean."""
+    p = mode.plan('diag')
+    for heavy in ('drifter-vivi', 'drifter-analyst', 'drifter-reporter',
+                  'drifter-voicein', 'drifter-fly-catcher'):
+        assert heavy in p['disable'], f"{heavy} must be stopped in diag mode"
+
+
+def test_diag_keeps_the_diagnostics_and_safety_core():
+    p = mode.plan('diag')
+    for core in ('drifter-canbridge', 'drifter-batcher', 'drifter-thresholds',
+                 'drifter-anomaly', 'drifter-alerts', 'drifter-dashboard',
+                 'drifter-watchdog', 'drifter-logger', 'drifter-realdash'):
+        assert core in p['enable'], f"{core} must run in diag mode"
+
+
+def test_diag_is_leaner_than_drive():
+    assert len(config.MODES['diag']) < len(config.MODES['drive'])
