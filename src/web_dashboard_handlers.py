@@ -34,7 +34,6 @@ from config import (
     MODE_STATE_PATH,
     MODES,
     SENTRY_COMMANDS,
-    SERVICES,
     SETTINGS_SCHEMA,
     SETTINGS_SECTIONS,
     SHARED_SERVICES,
@@ -47,6 +46,44 @@ from config import (
 from corpus import corpus_search, dtc_lookup_static
 from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
+
+# Non-security HUD helper groups extracted into focused sibling modules.
+# Re-imported here so the public API is byte-for-byte unchanged: every name
+# below still resolves at web_dashboard_handlers.X and the DashboardHandler
+# methods keep calling them as bare names.
+from web_dashboard_health import (  # noqa: F401
+    _CAPABILITY_HEARTBEATS,
+    _HEALTHZ_TTL,
+    _healthz_cache,
+    _healthz_payload,
+    _heartbeat_fresh,
+    _systemctl_active,
+)
+from web_dashboard_mechanic import (  # noqa: F401
+    _TELEMETRY_LINES,
+    MECHANIC_HISTORY_CHAR_BUDGET,
+    MECHANIC_HISTORY_TURNS,
+    _format_feed_context,
+    _mechanic_history_append,
+    _mechanic_history_block,
+    _mechanic_history_reset,
+    _mechanic_history_snapshot,
+    _query_telemetry_keys,
+    build_query_context,
+)
+from web_dashboard_panels import (  # noqa: F401
+    _AIRSPACE_EMERGENCY_SQUAWKS,
+    _CAN_DISCOVERY_RING_MAX,
+    _RF_CLASSIFICATION_RING_MAX,
+    _airspace_poller,
+    _record_can_discovery,
+    _record_rf_classification,
+    _snapshot_airspace,
+    _snapshot_can_discoveries,
+    _snapshot_rf_classifications,
+    _update_airspace_cache,
+    start_airspace_poller,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,126 +102,9 @@ GPS_MAX_ACCURACY_M = 100.0
 # Anything else on /api/mechanic/dtc/:code is rejected.
 _DTC_RE = re.compile(r'^[PCBU][0-9A-F]{4}$')
 
-# /healthz cache — systemctl is cheap but we hit it 15× per probe.
-# The fleet contract pings /healthz frequently; cache for 2s.
-_HEALTHZ_TTL = 2.0
-_healthz_cache: dict = {'ts': 0.0, 'payload': None, 'http_status': 200}
-
-# Services whose systemd active-state is necessary but not sufficient: their
-# inner loop can degrade (mic disappears, CAN drops) while the unit stays
-# "active". Each service writes a heartbeat file from inside its working loop;
-# /healthz overrides the systemctl reading with the heartbeat freshness.
-_CAPABILITY_HEARTBEATS: dict = {
-    'drifter-voicein': ('/opt/drifter/voicein.heartbeat', 90.0),
-}
-
-
-def _systemctl_active(unit: str) -> bool:
-    """Return True if `systemctl is-active <unit>` reports 'active'."""
-    try:
-        r = subprocess.run(
-            ['systemctl', 'is-active', unit],
-            capture_output=True, text=True, timeout=2,
-        )
-        return r.stdout.strip() == 'active'
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return False
-
-
-def _heartbeat_fresh(path: str, max_age_s: float, now: float) -> bool:
-    try:
-        return (now - Path(path).stat().st_mtime) < max_age_s
-    except OSError:
-        return False
-
-
-def _healthz_payload() -> tuple[dict, int]:
-    """Build the /healthz payload + HTTP status. Cached for _HEALTHZ_TTL."""
-    now = time.time()
-    if (_healthz_cache['payload'] is not None
-            and now - _healthz_cache['ts'] < _HEALTHZ_TTL):
-        return _healthz_cache['payload'], _healthz_cache['http_status']
-
-    services = {svc: _systemctl_active(svc) for svc in SERVICES}
-    for svc, (hb_path, max_age) in _CAPABILITY_HEARTBEATS.items():
-        if services.get(svc) and not _heartbeat_fresh(hb_path, max_age, now):
-            services[svc] = False
-    # Mode-aware failure: only services the current mode wants running count
-    # toward the "failed" list. Drive-only services being inactive in FOOT mode
-    # is the correct state, not a degradation.
-    try:
-        mode = (Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
-                or DEFAULT_MODE)
-    except OSError:
-        mode = DEFAULT_MODE
-    expected = MODES.get(mode, set(SERVICES))
-    # Hardware-optional services crash-loop cleanly until their dongle is
-    # plugged in. Canbridge waits for USB2CANFD, rf for RTL-SDR, voicein
-    # for the mic, vivi for Ollama+Piper. These should warn (status:
-    # degraded), not fail the healthz contract (HTTP 503).
-    _HW_OPTIONAL = {
-        'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
-        'drifter-voicein', 'drifter-flipper', 'drifter-bleconv',
-        'drifter-gps',
-        # Community-tool services pending external installs / allowlist
-        # config. They go inactive cleanly until their dependency is met
-        # (urh/caringcaribou/kismet/bettercap/fly catcher model) rather
-        # than failing the healthz contract.
-        'drifter-can-discovery', 'drifter-fly-catcher',
-        'drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
-        'drifter-rf-baseline', 'drifter-session-recorder',
-        # In-car SPI LCD: inactive (exits hw-pending) until /dev/fb1 is wired.
-        'drifter-lcd',
-        # fbmirror (fb0->fb1) is the mutually-exclusive alternative to lcd and
-        # also needs the SPI LCD framebuffer — fbmirror.c exits "fb1 not found"
-        # on a bench. Without this it lands in `failed` (not hw-pending), so a
-        # bench/no-LCD deploy returns degraded (503) and the oneshot final gate
-        # fails. It's also the unit operators disable when they pick lcd, which
-        # would otherwise trip the same 503.
-        'drifter-fbmirror',
-    }
-    failed = [s for s, ok in services.items()
-              if s in expected and not ok and s not in _HW_OPTIONAL]
-    degraded = [s for s, ok in services.items()
-                if s in expected and not ok and s in _HW_OPTIONAL]
-
-    mqtt_ok = state.mqtt_client is not None and getattr(
-        state.mqtt_client, 'is_connected', lambda: False)()
-
-    # Telemetry freshness: any topic updated in the last 30s = bus alive.
-    last_seen = state.latest_state.get('_last_update', 0)
-    telemetry_fresh = (now - last_seen) < 30 if last_seen else False
-
-    if failed:
-        status_str = 'degraded'
-    elif degraded:
-        status_str = 'ok-hw-pending'  # pi is healthy, dongles aren't plugged in yet
-    else:
-        status_str = 'ok'
-    # System hostname — the cockpit wordmark reads this instead of a
-    # baked-in node id. Cached because /etc/hostname is read-mostly.
-    try:
-        node_id = Path('/etc/hostname').read_text(encoding='utf-8').strip()
-    except OSError:
-        node_id = 'unknown'
-    payload = {
-        'status':              status_str,
-        'mode':                mode,
-        'ts':                  now,
-        'node_id':             node_id,
-        'services':            services,
-        'services_failed':     failed,
-        'services_hw_pending': degraded,
-        'mqtt_connected':      mqtt_ok,
-        'telemetry_fresh':     telemetry_fresh,
-        'ws_clients':          len(state.ws_clients),
-    }
-    # Healthz contract: 200 = OS-side healthy, 503 = a NON-hardware service
-    # is failing. Hardware-pending state still returns 200 so the deploy
-    # contract doesn't block on a bench unit waiting for OBD-II.
-    http_status = 200 if not failed else 503
-    _healthz_cache.update(ts=now, payload=payload, http_status=http_status)
-    return payload, http_status
+# _systemctl_active, _heartbeat_fresh, _healthz_payload and their cache
+# globals (_HEALTHZ_TTL, _healthz_cache, _CAPABILITY_HEARTBEATS) now live in
+# web_dashboard_health.py and are re-imported at the top of this module.
 
 # Static files served with no extra rewriting. All live at /opt/drifter/*.
 _STATIC_FILES = {
@@ -334,62 +254,9 @@ _RF_COMMANDS = {
     'tpms_delta_capture',
 }
 
-# Mechanic chat ring buffer — process-local, last N {ts, role, content} turns
-# prepended to the LLM prompt so the model has conversation context.
-# Capped at MECHANIC_HISTORY_TURNS (5 user + 5 assistant) and trimmed
-# until the joined char-count fits in MECHANIC_HISTORY_CHAR_BUDGET, which
-# approximates the 2000-token ceiling at ~4 chars/token.
-MECHANIC_HISTORY_TURNS = 10
-MECHANIC_HISTORY_CHAR_BUDGET = 8000
-
-import threading as _threading
-from collections import deque as _deque
-
-_mechanic_history: _deque = _deque(maxlen=MECHANIC_HISTORY_TURNS)
-_mechanic_history_lock = _threading.Lock()
-
-
-def _mechanic_history_append(role: str, content: str) -> None:
-    """Append a turn to the ring buffer and trim to char budget."""
-    if not isinstance(content, str) or not content.strip():
-        return
-    with _mechanic_history_lock:
-        _mechanic_history.append({
-            'ts': time.time(),
-            'role': role,
-            'content': content.strip(),
-        })
-        # Trim oldest turns while the budget is exceeded. Char-count
-        # is the proxy for token-count (≈ 4 chars/token).
-        total = sum(len(t.get('content') or '') for t in _mechanic_history)
-        while total > MECHANIC_HISTORY_CHAR_BUDGET and len(_mechanic_history) > 1:
-            dropped = _mechanic_history.popleft()
-            total -= len(dropped.get('content') or '')
-
-
-def _mechanic_history_reset() -> None:
-    with _mechanic_history_lock:
-        _mechanic_history.clear()
-
-
-def _mechanic_history_snapshot() -> list:
-    with _mechanic_history_lock:
-        return list(_mechanic_history)
-
-
-def _mechanic_history_block() -> str:
-    """Render the ring as a CONVERSATION HISTORY context block."""
-    turns = _mechanic_history_snapshot()
-    if not turns:
-        return ''
-    lines = []
-    for t in turns:
-        role = (t.get('role') or '').upper()
-        content = (t.get('content') or '').strip()
-        if not content:
-            continue
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
+# The mechanic chat ring buffer (_mechanic_history*, MECHANIC_HISTORY_*) now
+# lives in web_dashboard_mechanic.py and is re-imported at the top of this
+# module.
 
 # flipper_bridge's on_message() command allowlist. Same fail-closed posture
 # as _RF_COMMANDS — only commands the cockpit surface emits.
@@ -419,115 +286,11 @@ _CAN_COMMANDS = {
 # lists files here and /api/can/captures/<name> serves them back.
 _CAN_CAPTURE_DIR = Path('/opt/drifter/state/can_captures')
 
-# Process-local ring buffer of the last N URH classifications published on
-# drifter/rf/classification. The cockpit's "Signal Intel" sub-tile polls
-# /api/rf/classification and renders the last 5; bound so a noisy band
-# can't pin memory.
-_RF_CLASSIFICATION_RING_MAX = 50
-_rf_classifications: list = []
-_rf_classifications_lock = _threading.Lock()
-
-
-def _record_rf_classification(payload: dict) -> None:
-    """Push a classifier payload (newest first) onto the ring."""
-    if not isinstance(payload, dict):
-        return
-    with _rf_classifications_lock:
-        _rf_classifications.insert(0, payload)
-        del _rf_classifications[_RF_CLASSIFICATION_RING_MAX:]
-
-
-def _snapshot_rf_classifications(limit: int = 50) -> list:
-    with _rf_classifications_lock:
-        return list(_rf_classifications[:max(0, int(limit))])
-
-
-# Same ring for CaringCaribou discovery responses (drifter/can/discovery).
-_CAN_DISCOVERY_RING_MAX = 25
-_can_discoveries: list = []
-_can_discoveries_lock = _threading.Lock()
-
-
-def _record_can_discovery(payload: dict) -> None:
-    if not isinstance(payload, dict):
-        return
-    with _can_discoveries_lock:
-        _can_discoveries.insert(0, payload)
-        del _can_discoveries[_CAN_DISCOVERY_RING_MAX:]
-
-
-def _snapshot_can_discoveries(limit: int = 25) -> list:
-    with _can_discoveries_lock:
-        return list(_can_discoveries[:max(0, int(limit))])
-
-
-# Airspace enrichment cache — populated by the background fetcher that
-# polls tar1090's aircraft.json every 10s. /api/airspace/aircraft returns
-# whatever the last poll captured (or {} when tar1090 hasn't answered).
-_AIRSPACE_CACHE: dict = {'ts': 0.0, 'payload': {}}
-_AIRSPACE_CACHE_LOCK = _threading.Lock()
-_AIRSPACE_TAR1090_URL = 'http://localhost:8504/data/aircraft.json'
-_AIRSPACE_POLL_INTERVAL_S = 10.0
-_AIRSPACE_EMERGENCY_SQUAWKS = {'7500', '7600', '7700'}
-
-
-def _update_airspace_cache(payload: dict) -> None:
-    with _AIRSPACE_CACHE_LOCK:
-        _AIRSPACE_CACHE['ts'] = time.time()
-        _AIRSPACE_CACHE['payload'] = payload or {}
-
-
-def _snapshot_airspace() -> dict:
-    with _AIRSPACE_CACHE_LOCK:
-        return {
-            'ts': _AIRSPACE_CACHE['ts'],
-            'aircraft': (_AIRSPACE_CACHE['payload'] or {}).get('aircraft', []),
-            'source': 'tar1090',
-            'raw': _AIRSPACE_CACHE['payload'],
-        }
-
-
-def _airspace_poller() -> None:
-    """Background loop — fetch tar1090's aircraft.json, refresh the cache,
-    and republish to drifter/airspace/aircraft so the WS fan-out picks it up."""
-    import urllib.error
-    import urllib.request
-    while True:
-        payload = None
-        try:
-            with urllib.request.urlopen(_AIRSPACE_TAR1090_URL, timeout=4) as resp:
-                payload = json.loads(resp.read())
-        except (urllib.error.URLError, OSError, ValueError, TimeoutError):
-            payload = None
-        except Exception as e:
-            log.debug("airspace poll failed: %s", e)
-            payload = None
-        if payload is not None:
-            _update_airspace_cache(payload)
-            if state.mqtt_client is not None:
-                try:
-                    state.mqtt_client.publish(
-                        'drifter/airspace/aircraft',
-                        json.dumps({'ts': time.time(),
-                                    'aircraft': payload.get('aircraft', [])}),
-                    )
-                except Exception as e:
-                    log.debug("airspace publish failed: %s", e)
-        time.sleep(_AIRSPACE_POLL_INTERVAL_S)
-
-
-_AIRSPACE_THREAD_STARTED = {'v': False}
-
-
-def start_airspace_poller() -> None:
-    """Idempotent kick-off. Called once from web_dashboard.main()."""
-    if _AIRSPACE_THREAD_STARTED['v']:
-        return
-    _AIRSPACE_THREAD_STARTED['v'] = True
-    t = _threading.Thread(target=_airspace_poller, daemon=True,
-                          name='airspace-poller')
-    t.start()
-
+# The RF/CAN/airspace process-local caches (_record_rf_classification,
+# _snapshot_rf_classifications, _record_can_discovery,
+# _snapshot_can_discoveries, _update_airspace_cache, _snapshot_airspace,
+# _airspace_poller, start_airspace_poller) and their backing globals now live
+# in web_dashboard_panels.py and are re-imported at the top of this module.
 
 # Per-corner TPMS assignment file (written by rf_monitor.tpms_assign_corner).
 # GET /api/tpms/assignments reads this verbatim so the cockpit shows the
@@ -2790,26 +2553,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return build_query_context(query)
 
 
-_TELEMETRY_LINES = [
-    ('engine_rpm',      'RPM',      '{:.0f}'),
-    ('engine_coolant',  'Coolant',  '{:.1f}°C'),
-    ('vehicle_speed',   'Speed',    '{:.0f} km/h'),
-    ('engine_stft1',    'STFT B1',  '{:+.1f}%'),
-    ('engine_stft2',    'STFT B2',  '{:+.1f}%'),
-    ('engine_ltft1',    'LTFT B1',  '{:+.1f}%'),
-    ('engine_ltft2',    'LTFT B2',  '{:+.1f}%'),
-    ('power_voltage',   'Battery',  '{:.1f}V'),
-    ('engine_load',     'Load',     '{:.0f}%'),
-    ('vehicle_throttle','Throttle', '{:.0f}%'),
-    ('engine_iat',      'IAT',      '{:.0f}°C'),
-    ('engine_maf',      'MAF',      '{:.1f} g/s'),
-]
-
-
-def _query_telemetry_keys():
-    """Return [(state_key, label), ...] — single source of truth shared
-    between build_query_context and the grounding validator."""
-    return [(k, label) for k, label, _ in _TELEMETRY_LINES]
+# _TELEMETRY_LINES and _query_telemetry_keys now live in
+# web_dashboard_mechanic.py and are re-imported at the top of this module.
 
 
 # Conversational "Ask Mechanic" system prompt. Moved here from the retired
@@ -2840,158 +2585,8 @@ VEHICLE CONTEXT:
 - Suspected: vacuum leaks (PCV hose, IMT valve O-ring, brake booster hose)
 """
 
-# Path to the drifter-feeds aggregator output. Single source so the
-# helper below stays in lockstep with feeds.SUMMARY_PATH.
-_FEEDS_SUMMARY_PATH = Path('/opt/drifter/state/feeds_summary.json')
-
-
-def _format_feed_context() -> str | None:
-    """Read drifter-feeds aggregator output and produce a compact live-
-    context block: weather, EMV incidents, BOM warnings, interesting
-    aircraft. Empty when the file is missing, stale (>10min), or all
-    sub-sections are empty. Capped to ~2 KB to stay well under 500 tokens.
-
-    Ported verbatim from the retired vivi v1 module so the dashboard query
-    path and (formerly) the voice path render feeds identically. Self-
-    contained — stdlib only — so the memory-capped HUD process doesn't have
-    to import the heavy feeds aggregator just to read its output file."""
-    try:
-        s = json.loads(_FEEDS_SUMMARY_PATH.read_text())
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-    age = int(time.time() - float(s.get('ts', 0) or 0))
-    if age > 600:
-        return None
-    o = s.get('origin') or {}
-    src = o.get('source', '?')
-    radius = s.get('radius_km', '?')
-    parts = [f"[Live context — age {age}s, origin {src}, radius {radius}km]"]
-    w = s.get('weather') or {}
-    if any(w.get(k) is not None for k in ('temp_c', 'wind_kmh')):
-        parts.append(
-            f"Weather: {w.get('temp_c')}°C feels {w.get('feels_c')}°C, "
-            f"wind {w.get('wind_kmh')} km/h gust {w.get('gust_kmh')}, "
-            f"rain {w.get('rain_mm') or 0}mm"
-        )
-    inc = int(s.get('incidents_nearby') or 0)
-    parts.append(f"EMV incidents nearby: {inc}")
-    for it in (s.get('incidents_top') or [])[:3]:
-        parts.append(
-            f"  - {it.get('category1')} @ {it.get('location')} "
-            f"({it.get('distance_km')}km, status {it.get('status')})"
-        )
-    wc = int(s.get('warnings_count') or 0)
-    if wc:
-        parts.append(f"BOM VIC warnings: {wc}")
-        for it in (s.get('warnings_top') or [])[:2]:
-            parts.append(f"  - {it.get('title')}")
-    interesting = s.get('aircraft_interesting') or []
-    if interesting:
-        parts.append("Interesting aircraft nearby: " + ", ".join(
-            f"{a.get('flight') or a.get('hex')}@{a.get('distance_km')}km"
-            for a in interesting[:3]
-        ))
-    body = '\n'.join(parts)
-    return body[:2000]
-
-
-def build_query_context(query: str) -> str:
-    """Assemble the prompt the LLM sees when you ask a question in the UI.
-
-    Exposed at module scope so tests can reuse it without instantiating
-    a handler.
-    """
-    def _v(key):
-        d = state.latest_state.get(key, {})
-        return d.get('value') if isinstance(d, dict) else None
-
-    TELEMETRY_LINES = _TELEMETRY_LINES
-
-    telem_lines = []
-    for key, label, fmt in TELEMETRY_LINES:
-        v = _v(key)
-        if v is not None:
-            telem_lines.append(f"{label}: {fmt.format(v)}")
-        else:
-            # Explicit NO DATA — the model must SEE the absence rather
-            # than infer one. Closes the hallucination class where the
-            # LLM invented values to satisfy its mechanic persona.
-            telem_lines.append(f"{label}: NO DATA")
-
-    dtc_data = state.latest_state.get('diag_dtc', {})
-    if isinstance(dtc_data, dict):
-        if dtc_data.get('stored'):
-            telem_lines.append(f"Active DTCs: {', '.join(dtc_data['stored'])}")
-        if dtc_data.get('pending'):
-            telem_lines.append(f"Pending DTCs: {', '.join(dtc_data['pending'])}")
-
-    alert_d = state.latest_state.get('alert_message', {})
-    if isinstance(alert_d, dict):
-        alert_msg = alert_d.get('message', '')
-        if alert_msg and alert_msg != 'Systems nominal':
-            telem_lines.append(f"Active alert: {alert_msg}")
-
-    context_parts = []
-    # Conversation history — the last few user/assistant turns from this
-    # session so follow-up questions resolve correctly ("what about the
-    # second one?") without re-stating context every turn.
-    history_block = _mechanic_history_block()
-    if history_block:
-        context_parts.append(
-            "CONVERSATION HISTORY (most recent turns; use to resolve "
-            "pronouns and follow-ups, not as a source of telemetry):\n"
-            + history_block
-        )
-    # Telemetry is always emitted with explicit NO DATA markers — the
-    # model must see absent sensors rather than have to infer their
-    # absence from a vague "car may be off" line.
-    context_parts.append(
-        "CURRENT VEHICLE STATE (NO DATA = no current reading; do NOT "
-        "invent, estimate, or infer a value for any sensor marked "
-        "NO DATA):\n" + "\n".join(telem_lines)
-    )
-
-    # Live public-data feeds — same source the cockpit reads. The formatter
-    # lives in this module now (ported from the retired vivi v1 module) so
-    # the format stays identical to what the cockpit renders. A None means
-    # the feeds aggregator is offline / stale (>10 min) and we omit cleanly.
-    try:
-        feed_block = _format_feed_context()
-        if feed_block:
-            context_parts.append("LIVE EXTERIOR CONTEXT (use these numbers verbatim "
-                                 "— do not invent or refer to coolant/engine):\n"
-                                 + feed_block)
-    except Exception as e:
-        log.debug(f"feed-context build failed: {e}")
-
-    # Corpus retrieval — top 3 chunks ranked by cosine similarity. In the
-    # embed-free dashboard process this is a no-op (corpus_search returns []),
-    # so the LLM prompt simply omits the RELEVANT KNOWLEDGE block rather than
-    # loading sentence-transformers/torch and OOM-killing the memory-capped HUD.
-    kb_lines = []
-    for hit in corpus_search(query, k=3, min_similarity=0.4):
-        topic = hit.get('topic') or hit.get('section') or 'reference'
-        body = (hit.get('content') or '').strip().replace('\n', ' ')[:400]
-        kb_lines.append(f"{topic}: {body}")
-    if kb_lines:
-        context_parts.append("RELEVANT KNOWLEDGE:\n" + "\n---\n".join(kb_lines))
-
-    # Recency-attended reminder — qwen2.5 weights instructions later in
-    # the prompt more strongly. The static-spec loophole was real:
-    # 1.5b read "normal coolant range 85-100°C" from the corpus and
-    # answered "Your coolant is at 95°C". The reminder now explicitly
-    # forbids quoting a number for a NO DATA sensor even if the
-    # knowledge base documents a normal range.
-    context_parts.append(
-        "REMINDER: If a sensor in the CURRENT VEHICLE STATE block above "
-        "shows NO DATA, you MUST respond that you don't have a current "
-        "reading for it. Do NOT state any specific number for that "
-        "sensor — not from a normal range, not from a static spec, "
-        "not from a knowledge-base reference. Never estimate, infer, "
-        "or invent sensor values."
-    )
-
-    return query + ("\n\n---\n\n" + "\n\n".join(context_parts) if context_parts else "")
+# _FEEDS_SUMMARY_PATH, _format_feed_context and build_query_context now live
+# in web_dashboard_mechanic.py and are re-imported at the top of this module.
 
 
 # Populate the exact-match route table AFTER the methods exist.
