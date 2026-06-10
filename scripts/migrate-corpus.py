@@ -61,7 +61,7 @@ def migrate_dtc(data: dict) -> int:
         body_parts = [
             f"# {code} — {desc}",
             "",
-            f"## Description",
+            "## Description",
             desc,
         ]
         if action:

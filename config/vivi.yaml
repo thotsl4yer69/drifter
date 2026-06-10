@@ -11,14 +11,15 @@ mode: ptt
 wake_word: "hey vivi"
 
 # ── LLM backend (local Ollama) ──
-# Pi 5 actually has 15GB RAM (not 8 as the chassis sticker suggests on
-# Pi 5 (4-core, CPU-only inference): qwen2.5:3b takes 60-120s per turn
-# because of prompt-eval throughput on this hardware — every query falls
-# back to RAG on timeout, which is the wrong default. qwen2.5:1.5b
-# finishes a warm turn in ~20-40s and lets the LLM actually answer.
-# The trade-off: 1.5b is more prone to coolant-boilerplate fixations
-# (see no-invention guardrails in src/vivi.py). Stick with 3b on
-# hardware where you've measured <30s warm responses end-to-end.
+# One small model fleet-wide on the 8GB Pi 5 (4-core, CPU-only inference):
+# qwen2.5:1.5b warms a turn in ~20-40s. Larger tags (3b/7b) stall 60-120s per
+# turn here and fall back to RAG on timeout, and won't fit warm alongside a
+# second model (Ollama is capped to OLLAMA_MAX_LOADED_MODELS=1). This MUST stay
+# qwen2.5:1.5b — it has to match config.OLLAMA_MODEL and what install.sh pulls;
+# tests/test_llm_model_strategy.py enforces it. The trade-off: 1.5b is more
+# prone to coolant-boilerplate fixations (see the no-invention guardrails in
+# the vivi grounding validator). Opt into 7b for a standalone analyst only via
+# `install.sh --with-7b`.
 ollama_model: qwen2.5:1.5b
 ollama_host: localhost
 ollama_port: 11434
