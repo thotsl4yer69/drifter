@@ -44,7 +44,7 @@ from config import (
     save_settings,
     validate_settings_payload,
 )
-from corpus import corpus_search, dtc_lookup
+from corpus import corpus_search, dtc_lookup_static
 from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
 
@@ -1713,7 +1713,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _get_mechanic_advice(self, parsed):
         """Alert-click handler: feeds the alert text into the corpus and
         returns the top 3 ranked passages. The dashboard renders the
-        passage bodies as bullet lines under the alert banner."""
+        passage bodies as bullet lines under the alert banner.
+
+        In this embed-free dashboard process corpus_search() is a no-op
+        (returns []) — semantic retrieval lives in the torch-owning services
+        — so this degrades to an empty advice list rather than loading
+        torch and OOM-killing the HUD."""
         msg = parse_qs(parsed.query).get('alert', [''])[0]
         hits = corpus_search(msg, k=3, min_similarity=0.4) if msg else []
         advice = [{
@@ -1759,12 +1764,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _serve_dtc_lookup(self, parsed):
         """DTC click handler — corpus first (full description, ECU action,
         likely causes), legacy XTYPE_DTC_LOOKUP as a tiny built-in fallback
-        for codes the corpus hasn't been rebuilt with."""
+        for codes the corpus hasn't been rebuilt with.
+
+        Uses the torch-free static lookup (dtc_lookup_static) — NOT the
+        semantic-fallback dtc_lookup — so this always-on, memory-capped HUD
+        process never loads sentence-transformers/torch (would blow
+        MemoryMax=512M and OOM-kill the dashboard). A static dtc/<code>.md
+        miss falls through to the built-in XTYPE_DTC_LOOKUP table below."""
         code = parsed.path.rsplit('/', 1)[-1].upper()
         if not _DTC_RE.match(code):
             self.send_error(400, 'Invalid DTC code')
             return
-        hit = dtc_lookup(code)
+        hit = dtc_lookup_static(code)
         if hit:
             self._serve_json({
                 'code':    code,
@@ -2850,7 +2861,10 @@ def build_query_context(query: str) -> str:
     except Exception as e:
         log.debug(f"feed-context build failed: {e}")
 
-    # Corpus retrieval — top 3 chunks ranked by cosine similarity.
+    # Corpus retrieval — top 3 chunks ranked by cosine similarity. In the
+    # embed-free dashboard process this is a no-op (corpus_search returns []),
+    # so the LLM prompt simply omits the RELEVANT KNOWLEDGE block rather than
+    # loading sentence-transformers/torch and OOM-killing the memory-capped HUD.
     kb_lines = []
     for hit in corpus_search(query, k=3, min_similarity=0.4):
         topic = hit.get('topic') or hit.get('section') or 'reference'
