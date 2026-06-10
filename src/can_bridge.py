@@ -63,8 +63,32 @@ DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
 DTC_CHECK_INTERVAL = 60  # Check DTCs every 60 seconds
 
 # ── Resilience ──
-MAX_CONSECUTIVE_FAILURES = 20   # Exit after this many consecutive send failures
+# After this many consecutive send failures we tear down the bus and
+# re-discover the interface IN-PROCESS. We never exit the process for a
+# missing/dropped CAN source — that is a normal vehicle condition and must
+# DEGRADE, not crash-loop (which the old reboot-force unit turned into a
+# node-bricking reboot loop). See services/drifter-canbridge.service.
+MAX_CONSECUTIVE_FAILURES = 20
 ERROR_LOG_INTERVAL = 30         # Only log CAN errors every N seconds
+NO_CAN_RETRY_INTERVAL = 5       # Seconds between interface-detection retries
+# How often to re-publish the "still waiting for CAN" status while degraded,
+# so /healthz and the cockpit see a fresh hw-pending signal (not a stale one).
+NO_CAN_STATUS_INTERVAL = 30
+
+# ── CAN-adapter USB allowlist (VID:PID) ──
+# Positively-identified CAN-over-serial / gs_usb adapters ONLY. We slcand a
+# /dev/ttyACM*|ttyUSB* device only when udev says its VID:PID is on THIS list,
+# so we never hijack the Flipper / Marauder / GPS / mic serial ports (they are
+# generic CH340/PL2303/CP210x serial and are NOT here). Mirrors the allowlist
+# in config/setup-can.sh — keep the two in sync.
+# TODO(phase2): move to config.py
+CAN_USB_IDS = {
+    ('0483', '5740'),  # STMicro VCP — CANable / slcan (cantact, CANtact-style)
+    ('1d50', '606f'),  # OpenMoko — candleLight / gs_usb (CANable gs_usb fw, CANtact)
+    ('1209', '2323'),  # pid.codes — CANable 2.0 (gs_usb)
+    ('16d0', '117e'),  # MCS — gs_usb USB2CAN (candleLight-class)
+    ('1cd2', '606f'),  # Geschwister Schneider gs_usb (original CANtact)
+}
 
 # ── State ──
 latest_values = {}
@@ -77,15 +101,17 @@ _suppressed_errors = 0
 
 
 
-def _serial_dev_is_known_not_can(dev: str) -> bool:
-    """Return True if /dev/ttyUSB* is a USB-serial chip we know is NOT a CAN
-    adapter (e.g. CH340 inside a USB hub / mic dongle / GPS puck).
+def _serial_dev_is_can_adapter(dev: str) -> bool:
+    """Return True ONLY if udev positively identifies ``dev`` as a known CAN
+    adapter by USB VID:PID (see ``CAN_USB_IDS``).
 
-    Without this gate, can_bridge blindly runs slcand on the first ttyUSB it
-    finds, creating a phantom slcan0 that "succeeds" but never sees a CAN
-    frame — the cockpit then claims CAN is live while telemetry stays stale.
-    Real CAN-over-serial adapters use FTDI/STMicro/SiLabs/Microchip chips;
-    none use CH340 or PL2303.
+    This is a positive allowlist, not a denylist. Previously can_bridge would
+    slcand any ttyUSB/ttyACM that *wasn't* a known-bad CH340/PL2303 — which
+    happily hijacked the Flipper / Marauder / GPS / mic serial ports (some of
+    which use STMicro/SiLabs/FTDI chips that the denylist let through),
+    creating a phantom slcan0 that never sees a frame. We now bind a serial
+    CAN interface only when the VID:PID is explicitly an allowlisted CAN
+    adapter; an unrecognised serial device is left strictly alone.
     """
     try:
         import subprocess
@@ -95,13 +121,13 @@ def _serial_dev_is_known_not_can(dev: str) -> bool:
         )
         if r.returncode != 0:
             return False
-        vid = None
+        vid = pid = None
         for line in r.stdout.splitlines():
             if line.startswith('ID_VENDOR_ID='):
-                vid = line.split('=', 1)[1].lower()
-                break
-        # Hard reject: vendor IDs that never make CAN adapters.
-        return vid in {'1a86', '067b'}  # QinHeng CH340/CH341, Prolific PL2303
+                vid = line.split('=', 1)[1].strip().lower()
+            elif line.startswith('ID_MODEL_ID='):
+                pid = line.split('=', 1)[1].strip().lower()
+        return (vid, pid) in CAN_USB_IDS
     except Exception:
         return False
 
@@ -118,13 +144,15 @@ def find_can_interface():
         except (can.CanError, OSError):
             continue
 
-    # If no socketcan found, try the USB serial route (slcan)
+    # If no socketcan found, try the USB serial route (slcan) — but ONLY for
+    # a positively-identified CAN adapter (VID:PID allowlist). Unrecognised
+    # serial devices (Flipper / Marauder / GPS / mic) are never touched.
     import glob
     usb_devs = glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*')
     for dev in usb_devs:
-        if _serial_dev_is_known_not_can(dev):
-            log.info(f"Skipping {dev}: USB vendor ID is not a CAN adapter "
-                     f"(generic serial chip — e.g. CH340 in a hub/mic/GPS)")
+        if not _serial_dev_is_can_adapter(dev):
+            log.info(f"Skipping {dev}: USB VID:PID is not an allowlisted CAN "
+                     f"adapter (could be Flipper/Marauder/GPS/mic serial)")
             continue
         try:
             import subprocess
@@ -255,6 +283,63 @@ def request_dtcs(bus, mode=0x03):
     return dtcs
 
 
+def _publish_status(mqtt_client, state, **extra):
+    """Publish a retained status payload on the system_status topic.
+
+    Centralised so every code path emits a consistent shape. ``state`` is one
+    of: 'online', 'hw_pending' (alive, no CAN adapter / no frames yet),
+    'can_reconnecting', 'offline'. Best-effort — a publish failure must never
+    propagate (we must never crash on a status push)."""
+    payload = {"state": state, "timestamp": time.time(), **extra}
+    try:
+        mqtt_client.publish(TOPICS['system_status'],
+                            json.dumps(payload), retain=True)
+    except Exception as e:  # pragma: no cover - defensive
+        log.debug(f"status publish failed ({state}): {e}")
+
+
+def _acquire_bus(mqtt_client, running_fn):
+    """Block (while alive) until a CAN interface is found and a bus opens.
+
+    Returns ``(bus, iface)`` on success, or ``(None, None)`` if we were asked
+    to stop while still waiting. CRUCIALLY this NEVER raises and NEVER exits
+    the process for a missing CAN source — it keeps retrying and republishes a
+    fresh 'hw_pending' status so /healthz + the cockpit see the node as
+    hardware-pending (waiting for OBD-II), not failed. This is what stops a
+    no-CAN car/bench from crash-looping the service (which the removed
+    reboot-force unit escalated into a node-bricking reboot loop)."""
+    last_status = 0.0
+    while running_fn():
+        iface = find_can_interface()
+        if iface is not None:
+            try:
+                bus = can.Bus(interface='socketcan',
+                              channel=iface, bitrate=CAN_BITRATE)
+                log.info(f"Connected to {iface} at {CAN_BITRATE} bps")
+                _publish_status(mqtt_client, "online", can_interface=iface)
+                return bus, iface
+            except (can.CanError, OSError) as e:
+                # Interface name appeared but the bus won't open — treat as
+                # still-pending and keep retrying rather than dying.
+                log.warning(f"CAN interface {iface} found but bus open failed: "
+                            f"{e}. Retrying...")
+        now = time.monotonic()
+        if now - last_status >= NO_CAN_STATUS_INTERVAL or last_status == 0.0:
+            log.warning(
+                "No CAN interface — staying alive, will keep retrying. "
+                f"Plug in a CAN adapter, or: sudo ip link set can0 up type "
+                f"can bitrate {CAN_BITRATE}. (K-line car? use drifter-obdbridge "
+                "— see obd_bridge.py.)")
+            _publish_status(mqtt_client, "hw_pending", reason="no_can_interface")
+            last_status = now
+        # Sleep in short slices so SIGTERM is honoured promptly.
+        for _ in range(int(NO_CAN_RETRY_INTERVAL / 0.25)):
+            if not running_fn():
+                break
+            time.sleep(0.25)
+    return None, None
+
+
 def main():
     global latest_values, _consecutive_failures
 
@@ -264,28 +349,15 @@ def main():
         nonlocal running
         running = False
 
+    def _running():
+        return running
+
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    # ── Find CAN Interface ──
-    log.info("Searching for CAN interface...")
-    iface = None
-    while iface is None and running:
-        iface = find_can_interface()
-        if iface is None:
-            log.warning("No CAN interface found. Retrying in 5s...")
-            log.warning(f"Is USB2CANFD plugged in? Run: sudo ip link set can0 up type can bitrate {CAN_BITRATE}")
-            time.sleep(5)
-
-    if not running or iface is None:
-        log.info("Shutting down — no CAN interface found")
-        return
-
-    # ── Connect to CAN Bus ──
-    log.info(f"Connecting to {iface} at {CAN_BITRATE} bps...")
-    bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
-
-    # ── Connect to MQTT ──
+    # ── Connect to MQTT FIRST ──
+    # We connect to the broker before touching CAN so we can always publish a
+    # status (including 'hw_pending') even when no CAN adapter is present.
     mqtt_client = make_mqtt_client("drifter-canbridge")
     mqtt_connected = False
     while not mqtt_connected and running:
@@ -298,12 +370,20 @@ def main():
             log.warning(f"MQTT connect failed: {e}. Retrying in 3s...")
             time.sleep(3)
 
-    # ── Publish system status ──
-    mqtt_client.publish(TOPICS['system_status'], json.dumps({
-        "state": "online",
-        "can_interface": iface,
-        "timestamp": time.time()
-    }), retain=True)
+    if not running:
+        log.info("Shutting down before MQTT connected")
+        return
+
+    # ── Acquire CAN interface (degrades, never exits) ──
+    log.info("Searching for CAN interface...")
+    bus, iface = _acquire_bus(mqtt_client, _running)
+    if bus is None:
+        # Only reached when asked to stop while still waiting — clean exit.
+        log.info("Shutting down — stopped while waiting for CAN interface")
+        _publish_status(mqtt_client, "offline")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        return
 
     # ── Polling Loop ──
     # Build schedule: list of (pid, interval_seconds)
@@ -329,14 +409,11 @@ def main():
             if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 log.error(
                     f"CAN interface lost — {_consecutive_failures} consecutive failures. "
-                    f"Attempting in-process reconnection..."
+                    f"Attempting in-process reconnection (degrade, never exit)..."
                 )
-                mqtt_client.publish(TOPICS['system_status'], json.dumps({
-                    "state": "can_reconnecting",
-                    "can_interface": iface,
-                    "failures": _consecutive_failures,
-                    "timestamp": time.time()
-                }), retain=True)
+                _publish_status(mqtt_client, "can_reconnecting",
+                                can_interface=iface,
+                                failures=_consecutive_failures)
 
                 # Tear down old bus
                 try:
@@ -344,30 +421,16 @@ def main():
                 except Exception:
                     pass
 
-                # Re-discover CAN interface
+                # Re-acquire the interface. _acquire_bus keeps retrying and
+                # publishing 'hw_pending' indefinitely — it returns (None,None)
+                # ONLY when we were signalled to stop. We never exit the
+                # process just because CAN dropped out.
                 _consecutive_failures = 0
-                iface = None
-                while iface is None and running:
-                    iface = find_can_interface()
-                    if iface is None:
-                        log.warning("Waiting for CAN interface... (is USB2CANFD plugged in?)")
-                        time.sleep(5)
-
-                if not running:
-                    break
-
-                try:
-                    bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
-                    log.info(f"CAN interface reconnected on {iface}")
-                    mqtt_client.publish(TOPICS['system_status'], json.dumps({
-                        "state": "online",
-                        "can_interface": iface,
-                        "timestamp": time.time()
-                    }), retain=True)
-                except Exception as e:
-                    log.error(f"CAN reconnect failed: {e} — exiting for systemd restart")
-                    break
-
+                bus, iface = _acquire_bus(mqtt_client, _running)
+                if bus is None:
+                    break  # asked to stop while waiting
+                log.info(f"CAN interface reconnected on {iface}")
+                last_dtc_check = 0.0  # re-probe DTCs on the fresh bus
                 continue
 
             # Find the next PIDs that are due (up to 4 per loop to prevent blocking)
@@ -439,13 +502,14 @@ def main():
 
     # ── Cleanup ──
     log.info("Shutting down CAN Bridge...")
-    mqtt_client.publish(TOPICS['system_status'], json.dumps({
-        "state": "offline",
-        "timestamp": time.time()
-    }), retain=True)
+    _publish_status(mqtt_client, "offline")
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
-    bus.shutdown()
+    try:
+        if bus is not None:
+            bus.shutdown()
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':
