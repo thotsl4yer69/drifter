@@ -671,6 +671,7 @@ SERVICES = [
     "drifter-wifi-audit",    # bettercap PMKID/handshake (allowlist-scoped)
     "drifter-marauder",      # ESP32 Marauder Wi-Fi/BT attack bridge (NEW)
     "drifter-fly-catcher",   # ADS-B ghost detector
+    "drifter-feeds",         # ADS-B aircraft producer feeding fly-catcher
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge
     # Arsenal — Rubber Ducky / BadUSB HID injection (foot-only)
@@ -729,6 +730,7 @@ SHARED_SERVICES = [
     "drifter-voicein",     # wake-word + STT
     "drifter-rfaudio",     # on-demand SDR → speaker (emergency-band listen)
     "drifter-fly-catcher", # ADS-B ghost detector (passive; runs in both modes)
+    "drifter-feeds",       # ADS-B aircraft producer feeding fly-catcher (degrades to idle without a decoder)
     "drifter-weather",     # OpenWeatherMap poller (network-only; runs in both modes)
     "drifter-location",    # Elevation + Places (GPS-aware; runs in both modes)
     "drifter-lcd",         # in-car SPI LCD triage console (runs in both modes)
