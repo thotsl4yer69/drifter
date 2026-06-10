@@ -137,16 +137,19 @@ def test_cockpit_aircraft_freshness_window_constant():
 
 
 # ── (d) LLM-offline fallback rejects forbidden tokens ────────────────
+# Repointed from the retired v1 vivi._rag_fallback to vivi_v2.ask's offline
+# path: when every LLM backend is down, the shipped brain must give an
+# honest "I'm offline" reply, never substitute spec/manual data that reads
+# like a live sensor value.
 
 @pytest.fixture(scope='module')
-def vivi():
+def vivi_v2_mod():
     import unittest.mock as m
     sys.modules.setdefault('paho', m.MagicMock())
     sys.modules.setdefault('paho.mqtt', m.MagicMock())
     sys.modules.setdefault('paho.mqtt.client', m.MagicMock())
-    import vivi as _vivi
-    _vivi._load_config()
-    return _vivi
+    import vivi_v2
+    return vivi_v2
 
 
 _SENSOR_QUERIES = [
@@ -176,10 +179,35 @@ _FORBIDDEN_TOKENS = [
 ]
 
 
+def _offline_reply(vivi_v2_mod, query):
+    """Drive vivi_v2.ask with every backend down + collaborators stubbed,
+    returning the spoken/published response text."""
+    import unittest.mock as m
+    patches = [
+        m.patch.object(vivi_v2_mod, '_build_prompt', return_value=(query, {})),
+        m.patch.object(vivi_v2_mod, '_system_prompt_for', return_value="system"),
+        m.patch.object(vivi_v2_mod, '_publish_status'),
+        m.patch.object(vivi_v2_mod, '_publish_response'),
+        m.patch.object(vivi_v2_mod, 'speak'),
+        m.patch.object(vivi_v2_mod.vivi_memory, 'append_turn'),
+        m.patch.object(vivi_v2_mod.llm_client_v2, 'stream',
+                       side_effect=RuntimeError("All LLM backends failed")),
+        m.patch.object(vivi_v2_mod.llm_client_v2, 'query',
+                       side_effect=RuntimeError("All LLM backends failed")),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        return vivi_v2_mod.ask(query)['response']
+    finally:
+        for p in patches:
+            p.stop()
+
+
 @pytest.mark.parametrize('query', _SENSOR_QUERIES)
-def test_llm_offline_fallback_never_quotes_spec_data(vivi, query):
-    reply = vivi._rag_fallback(query)
-    assert 'LLM offline' in reply, f'fallback missing identification for {query!r}'
+def test_llm_offline_fallback_never_quotes_spec_data(vivi_v2_mod, query):
+    reply = _offline_reply(vivi_v2_mod, query)
+    assert 'offline' in reply.lower(), f'fallback missing identification for {query!r}'
     lowered = reply.lower()
     for tok in _FORBIDDEN_TOKENS:
         assert tok.lower() not in lowered, (
@@ -187,12 +215,12 @@ def test_llm_offline_fallback_never_quotes_spec_data(vivi, query):
         )
 
 
-def test_llm_offline_fallback_is_deterministic(vivi):
+def test_llm_offline_fallback_is_deterministic(vivi_v2_mod):
     """Same input → same output. The fallback is not allowed to
     randomly include spec data on some calls and not others."""
-    r1 = vivi._rag_fallback('coolant temperature')
-    r2 = vivi._rag_fallback('coolant temperature')
-    r3 = vivi._rag_fallback('coolant temperature')
+    r1 = _offline_reply(vivi_v2_mod, 'coolant temperature')
+    r2 = _offline_reply(vivi_v2_mod, 'coolant temperature')
+    r3 = _offline_reply(vivi_v2_mod, 'coolant temperature')
     assert r1 == r2 == r3
 
 

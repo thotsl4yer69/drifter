@@ -51,7 +51,7 @@ done
 
 # ── 2. Source files deployed ──
 echo -e "\n${AMBER}[2/8] Deployed Files${NC}"
-SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client.py voice_input.py field_ops_kb.py diagnose.py vivi.py flipper_bridge.py"
+SRC_FILES="can_bridge.py alert_engine.py logger.py voice_alerts.py home_sync.py status.py config.py calibrate.py watchdog.py realdash_bridge.py rf_monitor.py wardrive.py web_dashboard.py mechanic.py anomaly_monitor.py session_analyst.py db.py llm_client_v2.py voice_input.py field_ops_kb.py diagnose.py vivi_v2.py flipper_bridge.py"
 MISSING=0
 for f in $SRC_FILES; do
     if [ ! -f "/opt/drifter/$f" ]; then

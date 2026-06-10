@@ -160,16 +160,6 @@ def test_single_cluster_identity_filtered_out(conn):
     assert noise >= 1
 
 
-def test_persistent_summary_uses_cache(monkeypatch):
-    """Phase 4.8.1 — the Vivi context hook caches the summary for 60s
-    so we don't open the DB on every prompt build."""
-    import vivi
-    monkeypatch.setattr(vivi, '_persistent_cache',
-                        {'ts': time.time(), 'value': 'cached-value'})
-    # cache hit — should NOT touch ble_history at all
-    assert vivi._format_persistent_contacts() == 'cached-value'
-
-
 def test_noise_excluded_counter_increments(conn):
     """noise_excluded should reflect how many distinct identities were
     filtered out — useful for the dashboard's 'X candidates rejected'

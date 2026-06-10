@@ -31,8 +31,8 @@ echo -e "${CYAN}  MZ1312 UNCAGED TECHNOLOGY — EST 1991${NC}\n"
 
 # ── 1. Syntax check ──
 step "Python syntax check"
-python3 -m py_compile "${REPO_DIR}/src/vivi.py" && ok "vivi.py syntax OK" || \
-    fail "vivi.py syntax error"
+python3 -m py_compile "${REPO_DIR}/src/vivi_v2.py" && ok "vivi_v2.py syntax OK" || \
+    fail "vivi_v2.py syntax error"
 
 # ── 2. Unit tests ──
 step "Running pytest"

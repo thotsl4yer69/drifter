@@ -19,7 +19,7 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
-import llm_client
+import llm_client_v2 as llm_client
 from config import (
     MQTT_HOST,
     MQTT_PORT,
