@@ -322,6 +322,13 @@ pip install --quiet faster-whisper piper-tts sounddevice 2>/dev/null && ok "Vivi
     || (pip install --quiet "bleak>=0.21.0" \
         && ok "bleak installed (passive BLE scanner)") \
     || warn "bleak install failed — drifter-bleconv disabled"
+# Public-feeds producer (drifter-feeds, in SERVICES). aiohttp drives the async
+# HTTP polls; lxml parses the emergency-marker GeoJSON/CAP. feeds GUARDS both
+# imports and degrades to the file-based ADS-B path (its fly-catcher producer
+# role) without them, so this is best-effort — but installing them lets the
+# service run fully (weather/emergency feeds), not ADS-B-only.
+pip install --quiet aiohttp lxml 2>/dev/null && ok "feeds deps installed (aiohttp, lxml)" || \
+    warn "feeds deps failed — drifter-feeds runs ADS-B-only (run 'pip install aiohttp lxml' in venv)"
 # In-car SPI LCD GPIO buttons (drifter-lcd). RPi.GPIO only builds on a Pi, so
 # keep it best-effort — the LCD dashboard auto-cycles/MQTT-controls without it.
 pip install --quiet RPi.GPIO 2>/dev/null && ok "RPi.GPIO installed (LCD buttons)" || \
