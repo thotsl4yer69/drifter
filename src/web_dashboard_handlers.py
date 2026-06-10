@@ -2606,8 +2606,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # already up-to-date.
             _mechanic_history_append('user', query)
             prompt = self._build_query_context(query)
-            import llm_client
-            result = llm_client.query_chat(prompt)
+            import llm_client_v2
+            result = llm_client_v2.query(prompt, CHAT_SYSTEM_PROMPT)
             text = result['text']
             _mechanic_history_append('assistant', text)
             # Phase 5.3 grounding validator — second line of defence
@@ -2651,48 +2651,69 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-cache')
             self.send_header('Connection', 'keep-alive')
             self.end_headers()
-            import llm_client
+            import llm_client_v2
             buffered = []
-            for chunk in llm_client.stream_chat_ollama(prompt):
-                if chunk.get('token'):
-                    buffered.append(chunk['token'])
-                payload = json.dumps(chunk, default=str)
+
+            # v2 streams via an on_token callback (Claude SSE, with a safe
+            # non-streaming fallback) rather than yielding chunks. We adapt
+            # back to the same per-token SSE event shape the client expects.
+            def _emit_token(tok: str) -> None:
+                if not tok:
+                    return
+                buffered.append(tok)
+                payload = json.dumps({'token': tok}, default=str)
                 self.wfile.write(f"data: {payload}\n\n".encode())
                 self.wfile.flush()
-                # Phase 5.3 — when the stream completes, validate the
-                # buffered text. If the model hallucinated a NO DATA
-                # sensor reading, emit a final replace event so the
-                # client can overwrite the rendered tokens with the
-                # canonical no-reading reply.
-                if chunk.get('done'):
-                    # Persist the full streamed text into the Mechanic
-                    # ring buffer so the next /api/mechanic/history GET
-                    # reflects the just-completed turn.
-                    try:
-                        _mechanic_history_append('assistant',
-                                                 ''.join(buffered))
-                    except Exception as e:
-                        log.debug("history append (stream) failed: %s", e)
-                    try:
-                        from vivi_grounding import no_data_from_state, validate
-                        full = ''.join(buffered)
-                        no_data = no_data_from_state(
-                            state.latest_state, _query_telemetry_keys())
-                        safe, intercepted = validate(full, no_data)
-                        if intercepted:
-                            log.warning(
-                                "Vivi /api/query/stream grounding "
-                                "intercept (sensor=%s, query=%r)",
-                                intercepted, query[:80])
-                            replace = json.dumps(
-                                {'replace_text': safe,
-                                 'intercepted_sensor': intercepted})
-                            self.wfile.write(
-                                f"data: {replace}\n\n".encode())
-                            self.wfile.flush()
-                    except Exception as e:
-                        log.debug(
-                            "stream grounding validator skipped: %s", e)
+
+            result = llm_client_v2.stream(
+                prompt, CHAT_SYSTEM_PROMPT, on_token=_emit_token)
+            # If the backend never streamed token-by-token (e.g. the cascade
+            # served a non-streaming Ollama/Groq backend), on_token never
+            # fired — emit the full text now so the client still renders it.
+            if not buffered:
+                _emit_token(result.get('text', ''))
+
+            # Final done event mirrors the old generator's terminal chunk.
+            done = json.dumps({
+                'done': True,
+                'model': result.get('model', '?'),
+                'tokens': result.get('tokens', 0),
+                'text': ''.join(buffered),
+            }, default=str)
+            self.wfile.write(f"data: {done}\n\n".encode())
+            self.wfile.flush()
+
+            # Persist the full streamed text into the Mechanic ring buffer
+            # so the next /api/mechanic/history GET reflects the just-
+            # completed turn.
+            try:
+                _mechanic_history_append('assistant', ''.join(buffered))
+            except Exception as e:
+                log.debug("history append (stream) failed: %s", e)
+            # Phase 5.3 — validate the buffered text. If the model
+            # hallucinated a NO DATA sensor reading, emit a final replace
+            # event so the client can overwrite the rendered tokens with the
+            # canonical no-reading reply.
+            try:
+                from vivi_grounding import no_data_from_state, validate
+                full = ''.join(buffered)
+                no_data = no_data_from_state(
+                    state.latest_state, _query_telemetry_keys())
+                safe, intercepted = validate(full, no_data)
+                if intercepted:
+                    log.warning(
+                        "Vivi /api/query/stream grounding "
+                        "intercept (sensor=%s, query=%r)",
+                        intercepted, query[:80])
+                    replace = json.dumps(
+                        {'replace_text': safe,
+                         'intercepted_sensor': intercepted})
+                    self.wfile.write(
+                        f"data: {replace}\n\n".encode())
+                    self.wfile.flush()
+            except Exception as e:
+                log.debug(
+                    "stream grounding validator skipped: %s", e)
         except Exception as e:
             log.warning("Stream query error: %s", e)
             try:
@@ -2791,6 +2812,89 @@ def _query_telemetry_keys():
     return [(k, label) for k, label, _ in _TELEMETRY_LINES]
 
 
+# Conversational "Ask Mechanic" system prompt. Moved here from the retired
+# llm_client v1 shim (query_chat hard-wired this exact text); the v2 client
+# takes the system prompt explicitly via query()/stream(). This is the sole
+# caller now.
+CHAT_SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the \
+2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, \
+right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
+
+You are running on DRIFTER — a vehicle intelligence system on Raspberry Pi 5 \
+(Kali Linux) with live OBD-II/CAN bus telemetry. You may be given live sensor \
+readings and knowledge base context alongside each question.
+
+Your approach:
+- Be direct, practical, and experienced. Answer conversationally like a real mechanic.
+- Reference the live telemetry values when relevant ("Your coolant is at 95°C which suggests...")
+- Cite known X-Type failure modes when applicable (thermostat, coil packs, MAF, vacuum leaks)
+- Give actionable advice with difficulty ratings and AUD cost estimates
+- ALWAYS prioritise safety — flag anything dangerous immediately
+- Keep responses concise — the driver may be reading on a phone mounted in the car
+
+Do NOT return JSON. Respond in clear, readable text.
+
+VEHICLE CONTEXT:
+- Known history: valve cover gasket oil leak, prior spark plug overtorque failure
+- Current symptoms: P0303 cylinder 3 misfire, cruise control disabled, rough idle
+- Suspected: vacuum leaks (PCV hose, IMT valve O-ring, brake booster hose)
+"""
+
+# Path to the drifter-feeds aggregator output. Single source so the
+# helper below stays in lockstep with feeds.SUMMARY_PATH.
+_FEEDS_SUMMARY_PATH = Path('/opt/drifter/state/feeds_summary.json')
+
+
+def _format_feed_context() -> str | None:
+    """Read drifter-feeds aggregator output and produce a compact live-
+    context block: weather, EMV incidents, BOM warnings, interesting
+    aircraft. Empty when the file is missing, stale (>10min), or all
+    sub-sections are empty. Capped to ~2 KB to stay well under 500 tokens.
+
+    Ported verbatim from the retired vivi v1 module so the dashboard query
+    path and (formerly) the voice path render feeds identically. Self-
+    contained — stdlib only — so the memory-capped HUD process doesn't have
+    to import the heavy feeds aggregator just to read its output file."""
+    try:
+        s = json.loads(_FEEDS_SUMMARY_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    age = int(time.time() - float(s.get('ts', 0) or 0))
+    if age > 600:
+        return None
+    o = s.get('origin') or {}
+    src = o.get('source', '?')
+    radius = s.get('radius_km', '?')
+    parts = [f"[Live context — age {age}s, origin {src}, radius {radius}km]"]
+    w = s.get('weather') or {}
+    if any(w.get(k) is not None for k in ('temp_c', 'wind_kmh')):
+        parts.append(
+            f"Weather: {w.get('temp_c')}°C feels {w.get('feels_c')}°C, "
+            f"wind {w.get('wind_kmh')} km/h gust {w.get('gust_kmh')}, "
+            f"rain {w.get('rain_mm') or 0}mm"
+        )
+    inc = int(s.get('incidents_nearby') or 0)
+    parts.append(f"EMV incidents nearby: {inc}")
+    for it in (s.get('incidents_top') or [])[:3]:
+        parts.append(
+            f"  - {it.get('category1')} @ {it.get('location')} "
+            f"({it.get('distance_km')}km, status {it.get('status')})"
+        )
+    wc = int(s.get('warnings_count') or 0)
+    if wc:
+        parts.append(f"BOM VIC warnings: {wc}")
+        for it in (s.get('warnings_top') or [])[:2]:
+            parts.append(f"  - {it.get('title')}")
+    interesting = s.get('aircraft_interesting') or []
+    if interesting:
+        parts.append("Interesting aircraft nearby: " + ", ".join(
+            f"{a.get('flight') or a.get('hex')}@{a.get('distance_km')}km"
+            for a in interesting[:3]
+        ))
+    body = '\n'.join(parts)
+    return body[:2000]
+
+
 def build_query_context(query: str) -> str:
     """Assemble the prompt the LLM sees when you ask a question in the UI.
 
@@ -2847,13 +2951,12 @@ def build_query_context(query: str) -> str:
         "NO DATA):\n" + "\n".join(telem_lines)
     )
 
-    # Live public-data feeds — same source the cockpit reads. We pull the
-    # vivi helper to keep the format identical between the voice path
-    # (vivi.py) and the dashboard query path (here). A None means the
-    # feeds aggregator is offline / stale (>10 min) and we omit cleanly.
+    # Live public-data feeds — same source the cockpit reads. The formatter
+    # lives in this module now (ported from the retired vivi v1 module) so
+    # the format stays identical to what the cockpit renders. A None means
+    # the feeds aggregator is offline / stale (>10 min) and we omit cleanly.
     try:
-        import vivi as _vivi
-        feed_block = _vivi._format_feed_context()
+        feed_block = _format_feed_context()
         if feed_block:
             context_parts.append("LIVE EXTERIOR CONTEXT (use these numbers verbatim "
                                  "— do not invent or refer to coolant/engine):\n"

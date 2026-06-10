@@ -48,7 +48,7 @@ ok "Python packages installed"
 
 # ── 3. Deploy v2 modules ──
 step 3 "Deploying vivi_v2.py, vivi_memory.py, llm_client_v2.py"
-for f in vivi.py vivi_v2.py vivi_memory.py llm_client_v2.py; do
+for f in vivi_v2.py vivi_memory.py llm_client_v2.py; do
     if [ -f "${REPO_DIR}/src/${f}" ]; then
         cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
         chmod +x "${DRIFTER_DIR}/${f}"
