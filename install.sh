@@ -383,6 +383,14 @@ if [ -d "${REPO_DIR}/static/leaflet" ]; then
     ok "Leaflet $(ls "${REPO_DIR}/static/leaflet" | wc -l) asset(s) deployed"
 fi
 
+# Brand / PWA icons (favicon, apple-touch-icon, web manifest) — served by the
+# dashboard so the phone-tethered cockpit installs to the home screen branded.
+if [ -d "${REPO_DIR}/static/icons" ]; then
+    mkdir -p "${DRIFTER_DIR}/static/icons"
+    cp "${REPO_DIR}"/static/icons/* "${DRIFTER_DIR}/static/icons/"
+    ok "Brand/PWA icon $(ls "${REPO_DIR}/static/icons" | wc -l) asset(s) deployed"
+fi
+
 # Cockpit front door — web_dashboard_handlers.py serves the cockpit page from
 # /opt/drifter/ui/cockpit-preview.html. Without this the dashboard root returns
 # "503 cockpit not deployed" even though the service is healthy.

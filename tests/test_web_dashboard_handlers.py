@@ -1975,3 +1975,24 @@ def test_hid_get_single_payload(monkeypatch, tmp_path):
     payload = handler._serve_json.call_args[0][0]
     assert payload['script'] == 'STRING hi'
     assert payload['meta']['id'] == 'ducky-3'
+
+
+# ── Brand / PWA assets ────────────────────────────────────────────────
+
+def test_pwa_static_routes_registered():
+    """Favicon, apple-touch-icon and the web manifest are served so the
+    phone-tethered cockpit installs to the home screen branded."""
+    for route in ('/favicon.svg', '/favicon.ico',
+                  '/apple-touch-icon.png', '/manifest.webmanifest'):
+        assert route in h._STATIC_FILES, f'{route} not served'
+
+
+def test_pwa_manifest_is_valid_and_on_brand():
+    import json
+    from pathlib import Path
+    mf = Path(__file__).resolve().parent.parent / 'static' / 'icons' / 'manifest.webmanifest'
+    data = json.loads(mf.read_text())
+    assert data['name'] == 'MZ1312 DRIFTER'
+    assert data['display'] == 'standalone'
+    assert data['background_color'] == '#07090d'   # canonical near-black
+    assert data['icons'] and any(i['type'] == 'image/svg+xml' for i in data['icons'])

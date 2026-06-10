@@ -1,0 +1,15 @@
+{
+  "name": "MZ1312 DRIFTER",
+  "short_name": "DRIFTER",
+  "description": "MZ1312 UNCAGED TECHNOLOGY — in-car telemetry & intelligence cockpit",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}

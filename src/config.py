@@ -1078,15 +1078,19 @@ LCD_SCREENS = ("status", "services", "network", "diagnostics", "vehicle")
 
 # Dark "car dashboard" theme — high-contrast monospace, RGB tuples.
 LCD_THEME = {
-    'bg':       (8, 10, 14),       # near-black
-    'panel':    (18, 22, 30),      # slightly lifted panel
-    'fg':       (210, 220, 230),   # default text
-    'dim':      (120, 130, 140),   # secondary text
-    'ok':       (60, 220, 130),    # green
-    'warn':     (240, 190, 60),    # amber
-    'crit':     (235, 70, 70),     # red
-    'accent':   (80, 180, 240),    # MZ1312 cyan accent
-    'header_bg': (16, 28, 40),
+    # Aligned to the cockpit/opsec design tokens so the at-a-wheel display
+    # reads as the same product: amber is the signature, cyan the accent.
+    # The ok/warn/crit triad stays green/amber/red for glanceable safety
+    # (ok kept green so it can't be confused with the cyan accent).
+    'bg':       (7, 9, 13),         # #07090d — canonical near-black
+    'panel':    (17, 22, 31),       # #11161f — bg-2
+    'fg':       (232, 234, 237),    # #e8eaed
+    'dim':      (154, 163, 177),    # #9aa3b1 — fg-mute
+    'ok':       (61, 220, 132),     # green — nominal / service up
+    'warn':     (255, 174, 66),     # #ffae42 — brand amber
+    'crit':     (255, 107, 107),    # #ff6b6b — brand red
+    'accent':   (125, 211, 252),    # #7dd3fc — brand cyan
+    'header_bg': (22, 28, 40),      # #161c28 — bg-3
 }
 LCD_FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
