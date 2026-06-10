@@ -2,15 +2,19 @@
 Description=MZ1312 DRIFTER CAN Bridge
 After=network.target nanomq.service
 Wants=nanomq.service
-StartLimitIntervalSec=120
-# Burst=3 tightened (was 5) per 2026-05-20 architect follow-up:
-# RestartSec=15 below gives ~45s of thrash before reboot-force
-# engages on a USB CAN adapter pop-off — burst=5 was ~75s.
-StartLimitBurst=3
-# Vehicle-survival hardening 2026-05-20: if canbridge can't stay up,
-# the system is non-functional as a telemetry node. Force a reboot
-# rather than leaving the unit in 'failed' for the rest of the drive.
-StartLimitAction=reboot-force
+# NO StartLimitAction=reboot-force here (removed 2026-06-10).
+# A missing telemetry source — no USB2CANFD plugged in, no K-line adapter,
+# adapter popped off mid-drive, or the ECU simply being off — is a NORMAL,
+# expected condition on ANY vehicle. It must DEGRADE, never reboot the node.
+# The old reboot-force + StartLimitBurst=3 + RestartSec=15 combination
+# rebooted the Pi roughly every ~45s, forever, whenever CAN was absent —
+# a self-inflicted reboot loop that bricks the node on a bench or on a car
+# whose adapter dropped out. can_bridge.py now stays alive, retries CAN
+# interface detection in-process, and publishes a 'hw-pending'/'no-can'
+# status instead of exiting — so this unit should essentially never fail.
+# A plain Restart=on-failure remains below purely as a last-resort safety net
+# (real crash / OOM), with NO StartLimitAction so it can never escalate to a
+# reboot. StartLimitBurst/StartLimitIntervalSec are dropped along with it.
 
 [Service]
 Type=simple

@@ -2,12 +2,14 @@
 Description=MZ1312 DRIFTER Alert Engine
 After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
-StartLimitIntervalSec=120
-StartLimitBurst=5
-# Vehicle-survival hardening 2026-05-20: alerts are the driver-safety
-# layer (overheat, low oil pressure, etc.). Without them the operator
-# has no warnings — reboot rather than silently fail.
-StartLimitAction=reboot-force
+# Vehicle-survival hardening 2026-06-10: NO StartLimitAction=reboot-force.
+# This consumes CAN telemetry (After=drifter-canbridge); the old
+# reboot-force + StartLimitBurst=5 meant a crash here — e.g. on a no-CAN /
+# K-line car, or a broker hiccup at boot — could reboot the whole node, the
+# exact reboot-loop "never brick" forbids. A down alert engine is already
+# surfaced by /healthz (it's not hw-optional → degraded/503), so the operator
+# still sees it; recovery is Restart=on-failure (below) + the watchdog
+# restarting the unit — never a node reboot.
 
 [Service]
 User=drifter

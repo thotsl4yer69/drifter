@@ -2,12 +2,13 @@
 Description=MZ1312 DRIFTER Watchdog — Service & System Health Monitor
 After=nanomq.service drifter-canbridge.service
 Wants=nanomq.service
-StartLimitIntervalSec=120
-StartLimitBurst=5
-# Vehicle-survival hardening 2026-05-20: without watchdog, no
-# flap-detection or telemetry-health observability exists. Reboot
-# if it can't stay up.
-StartLimitAction=reboot-force
+# Vehicle-survival hardening 2026-06-10: NO StartLimitAction=reboot-force.
+# The watchdog's real job is restarting individual wedged units (it only ever
+# runs `systemctl restart <unit>`, never reboots). The systemd reboot-force
+# fired only if the watchdog *process itself* crash-looped — which a reboot
+# can't fix (code/config/broker-at-boot), so it would loop and brick the node.
+# Restart=on-failure (below) recovers a transient crash without ever escalating
+# to a node reboot.
 
 [Service]
 Type=simple
