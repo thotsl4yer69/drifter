@@ -14,12 +14,17 @@ set -eo pipefail
 # new source/services. Step 2+ still run (apt install of specific packages
 # is idempotent — dpkg no-ops if already installed).
 SKIP_APT=0
+WITH_7B=0
 for arg in "$@"; do
     case "$arg" in
         --skip-apt) SKIP_APT=1 ;;
+        --with-7b) WITH_7B=1 ;;
         -h|--help)
-            echo "Usage: sudo ./install.sh [--skip-apt]"
+            echo "Usage: sudo ./install.sh [--skip-apt] [--with-7b]"
             echo "  --skip-apt: skip step 1 system update/upgrade"
+            echo "  --with-7b:  also pull qwen2.5:7b (opt-in; ~4.7GB). The Pi 5"
+            echo "              can't hold 7b warm alongside Vivi — only pull it"
+            echo "              if you'll run the analyst standalone/offline."
             exit 0
             ;;
         *)
@@ -180,15 +185,53 @@ else
         warn "Ollama installation failed — LLM mechanic will be unavailable"
 fi
 
-# Pull LLM models
-# qwen2.5:7b — session_analyst (offline, no turn budget, smarter)
-# qwen2.5:3b — Vivi conversational turns on Pi 5 (~25-40s end-to-end)
+# Pull LLM model(s).
+# ONE small model for the whole fleet — qwen2.5:1.5b (~1.0GB). This is the
+# config.py OLLAMA_MODEL default AND the vivi.yaml ollama_model: every LLM
+# consumer (vivi conversational turns, session_analyst, session_reporter,
+# ai_diagnostics — all via src/llm_client.py) resolves to this tag. The Pi 5
+# is CPU-only; 1.5b warms in ~10-40s. Larger tags (3b/7b) stalled 60-120s per
+# turn on this hardware and never fit warm alongside a second model, so we do
+# NOT pull them by default. `--with-7b` opts into qwen2.5:7b for operators who
+# run the analyst standalone/offline (no turn budget) and accept it can't be
+# co-resident with Vivi (OLLAMA_MAX_LOADED_MODELS=1 evicts one for the other).
+#
+# IMPORTANT: keep the default-pull tag(s) below in lock-step with
+# config.py OLLAMA_MODEL — tests/test_llm_model_strategy.py fails the build if
+# install.sh pulls a model the config doesn't reference, or omits one it does.
+OLLAMA_DEFAULT_MODEL="qwen2.5:1.5b"
 if command -v ollama &>/dev/null; then
-    step 5 "Pulling LLM models (qwen2.5:7b for analyst, qwen2.5:3b for Vivi)"
-    ollama pull qwen2.5:7b 2>/dev/null && ok "qwen2.5:7b ready (analyst)" || \
-        warn "Could not pull qwen2.5:7b — run 'ollama pull qwen2.5:7b' manually"
-    ollama pull qwen2.5:3b 2>/dev/null && ok "qwen2.5:3b ready (Vivi)" || \
-        warn "Could not pull qwen2.5:3b — run 'ollama pull qwen2.5:3b' manually"
+    step 5 "Pulling LLM model (${OLLAMA_DEFAULT_MODEL} — fleet-wide default)"
+    ollama pull "${OLLAMA_DEFAULT_MODEL}" 2>/dev/null \
+        && ok "${OLLAMA_DEFAULT_MODEL} ready" \
+        || warn "Could not pull ${OLLAMA_DEFAULT_MODEL} — run 'ollama pull ${OLLAMA_DEFAULT_MODEL}' manually"
+    if [[ "${WITH_7B}" == "1" ]]; then
+        step 5 "Pulling qwen2.5:7b (opt-in via --with-7b; analyst standalone)"
+        ollama pull qwen2.5:7b 2>/dev/null && ok "qwen2.5:7b ready (analyst, opt-in)" || \
+            warn "Could not pull qwen2.5:7b — run 'ollama pull qwen2.5:7b' manually"
+    fi
+fi
+
+# Cap Ollama at ONE resident model so analyst and vivi can never co-pin two
+# models and OOM the 8GB Pi. Set on the ollama DAEMON (not drifter's .env —
+# ollama.service runs as its own user and won't read /opt/drifter/.env) via a
+# systemd drop-in. KEEP_ALIVE matches config.OLLAMA_KEEP_ALIVE so the warm
+# model survives between turns but a second request for a different tag evicts
+# the first instead of holding both.
+if command -v ollama &>/dev/null && systemctl list-unit-files ollama.service &>/dev/null; then
+    step 5 "Configuring Ollama single-model residency (OLLAMA_MAX_LOADED_MODELS=1)"
+    mkdir -p /etc/systemd/system/ollama.service.d
+    cat > /etc/systemd/system/ollama.service.d/drifter-residency.conf <<'OLLAMA_CONF'
+# Managed by DRIFTER install.sh — Pi 5 8GB single-model residency guard.
+# Holds at most one model in RAM so session_analyst and Vivi can't both pin a
+# model concurrently (would OOM). KEEP_ALIVE keeps the active model warm.
+[Service]
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_KEEP_ALIVE=30m"
+OLLAMA_CONF
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl restart ollama 2>/dev/null || true
+    ok "Ollama capped to 1 resident model (keep_alive 30m)"
 fi
 
 # ── 5b. Voice Input (STT + Wake Word) ──
