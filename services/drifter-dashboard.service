@@ -14,6 +14,13 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/web_dashboard.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# Run corpus retrieval embed-free in the dashboard. corpus.corpus_search()
+# lazy-loads sentence-transformers/torch (~1 GB resident) which would blow the
+# MemoryMax=512M cap below and OOM-kill the HUD that serves /healthz. With this
+# set, the dashboard uses the torch-free static DTC lookup and leaves semantic
+# retrieval to the torch-owning services. web_dashboard.py also defaults this
+# on, so a bare `python3 web_dashboard.py` launch is equally protected.
+Environment=DRIFTER_CORPUS_NO_EMBED=1
 
 # Vehicle-survival hardening 2026-05-20: dashboard is the HUD; it
 # should not be the thing that OOMs the Pi.

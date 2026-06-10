@@ -42,6 +42,16 @@ except ImportError:
 
 from http.server import ThreadingHTTPServer
 
+# The dashboard is the always-on HUD and runs under systemd MemoryMax=512M
+# (services/drifter-dashboard.service). sentence-transformers/torch — which
+# corpus.corpus_search() lazy-loads — is ~1 GB resident and would OOM-kill this
+# process the moment a semantic query ran. Force corpus into embed-free mode
+# BEFORE importing the handlers (which import corpus): the DTC path stays on the
+# torch-free static lookup, and semantic retrieval is left to the torch-owning
+# services. The systemd unit also exports this; setting it here keeps a
+# direct `python3 web_dashboard.py` launch (and tests) equally safe.
+os.environ.setdefault("DRIFTER_CORPUS_NO_EMBED", "1")
+
 import web_dashboard_state as state
 from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
 from web_dashboard_audio import generate_audio_wav

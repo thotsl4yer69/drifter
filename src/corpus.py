@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import struct
@@ -33,6 +34,23 @@ STATE_DIR = Path("/opt/drifter/state")
 DB_PATH = STATE_DIR / "corpus.db"
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBED_DIM = 384  # MiniLM L6 v2 output size
+
+# Embed-free guard. sentence-transformers + torch is ~1 GB resident — far too
+# much for the always-on web dashboard, which runs under systemd MemoryMax=512M
+# (services/drifter-dashboard.service). A single semantic query in that process
+# would blow the cap and OOM-kill the very thing serving /healthz. When
+# DRIFTER_CORPUS_NO_EMBED is set (the dashboard sets it before importing this
+# module), corpus_search() refuses to load the model and returns no hits, and
+# dtc_lookup() skips its semantic fallback. dtc_lookup_static() is always
+# torch-free. Semantic retrieval still happens in the torch-owning services.
+EMBED_DISABLED = bool(os.environ.get("DRIFTER_CORPUS_NO_EMBED"))
+
+
+def _embed_disabled() -> bool:
+    """True if this process must stay torch-free. Reads the module constant
+    (set at import for the documented "export before import" contract) and
+    re-checks the env live so the guard is robust to load ordering."""
+    return EMBED_DISABLED or bool(os.environ.get("DRIFTER_CORPUS_NO_EMBED"))
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?\n)---\s*\n", re.DOTALL)
 _SECTION_RE = re.compile(r"^##\s+(.+?)$", re.MULTILINE)
@@ -228,6 +246,12 @@ def corpus_search(query: str, k: int = 3,
     no match above threshold → empty list. Score-sorted descending."""
     if not query or not query.strip():
         return []
+    if _embed_disabled():
+        # Running in an embed-free process (e.g. the memory-capped dashboard).
+        # Loading the model here would OOM-kill the process; the torch-owning
+        # services serve semantic retrieval instead.
+        log.debug("corpus_search skipped: EMBED_DISABLED")
+        return []
     if not DB_PATH.exists():
         return []
     try:
@@ -262,9 +286,12 @@ def corpus_search(query: str, k: int = 3,
     return scored[:k]
 
 
-def dtc_lookup(code: str) -> dict | None:
-    """Direct lookup by DTC code (e.g. 'P0171'). Falls through to semantic
-    search if the code isn't in the dtc/ subdir."""
+def dtc_lookup_static(code: str) -> dict | None:
+    """Torch-free DTC lookup: reads the static dtc/<code>.md file only.
+
+    This is the path the memory-capped web dashboard uses — it never touches
+    sentence-transformers/torch, so it stays well under MemoryMax=512M. Returns
+    None when there is no static file for the code (no semantic fallback)."""
     code = code.strip().upper()
     if not code:
         return None
@@ -282,7 +309,21 @@ def dtc_lookup(code: str) -> dict | None:
             'confidence': fm.get('confidence', 'medium'),
             'score': 1.0,
         }
-    hits = corpus_search(code, k=1, min_similarity=0.3)
+    return None
+
+
+def dtc_lookup(code: str) -> dict | None:
+    """Direct lookup by DTC code (e.g. 'P0171'). Falls through to semantic
+    search if the code isn't in the dtc/ subdir.
+
+    The static hit is torch-free; only the semantic fallback loads the
+    embedding model (and is skipped entirely when EMBED_DISABLED)."""
+    hit = dtc_lookup_static(code)
+    if hit is not None:
+        return hit
+    if not code.strip():
+        return None
+    hits = corpus_search(code.strip().upper(), k=1, min_similarity=0.3)
     return hits[0] if hits else None
 
 
