@@ -4,15 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MZ1312 DRIFTER — Mesh</title>
+<meta name="theme-color" content="#07090d">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090d'/%3E%3Cpath d='M14 46V20l9 13 9-13 9 13 9-13v26' fill='none' stroke='%23ffae42' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #0b0d12;
-    --panel: #11141b;
-    --line: #1f2530;
-    --fg: #e6e9ef;
-    --muted: #8a95a6;
-    --accent: #7aa2ff;
-    --green: #5ce6a1;
+    --bg: #07090d;
+    --panel: #11161f;
+    --line: #1c2330;
+    --fg: #e8eaed;
+    --muted: #9aa3b1;
+    --accent: #ffae42;
+    --green: #3ddc84;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -45,9 +47,9 @@
     <h3>Nodes</h3>
     <div id="nodeList"></div>
     <div class="legend">
-      <div><span style="background:#5ce6a1"></span> Online &lt;30s</div>
-      <div><span style="background:#f3a73f"></span> Stale 30-120s</div>
-      <div><span style="background:#ff5577"></span> Offline &gt;120s</div>
+      <div><span style="background:#3ddc84"></span> Online &lt;30s</div>
+      <div><span style="background:#ffae42"></span> Stale 30-120s</div>
+      <div><span style="background:#ff6b6b"></span> Offline &gt;120s</div>
     </div>
   </aside>
 </main>
@@ -62,9 +64,9 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-const linkLayer = svg.append('g').attr('stroke', '#1f2530').attr('stroke-width', 1);
+const linkLayer = svg.append('g').attr('stroke', '#1c2330').attr('stroke-width', 1);
 const nodeLayer = svg.append('g');
-const labelLayer = svg.append('g').attr('font-size', 11).attr('fill', '#e6e9ef');
+const labelLayer = svg.append('g').attr('font-size', 11).attr('fill', '#e8eaed');
 
 let simulation = d3.forceSimulation()
   .force('link', d3.forceLink().id(d => d.id).distance(140))
@@ -76,9 +78,9 @@ let nodes = [], links = [];
 
 function colorFor(node) {
   const age = (Date.now()/1000) - (node.last_seen || 0);
-  if (age < 30) return '#5ce6a1';
-  if (age < 120) return '#f3a73f';
-  return '#ff5577';
+  if (age < 30) return '#3ddc84';
+  if (age < 120) return '#ffae42';
+  return '#ff6b6b';
 }
 
 function tick() {
@@ -91,7 +93,7 @@ function tick() {
     .attr('r', d => d.id === 'self' ? 14 : 10)
     .attr('cx', d => d.x).attr('cy', d => d.y)
     .attr('fill', colorFor)
-    .attr('stroke', '#7aa2ff').attr('stroke-width', 1);
+    .attr('stroke', '#ffae42').attr('stroke-width', 1);
   labelLayer.selectAll('text')
     .data(nodes).join('text')
     .attr('x', d => d.x + 14).attr('y', d => d.y + 4)
