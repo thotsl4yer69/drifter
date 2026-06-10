@@ -108,3 +108,48 @@ def test_boot_core_services_subset_of_services():
 def test_lcd_screens_include_all_renderers():
     assert set(config.LCD_SCREENS) == {
         'status', 'services', 'network', 'diagnostics', 'vehicle'}
+
+
+# ── In-car diagnostics: DTC decode + OBD staleness ────────────────────
+
+def test_decode_dtc_known_code():
+    label, sev = lcd.decode_dtc('P0171')
+    assert label.startswith('P0171') and 'Lean' in label
+    assert sev in ('AMBER', 'RED')
+
+
+def test_decode_dtc_case_and_whitespace():
+    label, sev = lcd.decode_dtc('  p0171 ')
+    assert 'P0171' in label and 'Lean' in label
+
+
+def test_decode_dtc_unknown_falls_back():
+    label, sev = lcd.decode_dtc('P9999')
+    assert label == 'P9999' and sev == 'AMBER'
+
+
+def test_decode_dtc_empty():
+    assert lcd.decode_dtc('') == ('', 'AMBER')
+
+
+def test_build_frame_data_exposes_vehicle_ts():
+    # A minimal fake cache exposing the fields build_frame_data reads.
+    class _Cache:
+        def __init__(self):
+            self.connected = True
+            self.network = None
+            self.gps = None
+            self.vehicle = {'rpm': 800}
+            self.vehicle_ts = 123.0
+            self.dtcs = []
+            self.last_alert = None
+
+        def msg_rate(self):
+            return 0.0
+
+    class _CC:
+        def get(self, key, fn, ttl):
+            return {}
+
+    data = lcd.build_frame_data(_Cache(), _CC())
+    assert data['mqtt']['vehicle_ts'] == 123.0

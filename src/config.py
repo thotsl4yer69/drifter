@@ -1099,6 +1099,9 @@ LCD_FONT_CANDIDATES = (
 )
 # journalctl tail depth for the diagnostics screen.
 LCD_DIAG_LOG_LINES = int(os.getenv("LCD_DIAG_LOG_LINES", "10"))
+# Vehicle telemetry older than this (s) is shown as stale on the LCD so frozen
+# gauges (dead bus / engine off) can't be mistaken for live readings.
+LCD_OBD_STALE_S = float(os.getenv("LCD_OBD_STALE_S", "5.0"))
 
 # ═══════════════════════════════════════════════════════════════════
 #  Wi-Fi hotspot auto-connect (auto_connect.py / drifter-autoconnect)

@@ -44,6 +44,7 @@ from config import (
     LCD_FB_DEVICE,
     LCD_FONT_CANDIDATES,
     LCD_HEIGHT,
+    LCD_OBD_STALE_S,
     LCD_REFRESH_HZ,
     LCD_ROTATE,
     LCD_SCREENS,
@@ -58,6 +59,7 @@ from config import (
     PING_TIMEOUT_SEC,
     SERVICES,
     TOPICS,
+    XTYPE_DTC_LOOKUP,
     make_mqtt_client,
 )
 
@@ -142,6 +144,17 @@ def service_state_color(state: str, theme: dict) -> tuple:
     if state in ('activating', 'reloading', 'deactivating'):
         return theme['warn']
     return theme['crit']
+
+
+def decode_dtc(code: str) -> tuple[str, str]:
+    """Return (label, severity) for a DTC code from XTYPE_DTC_LOOKUP — turns a
+    raw 'P0301' into 'P0301 Cylinder 1 Misfire' so the fault is readable at the
+    wheel. Unknown codes fall back to (code, 'AMBER')."""
+    norm = str(code).strip().upper()
+    info = XTYPE_DTC_LOOKUP.get(norm) if norm else None
+    if info:
+        return (f"{norm} {info.get('desc', '')}".strip(), info.get('severity', 'AMBER'))
+    return (norm, 'AMBER')
 
 
 def signal_quality(dbm: float | None) -> tuple[int, str]:
@@ -406,6 +419,7 @@ class MqttCache:
         self.msg_count = 0
         self._rate_anchor = (time.time(), 0)
         self.vehicle: dict = {}      # rpm/speed/coolant/voltage
+        self.vehicle_ts: float = 0.0  # last vehicle telemetry arrival (staleness)
         self.dtcs: list = []
         self.last_alert: dict | None = None
         self.network: dict | None = None  # from auto_connect
@@ -446,12 +460,16 @@ class MqttCache:
             t = msg.topic
             if t == TOPICS.get('rpm'):
                 self.vehicle['rpm'] = _val(data)
+                self.vehicle_ts = time.time()
             elif t == TOPICS.get('speed'):
                 self.vehicle['speed'] = _val(data)
+                self.vehicle_ts = time.time()
             elif t == TOPICS.get('coolant'):
                 self.vehicle['coolant'] = _val(data)
+                self.vehicle_ts = time.time()
             elif t == TOPICS.get('voltage'):
                 self.vehicle['voltage'] = _val(data)
+                self.vehicle_ts = time.time()
             elif t == TOPICS.get('dtc'):
                 codes = data.get('codes') if isinstance(data, dict) else data
                 if isinstance(codes, list):
@@ -678,8 +696,13 @@ class Renderer:
         img, d = self._canvas()
         v = data['mqtt']['vehicle']
         dtcs = data['mqtt']['dtcs']
+        v_ts = data['mqtt'].get('vehicle_ts', 0.0)
         connected = bool(v)
-        y = self._header(d, 'VEHICLE', 'OBD' if connected else 'no OBD')
+        # Stale = data arrived once but the bus has since gone quiet (engine off
+        # / link dropped). Surfacing it stops frozen gauges reading as live.
+        stale = connected and v_ts and (time.time() - v_ts) > LCD_OBD_STALE_S
+        sub = 'no OBD' if not connected else ('OBD stale' if stale else 'OBD')
+        y = self._header(d, 'VEHICLE', sub)
         if not connected:
             d.text((self.width // 2 - 70, self.height // 2 - 20), 'No OBD data',
                    font=self.fonts['lg'], fill=th['dim'])
@@ -706,8 +729,13 @@ class Renderer:
               level_color(volt or 14, 13.2, 12.0, th, higher_is_worse=False))
         d.line([0, 214, self.width, 214], fill=th['panel'])
         if dtcs:
-            d.text((10, 222), f"DTC: {', '.join(str(c) for c in dtcs[:6])}",
-                   font=self.fonts['md'], fill=th['crit'])
+            # Decode the lead fault to plain language; colour by severity and
+            # tally the rest. "P0301 Cylinder 1 Misfire  +2" beats raw codes.
+            label, sev = decode_dtc(str(dtcs[0]))
+            color = th['crit'] if sev == 'RED' else th['warn']
+            more = f"  +{len(dtcs) - 1}" if len(dtcs) > 1 else ''
+            d.text((10, 222), f"{label}{more}"[:60],
+                   font=self.fonts['sm'], fill=color)
         else:
             d.text((10, 222), 'DTC: none', font=self.fonts['md'], fill=th['ok'])
         return img
@@ -793,6 +821,7 @@ def build_frame_data(cache: MqttCache, cc: CachedCollectors) -> dict:
             'connected': cache.connected,
             'rate': cache.msg_rate(),
             'vehicle': cache.vehicle,
+            'vehicle_ts': cache.vehicle_ts,
             'dtcs': cache.dtcs,
             'last_alert': cache.last_alert,
         },
