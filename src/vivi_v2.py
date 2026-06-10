@@ -24,6 +24,8 @@ import paho.mqtt.client as mqtt
 
 import llm_client_v2
 import vivi_memory
+import vivi_rf_intent
+import vivi_sentinel
 from config import (
     LEVEL_AMBER,
     LEVEL_RED,
@@ -533,6 +535,18 @@ def speak(text: str) -> None:
 
 def _handle_query(text: str) -> None:
     try:
+        # Deterministic RF voice-intents (start/stop monitor, scan/list bands,
+        # replay reminder) are intercepted BEFORE the LLM — see vivi_rf_intent.
+        intent = vivi_rf_intent.classify_rf_intent(text)
+        if intent is not None:
+            response = vivi_rf_intent.dispatch_rf_intent(intent, _mqtt_client)
+            _publish_response(text, response, 'rf_intent')
+            _publish_status("speaking")
+            try:
+                speak(response)
+            finally:
+                _publish_status("idle")
+            return
         result = ask(text)
         _publish_status("speaking")
         # If streaming sentence-by-sentence, sentences were already spoken.
@@ -757,6 +771,18 @@ def on_message(client, userdata, msg) -> None:
         elif topic == TOPICS.get('location_nearby'):
             if isinstance(payload, dict):
                 _handle_nearby(payload)
+        else:
+            # Proactive counter-surveillance sentinel: axon BLE / police heli /
+            # drone / low-aircraft heads-ups. classify_detection maps the
+            # detection to (cooldown_reason, line); _maybe_proactive speaks it,
+            # de-duped per reason.
+            for key in ('ble_detection', 'adsb_police',
+                        'drone_detection', 'rf_adsb'):
+                if topic == TOPICS.get(key) and isinstance(payload, dict):
+                    hit = vivi_sentinel.classify_detection(key, payload)
+                    if hit:
+                        _maybe_proactive(*hit)
+                    break
     except Exception as e:
         log.error(f"on_message {topic} failed: {e}")
 
@@ -766,6 +792,8 @@ def _subscribe_topics(client: mqtt.Client) -> None:
         'vivi2_query', 'snapshot', 'safety_alert', 'dtc', 'vivi2_memory',
         'crash_event', 'trip_event', 'nav_alert',
         'weather_current', 'weather_alerts', 'location_nearby',
+        # Proactive counter-surveillance sentinel feeds (see vivi_sentinel).
+        'ble_detection', 'adsb_police', 'drone_detection', 'rf_adsb',
     ]
     subs = []
     for key in wanted:
