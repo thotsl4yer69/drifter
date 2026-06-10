@@ -1027,8 +1027,21 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # ── LLM Backend (Ollama — local, offline) ──
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")  # Pi 5 ran qwen2.5:3b at 165% CPU with 60+s stalls. 1.5b responds in ~10s warm. The prompt-side NO DATA tags + vivi_grounding.validate() post-hoc check together catch the fabrication class 3b was originally chosen to prevent.
+# ONE small model for the whole fleet. Every local LLM consumer resolves to
+# this tag: session_analyst, session_reporter, ai_diagnostics (all via
+# src/llm_client.py) and Vivi (vivi.yaml ollama_model mirrors this). install.sh
+# pulls EXACTLY this tag by default — tests/test_llm_model_strategy.py enforces
+# the two stay in sync so the deploy never downloads an unused model again.
+# Pi 5 ran qwen2.5:3b at 165% CPU with 60+s stalls; 1.5b responds in ~10s warm.
+# The prompt-side NO DATA tags + vivi_grounding.validate() post-hoc check
+# together catch the fabrication class 3b was originally chosen to prevent.
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+# Cap resident models at 1 so analyst + Vivi can't both pin a model and OOM the
+# 8GB Pi. Enforced on the ollama DAEMON via the systemd drop-in install.sh
+# writes (ollama.service won't read /opt/drifter/.env); surfaced here so callers
+# and ops tooling can read the intended limit from one place.
+OLLAMA_MAX_LOADED_MODELS = int(os.getenv("OLLAMA_MAX_LOADED_MODELS", "1"))
 
 # ── Voice Input (STT) ──
 VOSK_MODEL_DIR = DRIFTER_DIR / "vosk-models" / "vosk-model-small-en-us-0.15"
