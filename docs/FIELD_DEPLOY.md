@@ -53,11 +53,22 @@ Expected tail of the log:
 
 ```
 STAGE 40 OK
+STAGE 45 START — settle into persona
+  ✓ persona: diag
+STAGE 45 OK
 STAGE FINAL START — curl http://127.0.0.1:8080/healthz
-{"status":"ok",…}
+{"status":"ok","mode":"diag",…}
 STAGE FINAL OK
 DEPLOY: ok
 ```
+
+A fresh deploy enables + starts the whole service set (so the run proves every
+unit launches), then **settles into the lean `diag` persona** — telemetry +
+driver-safety only, no LLM/voice/recon. So `/healthz` reports `"mode":"diag"`
+and the heavy services are *intentionally* inactive at first. Once the node is
+stable, bring the assistant stack up with `sudo drifter mode drive` (or
+`sudo drifter mode foot` for recon). A re-run of `oneshot.sh` respects
+whatever mode you last set.
 
 If a stage fails, the script exits with a numeric code:
 
@@ -83,7 +94,7 @@ drifter healthz                   # dashboard contract probe
 drifter diagnose                  # full fleet-contract probe
 drifter logs canbridge            # last 50 lines for one service
 drifter logs canbridge -f         # tail -F
-drifter restart                   # restart all 15 drifter-* units
+drifter restart                   # restart every drifter-* unit in SERVICES
 drifter restart dashboard         # one service
 drifter version                   # deployed git rev / branch
 ```
@@ -171,7 +182,14 @@ in or the kernel module/udev rule didn't load (`/etc/udev/rules.d/80-can.rules`)
 
 The 2004 X-Type 2.5 is **not yet confirmed to speak CAN on the OBD-II pins** —
 some of that era are **K-line** (ISO 9141 / KWP2000) instead. Settle it before
-trusting empty gauges:
+trusting empty gauges.
+
+**`drifter diagnose` now settles this for you** — when `can0`/`slcan0` is up it
+fires a read-only OBD query (mode 01 PID 05) and reports the result on the
+`can0` check line: `CAN/ISO-15765 confirmed (ECU answered 7E8)` if the car
+speaks CAN, or `no 7E8 OBD response — engine off, or K-line: use
+drifter-obdbridge` if it's silent. Run it with the engine running. To confirm
+by hand:
 
 ```bash
 candump slcan0          # NOT can0 — see above
