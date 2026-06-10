@@ -286,6 +286,57 @@ def corpus_search(query: str, k: int = 3,
     return scored[:k]
 
 
+def corpus_search_lexical(query: str, k: int = 3,
+                          min_score: float = 0.05) -> list[dict]:
+    """Torch-free keyword search over the stored chunk text. Same return shape
+    as corpus_search, so the memory-capped dashboard can do useful RAG without
+    loading the embedding model. Scores by query-term coverage + a capped
+    term-frequency signal over content/topic/section/tags."""
+    if not query or not query.strip() or not DB_PATH.exists():
+        return []
+    terms = [t for t in re.findall(r'[a-z0-9]+', query.lower()) if len(t) >= 3]
+    if not terms:
+        return []
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT source_path, section, content, tags, vehicle, "
+            "confidence, topic FROM chunks"
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error as e:
+        log.warning(f"corpus_search_lexical failed: {e}")
+        return []
+    scored = []
+    for src, sec, content, tags, vehicle, conf, topic in rows:
+        hay = f"{content} {topic or ''} {sec or ''} {tags or ''}".lower()
+        matched = sum(1 for t in terms if t in hay)
+        if not matched:
+            continue
+        tf = min(sum(hay.count(t) for t in terms), 10) / 10.0
+        score = (matched / len(terms)) * 0.7 + tf * 0.3
+        if score >= min_score:
+            scored.append({
+                'source': src, 'section': sec, 'content': content,
+                'tags': tags.split(',') if tags else [],
+                'vehicle': vehicle, 'confidence': conf, 'topic': topic,
+                'score': float(round(score, 4)),
+            })
+    scored.sort(key=lambda x: x['score'], reverse=True)
+    return scored[:k]
+
+
+def corpus_search_best(query: str, k: int = 3,
+                       min_similarity: float = 0.4) -> list[dict]:
+    """Semantic search where the embedding model is available; torch-free
+    lexical fallback in embed-disabled processes (the memory-capped dashboard)
+    so RAG still works in the HUD without pulling torch. Torch-owning services
+    keep getting full semantic retrieval unchanged."""
+    if _embed_disabled():
+        return corpus_search_lexical(query, k=k)
+    return corpus_search(query, k=k, min_similarity=min_similarity)
+
+
 def dtc_lookup_static(code: str) -> dict | None:
     """Torch-free DTC lookup: reads the static dtc/<code>.md file only.
 
