@@ -524,6 +524,13 @@ cp "${REPO_DIR}/config/80-can.rules" /etc/udev/rules.d/
 udevadm control --reload-rules 2>/dev/null || true
 ok "CAN auto-detection configured"
 
+# zram compressed-swap OOM backstop (no disk swap on a car-mounted SD Pi).
+# drifter-zram.service is shipped by the services/*.service glob below;
+# enable it separately (it's infra, not a config.SERVICES unit).
+cp "${REPO_DIR}/config/setup-zram.sh" /usr/local/bin/drifter-zram
+chmod +x /usr/local/bin/drifter-zram
+ok "zram OOM backstop installed (drifter-zram)"
+
 # Check if boot config needs updating
 BOOT_CFG="/boot/firmware/config.txt"
 if [ -f "$BOOT_CFG" ]; then
@@ -599,6 +606,10 @@ for sudoers_src in "${REPO_DIR}"/services/drifter-*.sudoers; do
 done
 
 systemctl daemon-reload
+
+# zram OOM backstop — infra unit (not a config.SERVICES member), enabled on its
+# own so it doesn't perturb the SERVICES invariant the deploy tests enforce.
+systemctl enable --now drifter-zram 2>/dev/null || true
 
 # Enable all services
 # Older deploys shipped drifter-llm.service (superseded by drifter-analyst);

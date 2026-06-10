@@ -1,0 +1,14 @@
+[Unit]
+Description=MZ1312 DRIFTER zram swap (OOM backstop)
+DefaultDependencies=no
+After=local-fs.target
+Before=swap.target sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/drifter-zram start
+ExecStop=/usr/local/bin/drifter-zram stop
+
+[Install]
+WantedBy=multi-user.target

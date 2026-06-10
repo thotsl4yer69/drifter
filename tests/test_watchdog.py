@@ -85,3 +85,89 @@ def test_active_service_does_not_trigger_issue(monkeypatch,
     mq = FakeMQTT()
     health = watchdog.check_health(mq)
     assert health['overall'] == 'healthy'
+
+
+# ── Auto-demote to diag under sustained pressure ────────────────────
+class _RecordingClient:
+    def __init__(self):
+        self.published = []
+
+    def publish(self, topic, payload, retain=False):
+        self.published.append((topic, payload, retain))
+
+
+def _reset_pressure(monkeypatch):
+    monkeypatch.setattr(watchdog, '_pressure_count', 0, raising=False)
+    monkeypatch.setattr(watchdog, 'WATCHDOG_AUTO_DIAG', True)
+    monkeypatch.setattr(watchdog, 'WATCHDOG_MEM_CRITICAL_PCT', 92.0)
+    monkeypatch.setattr(watchdog, 'WATCHDOG_TEMP_CRITICAL_C', 82.0)
+    monkeypatch.setattr(watchdog, 'WATCHDOG_PRESSURE_CHECKS', 3)
+
+
+def test_no_demote_below_threshold(monkeypatch):
+    _reset_pressure(monkeypatch)
+    import mode
+    switched = []
+    monkeypatch.setattr(mode, 'read_mode', lambda: 'drive')
+    monkeypatch.setattr(mode, 'switch', lambda m: switched.append(m))
+    c = _RecordingClient()
+    for _ in range(5):
+        assert watchdog._maybe_demote_to_diag(c, {'memory_percent': 70, 'cpu_temp': 60}) is None
+    assert switched == []
+
+
+def test_demote_only_after_sustained_pressure(monkeypatch):
+    _reset_pressure(monkeypatch)
+    import mode
+    switched = []
+    monkeypatch.setattr(mode, 'read_mode', lambda: 'drive')
+    monkeypatch.setattr(mode, 'switch', lambda m: switched.append(m))
+    c = _RecordingClient()
+    hot = {'memory_percent': 95, 'cpu_temp': 60}
+    # First two critical checks: still building up, no demote.
+    assert watchdog._maybe_demote_to_diag(c, hot) is None
+    assert watchdog._maybe_demote_to_diag(c, hot) is None
+    assert switched == []
+    # Third sustained check: fire.
+    ev = watchdog._maybe_demote_to_diag(c, hot)
+    assert ev and ev['action'] == 'auto_demote_to_diag' and ev['reason'] == 'memory'
+    assert switched == ['diag']
+    assert c.published  # operator notified
+
+
+def test_thermal_pressure_also_demotes(monkeypatch):
+    _reset_pressure(monkeypatch)
+    import mode
+    switched = []
+    monkeypatch.setattr(mode, 'read_mode', lambda: 'drive')
+    monkeypatch.setattr(mode, 'switch', lambda m: switched.append(m))
+    c = _RecordingClient()
+    hot = {'memory_percent': 50, 'cpu_temp': 85}
+    for _ in range(3):
+        ev = watchdog._maybe_demote_to_diag(c, hot)
+    assert ev['reason'] == 'thermal' and switched == ['diag']
+
+
+def test_no_demote_when_already_diag(monkeypatch):
+    _reset_pressure(monkeypatch)
+    import mode
+    switched = []
+    monkeypatch.setattr(mode, 'read_mode', lambda: 'diag')
+    monkeypatch.setattr(mode, 'switch', lambda m: switched.append(m))
+    c = _RecordingClient()
+    hot = {'memory_percent': 99, 'cpu_temp': 90}
+    for _ in range(4):
+        watchdog._maybe_demote_to_diag(c, hot)
+    assert switched == []  # already lean, nothing to shed
+
+
+def test_disabled_never_demotes(monkeypatch):
+    _reset_pressure(monkeypatch)
+    monkeypatch.setattr(watchdog, 'WATCHDOG_AUTO_DIAG', False)
+    import mode
+    switched = []
+    monkeypatch.setattr(mode, 'switch', lambda m: switched.append(m))
+    c = _RecordingClient()
+    for _ in range(5):
+        assert watchdog._maybe_demote_to_diag(c, {'memory_percent': 99, 'cpu_temp': 95}) is None
+    assert switched == []
