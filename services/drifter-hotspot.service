@@ -9,5 +9,11 @@ RemainAfterExit=yes
 ExecStart=/usr/bin/nmcli con up "MZ1312_DRIFTER"
 ExecStop=/usr/bin/nmcli con down "MZ1312_DRIFTER"
 
+# RAM-survival hardening 2026-06-10: diag/safety core tier (the AP phones
+# tether to). Negative OOMScoreAdjust biases the global OOM killer toward
+# the heavy AI/ML services (+500) first. See drifter-canbridge.service
+# for the full OOM-priority scheme.
+OOMScoreAdjust=-800
+
 [Install]
 WantedBy=multi-user.target

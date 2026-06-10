@@ -21,5 +21,12 @@ MemoryHigh=1.2G
 MemoryMax=1.5G
 TasksMax=256
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier.
+# OOMScoreAdjust=+500 so the kernel kills vivi BEFORE the diag/safety
+# core (at -800). Vivi is out-of-process to ollama; the 1.5G cap covers
+# its audio/wake buffers, not the LLM runtime. See
+# drifter-canbridge.service for the full OOM-priority scheme.
+OOMScoreAdjust=500
+
 [Install]
 WantedBy=multi-user.target

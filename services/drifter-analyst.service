@@ -17,8 +17,13 @@ RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
 # Vehicle-survival hardening 2026-05-20: LLM-adjacent service; cap so
-# a stuck request can't take the Pi with it.
+# a stuck request can't take the Pi with it. Out-of-process to ollama,
+# so 512M covers its own buffers, not the LLM runtime.
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier —
+# OOMScoreAdjust=+500 so the kernel kills this BEFORE the diag/safety
+# core (at -800). See drifter-canbridge.service for the scheme.
 MemoryMax=512M
+OOMScoreAdjust=500
 
 NoNewPrivileges=true
 ProtectHome=true

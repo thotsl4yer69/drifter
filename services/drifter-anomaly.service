@@ -18,6 +18,11 @@ Environment=PYTHONUNBUFFERED=1
 
 # Vehicle-survival hardening 2026-05-20
 MemoryMax=512M
+# RAM-survival hardening 2026-06-10: diag/safety core tier. Negative
+# OOMScoreAdjust protects this from global OOM kill so the kernel
+# sacrifices the heavy AI/ML services (+500) first. See
+# drifter-canbridge.service for the full OOM-priority scheme.
+OOMScoreAdjust=-800
 
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc

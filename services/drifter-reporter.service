@@ -14,5 +14,14 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier. Reporter
+# talks to ollama out-of-process (own RSS modest, ~300-500M) — 512M
+# leaves headroom for markdown/LLM-response buffers without ever covering
+# ollama. OOMScoreAdjust=+500 makes the kernel kill this BEFORE the
+# diag/safety core (which sits at -800). See drifter-canbridge.service
+# for the full OOM-priority scheme.
+MemoryMax=512M
+OOMScoreAdjust=500
+
 [Install]
 WantedBy=multi-user.target

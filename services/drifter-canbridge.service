@@ -27,11 +27,22 @@ Environment=PYTHONUNBUFFERED=1
 
 # Vehicle-survival hardening 2026-05-20: canbridge has bounded ring
 # buffers — 256M ceiling, growth past this is a coding defect.
-# OOMScoreAdjust=-500 protects this driver-safety service from
-# global OOM kill (Ollama uncapped per user decision; see
-# progress.txt for the OOM-priority-inversion discussion).
+#
+# === RAM-survival OOM-priority scheme (2026-06-10) ===
+# When the 8G Pi runs out of memory the kernel OOM-killer must sacrifice
+# the heavy AI/ML/voice services FIRST and keep this diagnostics + safety
+# core alive. We bias OOMScoreAdjust in two tiers:
+#   * diagnostics/safety CORE (DIAG_SERVICES in config.py)  -> -800
+#     (this file is core; strengthened from the historical -500)
+#   * heavy/sacrificial (vivi, analyst, reporter, voicein,
+#     fly-catcher, aidiag, vision)                          -> +500
+# Lower score = last to be killed; higher = first. Ollama is
+# intentionally LEFT UNCAPPED / unscored (user decision; see
+# progress.txt OOM-priority-inversion discussion) — the +500 heavy tier
+# is what the kernel reaches for before ever touching this core.
+# canbridge is the primary telemetry source, so it gets full protection.
 MemoryMax=256M
-OOMScoreAdjust=-500
+OOMScoreAdjust=-800
 
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc

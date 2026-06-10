@@ -15,6 +15,12 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# RAM-survival hardening 2026-06-10: diag/safety core tier. Negative
+# OOMScoreAdjust protects this from global OOM kill so the kernel
+# sacrifices the heavy AI/ML services (+500) first. See
+# drifter-canbridge.service for the full OOM-priority scheme.
+OOMScoreAdjust=-800
+
 # Sandboxing — no GPIO / hardware writes, just reads from gpsd's
 # localhost socket and writes to the MQTT broker.
 NoNewPrivileges=true

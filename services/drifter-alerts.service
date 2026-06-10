@@ -24,7 +24,9 @@ Environment=PYTHONUNBUFFERED=1
 # Vehicle-survival hardening 2026-05-20: driver-safety service —
 # bias global OOM killer away from us. See progress.txt for the
 # Ollama-uncapped OOM-priority-inversion discussion.
-OOMScoreAdjust=-500
+# RAM-survival 2026-06-10: strengthened -500 -> -800 (diag/safety core
+# tier; heavy AI/ML services sit at +500). See drifter-canbridge.service.
+OOMScoreAdjust=-800
 
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
