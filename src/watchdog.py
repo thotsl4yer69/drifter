@@ -8,6 +8,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
+import os
 import signal
 import subprocess
 import time
@@ -32,9 +33,22 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ── Auto-demote-to-diag under sustained pressure ──
+# Proactive RAM/thermal protection: if memory or CPU temperature stays
+# critical for several consecutive checks, drop to the lean `diag` mode
+# (stops the LLM/STT/ML services — the main RAM + heat sources) so the
+# vehicle-diagnostics + safety core keeps running. One-way and debounced:
+# it never auto-promotes back (the operator switches up when ready), so it
+# can't flap. TODO(phase3): move these knobs into config.py.
+WATCHDOG_AUTO_DIAG = os.environ.get("WATCHDOG_AUTO_DIAG", "1") not in ("0", "false", "no")
+WATCHDOG_MEM_CRITICAL_PCT = float(os.environ.get("WATCHDOG_MEM_CRITICAL_PCT", "92"))
+WATCHDOG_TEMP_CRITICAL_C = float(os.environ.get("WATCHDOG_TEMP_CRITICAL_C", "82"))
+WATCHDOG_PRESSURE_CHECKS = int(os.environ.get("WATCHDOG_PRESSURE_CHECKS", "3"))
+
 # ── State ──
 last_mqtt_data = {}        # topic → timestamp of last message
 service_restarts = {}      # service → restart count
+_pressure_count = 0        # consecutive checks under critical mem/thermal pressure
 
 
 def get_service_status(name):
@@ -103,6 +117,58 @@ def on_message(client, userdata, msg):
     last_mqtt_data[msg.topic] = time.time()
 
 
+def _maybe_demote_to_diag(mqtt_client, sys_metrics):
+    """If memory/thermal pressure is sustained, drop to lean `diag` mode so the
+    diagnostics + safety core survives. Returns the demotion event dict if it
+    fired this check, else None."""
+    global _pressure_count
+    if not WATCHDOG_AUTO_DIAG:
+        return None
+
+    mem = sys_metrics.get('memory_percent') or 0.0
+    temp = sys_metrics.get('cpu_temp') or 0.0
+    critical = mem >= WATCHDOG_MEM_CRITICAL_PCT or temp >= WATCHDOG_TEMP_CRITICAL_C
+    if not critical:
+        _pressure_count = 0
+        return None
+
+    _pressure_count += 1
+    if _pressure_count < WATCHDOG_PRESSURE_CHECKS:
+        return None
+
+    # Sustained pressure. Shed the heavy tier by switching to diag — unless
+    # we're already there, in which case there's nothing more to stop.
+    try:
+        import mode
+        if mode.read_mode() == 'diag':
+            _pressure_count = 0
+            return None
+        log.error(
+            "SUSTAINED pressure (mem=%.0f%%, temp=%.0f°C) for %d checks — "
+            "auto-demoting to diag mode to protect diagnostics",
+            mem, temp, _pressure_count)
+        mode.switch('diag')
+        _pressure_count = 0
+        event = {
+            'action': 'auto_demote_to_diag',
+            'reason': 'memory' if mem >= WATCHDOG_MEM_CRITICAL_PCT else 'thermal',
+            'memory_percent': round(mem, 1),
+            'cpu_temp': round(temp, 1),
+            'ts': time.time(),
+        }
+        # Surface it so the operator knows why the heavy services stopped.
+        try:
+            mqtt_client.publish(TOPICS.get('watchdog', 'drifter/watchdog'),
+                                json.dumps({'overall': 'auto_demote', **event}),
+                                retain=False)
+        except Exception:
+            pass
+        return event
+    except Exception as e:
+        log.warning("auto-demote to diag failed: %s", e)
+        return None
+
+
 def check_health(mqtt_client):
     """Full health check — services, MQTT liveness, system metrics."""
     now = time.time()
@@ -155,6 +221,13 @@ def check_health(mqtt_client):
         issues.append(f"Disk {sys_metrics['disk_percent']:.0f}% full")
     if sys_metrics.get('memory_percent', 0) > 90:
         issues.append(f"Memory {sys_metrics['memory_percent']:.0f}% used")
+
+    # Proactive protection: shed the heavy tier (→ diag mode) if mem/thermal
+    # pressure is sustained, so diagnostics outlive a memory squeeze.
+    demote = _maybe_demote_to_diag(mqtt_client, sys_metrics)
+    if demote:
+        issues.append(f"auto-demoted to diag mode ({demote['reason']} pressure)")
+        health['auto_demote'] = demote
 
     if issues:
         health['overall'] = 'degraded'
