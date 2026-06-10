@@ -25,6 +25,9 @@ BLE_MAP_HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>DRIFTER — situational map</title>
+<meta name="theme-color" content="#07090d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/leaflet/leaflet.css">
 <style>
   :root { --bg:#000; --fg:#dcdcdc; --dim:#7a7a7a; --accent:#ffae42; --alert:#ff5151; }

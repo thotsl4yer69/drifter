@@ -371,6 +371,8 @@ OPSEC_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>DRIFTER · OPSEC</title>
+<meta name="theme-color" content="#07090d">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090d'/%3E%3Cpath d='M14 46V20l9 13 9-13 9 13 9-13v26' fill='none' stroke='%23ffae42' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@300;400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
@@ -547,7 +549,7 @@ main{padding:18px;max-width:1240px;margin:0 auto}
 .tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
 button.probe,button.btn{
   background:var(--glass-bg-strong);border:1px solid var(--glass-stroke);
-  color:var(--fg);padding:11px 12px;cursor:pointer;text-align:left;
+  color:var(--fg);padding:11px 12px;cursor:pointer;text-align:left;min-height:44px;
   font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;
   border-radius:var(--r-md);transition:.14s ease;
 }
@@ -581,6 +583,10 @@ input[type=text]:focus{border-color:var(--glass-stroke-amber);box-shadow:0 0 10p
 /* ── Curated launcher rows (output adjacent) ────────────────── */
 .tool-split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
 @media(max-width:880px){.tool-split{grid-template-columns:1fr}}
+@media(max-width:480px){.kv{grid-template-columns:1fr;gap:2px 0}.hint{margin-left:0}}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
 .tool-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .tool-block{
   padding:10px 0;border-bottom:1px solid var(--glass-stroke);
@@ -841,6 +847,10 @@ toolRows.addEventListener('click', e => {
 // In kiosk mode there is no browser chrome, so this is the only way back.
 var _bk = document.getElementById('nav-cockpit');
 if (_bk) _bk.href = 'http://' + (location.hostname || '127.0.0.1') + ':8080/';
+// Same for the DRIVE/FOOT switch — the static href is a hotspot-IP
+// fallback that's wrong off-hotspot; resolve it before the mode poll.
+var _sw = document.getElementById('switch-link');
+if (_sw) _sw.href = 'http://' + (location.hostname || '127.0.0.1') + ':8080/';
 document.querySelectorAll('nav a').forEach(a => {
   a.onclick = (e) => {
     if (!a.dataset.page) return;   // back link → let the anchor navigate
