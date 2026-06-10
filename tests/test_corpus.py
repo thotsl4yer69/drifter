@@ -173,3 +173,37 @@ def test_rebuild_prunes_orphaned_chunks_for_deleted_files(_patch_paths_and_embed
     conn.close()
     assert 'gone.md' not in paths
     assert 'keep.md' in paths
+
+
+def test_lexical_search_finds_keyword_chunks(_patch_paths_and_embed):
+    corpus_dir = _patch_paths_and_embed
+    _write_md(corpus_dir, 'coolant.md', {'topic': 'cooling'},
+              '# Cooling\n\n## Overheat\nThe thermostat sticks and coolant boils over.')
+    _write_md(corpus_dir, 'brakes.md', {'topic': 'brakes'},
+              '# Brakes\n\n## Pads\nReplace worn brake pads.')
+    corpus_mod.rebuild(force=True)
+    hits = corpus_mod.corpus_search_lexical('coolant overheating thermostat', k=3)
+    assert hits and hits[0]['topic'] == 'cooling'
+    assert 'thermostat' in hits[0]['content'].lower()
+    # Same return shape as semantic search.
+    assert {'source', 'content', 'topic', 'score'} <= set(hits[0])
+
+
+def test_lexical_search_no_match_returns_empty(_patch_paths_and_embed):
+    corpus_dir = _patch_paths_and_embed
+    _write_md(corpus_dir, 'x.md', {'topic': 't'}, '# T\n\n## S\nbrake pads')
+    corpus_mod.rebuild(force=True)
+    assert corpus_mod.corpus_search_lexical('quantum entanglement', k=3) == []
+    assert corpus_mod.corpus_search_lexical('', k=3) == []
+
+
+def test_search_best_uses_lexical_when_embed_disabled(_patch_paths_and_embed, monkeypatch):
+    corpus_dir = _patch_paths_and_embed
+    _write_md(corpus_dir, 'c.md', {'topic': 'cooling'}, '# C\n\n## O\ncoolant overheat thermostat')
+    corpus_mod.rebuild(force=True)
+    monkeypatch.setattr(corpus_mod, '_embed_disabled', lambda: True)
+    # Would raise if it tried to embed (no model in tests), proving lexical path.
+    monkeypatch.setattr(corpus_mod, '_get_model',
+                        lambda: (_ for _ in ()).throw(AssertionError('loaded torch!')))
+    hits = corpus_mod.corpus_search_best('coolant overheat', k=2)
+    assert hits and hits[0]['topic'] == 'cooling'

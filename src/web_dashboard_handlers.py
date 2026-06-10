@@ -43,7 +43,7 @@ from config import (
     save_settings,
     validate_settings_payload,
 )
-from corpus import corpus_search, dtc_lookup_static
+from corpus import corpus_search_best, dtc_lookup_static
 from hw_probe import probe_rtl_sdr, probe_speaker
 from web_dashboard_hardware import check_hardware
 
@@ -1478,12 +1478,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         returns the top 3 ranked passages. The dashboard renders the
         passage bodies as bullet lines under the alert banner.
 
-        In this embed-free dashboard process corpus_search() is a no-op
-        (returns []) — semantic retrieval lives in the torch-owning services
-        — so this degrades to an empty advice list rather than loading
-        torch and OOM-killing the HUD."""
+        In this embed-free dashboard process corpus_search_best falls back to
+        a torch-free lexical search over the corpus (semantic retrieval, which
+        needs the embedding model, runs in the torch-owning services) — so the
+        HUD still surfaces relevant passages without loading torch."""
         msg = parse_qs(parsed.query).get('alert', [''])[0]
-        hits = corpus_search(msg, k=3, min_similarity=0.4) if msg else []
+        hits = corpus_search_best(msg, k=3, min_similarity=0.4) if msg else []
         advice = [{
             'text':   (h.get('content') or '').strip().splitlines()[0][:200],
             'source': h.get('source'),

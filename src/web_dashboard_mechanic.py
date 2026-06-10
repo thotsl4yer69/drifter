@@ -18,7 +18,7 @@ from collections import deque as _deque
 from pathlib import Path
 
 import web_dashboard_state as state
-from corpus import corpus_search
+from corpus import corpus_search_best
 
 log = logging.getLogger(__name__)
 
@@ -221,12 +221,12 @@ def build_query_context(query: str) -> str:
     except Exception as e:
         log.debug(f"feed-context build failed: {e}")
 
-    # Corpus retrieval — top 3 chunks ranked by cosine similarity. In the
-    # embed-free dashboard process this is a no-op (corpus_search returns []),
-    # so the LLM prompt simply omits the RELEVANT KNOWLEDGE block rather than
-    # loading sentence-transformers/torch and OOM-killing the memory-capped HUD.
+    # Corpus retrieval — top 3 chunks. corpus_search_best uses semantic ranking
+    # where the embedding model is available and a torch-free lexical search in
+    # the memory-capped HUD, so the RELEVANT KNOWLEDGE block is populated here
+    # without loading sentence-transformers/torch into the dashboard.
     kb_lines = []
-    for hit in corpus_search(query, k=3, min_similarity=0.4):
+    for hit in corpus_search_best(query, k=3, min_similarity=0.4):
         topic = hit.get('topic') or hit.get('section') or 'reference'
         body = (hit.get('content') or '').strip().replace('\n', ' ')[:400]
         kb_lines.append(f"{topic}: {body}")
