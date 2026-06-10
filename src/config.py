@@ -293,9 +293,38 @@ def _detect_platform() -> str:
     return "pi5"
 
 
-PLATFORM = _detect_platform()
-IS_RDKX5 = PLATFORM == "rdkx5"
-IS_PI5 = PLATFORM == "pi5"
+# PLATFORM / IS_RDKX5 / IS_PI5 are computed LAZILY via the module-level
+# __getattr__ (PEP 562) at the bottom of this file. _detect_platform() does a
+# /proc/device-tree/model file probe; running it at import would make every
+# one of the ~80 modules that `import config` pay that I/O cost up front. By
+# resolving on first attribute access instead, `import config` stays pure
+# (no file reads / subprocess), while BOTH access patterns keep working
+# unchanged: `config.PLATFORM` AND `from config import PLATFORM` (the latter
+# also routes through __getattr__). Cached after first access so the probe
+# runs at most once per process.
+#
+# Deliberately NOT assigned at module level — defining them as real
+# attributes would shadow __getattr__ (which only fires for *missing* names)
+# and reintroduce the import-time probe.
+_LAZY_ATTRS_CACHE: dict[str, object] = {}
+
+
+def __getattr__(name: str):
+    """PEP 562 lazy attribute resolver for detected-at-import values.
+
+    Computes PLATFORM/IS_RDKX5/IS_PI5 on first access (and caches them) so
+    plain `import config` performs no subprocess / file I/O. Anything else is
+    a genuine miss and raises AttributeError as usual.
+    """
+    if name in _LAZY_ATTRS_CACHE:
+        return _LAZY_ATTRS_CACHE[name]
+    if name in ("PLATFORM", "IS_RDKX5", "IS_PI5"):
+        platform = _detect_platform()
+        _LAZY_ATTRS_CACHE["PLATFORM"] = platform
+        _LAZY_ATTRS_CACHE["IS_RDKX5"] = platform == "rdkx5"
+        _LAZY_ATTRS_CACHE["IS_PI5"] = platform == "pi5"
+        return _LAZY_ATTRS_CACHE[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # ═══════════════════════════════════════════════════════════════════
 #  Vehicle: 2004 Jaguar X-Type 2.5L V6 (AJ-V6 / Duratec)
@@ -402,250 +431,10 @@ THRESHOLDS = {
 #  DTC Lookup — 2004 Jaguar X-Type / AJ-V6 Specific
 #  Plain-English diagnosis with X-Type known causes
 # ═══════════════════════════════════════════════════════════════════
-XTYPE_DTC_LOOKUP = {
-    # Fuel system
-    'P0171': {
-        'desc': 'System Too Lean — Bank 1',
-        'cause': 'Intake manifold gasket leak, cracked PCV valve diaphragm, '
-                 'dirty MAF sensor, or vacuum hose off the brake booster.',
-        'action': 'Smoke test intake, clean MAF with electronics cleaner, '
-                  'check PCV valve on top of valve cover Bank 1.',
-        'severity': 'AMBER',
-    },
-    'P0174': {
-        'desc': 'System Too Lean — Bank 2',
-        'cause': 'Same as P0171 but Bank 2 side. On the X-Type the Bank 2 '
-                 'intake runner seals are harder to access.',
-        'action': 'Smoke test intake. If both P0171+P0174 appear together, '
-                  'suspect the upper intake plenum gasket or large shared vacuum leak.',
-        'severity': 'AMBER',
-    },
-    'P0172': {
-        'desc': 'System Too Rich — Bank 1',
-        'cause': 'Leaking fuel injector, stuck-open purge valve (common on X-Type), '
-                 'or failing upstream O2 sensor Bank 1.',
-        'action': 'Check purge valve on firewall side. Pull injector rail and '
-                  'look for drippers. Test O2 sensor heater resistance.',
-        'severity': 'AMBER',
-    },
-    'P0175': {
-        'desc': 'System Too Rich — Bank 2',
-        'cause': 'Same as P0172 but Bank 2. Also check for coolant leaking '
-                 'into cylinder (head gasket weep) on the rear bank.',
-        'action': 'Inspect spark plugs for fouling. White/steam residue = coolant leak.',
-        'severity': 'AMBER',
-    },
-
-    # Misfires — often coil packs on this engine
-    'P0300': {
-        'desc': 'Random/Multiple Cylinder Misfire',
-        'cause': 'On the AJ-V6 this is usually failing coil packs (COP), worn plugs, '
-                 'or a vacuum leak affecting multiple cylinders.',
-        'action': 'Swap coil packs between cylinders and see if misfire follows. '
-                  'Replace all 6 plugs if over 30k miles. Check for vacuum leaks.',
-        'severity': 'AMBER',
-    },
-    'P0301': {
-        'desc': 'Cylinder 1 Misfire',
-        'cause': 'Coil pack failure is the #1 cause on X-Type. Cylinder 1 is '
-                 'front-left (Bank 1, nearest radiator).',
-        'action': 'Swap coil from Cyl 1 to Cyl 4. If misfire moves → replace coil. '
-                  'If not → check plug, compression, injector.',
-        'severity': 'AMBER',
-    },
-    'P0302': {
-        'desc': 'Cylinder 2 Misfire',
-        'cause': 'Coil pack or spark plug. Cyl 2 is mid Bank 1.',
-        'action': 'Swap coil to another cylinder and retest.',
-        'severity': 'AMBER',
-    },
-    'P0303': {
-        'desc': 'Cylinder 3 Misfire',
-        'cause': 'Coil pack or spark plug. Cyl 3 is rear Bank 1.',
-        'action': 'Swap coil to another cylinder and retest.',
-        'severity': 'AMBER',
-    },
-    'P0304': {
-        'desc': 'Cylinder 4 Misfire',
-        'cause': 'Coil pack or spark plug. Cyl 4 is front Bank 2 (nearest alternator).',
-        'action': 'Swap coil to another cylinder and retest.',
-        'severity': 'AMBER',
-    },
-    'P0305': {
-        'desc': 'Cylinder 5 Misfire',
-        'cause': 'Coil pack or spark plug. Cyl 5 is mid Bank 2.',
-        'action': 'Swap coil to another cylinder and retest.',
-        'severity': 'AMBER',
-    },
-    'P0306': {
-        'desc': 'Cylinder 6 Misfire',
-        'cause': 'Coil pack or spark plug. Cyl 6 is rear Bank 2 (hardest to access).',
-        'action': 'Swap coil to another cylinder and retest.',
-        'severity': 'AMBER',
-    },
-
-    # Sensors
-    'P0340': {
-        'desc': 'Camshaft Position Sensor A — Bank 1',
-        'cause': 'CMP sensor failure or wiring corrosion. Common on ageing X-Types. '
-                 'Located behind the timing cover on Bank 1 side.',
-        'action': 'Replace CMP sensor (cheap part). Check connector for green corrosion.',
-        'severity': 'RED',
-    },
-    'P0345': {
-        'desc': 'Camshaft Position Sensor A — Bank 2',
-        'cause': 'Same as P0340 but Bank 2 side.',
-        'action': 'Replace CMP sensor Bank 2. Check for coolant contamination '
-                  'from thermostat housing leak (they are close together).',
-        'severity': 'RED',
-    },
-
-    # Catalyst
-    'P0420': {
-        'desc': 'Catalyst Efficiency Below Threshold — Bank 1',
-        'cause': 'Catalytic converter degraded, or downstream O2 sensor lazy. '
-                 'UK MOT relevant. On X-Type often caused by prolonged rich running '
-                 'from a bad coil pack fouling the cat.',
-        'action': 'Fix any upstream fuel trim or misfire codes FIRST. '
-                  'Then clear and retest. If cat is truly dead, budget $400-800 for replacement.',
-        'severity': 'AMBER',
-    },
-    'P0430': {
-        'desc': 'Catalyst Efficiency Below Threshold — Bank 2',
-        'cause': 'Same as P0420 but Bank 2. The X-Type has 2 pre-cats and 1 main cat.',
-        'action': 'Same approach — fix fuel/ignition first, then re-evaluate cat health.',
-        'severity': 'AMBER',
-    },
-
-    # EGR / Purge
-    'P0401': {
-        'desc': 'EGR Flow Insufficient',
-        'cause': 'Carbon buildup in EGR passages (very common on X-Type). '
-                 'EGR valve sticking or vacuum actuator leaking.',
-        'action': 'Remove and clean EGR valve. Clean EGR passages with carb cleaner. '
-                  'Check vacuum hoses to EGR actuator.',
-        'severity': 'AMBER',
-    },
-    'P0443': {
-        'desc': 'EVAP Purge Control Valve Circuit',
-        'cause': 'Purge valve solenoid failed or wiring fault. Located on the '
-                 'firewall side of the engine bay.',
-        'action': 'Test purge valve with 12V — should click. Replace if stuck open '
-                  '(causes rich condition) or stuck closed (fuel tank pressure).',
-        'severity': 'AMBER',
-    },
-
-    # Idle / Throttle — X-Type uses electronic throttle body (drive-by-wire)
-    'P0507': {
-        'desc': 'Idle Air Control RPM Higher Than Expected',
-        'cause': 'Vacuum leak, dirty throttle body, or sticking IAC. On X-Type '
-                 'the electronic throttle body gets carbon buildup inside.',
-        'action': 'Clean throttle body with carb cleaner (remove to clean properly). '
-                  'Then do idle relearn: key on 30s, start, idle 2 min, drive 10 min.',
-        'severity': 'AMBER',
-    },
-    'P1000': {
-        'desc': 'OBD-II System Readiness Not Complete',
-        'cause': 'Not a fault — monitors have not run since last battery disconnect '
-                 'or code clear. Normal after work.',
-        'action': 'Drive a mixed cycle: cold start, idle 2 min, accelerate to 60 mph, '
-                  'cruise 5 min, decelerate with foot off gas. Monitors will complete.',
-        'severity': 'INFO',
-    },
-
-    # O2 Sensors
-    'P0131': {
-        'desc': 'O2 Sensor Low Voltage — Bank 1 Sensor 1 (upstream)',
-        'cause': 'Upstream O2 sensor degraded or exhaust leak before sensor. '
-                 'On X-Type, check the flex joint near the manifold for cracks.',
-        'action': 'Check exhaust for leaks at manifold-to-flex joint. '
-                  'Test O2 heater fuse. Replace sensor if >80k miles.',
-        'severity': 'AMBER',
-    },
-    'P1131': {
-        'desc': 'O2 Sensor Lack of Switching — Bank 1',
-        'cause': 'Upstream O2 sensor stuck lean. Common on ageing X-Types. '
-                 'Can also be triggered by persistent vacuum leak.',
-        'action': 'Fix vacuum leaks first. If still present, replace Bank 1 sensor 1.',
-        'severity': 'AMBER',
-    },
-    'P1151': {
-        'desc': 'O2 Sensor Lack of Switching — Bank 2',
-        'cause': 'Same as P1131 but Bank 2 side.',
-        'action': 'Fix vacuum leaks first, then replace Bank 2 sensor 1 if needed.',
-        'severity': 'AMBER',
-    },
-
-    # Fuel pump
-    'P1235': {
-        'desc': 'Fuel Pump Control Out of Range',
-        'cause': 'Fuel pump relay failing, wiring fault, or fuel pump itself wearing out. '
-                 'On X-Type the pump is in the tank, access via rear seat.',
-        'action': 'Check fuel pump relay in engine bay fuse box first (swap with identical relay). '
-                  'Listen for pump prime when turning key to ON. '
-                  'Check fuel pressure at rail (spec: 3.0-3.5 bar).',
-        'severity': 'RED',
-    },
-
-    # Throttle body (drive-by-wire specific to X-Type)
-    'P1518': {
-        'desc': 'Intake Manifold Runner Control Stuck Open',
-        'cause': 'IMRC actuator failure or vacuum leak to the runner control. '
-                 'Affects power band above 3500 RPM.',
-        'action': 'Check vacuum hose to IMRC actuator. Test actuator with vacuum pump. '
-                  'Common on high-mileage X-Types.',
-        'severity': 'AMBER',
-    },
-    'P2106': {
-        'desc': 'Throttle Actuator — Forced Limited Power',
-        'cause': 'PCM has put the engine in limp mode. Usually triggered by another '
-                 'fault code. The X-Type throttle body motor can fail internally.',
-        'action': 'LIMP MODE. Read ALL codes — fix the root cause. '
-                  'If throttle body related, try cleaning first before replacing ($250+ part).',
-        'severity': 'RED',
-    },
-    'P2111': {
-        'desc': 'Throttle Actuator Stuck Open',
-        'cause': 'Throttle plate sticking or motor failure. Carbon buildup is '
-                 'the usual cause on X-Type.',
-        'action': 'Remove and clean throttle body. Check for scored bore. '
-                  'After refitting: idle relearn procedure required.',
-        'severity': 'RED',
-    },
-    'P2112': {
-        'desc': 'Throttle Actuator Stuck Closed',
-        'cause': 'Throttle plate jammed shut. Will cause loss of power or no-start.',
-        'action': 'Emergency: key off/on may reset. Clean or replace throttle body. '
-                  'Do NOT force the plate open with tools.',
-        'severity': 'RED',
-    },
-    'P2135': {
-        'desc': 'Throttle Position Sensor Correlation',
-        'cause': 'The two TPS signals inside the throttle body disagree. '
-                 'Wiring fault or internal throttle body failure.',
-        'action': 'Check TPS connector for corrosion. Wiggle-test wiring. '
-                  'If intermittent, throttle body replacement likely needed.',
-        'severity': 'RED',
-    },
-
-    # Communication
-    'U0100': {
-        'desc': 'Lost Communication with ECM/PCM',
-        'cause': 'CAN bus wiring fault, ECM power supply issue, or ECM failure. '
-                 'On X-Type, check the main engine fuse box and ECM connector.',
-        'action': 'Check battery voltage. Inspect ECM connector (behind glovebox). '
-                  'Check CAN bus termination with multimeter (should be ~60 ohms).',
-        'severity': 'RED',
-    },
-    'U0121': {
-        'desc': 'Lost Communication with ABS Module',
-        'cause': 'ABS module failure or CAN bus fault. The X-Type ABS module '
-                 'is known to fail internally (common issue).',
-        'action': 'Check ABS fuse first. If module dead, specialist rebuild '
-                  '(BBA Reman, ECU Testing) typically $250-400.',
-        'severity': 'AMBER',
-    },
-}
+# The lookup table itself lives in _config_dtc.py (pure data, extracted to
+# keep this module lean). Re-imported here so `config.XTYPE_DTC_LOOKUP` and
+# `from config import XTYPE_DTC_LOOKUP` resolve exactly as before.
+from _config_dtc import XTYPE_DTC_LOOKUP  # noqa: E402,F401  (re-export)
 
 # ── Calibration Defaults ──
 CALIBRATION_DEFAULTS = {
@@ -745,243 +534,10 @@ RFAUDIO_OPEN_RETRIES     = 3     # rtl_fm retries on usb_claim_interface error (
 RFAUDIO_OPEN_RETRY_BACKOFF_SEC = 2.0  # Between retries; total worst-case latency ≈ 9s
 
 # ── MQTT Topics ──
-TOPICS = {
-    'rpm': 'drifter/engine/rpm',
-    'coolant': 'drifter/engine/coolant',
-    'stft1': 'drifter/engine/stft1',
-    'stft2': 'drifter/engine/stft2',
-    'ltft1': 'drifter/engine/ltft1',
-    'ltft2': 'drifter/engine/ltft2',
-    'load': 'drifter/engine/load',
-    'speed': 'drifter/vehicle/speed',
-    'throttle': 'drifter/engine/throttle',
-    'voltage': 'drifter/power/voltage',
-    'iat': 'drifter/engine/iat',
-    'maf': 'drifter/engine/maf',
-    'timing': 'drifter/engine/timing',
-    'o2_b1s1': 'drifter/engine/o2_b1s1',
-    'o2_b2s1': 'drifter/engine/o2_b2s1',
-    'run_time': 'drifter/engine/run_time',
-    'baro': 'drifter/engine/baro',
-    'fuel_lvl': 'drifter/vehicle/fuel_lvl',
-    'alert_level': 'drifter/alert/level',
-    'alert_message': 'drifter/alert/message',
-    'snapshot': 'drifter/snapshot',
-    'system_status': 'drifter/system/status',
-    'dtc': 'drifter/diag/dtc',
-    'calibration': 'drifter/diag/calibration',
-    'watchdog': 'drifter/system/watchdog',
-    'drive_session': 'drifter/session',
-    # RF / TPMS
-    'tpms_fl': 'drifter/rf/tpms/fl',
-    'tpms_fr': 'drifter/rf/tpms/fr',
-    'tpms_rl': 'drifter/rf/tpms/rl',
-    'tpms_rr': 'drifter/rf/tpms/rr',
-    'tpms_snapshot': 'drifter/rf/tpms/snapshot',
-    'rf_signal': 'drifter/rf/signals',
-    'rf_spectrum': 'drifter/rf/spectrum',
-    'rf_emergency': 'drifter/rf/emergency',
-    'rf_status': 'drifter/rf/status',
-    'rf_command': 'drifter/rf/command',
-    'rf_adsb': 'drifter/rf/adsb',
-    'rfaudio_command': 'drifter/rfaudio/command',
-    'rfaudio_status': 'drifter/rfaudio/status',
-    # Wardrive
-    'wardrive_wifi': 'drifter/wardrive/wifi',
-    'wardrive_bt': 'drifter/wardrive/bt',
-    'wardrive_status': 'drifter/wardrive/status',
-    'wardrive_snapshot': 'drifter/wardrive/snapshot',
-    # Analyst
-    'analysis_report': 'drifter/analysis/report',
-    'analysis_request': 'drifter/analysis/request',
-    'anomaly_event': 'drifter/anomaly/event',
-    # Voice Input
-    'voice_transcript': 'drifter/voice/transcript',
-    'voice_command': 'drifter/voice/command',
-    'voice_status': 'drifter/voice/status',
-    'hud_navigate': 'drifter/hud/navigate',
-    # Vivi voice assistant
-    'vivi_query': 'drifter/vivi/query',
-    'vivi_response': 'drifter/vivi/response',
-    'vivi_status': 'drifter/vivi/status',
-    'vivi_control': 'drifter/vivi/control',
-    # Audio (shared with voice_alerts)
-    'audio_wav': 'drifter/audio/wav',
-    # Flipper Zero
-    'flipper_status': 'drifter/flipper/status',
-    'flipper_command': 'drifter/flipper/command',
-    'flipper_result': 'drifter/flipper/result',
-    'flipper_subghz': 'drifter/flipper/subghz',
-    # HID injection (drifter-hid — Rubber Ducky / BadUSB, foot-only)
-    'hid_command': 'drifter/hid/command',
-    'hid_status': 'drifter/hid/status',
-    'hid_result': 'drifter/hid/result',
-    'hid_audit': 'drifter/hid/audit',
-    # Tool Executor
-    'tool_request': 'drifter/tool/request',
-    'tool_result': 'drifter/tool/result',
-    # Conversation mode (Vivi ↔ voice_input loop)
-    'voice_listen_now': 'drifter/voice/listen_now',
-    'vivi_conversation_mode': 'drifter/vivi/conversation_mode',
-    'vivi_say': 'drifter/vivi/say',
-    # Phase 5 — cockpit interrupt + voice control of HUD layers
-    'adsb_police': 'drifter/adsb/police',
-    'drone_detection': 'drifter/drone/detection',
-    'hud_map_layer': 'drifter/hud/map/layer',
-    # BLE passive scanner (Phase 4.5)
-    'ble_detection': 'drifter/ble/detection',
-    'ble_raw': 'drifter/ble/raw',
-    # GPS (cached by ble_passive for detection geo-tagging)
-    'gps_fix': 'drifter/gps/fix',
-    # v2 — Telemetry Batcher
-    'telemetry_window': 'drifter/telemetry/window',
-    'telemetry_stats': 'drifter/telemetry/stats',
-    # v2 — Trip Computer
-    'trip_stats': 'drifter/trip/stats',
-    'trip_event': 'drifter/trip/event',
-    'trip_fuel': 'drifter/trip/fuel',
-    'trip_cost': 'drifter/trip/cost',
-    # v2 — Adaptive Thresholds
-    'thresholds_learned': 'drifter/thresholds/learned',
-    'thresholds_update': 'drifter/thresholds/update',
-    # Recon / audit expansion (Agent B)
-    'wifi_devices': 'drifter/wifi/devices',
-    'ble_devices': 'drifter/ble/devices',
-    'wifi_audit': 'drifter/wifi/audit',
-    'airspace_aircraft': 'drifter/airspace/aircraft',
-    'airspace_aircraft_classified': 'drifter/airspace/aircraft_classified',
-    # v2 — Session Reporter
-    'session_report': 'drifter/session/report',
-    'session_summary': 'drifter/session/summary',
-    'safety_alert': 'drifter/safety/alert',
-    'ai_diag_response': 'drifter/ai/diag/response',
-
-    # ── v2/v2.1 additions (from feature/drifter-v2) ──
-    'ai_diag_request': 'drifter/diag/ai/request',
-    'ai_diag_status': 'drifter/diag/ai/status',
-    'alpr_plate': 'drifter/vision/alpr/plate',
-    'can_dbc_generated': 'drifter/can/dbc/generated',
-    'can_decode_request': 'drifter/can/decode/request',
-    'can_decode_response': 'drifter/can/decode/response',
-    'can_sniff_frame': 'drifter/can/sniff/frame',
-    'can_sniff_status': 'drifter/can/sniff/status',
-    'can_sniff_summary': 'drifter/can/sniff/summary',
-    'comms_inbound': 'drifter/comms/inbound',
-    'comms_notify': 'drifter/comms/notify',
-    'comms_sms': 'drifter/comms/sms',
-    'crash_event': 'drifter/crash/event',
-    'crash_sos': 'drifter/crash/sos',
-    'crash_status': 'drifter/crash/status',
-    'dashcam_clip': 'drifter/vision/dashcam/clip',
-    'dashcam_status': 'drifter/vision/dashcam/status',
-    'discord_inbound': 'drifter/discord/inbound',
-    'discord_outbound': 'drifter/discord/outbound',
-    'discord_status': 'drifter/discord/status',
-    'driver_event': 'drifter/driver/event',
-    'driver_fatigue': 'drifter/driver/fatigue',
-    'driver_score': 'drifter/driver/score',
-    'driver_weather': 'drifter/driver/weather',
-    'fcw_status': 'drifter/vision/fcw/status',
-    'fcw_warning': 'drifter/vision/fcw/warning',
-    'fleet_alert': 'drifter/fleet/alert',
-    'fleet_command': 'drifter/fleet/command',
-    'fleet_heartbeat': 'drifter/fleet/heartbeat',
-    'fleet_register': 'drifter/fleet/register',
-    'fleet_status': 'drifter/fleet/status',
-    'fleet_telemetry': 'drifter/fleet/telemetry',
-    'fuzz_command': 'drifter/fuzz/command',
-    'fuzz_status': 'drifter/fuzz/status',
-    'home_command': 'drifter/home/command',
-    'home_event': 'drifter/home/event',
-    'home_status': 'drifter/home/status',
-    'kb_query': 'drifter/kb/query',
-    'kb_response': 'drifter/kb/response',
-    'kb_update': 'drifter/kb/update',
-    'learn_event': 'drifter/learn/event',
-    'llm_query': 'drifter/llm/query',
-    'llm_response': 'drifter/llm/response',
-    'marauder_cmd': 'drifter/marauder/cmd',
-    'mesh_announce': 'drifter/mesh/announce',
-    'mesh_bridge': 'drifter/mesh/bridge',
-    'mesh_node': 'drifter/mesh/node',
-    'mesh_status': 'drifter/mesh/status',
-    'mesh_topology': 'drifter/mesh/topology',
-    'nav_alert': 'drifter/nav/alert',
-    'nav_camera': 'drifter/nav/camera',
-    'nav_geofence': 'drifter/nav/geofence',
-    'nav_position': 'drifter/nav/position',
-    'nav_route': 'drifter/nav/route',
-    'nav_status': 'drifter/nav/status',
-    'obd_pid': 'drifter/obd/pid',
-    'obd_status': 'drifter/obd/status',
-    'presence_event': 'drifter/presence/event',
-    'presence_status': 'drifter/presence/status',
-    'recorder_command': 'drifter/recorder/command',
-    'recorder_session': 'drifter/recorder/session',
-    'recorder_status': 'drifter/recorder/status',
-    'replay_command': 'drifter/replay/command',
-    'replay_progress': 'drifter/replay/progress',
-    'replay_status': 'drifter/replay/status',
-    'safety_status': 'drifter/safety/status',
-    'satellite_announce': 'drifter/satellite/announce',
-    'satellite_command': 'drifter/satellite/command',
-    'satellite_status': 'drifter/satellite/status',
-    'satellite_telemetry': 'drifter/satellite/telemetry',
-    'sentry_clip': 'drifter/sentry/clip',
-    'sentry_event': 'drifter/sentry/event',
-    'sentry_status': 'drifter/sentry/status',
-    'spotify_command': 'drifter/spotify/command',
-    'spotify_duck': 'drifter/spotify/duck',
-    'spotify_status': 'drifter/spotify/status',
-    'spotify_track': 'drifter/spotify/track',
-    'vehicle_id': 'drifter/vehicle/id',
-    'vehicle_profile': 'drifter/vehicle/profile',
-    'vision_object': 'drifter/vision/object',
-    'vision_status': 'drifter/vision/status',
-    'vivi2_memory': 'drifter/vivi2/memory',
-    'vivi2_proactive': 'drifter/vivi2/proactive',
-    'vivi2_query': 'drifter/vivi2/query',
-    'vivi2_response': 'drifter/vivi2/response',
-    'vivi2_status': 'drifter/vivi2/status',
-    'vivi2_stream': 'drifter/vivi2/stream',
-
-    # ── RDK X5 port — native CAN FD bridge + toolkit (can_native.py) ──
-    # The bridge republishes the same per-PID metric topics as can_bridge.py
-    # (rpm/coolant/…/snapshot/dtc/system_status above); these are the
-    # native-bridge-specific control + status + toolkit-output channels.
-    'can_native_status': 'drifter/can/native/status',
-    'can_native_command': 'drifter/can/native/command',
-    'can_native_frame': 'drifter/can/native/frame',
-    'can_native_fuzz': 'drifter/can/native/fuzz',
-    'can_native_replay': 'drifter/can/native/replay',
-
-    # ── Counter-surveillance (ghost_protocol.py) ──
-    'ghost_status': 'drifter/ghost/status',
-    'ghost_alert': 'drifter/ghost/alert',
-    'ghost_tracker': 'drifter/ghost/tracker',     # AirTag / Tile / SmartTag follower
-    'ghost_stingray': 'drifter/ghost/stingray',   # IMSI-catcher / cell anomaly
-    'ghost_alpr': 'drifter/ghost/alpr',           # ALPR camera awareness
-    'ghost_rf': 'drifter/ghost/rf',               # anomalous RF / surveillance band
-
-    # ── Weather (weather_service.py — OpenWeatherMap One Call) ──
-    'weather_current': 'drifter/weather/current',   # temp/humidity/wind/visibility/condition
-    'weather_forecast': 'drifter/weather/forecast', # hourly outlook
-    'weather_alerts': 'drifter/weather/alerts',     # gov + derived (rain_soon/fog/ice/wind)
-
-    # ── Location enrichment (location_service.py — Google Elevation + Places) ──
-    'location_elevation': 'drifter/location/elevation',  # elevation_m + road grade %
-    'location_nearby': 'drifter/location/nearby',        # nearby POIs (fuel/mechanic/...)
-    'location_query': 'drifter/location/query',          # request: {"type": "gas_station"}
-
-    # ── In-car LCD + boot orchestration + Wi-Fi auto-connect ──
-    # The 3.5" SPI LCD dashboard, the headless boot sequencer, and the
-    # hotspot auto-connector all talk over these topics so the operator can
-    # triage the node at the car without dragging an HDMI monitor out.
-    'network_status': 'drifter/network/status',  # auto_connect → {ssid,ip,internet,ap_fallback,state}
-    'lcd_command': 'drifter/lcd/command',        # remote control: {"action":"next"|"prev"|"refresh"|"screen","screen":"network"}
-    'lcd_status': 'drifter/lcd/status',          # lcd_dashboard heartbeat → {screen,ts,fb}
-    'boot_status': 'drifter/boot/status',        # boot_manager stage progress → {stage,detail,ok,ts}
-}
+# Full drifter/* topic map lives in _config_topics.py (pure data, extracted
+# to keep this module lean). Re-imported here so `config.TOPICS` and
+# `from config import TOPICS` resolve exactly as before.
+from _config_topics import TOPICS  # noqa: E402,F401  (re-export)
 
 # ── LLM v2 cascade config ──
 LLM_CASCADE_ORDER = os.getenv("LLM_CASCADE_ORDER", "ollama").split(",")
