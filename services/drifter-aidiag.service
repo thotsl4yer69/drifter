@@ -14,5 +14,13 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier. LLM calls
+# go out-of-process (Claude API / ollama), so own RSS is modest — 512M
+# covers prompt/response buffers without ever covering the LLM runtime.
+# OOMScoreAdjust=+500 makes the kernel kill this BEFORE the diag/safety
+# core (at -800). See drifter-canbridge.service for the scheme.
+MemoryMax=512M
+OOMScoreAdjust=500
+
 [Install]
 WantedBy=multi-user.target

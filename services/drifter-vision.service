@@ -14,5 +14,14 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier. YOLO model +
+# frame buffers are RAM-hungry in-process (Hailo offloads inference but
+# the Python side still buffers frames/tensors, ~0.5-1.5G); 1.5G caps a
+# runaway with headroom. OOMScoreAdjust=+500 makes the kernel kill this
+# BEFORE the diag/safety core (at -800). See drifter-canbridge.service
+# for the OOM-priority scheme.
+MemoryMax=1.5G
+OOMScoreAdjust=500
+
 [Install]
 WantedBy=multi-user.target

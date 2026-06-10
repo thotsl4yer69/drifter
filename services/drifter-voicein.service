@@ -13,6 +13,16 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier — this is the
+# single biggest in-process RAM consumer. whisper STT loads the model
+# in-process (~1-2G resident under load); 2.5G gives real headroom over
+# that so it does NOT OOM in normal use, while still capping a runaway so
+# it can't exhaust the 8G Pi. OOMScoreAdjust=+500 makes the kernel
+# sacrifice STT BEFORE the diag/safety core (at -800). See
+# drifter-canbridge.service for the OOM-priority scheme.
+MemoryMax=2.5G
+OOMScoreAdjust=500
+
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
 # read-only while leaving /opt/drifter writable for logs/state.

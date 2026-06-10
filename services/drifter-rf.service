@@ -13,6 +13,12 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# RAM-survival hardening 2026-06-10: diag/safety core tier (passive
+# RTL-SDR TPMS / vehicle telemetry). Negative OOMScoreAdjust protects
+# this from global OOM kill so the kernel sacrifices the heavy AI/ML
+# services (+500) first. See drifter-canbridge.service for the scheme.
+OOMScoreAdjust=-800
+
 # --- Hardening (see AGENTS.md) --------------------------------------
 # Baseline sandboxing. ProtectSystem=full makes /usr, /boot, /etc
 # read-only while leaving /opt/drifter writable for logs/state.

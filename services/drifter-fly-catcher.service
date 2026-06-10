@@ -13,6 +13,14 @@ Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 
+# RAM-survival hardening 2026-06-10: heavy/sacrificial tier. Loads an
+# in-process ML model (~0.5-1G resident); 1.5G caps a runaway with
+# headroom over real need. OOMScoreAdjust=+500 makes the kernel kill
+# this BEFORE the diag/safety core (at -800). See
+# drifter-canbridge.service for the OOM-priority scheme.
+MemoryMax=1.5G
+OOMScoreAdjust=500
+
 NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true
