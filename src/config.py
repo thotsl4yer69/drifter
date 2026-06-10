@@ -791,7 +791,11 @@ assert set(DIAG_SERVICES) <= set(SERVICES), \
 # Persistent mode marker — read by the dashboard and CLI to render which
 # persona is currently armed. Updated by `drifter mode <name>`.
 MODE_STATE_PATH = DRIFTER_DIR / "mode.state"
-DEFAULT_MODE = "drive"
+# Lean by default: a node with no persisted mode comes up in the guaranteed-
+# light diag floor (telemetry + safety only). Switch up with `drifter mode
+# drive` (assistant/LLM/voice) or `foot` (recon) once it's stable. oneshot.sh
+# settles into the resolved mode after the /healthz gate.
+DEFAULT_MODE = "diag"
 
 # ── Marauder bridge feature flags ─────────────────────────────────────
 # Random-SSID beacon spam is refused outright by the bridge — random
