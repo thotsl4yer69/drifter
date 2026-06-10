@@ -122,6 +122,17 @@ _STATIC_FILES = {
         ('/opt/drifter/static/leaflet/marker-icon-2x.png', 'image/png', None),
     '/static/leaflet/marker-shadow.png':
         ('/opt/drifter/static/leaflet/marker-shadow.png', 'image/png', None),
+    # Brand / PWA assets — the cockpit is phone-tethered, so it should install
+    # to the home screen with proper MZ1312 branding. The SVG/PNG mark already
+    # ships in the canonical palette (static/icons/drifter-cockpit.*).
+    '/favicon.svg': ('/opt/drifter/static/icons/drifter-cockpit.svg',
+                     'image/svg+xml', None),
+    '/favicon.ico': ('/opt/drifter/static/icons/drifter-cockpit.png',
+                     'image/png', None),
+    '/apple-touch-icon.png': ('/opt/drifter/static/icons/drifter-cockpit.png',
+                              'image/png', None),
+    '/manifest.webmanifest': ('/opt/drifter/static/icons/manifest.webmanifest',
+                              'application/manifest+json', None),
 }
 
 
