@@ -187,22 +187,23 @@ def test_healthz_payload_hw_optional_inactive(monkeypatch):
     assert payload['services_failed'] == []
 
 
-def test_healthz_payload_fbmirror_inactive_is_hw_pending(monkeypatch):
-    """fbmirror needs the SPI LCD framebuffer (/dev/fb1); on a bench it exits
-    'fb1 not found'. It must classify as hardware-optional so the deploy gate
-    stays 200 — and so does the documented 'disable fbmirror to use lcd' step.
+def test_healthz_payload_lcd_inactive_is_hw_pending(monkeypatch):
+    """The in-car SPI LCD triage console (drifter-lcd) needs /dev/fb1; on a
+    bench without the panel it exits hw-pending. It must classify as
+    hardware-optional so the deploy gate stays HTTP 200 rather than degraded.
+    (drifter-lcd replaced drifter-fbmirror as the sole SPI dash service.)
     """
     _reset_healthz_cache()
     monkeypatch.setattr(
         h, '_systemctl_active',
-        lambda u: u != 'drifter-fbmirror',
+        lambda u: u != 'drifter-lcd',
     )
     state.mqtt_client = None
     state.latest_state.clear()
     payload, status = h._healthz_payload()
     assert status == 200
     assert payload['status'] == 'ok-hw-pending'
-    assert 'drifter-fbmirror' in payload['services_hw_pending']
+    assert 'drifter-lcd' in payload['services_hw_pending']
     assert payload['services_failed'] == []
 
 
@@ -260,7 +261,7 @@ def test_healthz_foot_mode_ignores_drive_only_inactive(monkeypatch, tmp_path):
     # All drive-only services down, all foot+shared up.
     drive_only = {'drifter-canbridge', 'drifter-alerts', 'drifter-anomaly',
                   'drifter-analyst', 'drifter-voice', 'drifter-realdash',
-                  'drifter-fbmirror', 'drifter-rf'}
+                  'drifter-rf'}
     monkeypatch.setattr(h, '_systemctl_active', lambda u: u not in drive_only)
     state.mqtt_client = None
     state.latest_state.clear()

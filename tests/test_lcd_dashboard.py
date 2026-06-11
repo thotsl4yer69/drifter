@@ -16,6 +16,53 @@ import lcd_dashboard as lcd
 TH = config.LCD_THEME
 
 
+# ──────────────────── framebuffer resolution (regression) ────────────────
+# These guard the in-car blank-LCD bug: the SPI panel must be resolved by
+# sysfs driver name (not a hardcoded fb1) and waited for, so a late/renumbered
+# probe doesn't leave the dash dark for the whole drive.
+
+def _mk_fb(root, idx, name):
+    d = root / f"fb{idx}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "name").write_text(name + "\n")
+
+
+def test_resolve_fb_prefers_spi_panel_by_name(tmp_path):
+    _mk_fb(tmp_path, 0, "vc4drmfb")     # HDMI/DRM plane
+    _mk_fb(tmp_path, 1, "fb_ili9486")   # the SPI dash panel
+    assert lcd.resolve_fb_device(
+        preferred="/dev/fbNONE", sysfs_root=str(tmp_path)) == "/dev/fb1"
+
+
+def test_resolve_fb_survives_renumber(tmp_path):
+    # SPI panel grabbed fb0 and the DRM plane is fb1 — must follow the name,
+    # not the index, or we'd blit the menu onto the HDMI plane.
+    _mk_fb(tmp_path, 0, "fb_ili9486")
+    _mk_fb(tmp_path, 1, "vc4drmfb")
+    assert lcd.resolve_fb_device(
+        preferred="/dev/fb1", sysfs_root=str(tmp_path)) == "/dev/fb0"
+
+
+def test_resolve_fb_none_when_only_drm_plane(tmp_path):
+    _mk_fb(tmp_path, 0, "vc4drmfb")     # only HDMI present, no SPI panel yet
+    assert lcd.resolve_fb_device(
+        preferred="/dev/fbNONE", sysfs_root=str(tmp_path)) is None
+
+
+def test_wait_for_fb_times_out_without_panel(tmp_path):
+    # No panel + zero budget → returns None promptly (caller then exits 1 so
+    # systemd retries). Must not hang.
+    assert lcd.wait_for_fb(
+        timeout=0, interval=0.01,
+        preferred="/dev/fbNONE", sysfs_root=str(tmp_path)) is None
+
+
+def test_ap_fallback_default_is_recovery_fast():
+    # 300s read as "hotspot never came up" on first car launch; lock the
+    # internet-first 90s recovery default in code so a reinstall can't revert it.
+    assert config.AUTOCONNECT_AP_FALLBACK_SEC <= 90
+
+
 # ───────────────────────── lcd_dashboard helpers ─────────────────────────
 
 def test_fmt_uptime_buckets():

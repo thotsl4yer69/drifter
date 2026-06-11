@@ -25,7 +25,7 @@ _WATCHED_SERVICES = (
     'drifter-watchdog',  'drifter-hotspot',  'drifter-rf',
     'drifter-wardrive',  'drifter-voice',    'drifter-realdash',
     'drifter-logger',    'drifter-homesync', 'drifter-anomaly',
-    'drifter-analyst',   'drifter-voicein',  'drifter-fbmirror',
+    'drifter-analyst',   'drifter-voicein',  'drifter-lcd',
     'drifter-bleconv',   'drifter-flipper',  'drifter-gps',
     'drifter-feeds',     'drifter-vivi',     'drifter-opsec',
     'nanomq',            'mosquitto',

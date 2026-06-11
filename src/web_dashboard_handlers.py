@@ -467,6 +467,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith('/assets/'):
             self._serve_avatar_asset(parsed.path[len('/assets/'):])
             return
+        # Cockpit v4 (LEDGER) — the Vite/React build deployed at
+        # /opt/drifter/ui/v4. Served under its own prefix so the bundle's
+        # relative ./assets/* refs resolve and never collide with the Vivi
+        # /assets/ avatar route above. '/' 301-redirects here.
+        if parsed.path == '/v4' or parsed.path.startswith('/v4/'):
+            self._serve_v4(parsed.path)
+            return
         # Static files served straight from disk.
         if parsed.path in _STATIC_FILES:
             self._serve_static(parsed.path)
@@ -475,21 +482,79 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     # Route bodies — one method per endpoint. Most are one-liners.
     def _serve_dashboard_page(self, parsed):
-        """Front door. Serves the cockpit (formerly /preview/cockpit) from
-        disk so design iterations land without a service restart.
-        Local-network only — same ACL as before."""
+        """Front door. The cockpit is now the v4 (LEDGER) Vite/React build
+        under /v4/; '/' 301-redirects there so the bundle's relative asset
+        refs resolve. The previous single-file cockpit remains reachable at
+        /preview/cockpit as a fallback. Local-network only — same ACL."""
         peer = self.client_address[0] if self.client_address else ''
         if not _is_local_peer(peer):
             self.send_error(403, 'cockpit: local network only')
             return
-        path = Path('/opt/drifter/ui/cockpit-preview.html')
-        if not path.exists():
-            self.send_error(503, 'cockpit not deployed')
+        if not Path('/opt/drifter/ui/v4/index.html').exists():
+            # v4 not deployed — fall back to the legacy single-file cockpit.
+            path = Path('/opt/drifter/ui/cockpit-preview.html')
+            if not path.exists():
+                self.send_error(503, 'cockpit not deployed')
+                return
+            try:
+                self._serve_html(path.read_text(encoding='utf-8'))
+            except OSError as e:
+                self.send_error(500, f'cockpit read error: {e}')
             return
+        self.send_response(301)
+        self.send_header('Location', '/v4/')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    # Cockpit v4 static server — serves the Vite build from /opt/drifter/ui/v4.
+    _V4_MIME = {
+        '.html': 'text/html; charset=utf-8', '.js': 'application/javascript',
+        '.mjs': 'application/javascript', '.css': 'text/css; charset=utf-8',
+        '.json': 'application/json', '.webmanifest': 'application/manifest+json',
+        '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+        '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf',
+        '.map': 'application/json',
+    }
+
+    def _serve_v4(self, path):
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'cockpit: local network only')
+            return
+        rel = path[len('/v4'):].lstrip('/')  # '' or 'assets/x.js' or 'index.html'
+        if not rel or rel.endswith('/'):
+            rel = 'index.html'
+        # Path-traversal guard.
+        if rel.startswith('/') or '..' in rel.split('/'):
+            self.send_error(400, 'bad path')
+            return
+        base = Path('/opt/drifter/ui/v4')
         try:
-            self._serve_html(path.read_text(encoding='utf-8'))
-        except OSError as e:
-            self.send_error(500, f'cockpit read error: {e}')
+            candidate = (base / rel).resolve()
+            if not str(candidate).startswith(str(base.resolve())):
+                self.send_error(400, 'bad path')
+                return
+        except OSError:
+            self.send_error(400, 'bad path')
+            return
+        if not (candidate.exists() and candidate.is_file()):
+            # SPA: unknown non-asset paths fall back to index.html.
+            candidate = base / 'index.html'
+            if not candidate.exists():
+                self.send_error(404)
+                return
+        ct = self._V4_MIME.get(candidate.suffix.lower(), 'application/octet-stream')
+        data = candidate.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', ct)
+        self.send_header('Content-Length', str(len(data)))
+        # hashed assets are immutable; html/manifest stay fresh
+        if candidate.suffix.lower() in ('.html', '.webmanifest'):
+            self.send_header('Cache-Control', 'no-cache')
+        else:
+            self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
+        self.end_headers()
+        self.wfile.write(data)
 
     def _redirect_to_root(self, parsed):
         """Permanent redirect for URLs whose surface moved into the

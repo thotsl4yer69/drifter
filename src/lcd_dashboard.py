@@ -26,7 +26,9 @@ UNCAGED TECHNOLOGY — EST 1991
 """
 from __future__ import annotations
 
+import glob
 import logging
+import os
 import shutil
 import signal
 import socket
@@ -42,6 +44,7 @@ from config import (
     LCD_BTN_PREV,
     LCD_DIAG_LOG_LINES,
     LCD_FB_DEVICE,
+    LCD_FB_WAIT_SEC,
     LCD_FONT_CANDIDATES,
     LCD_HEIGHT,
     LCD_OBD_STALE_S,
@@ -182,6 +185,50 @@ def active_mode() -> str:
 # ════════════════════════════════════════════════════════════════════
 #  Framebuffer
 # ════════════════════════════════════════════════════════════════════
+
+def resolve_fb_device(preferred: str = LCD_FB_DEVICE,
+                      sysfs_root: str = "/sys/class/graphics",
+                      name_hints: tuple = (
+                          "ili9486", "ili9341", "ili9488", "st7789",
+                          "hx8357", "fb_ili", "tft")) -> str | None:
+    """Resolve the SPI panel's /dev/fbN, resilient to fbN renumbering.
+
+    The fbtft panel and the vc4 DRM/HDMI plane race at boot, so /dev/fb1 is not
+    guaranteed to be the SPI TFT. Prefer the framebuffer whose sysfs 'name'
+    matches a known SPI-TFT driver (e.g. 'fb_ili9486') and explicitly skip the
+    DRM plane ('vc4drmfb'). Only if no panel is matched by name do we accept the
+    configured `preferred` path, and only when it actually exists. Returns None
+    when no usable panel framebuffer is present yet (caller waits / retries)."""
+    for name_path in sorted(glob.glob(f"{sysfs_root}/fb*/name")):
+        try:
+            name = Path(name_path).read_text().strip().lower()
+        except OSError:
+            continue
+        if "vc4" in name or "drm" in name:
+            continue  # HDMI/DRM plane — never the SPI dash panel
+        if any(hint in name for hint in name_hints):
+            fb = os.path.basename(os.path.dirname(name_path))  # 'fb1'
+            return f"/dev/{fb}"
+    if os.path.exists(preferred):
+        return preferred
+    return None
+
+
+def wait_for_fb(timeout: float = LCD_FB_WAIT_SEC, interval: float = 2.0,
+                **kwargs) -> str | None:
+    """Poll resolve_fb_device until the SPI panel appears or `timeout` elapses.
+
+    The panel registers ~12s into boot (later under a crank brownout); waiting
+    here — rather than exiting on the first miss — is what keeps the dash alive
+    on a cold car start."""
+    dev = resolve_fb_device(**kwargs)
+    deadline = time.time() + max(0.0, timeout)
+    while dev is None and time.time() < deadline:
+        log.info("SPI panel framebuffer not present yet — waiting...")
+        time.sleep(max(0.1, interval))
+        dev = resolve_fb_device(**kwargs)
+    return dev
+
 
 class Framebuffer:
     """Minimal direct-to-/dev/fbN writer. Reads geometry from sysfs and
@@ -849,11 +896,15 @@ def main() -> None:
                   "Exiting.")
         return
 
-    fb = Framebuffer()
-    if not fb.available():
-        log.error(f"{LCD_FB_DEVICE} not present — SPI LCD not wired. "
-                  "Run scripts/setup-lcd.sh and reboot. Exiting (hw-pending).")
-        return
+    dev = wait_for_fb()
+    if dev is None:
+        log.error("No SPI panel framebuffer appeared after %ss — panel not wired "
+                  "or the fbtft driver failed to probe. Exiting non-zero so "
+                  "systemd (Restart=on-failure) retries, instead of a clean exit "
+                  "that leaves the dash blank for the whole drive.", LCD_FB_WAIT_SEC)
+        raise SystemExit(1)
+    fb = Framebuffer(dev)
+    log.info("Resolved SPI panel framebuffer: %s", dev)
 
     fonts = load_fonts()
     renderer = Renderer(fonts, width=fb.width, height=fb.height)

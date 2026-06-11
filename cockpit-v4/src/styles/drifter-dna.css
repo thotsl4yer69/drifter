@@ -1,0 +1,243 @@
+/* ════════════════════════════════════════════════════════════════
+   DRIFTER DNA — shared tokens + primitives for the v4 dash rebuild.
+   Ported 1:1 from the LEDGER handoff (shared/drifter-dna.css).
+   Scoped under .dr so any host chrome is unaffected.
+   The ONLY change from the prototype: --f-sans/--f-mono/--f-stencil
+   reference the locally-bundled @fontsource families instead of the
+   Google Fonts CDN names (offline-first, brief §2.2). Bricolage ships
+   as a variable font → family "Bricolage Grotesque Variable".
+   ════════════════════════════════════════════════════════════════ */
+
+.dr {
+  /* surfaces */
+  --bg-0: #07090d;
+  --bg-1: #0c1017;
+  --bg-2: #11161f;
+  --bg-3: #161c28;
+  --edge: #1c2330;
+
+  --glass: rgba(22, 27, 36, 0.62);
+  --glass-strong: rgba(22, 27, 36, 0.88);
+  --stroke: rgba(255, 255, 255, 0.09);
+  --stroke-2: rgba(255, 255, 255, 0.14);
+
+  /* ink */
+  --fg: #e8eaed;
+  --fg-mute: #9aa3b1;
+  --fg-dim: #5a6471;
+  --fg-deep: #38414e;
+
+  /* accents */
+  --acc: #ffae42;
+  --acc-deep: #b87a1f;
+  --acc-rgb: 255, 174, 66;
+  --acc-glow: 0 0 24px rgba(var(--acc-rgb), 0.30);
+  --acc-glow-strong: 0 0 32px rgba(var(--acc-rgb), 0.55);
+  --stroke-acc: rgba(var(--acc-rgb), 0.45);
+
+  --cyan: #7dd3fc;
+  --cyan-rgb: 125, 211, 252;
+  --teal: #5eead4;
+  --red: #ff6b6b;
+  --red-rgb: 255, 107, 107;
+  --vio: #a78bfa;
+  --vio-deep: #8b5cf6;
+  --vio-rgb: 167, 139, 250;
+
+  /* map palette (mz1312) */
+  --map-bg: #0a0a0f;
+  --map-land: #0c0c12;
+  --map-block: #101018;
+  --map-road: #15131f;
+  --map-arterial: #1b1830;
+  --map-hwy: #2a2350;
+  --map-hwy-stroke: #8b5cf6;
+  --map-park: #0f1512;
+  --map-water: #070710;
+
+  /* shape */
+  --r-sm: 4px;
+  --r-md: 10px;
+  --r-lg: 16px;
+
+  /* inset boxes (alert rows, chips, sub-tiles) — theme-aware */
+  --inset-bg: rgba(0, 0, 0, 0.22);
+  /* ink dropped over the map — halo flips with theme */
+  --map-ink-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+  /* spectrum scope phosphor — follows theme (red-shift safe) but stays
+     bright on the fixed-dark scope in daylight */
+  --scope-bar: var(--cyan);
+  --scope-hot: var(--acc);
+
+  /* type — locally bundled (@fontsource) */
+  --f-sans: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --f-stencil: 'Major Mono Display', 'JetBrains Mono', monospace;
+
+  font-family: var(--f-sans);
+  font-feature-settings: 'ss01' 1, 'cv01' 1;
+  color: var(--fg);
+  background: var(--bg-0);
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Theme variants ─────────────────────────────────────────── */
+.dr[data-dr-theme="nightrun"] {
+  --fg: #ff9d9d; --fg-mute: #c45c5c; --fg-dim: #8a3a3a; --fg-deep: #4d1c1c;
+  --acc: #ff3030; --acc-deep: #c41818; --acc-rgb: 255, 48, 48;
+  --cyan: #ff7878; --cyan-rgb: 255, 120, 120; --teal: #ffa0a0; --vio: #ff5050; --vio-deep: #e03030; --vio-rgb: 255, 80, 80;
+  --bg-0: #0a0606; --bg-1: #100808; --bg-2: #160c0c; --bg-3: #1f1010; --edge: #2a1515;
+  --map-hwy-stroke: #e03030; --map-hwy: #3a1515; --map-arterial: #281010;
+}
+.dr[data-dr-theme="mapline"] {
+  --acc: #a78bfa; --acc-deep: #6d4dd4; --acc-rgb: 167, 139, 250;
+  --teal: #7dd3fc;
+  --bg-0: #08070f; --bg-1: #0d0b16; --bg-2: #120f1e; --bg-3: #181428; --edge: #221c38;
+}
+.dr[data-dr-theme="daylight"] {
+  --bg-0: #e9ecef; --bg-1: #f1f3f5; --bg-2: #f8f9fa; --bg-3: #ffffff; --edge: #d4d9e0;
+  --inset-bg: rgba(15, 23, 42, 0.05);
+  --map-ink-shadow: 0 1px 3px rgba(255, 255, 255, 0.95);
+  --scope-bar: #67e8f9;
+  --scope-hot: #fbbf24;
+  --fg: #0f172a; --fg-mute: #334155; --fg-dim: #475569; --fg-deep: #64748b;
+  --acc: #d97706; --acc-deep: #92400e; --acc-rgb: 217, 119, 6;
+  --cyan: #0284c7; --cyan-rgb: 2, 132, 199; --teal: #059669; --red: #dc2626; --red-rgb: 220, 38, 38;
+  --vio: #7c3aed; --vio-deep: #6d28d9; --vio-rgb: 124, 58, 237;
+  --glass: rgba(255,255,255,0.80);
+  --glass-strong: rgba(255,255,255,0.95);
+  --stroke: rgba(0,0,0,0.12);
+  --stroke-2: rgba(0,0,0,0.18);
+  --map-bg: #dde1e8; --map-land: #e4e7ed; --map-block: #d8dce4; --map-road: #f3f4f8;
+  --map-arterial: #e9e4f5; --map-hwy: #cabffa; --map-hwy-stroke: #7c3aed;
+  --map-park: #dce8dd; --map-water: #c3d2e6;
+}
+
+/* ── Atmosphere (per-artboard) ──────────────────────────────── */
+.dr .dr-atmo {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(var(--acc-rgb), 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 100% 110%, rgba(var(--cyan-rgb, 125,211,252), 0.035) 0%, transparent 65%);
+}
+.dr .dr-scan {
+  position: absolute; inset: 0; pointer-events: none; z-index: 60;
+  background-image: repeating-linear-gradient(to bottom,
+    rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px,
+    transparent 1px, transparent 3px);
+  mix-blend-mode: overlay; opacity: 0.42;
+}
+.dr[data-dr-theme="daylight"] .dr-scan { opacity: 0.12; mix-blend-mode: multiply; }
+.dr[data-dr-scan="off"] .dr-scan { display: none; }
+
+/* ── Type utilities ─────────────────────────────────────────── */
+.dr .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.dr .stencil { font-family: var(--f-stencil); letter-spacing: 0.18em; text-transform: lowercase; }
+
+/* ── Tile primitive (glass + corner brackets) ───────────────── */
+.dr .dr-tile {
+  position: relative;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.dr .dr-tile.bracketed::before {
+  content: ''; position: absolute; inset: 3px; pointer-events: none;
+  border-radius: calc(var(--r-md) - 2px);
+  --bk: rgba(var(--acc-rgb), 0.55);
+  background:
+    linear-gradient(var(--bk), var(--bk)) top left    / 9px 1px,
+    linear-gradient(var(--bk), var(--bk)) top left    / 1px 9px,
+    linear-gradient(var(--bk), var(--bk)) top right   / 9px 1px,
+    linear-gradient(var(--bk), var(--bk)) top right   / 1px 9px,
+    linear-gradient(var(--bk), var(--bk)) bottom left / 9px 1px,
+    linear-gradient(var(--bk), var(--bk)) bottom left / 1px 9px,
+    linear-gradient(var(--bk), var(--bk)) bottom right/ 9px 1px,
+    linear-gradient(var(--bk), var(--bk)) bottom right/ 1px 9px;
+  background-repeat: no-repeat;
+}
+
+/* ── Tile head ──────────────────────────────────────────────── */
+.dr .dr-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; padding: 9px 12px 0;
+}
+.dr .dr-label {
+  font-family: var(--f-stencil); text-transform: lowercase;
+  letter-spacing: 0.16em; font-size: 10px; color: var(--fg-mute);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: none; max-width: 72%;
+}
+.dr .dr-meta {
+  font-family: var(--f-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--fg-dim); text-transform: uppercase; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+/* ── Pills / ghost buttons ──────────────────────────────────── */
+.dr .dr-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--f-mono); font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--fg-mute);
+  border: 1px solid var(--stroke); border-radius: 999px;
+  padding: 3px 10px; background: rgba(0,0,0,0.18); white-space: nowrap;
+}
+.dr[data-dr-theme="daylight"] .dr-pill { background: rgba(255,255,255,0.7); }
+.dr .dr-pill .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--teal); box-shadow: 0 0 8px var(--teal);
+}
+.dr .dr-pill.hot { color: var(--acc); border-color: var(--stroke-acc); }
+.dr .dr-pill.hot .dot { background: var(--acc); box-shadow: 0 0 8px var(--acc); }
+.dr .dr-pill.crit { color: var(--red); border-color: rgba(var(--red-rgb), 0.5); }
+.dr .dr-pill.crit .dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+.dr .dr-ghost {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--f-mono); font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--fg-mute);
+  border: 1px solid var(--stroke-2); border-radius: var(--r-sm);
+  padding: 5px 10px; background: transparent; user-select: none;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+.dr .dr-ghost:hover { color: var(--acc); border-color: var(--stroke-acc); background: rgba(var(--acc-rgb), 0.06); }
+.dr .dr-ghost.live { color: var(--acc); border-color: var(--stroke-acc); }
+.dr .dr-ghost .kbd {
+  font-size: 8px; padding: 1px 4px; border: 1px solid var(--stroke);
+  border-radius: 3px; background: rgba(255,255,255,0.04); color: var(--fg-dim);
+}
+
+/* ── Live dot ───────────────────────────────────────────────── */
+.dr .dr-live {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--teal); box-shadow: 0 0 10px var(--teal);
+  animation: drPulse 2.2s ease-in-out infinite;
+}
+@keyframes drPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes drSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .dr *, .dr *::before, .dr *::after { animation: none !important; transition: none !important; }
+}
+
+/* ── Density ────────────────────────────────────────────────── */
+.dr[data-dr-density="compact"] { font-size: 12px; }
+.dr[data-dr-density="compact"] .dr-head { padding: 6px 10px 0; }
+
+/* ── Buttons (production: real <button>, focus-visible ring) ──── */
+.dr button { font-family: inherit; }
+.dr [role="button"], .dr button.dr-btn {
+  -webkit-tap-highlight-color: transparent;
+}
+.dr :focus-visible {
+  outline: 2px solid var(--acc); outline-offset: 1px; border-radius: 3px;
+}
+
+/* ── Scrollbars inside artboards ────────────────────────────── */
+.dr ::-webkit-scrollbar { width: 4px; height: 4px; }
+.dr ::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 2px; }
+.dr ::-webkit-scrollbar-track { background: transparent; }

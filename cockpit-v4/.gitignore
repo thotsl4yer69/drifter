@@ -1,0 +1,8 @@
+# cockpit-v4 (Vite/React) — commit source only.
+# node_modules is a dev dependency (re-install with `npm install`).
+# dist is the build output, deployed separately to /opt/drifter/ui/v4.
+node_modules/
+dist/
+.vite/
+*.local
+npm-debug.log*

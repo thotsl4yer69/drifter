@@ -13,6 +13,10 @@ WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/lcd_dashboard.py
 Restart=on-failure
 RestartSec=5
+# Diag-core dash service — negative OOMScoreAdjust protects the in-car triage
+# console from global OOM kill so the operator keeps a screen under memory
+# pressure (matches the other DIAG_SERVICES; heavy services sit at +500).
+OOMScoreAdjust=-800
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
 

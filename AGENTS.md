@@ -85,9 +85,6 @@ python -m py_compile src/config.py src/can_bridge.py src/alert_engine.py ...
 # Run tests (from repo root)
 pytest tests/ -v
 
-# Test bench (requires MQTT broker running)
-./scripts/test-bench.sh [idle|vacuum|overheat|alternator|coldstart|thermostat|dtc|all]
-
 # Deploy (on Pi)
 sudo ./install.sh && sudo reboot
 

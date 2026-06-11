@@ -18,6 +18,9 @@ data/
 # IS source code — track it explicitly.
 !src/data/
 !src/data/**
+# cockpit-v4's data adapter is source code, not a runtime data dir — track it.
+!cockpit-v4/src/data/
+!cockpit-v4/src/data/**
 reports/
 .vscode/
 .idea/

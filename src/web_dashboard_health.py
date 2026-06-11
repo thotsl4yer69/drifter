@@ -100,14 +100,9 @@ def _healthz_payload() -> tuple[dict, int]:
         'drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
         'drifter-rf-baseline', 'drifter-session-recorder',
         # In-car SPI LCD: inactive (exits hw-pending) until /dev/fb1 is wired.
+        # (fbmirror, the old mutually-exclusive fb0->fb1 mirror, was retired in
+        # favour of lcd as the sole dash service.)
         'drifter-lcd',
-        # fbmirror (fb0->fb1) is the mutually-exclusive alternative to lcd and
-        # also needs the SPI LCD framebuffer — fbmirror.c exits "fb1 not found"
-        # on a bench. Without this it lands in `failed` (not hw-pending), so a
-        # bench/no-LCD deploy returns degraded (503) and the oneshot final gate
-        # fails. It's also the unit operators disable when they pick lcd, which
-        # would otherwise trip the same 503.
-        'drifter-fbmirror',
     }
     failed = [s for s, ok in services.items()
               if s in expected and not ok and s not in _HW_OPTIONAL]

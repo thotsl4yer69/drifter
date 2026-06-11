@@ -1,0 +1,14 @@
+{
+  "name": "MZ1312 DRIFTER Cockpit",
+  "short_name": "DRIFTER",
+  "description": "MZ1312 DRIFTER in-vehicle cockpit",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    { "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

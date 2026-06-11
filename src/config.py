@@ -651,7 +651,6 @@ SERVICES = [
     "drifter-rf",
     "drifter-wardrive",
     "drifter-dashboard",
-    "drifter-fbmirror",
     "drifter-voicein",
     "drifter-flipper",
     "drifter-opsec",
@@ -697,7 +696,6 @@ DRIVE_ONLY_SERVICES = [
     "drifter-analyst",     # LLM session analyst over driving sessions
     "drifter-voice",       # cabin TTS for vehicle alerts
     "drifter-realdash",    # RealDash app feed
-    "drifter-fbmirror",    # SPI LCD mirror for the dash screen
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
     "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
     "drifter-gps",         # GPS feed for the cockpit map + drive_id geo-tagging
@@ -755,7 +753,7 @@ DIAG_SERVICES = [
     "drifter-rf",          # RTL-SDR TPMS (passive vehicle telemetry)
     "drifter-gps",         # GPS feed
     "drifter-realdash",    # RealDash app feed
-    "drifter-fbmirror",    # SPI LCD dash mirror
+    "drifter-lcd",         # in-car SPI LCD triage console (the dash screen)
     "drifter-logger",      # telemetry log writer
     "drifter-dashboard",   # operator HUD + /healthz
     "drifter-hotspot",     # Wi-Fi AP
@@ -1053,6 +1051,12 @@ LOCATION_POI_DEFAULT_TYPES = ('gas_station', 'car_repair')
 # ═══════════════════════════════════════════════════════════════════
 LCD_ENABLED = os.getenv("LCD_ENABLED", "true").lower() in ("1", "true", "yes")
 LCD_FB_DEVICE = os.getenv("LCD_FB_DEVICE", "/dev/fb1")   # fb0 is HDMI; SPI LCD = fb1
+# The SPI panel (fb_ili9486, staging fbtft driver) registers ~12s into boot and
+# its fbN index can race the vc4 DRM/HDMI plane — so the dashboard resolves the
+# panel by sysfs driver name and WAITS up to this long for it. On a genuine
+# timeout it exits non-zero so systemd (Restart=on-failure) retries, instead of
+# a clean exit that would leave the dash blank for the whole drive.
+LCD_FB_WAIT_SEC = int(os.getenv("LCD_FB_WAIT_SEC", "90"))
 LCD_WIDTH = int(os.getenv("LCD_WIDTH", "480"))           # Waveshare 3.5" landscape
 LCD_HEIGHT = int(os.getenv("LCD_HEIGHT", "320"))
 # Software rotation applied to the rendered frame (0/90/180/270). Most SPI
@@ -1122,9 +1126,12 @@ AUTOCONNECT_KNOWN_SSIDS = [
 ]
 AUTOCONNECT_RETRY_SEC = int(os.getenv("AUTOCONNECT_RETRY_SEC", "30"))
 AUTOCONNECT_SCAN_TIMEOUT = int(os.getenv("AUTOCONNECT_SCAN_TIMEOUT", "15"))
-# After this long with no known SSID joined, bring up our own AP so the
-# operator can SSH in. 0 disables the fallback (stay a pure client).
-AUTOCONNECT_AP_FALLBACK_SEC = int(os.getenv("AUTOCONNECT_AP_FALLBACK_SEC", "300"))
+# After this long with no known SSID joined, bring up our own AP as a LAST
+# RESORT so the operator can SSH in (the AP has no internet uplink, so it is a
+# recovery path, not the goal — internet via phone/home wifi is). 0 disables it.
+# 90s, not 300s: a 5-minute wait read as "hotspot never came up" on first car
+# launch. Lives in code (not .env) so a clean reinstall can't silently revert it.
+AUTOCONNECT_AP_FALLBACK_SEC = int(os.getenv("AUTOCONNECT_AP_FALLBACK_SEC", "90"))
 # The NetworkManager connection name of our own hotspot (install.sh creates it).
 AP_FALLBACK_CONNECTION = os.getenv("AP_FALLBACK_CONNECTION", "MZ1312_DRIFTER")
 AUTOCONNECT_WIFI_IFACE = os.getenv("AUTOCONNECT_WIFI_IFACE", "wlan0")

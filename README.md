@@ -375,8 +375,7 @@ drifter/
 ├── realdash/
 │   └── drifter_channels.xml     # RealDash channel map
 ├── scripts/
-│   ├── oneshot.sh               # Stage-gated deploy wrapper
-│   └── test-bench.sh            # MQTT test scenarios (idle, vacuum, overheat, alternator, X-Type)
+│   └── oneshot.sh               # Stage-gated deploy wrapper
 ├── tests/
 │   ├── test_alert_engine.py     # Diagnostic rule unit tests
 │   ├── test_alert_hysteresis.py # Alert de-bounce / hysteresis tests
@@ -448,26 +447,6 @@ pytest tests/ -v --cov=src
 ```
 
 Tests cover all 23 diagnostic rules in the alert engine, including trigger conditions, OK conditions, and edge cases.
-
-### Test Bench (Hardware-Free Simulation)
-
-The test bench injects simulated telemetry via MQTT — no CAN hardware or vehicle needed:
-
-```bash
-# Run a specific scenario
-./scripts/test-bench.sh idle        # Normal warm idle (all OK)
-./scripts/test-bench.sh vacuum      # Bank 1 lean (triggers AMBER)
-./scripts/test-bench.sh overheat    # Coolant ramp 95→120°C (escalates to RED)
-./scripts/test-bench.sh alternator  # Voltage drop (escalates to RED)
-./scripts/test-bench.sh coldstart   # Cold engine with fast idle
-./scripts/test-bench.sh thermostat  # Coolant oscillation (AMBER)
-./scripts/test-bench.sh dtc         # Inject DTCs (P0301, P0420, P0171)
-
-# Run all scenarios
-./scripts/test-bench.sh all
-```
-
-Requires `mosquitto_pub` (from `mosquitto-clients`).
 
 ## Checking System Status
 

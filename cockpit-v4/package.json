@@ -1,0 +1,23 @@
+{
+  "name": "drifter-cockpit-v4",
+  "private": true,
+  "version": "4.0.0",
+  "type": "module",
+  "description": "MZ1312 DRIFTER in-vehicle cockpit (LEDGER direction) — offline-first Vite/React build",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11",
+    "@fontsource-variable/bricolage-grotesque": "^5.1.0",
+    "@fontsource/jetbrains-mono": "^5.1.1",
+    "@fontsource/major-mono-display": "^5.1.0"
+  }
+}
