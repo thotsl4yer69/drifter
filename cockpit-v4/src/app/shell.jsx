@@ -10,11 +10,11 @@ import { useSim, Spark, TapeGauge, ShiftLights, drFmt } from '../shared/widgets.
 import { DrifterSim } from '../data/adapter.js';
 import { useSettings, DevPanel } from '../shared/settings.jsx';
 import { LgTile, LgRail, LgTop, LgSpeed, LgGauge, LgAlerts, LgRf, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
-import { FtMain, DgMain } from '../directions/modes.jsx';
+import { RfMain, FtMain, DgMain } from '../directions/modes.jsx';
 import { MpMain } from '../directions/map.jsx';
 import { SyMain, VvMain } from '../directions/system.jsx';
 import { DirPhone } from '../directions/phone.jsx';
-import { DirPhoneFoot, DirPhoneDiag, PmDock } from '../directions/phone-modes.jsx';
+import { DirPhoneRf, DirPhoneFoot, DirPhoneDiag, PmDock } from '../directions/phone-modes.jsx';
 
 function useViewport() {
   const [v, setV] = React.useState({ w: window.innerWidth, h: window.innerHeight });
@@ -85,13 +85,14 @@ function ShSurface({ surf, sim, short, onNav }) {
   if (surf === 'vivi') return <VvMain sim={sim} />;
   if (surf === 'rf' || surf === 'arms') {
     if (!armed) {
+      const offensive = surf === 'arms';
       return (
         <div style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
           <div className="dr-tile bracketed" style={{ padding: '22px 28px', maxWidth: 420, textAlign: 'center' }}>
             <div className="mono" style={{ fontSize: 13, color: 'var(--fg-dim)', marginBottom: 8 }}>⊘</div>
-            <div className="stencil" style={{ fontSize: 10, color: 'var(--fg)' }}>arsenal locked</div>
+            <div className="stencil" style={{ fontSize: 10, color: 'var(--fg)' }}>{offensive ? 'arsenal locked' : 'rf intel locked'}</div>
             <div className="mono" style={{ fontSize: 9, color: 'var(--fg-dim)', marginTop: 8, lineHeight: 1.7 }}>
-              drive mode suppresses recon &amp; offensive surfaces.<br />switch the MODE pill to foot or both when parked.
+              drive mode suppresses {offensive ? 'offensive' : 'recon'} surfaces.<br />switch the MODE pill to foot or both when parked.
             </div>
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
               <button type="button" className="dr-ghost" onClick={() => onNav('mode-foot')}>switch to foot mode</button>
@@ -100,7 +101,7 @@ function ShSurface({ surf, sim, short, onNav }) {
         </div>
       );
     }
-    return <FtMain sim={sim} />;
+    return surf === 'rf' ? <RfMain sim={sim} /> : <FtMain sim={sim} />;
   }
   if (surf === 'trip') {
     return (
@@ -186,7 +187,7 @@ export function CockpitApp() {
     const pocketSurf = {
       cock: <DirPhone t={t} onNav={onNavPocket} />,
       arms: <DirPhoneFoot t={t} onNav={onNavPocket} />,
-      rf: <DirPhoneFoot t={t} onNav={onNavPocket} />,
+      rf: <DirPhoneRf t={t} onNav={onNavPocket} />,
       data: <DirPhoneDiag t={t} onNav={onNavPocket} />,
       map: (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', zIndex: 1 }} data-screen-label="pocket map">

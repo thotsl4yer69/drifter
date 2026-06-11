@@ -2409,8 +2409,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.write(b'{"status": "triggered"}')
 
     def _post_vivi_query(self):
-        """Avatar viewer text input → publish on TOPICS['vivi_query'].
-        Drives both vivi.py and vivi_v2.py since both subscribe there."""
+        """Avatar/cockpit text input → publish on TOPICS['vivi2_query'].
+        vivi_v2 subscribes to drifter/vivi2/query; the legacy vivi/query (v1,
+        deleted) was a dead-end, so chat never reached the assistant."""
         body = self._read_json_body()
         if body is None:
             return
@@ -2418,7 +2419,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if not query:
             self.send_error(400, 'query required')
             return
-        topic = TOPICS.get('vivi_query', 'drifter/vivi/query')
+        topic = TOPICS.get('vivi2_query', 'drifter/vivi2/query')
         payload = json.dumps({'query': query, 'ts': time.time()})
         try:
             if state.mqtt_client is None:

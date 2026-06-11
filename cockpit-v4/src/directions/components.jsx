@@ -74,7 +74,7 @@ export function CmVivi() {
         <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'radial-gradient(circle at 32% 30%, var(--teal), rgba(94,234,212,0.06) 70%)', boxShadow: '0 0 12px rgba(94,234,212,0.4)' }}></div>
         <span className="stencil" style={{ fontSize: 9, color: 'var(--teal)' }}>vivi</span>
         <span className="mono" style={{ fontSize: 8, color: state === 'cold' ? 'var(--acc)' : 'var(--fg-dim)', marginLeft: 'auto' }}>
-          {state === 'cold' ? '⚠ model not resident — first query cold-loads (slow + power spike)' : state === 'thinking' ? 'qwen2.5:3b · thinking…' : 'qwen2.5:3b · warm'}
+          {state === 'cold' ? '⚠ model not resident — first query cold-loads (slow + power spike)' : state === 'thinking' ? 'qwen2.5:1.5b · thinking…' : 'qwen2.5:1.5b · warm'}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 6 }}>

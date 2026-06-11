@@ -100,11 +100,25 @@ function FtHid() {
   );
 }
 
-export function FtMain({ sim }) {
+// ── RF · passive intelligence surface (rail ⊚) ──────────────────
+// Receive-only: spectrum, ADS-B, Wi-Fi wardrive, BLE surveillance.
+// No transmit, no offense — that lives on the ARSENAL surface.
+function RfGhost({ sim }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr 1fr', gridTemplateRows: 'auto 1fr 1fr', gap: 10, padding: 10, minHeight: 0, minWidth: 0 }}>
-      <div className="mono" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--stroke-acc)', background: 'rgba(var(--acc-rgb),0.08)', color: 'var(--acc)', fontSize: 10, letterSpacing: '0.12em' }}>
-        ⊗ FOOT MODE · arsenal unlocked · parked · offense stays ARM→CONFIRM gated
+    <LgTile label="counter-surveillance" meta="drifter/ghost · passive correlator">
+      <MdRow l="tracker followers" v="0" dim />
+      <MdRow l="imsi-catcher suspects" v="0" dim />
+      <MdRow l="alpr awareness" v="idle" dim />
+      <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 'auto', paddingTop: 6 }}>energy-anomaly heuristic only · needs sdr + bt feeds to flag</div>
+    </LgTile>
+  );
+}
+
+export function RfMain({ sim }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gridTemplateRows: 'auto 1fr 1fr', gap: 10, padding: 10, minHeight: 0, minWidth: 0 }}>
+      <div className="mono" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(var(--cyan-rgb),0.4)', background: 'rgba(var(--cyan-rgb),0.07)', color: 'var(--cyan)', fontSize: 10, letterSpacing: '0.12em' }}>
+        ⊚ RF INTELLIGENCE · passive · receive-only — spectrum, ads-b, wi-fi &amp; ble recon. no transmit.
       </div>
 
       <LgTile label="rf · spectrum" meta="rtl-sdr · live sweep" live style={{ gridRow: '2' }}>
@@ -115,6 +129,7 @@ export function FtMain({ sim }) {
         <div style={{ display: 'flex', gap: 6, marginTop: 'auto', paddingTop: 8 }}>
           <span className="dr-ghost">force sweep</span>
           <span className="dr-ghost">scan emergency</span>
+          <span className="dr-ghost">rfaudio listen</span>
         </div>
       </LgTile>
       <LgTile label="ads-b · ppi" meta={`${sim.rf.adsb} aircraft · 1090M`} live style={{ gridRow: '3', alignItems: 'center' }}>
@@ -131,18 +146,31 @@ export function FtMain({ sim }) {
       <div style={{ gridRow: '2', gridColumn: '2', display: 'grid', minHeight: 0 }}><FtWardrive sim={sim} /></div>
       <div style={{ gridRow: '3', gridColumn: '2', display: 'grid', minHeight: 0 }}><FtBle sim={sim} /></div>
 
-      <div style={{ gridRow: '2', gridColumn: '3', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
-        <CmGatedAction />
-        <LgTile label="wi-fi audit" meta="allowlist-gated">
+      <div style={{ gridRow: '2 / 4', gridColumn: '3', display: 'grid', minHeight: 0 }}><RfGhost sim={sim} /></div>
+    </div>
+  );
+}
+
+// ── ARSENAL · offensive surface (rail ⊗) ────────────────────────
+// Active-transmit / intrusive: every action ARM→CONFIRM gated.
+export function FtMain({ sim }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto 1fr 1fr', gap: 10, padding: 10, minHeight: 0, minWidth: 0 }}>
+      <div className="mono" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--stroke-acc)', background: 'rgba(var(--acc-rgb),0.08)', color: 'var(--acc)', fontSize: 10, letterSpacing: '0.12em' }}>
+        ⊗ ARSENAL · offensive · parked — every action is ARM→CONFIRM gated &amp; allowlist-scoped
+      </div>
+
+      <div style={{ gridRow: '2', gridColumn: '1', display: 'grid', minHeight: 0 }}><CmGatedAction /></div>
+      <div style={{ gridRow: '2', gridColumn: '2', display: 'grid', minHeight: 0 }}>
+        <LgTile label="wi-fi audit" meta="allowlist-gated · handshake/pmkid">
           <MdRow l="allowlist scope" v={sim.recon.auditAllowlist.length ? sim.recon.auditAllowlist.join(' · ') : 'empty'} />
           <MdRow l="handshake capture" v="idle" dim />
-          <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 6 }}>disabled when allowlist is empty — shown plainly, never grayed mystery</div>
+          <MdRow l="monitor iface" v="wlan1 · absent" dim />
+          <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 'auto', paddingTop: 6 }}>disabled when allowlist is empty — shown plainly, never grayed mystery · passive capture only, no deauth-to-force</div>
         </LgTile>
       </div>
-      <div style={{ gridRow: '3', gridColumn: '3', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
-        <FtHid />
-        <FtSentry />
-      </div>
+      <div style={{ gridRow: '3', gridColumn: '1', display: 'grid', minHeight: 0 }}><FtHid /></div>
+      <div style={{ gridRow: '3', gridColumn: '2', display: 'grid', minHeight: 0 }}><FtSentry /></div>
     </div>
   );
 }

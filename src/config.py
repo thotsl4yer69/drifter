@@ -1082,19 +1082,27 @@ LCD_SCREENS = ("status", "services", "network", "diagnostics", "vehicle")
 
 # Dark "car dashboard" theme — high-contrast monospace, RGB tuples.
 LCD_THEME = {
-    # Aligned to the cockpit/opsec design tokens so the at-a-wheel display
-    # reads as the same product: amber is the signature, cyan the accent.
-    # The ok/warn/crit triad stays green/amber/red for glanceable safety
-    # (ok kept green so it can't be confused with the cyan accent).
-    'bg':       (7, 9, 13),         # #07090d — canonical near-black
-    'panel':    (17, 22, 31),       # #11161f — bg-2
-    'fg':       (232, 234, 237),    # #e8eaed
-    'dim':      (154, 163, 177),    # #9aa3b1 — fg-mute
-    'ok':       (61, 220, 132),     # green — nominal / service up
-    'warn':     (255, 174, 66),     # #ffae42 — brand amber
-    'crit':     (255, 107, 107),    # #ff6b6b — brand red
-    'accent':   (125, 211, 252),    # #7dd3fc — brand cyan
+    # Full DRIFTER cockpit v4 ("uncaged") token set so the at-a-wheel panel
+    # reads as the same product as the HDMI/phone cockpit: amber is the
+    # signature accent, teal = live/nominal, cyan = secondary data, red = crit.
+    'bg':        (7, 9, 13),        # #07090d — canonical near-black
+    'bg1':       (12, 16, 23),      # #0c1017
+    'panel':     (20, 25, 35),      # glass tile fill (slightly above bg)
     'header_bg': (22, 28, 40),      # #161c28 — bg-3
+    'edge':      (28, 35, 48),      # #1c2330 — tile strokes
+    'fg':        (232, 234, 237),   # #e8eaed
+    'dim':       (154, 163, 177),   # #9aa3b1 — fg-mute
+    'fg_dim':    (90, 100, 113),    # #5a6471
+    'fg_deep':   (56, 65, 78),      # #38414e
+    'accent':    (255, 174, 66),    # #ffae42 — brand amber (signature)
+    'amber':     (255, 174, 66),    # alias
+    'amber_dim': (150, 108, 46),    # bracket corners / dim amber (~0.55)
+    'cyan':      (125, 211, 252),   # #7dd3fc — secondary data accent
+    'teal':      (94, 234, 212),    # #5eead4 — live / nominal
+    # ok/warn/crit triad consumed by level_color/service_state_color helpers
+    'ok':        (94, 234, 212),    # teal — nominal / service up / live
+    'warn':      (255, 174, 66),    # amber
+    'crit':      (255, 107, 107),   # #ff6b6b — red
 }
 LCD_FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",

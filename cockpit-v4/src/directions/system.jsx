@@ -149,7 +149,7 @@ export function VvMain({ sim }) {
       <div style={{ gridArea: 'side', display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 10px 10px 0', minHeight: 0 }}>
         <LgTile label="model · power" meta="§2.5 guard">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '3.5px 0', borderBottom: '1px dotted var(--edge)' }}>
-            <span className="mono" style={{ fontSize: 9, color: 'var(--fg-mute)', whiteSpace: 'nowrap' }}>qwen2.5:3b</span>
+            <span className="mono" style={{ fontSize: 9, color: 'var(--fg-mute)', whiteSpace: 'nowrap' }}>qwen2.5:1.5b</span>
             <b className="mono" style={{ fontSize: 9, color: 'var(--acc)', whiteSpace: 'nowrap' }}>not resident</b>
           </div>
           <div className="mono" style={{ fontSize: 8.5, color: 'var(--fg-dim)', margin: '6px 0' }}>⚠ first query cold-loads — slow + power spike on the marginal 5 V rail</div>

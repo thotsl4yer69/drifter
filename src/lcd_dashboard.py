@@ -309,15 +309,26 @@ class Framebuffer:
 
 
 def load_fonts() -> dict:
-    """Load a monospace font family at the sizes the screens use."""
-    path = next((p for p in LCD_FONT_CANDIDATES if Path(p).exists()), None)
-    sizes = {'sm': 14, 'md': 18, 'lg': 26, 'xl': 40}
+    """Load the monospace family at the sizes the v4 screens use, plus a bold
+    cut for the hero gauge numbers."""
+    reg = next((p for p in LCD_FONT_CANDIDATES
+                if 'Bold' not in p and Path(p).exists()), None)
+    bold = next((p for p in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+        "/opt/drifter/fonts/DejaVuSansMono-Bold.ttf", reg)
+        if p and Path(p).exists()), reg)
+    sizes = {'xs': 11, 'sm': 13, 'md': 16, 'lg': 22, 'xl': 30, 'huge': 44}
     fonts: dict = {}
     for name, size in sizes.items():
         try:
-            fonts[name] = ImageFont.truetype(path, size) if path else ImageFont.load_default()
+            fonts[name] = ImageFont.truetype(reg, size) if reg else ImageFont.load_default()
         except Exception:  # pragma: no cover - defensive
             fonts[name] = ImageFont.load_default()
+    for name, size in {'blg': 22, 'bxl': 30, 'bhuge': 44}.items():
+        try:
+            fonts[name] = ImageFont.truetype(bold, size) if bold else fonts['lg']
+        except Exception:  # pragma: no cover
+            fonts[name] = fonts.get(name[1:], ImageFont.load_default())
     return fonts
 
 
@@ -580,21 +591,114 @@ class Renderer:
         img = Image.new('RGB', (self.width, self.height), self.theme['bg'])
         return img, ImageDraw.Draw(img)
 
-    def _header(self, d, title: str, subtitle: str = '') -> int:
-        th = self.theme
-        d.rectangle([0, 0, self.width, 30], fill=th['header_bg'])
-        d.text((8, 6), f"DRIFTER · {title}", font=self.fonts['md'], fill=th['accent'])
-        if subtitle:
-            w = d.textlength(subtitle, font=self.fonts['sm'])
-            d.text((self.width - w - 8, 9), subtitle, font=self.fonts['sm'], fill=th['dim'])
-        d.line([0, 31, self.width, 31], fill=th['panel'])
-        return 40  # first content y
+    # ── v4 "uncaged" primitives ─────────────────────────────────────
+    def _rrect(self, d, box, radius, **kw):
+        try:
+            d.rounded_rectangle(box, radius=radius, **kw)
+        except (AttributeError, TypeError):  # pragma: no cover - old Pillow
+            d.rectangle(box, **{k: v for k, v in kw.items() if k in ('fill', 'outline')})
 
-    def _row(self, d, y: int, label: str, value: str, color=None) -> int:
+    def _tw(self, d, text, font, tracking=0.0):
+        return sum(d.textlength(ch, font=font) + tracking for ch in text)
+
+    def _track(self, d, xy, text, font, fill, tracking=1.0):
+        """Letter-spaced text — the Major-Mono-Display stencil feel."""
+        x, y = xy
+        for ch in text:
+            d.text((x, y), ch, font=font, fill=fill)
+            x += d.textlength(ch, font=font) + tracking
+        return x
+
+    def _label(self, d, xy, text, color=None, tracking=1.4):
+        return self._track(d, xy, text.lower(), self.fonts['xs'],
+                           color or self.theme['dim'], tracking)
+
+    def _brackets(self, d, box, color, ln=8):
+        x0, y0, x1, y1 = box
+        for cx, cy, dx, dy in ((x0, y0, 1, 1), (x1, y0, -1, 1),
+                               (x0, y1, 1, -1), (x1, y1, -1, -1)):
+            d.line([cx, cy, cx + dx * ln, cy], fill=color)
+            d.line([cx, cy, cx, cy + dy * ln], fill=color)
+
+    def _dot(self, d, x, y, color, r=3):
+        d.ellipse([x - r, y - r, x + r, y + r], fill=color)
+
+    def _bars(self, d, x, y, bars, n=4):
         th = self.theme
-        d.text((10, y), label, font=self.fonts['sm'], fill=th['dim'])
-        d.text((150, y), value, font=self.fonts['sm'], fill=color or th['fg'])
-        return y + 22
+        for i in range(n):
+            h = 4 + i * 3
+            col = th['teal'] if i < bars else th['fg_deep']
+            d.rectangle([x + i * 8, y + (13 - h), x + i * 8 + 5, y + 13], fill=col)
+
+    def _pill(self, d, x, y, text, color):
+        tw = self._tw(d, text.upper(), self.fonts['xs'], 0.8)
+        self._rrect(d, [x, y, x + tw + 16, y + 16], 8, outline=self.theme['edge'])
+        self._track(d, (x + 8, y + 3), text.upper(), self.fonts['xs'], color, 0.8)
+
+    def _panel(self, d, box, label=None, meta=None, bracket=False, live=False) -> int:
+        """Glass tile: rounded dark fill + edge stroke (+brackets/label/live).
+        Returns the y at which body content should start."""
+        th = self.theme
+        x0, y0, x1, y1 = box
+        self._rrect(d, box, 8, fill=th['panel'], outline=th['edge'])
+        if bracket:
+            self._brackets(d, (x0 + 4, y0 + 4, x1 - 4, y1 - 4), th['amber_dim'])
+        if label:
+            self._label(d, (x0 + 11, y0 + 7), label)
+        if meta:
+            mw = d.textlength(meta.upper(), font=self.fonts['xs'])
+            d.text((x1 - mw - (24 if live else 11), y0 + 8), meta.upper(),
+                   font=self.fonts['xs'], fill=th['fg_deep'])
+        if live:
+            self._dot(d, x1 - 13, y0 + 11, th['teal'])
+        return (y0 + 26) if label else (y0 + 9)
+
+    def _kv(self, d, x, y, w, label, value, color=None, vfont=None) -> int:
+        """stencil label (left, dim) → mono value (right-aligned)."""
+        th = self.theme
+        self._label(d, (x, y + 1), label)
+        vf = vfont or self.fonts['sm']
+        vw = d.textlength(value, font=vf)
+        d.text((x + w - vw, y), value, font=vf, fill=color or th['fg'])
+        return y + 20
+
+    def _honest(self, d, box, kind, label, hint=None):
+        """Centered honest-state card (brief §2.4) — drawn with primitives so
+        it never depends on exotic font glyphs. no-hw=ring+slash, acquiring=arc."""
+        th = self.theme
+        x0, y0, x1, y1 = box
+        col = {'no-hw': th['fg_dim'], 'acquiring': th['cyan'],
+               'no-key': th['fg_dim'], 'conn-err': th['crit']}.get(kind, th['fg_dim'])
+        cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+        gy, r = cy - 24, 12
+        if kind == 'acquiring':
+            d.arc([cx - r, gy - r, cx + r, gy + r], 35, 315, fill=col, width=2)
+        else:
+            d.ellipse([cx - r, gy - r, cx + r, gy + r], outline=col, width=2)
+            d.line([cx - r * 0.66, gy + r * 0.66, cx + r * 0.66, gy - r * 0.66],
+                   fill=col, width=2)
+        lw = self._tw(d, label.upper(), self.fonts['sm'], 1.0)
+        self._track(d, (cx - lw / 2, cy), label.upper(), self.fonts['sm'], col, 1.0)
+        if hint:
+            hw = d.textlength(hint, font=self.fonts['xs'])
+            d.text((cx - hw / 2, cy + 18), hint, font=self.fonts['xs'], fill=th['fg_deep'])
+
+    def _brand(self, d, screen: str) -> int:
+        """Top brand bar — amber 'm' badge + mz1312·drifter stencil + screen + clock."""
+        th = self.theme
+        W = self.width
+        self._rrect(d, [8, 6, 30, 28], 6, outline=th['amber'])
+        d.text((14, 7), 'm', font=self.fonts['md'], fill=th['amber'])
+        self._track(d, (38, 7), 'mz1312 · drifter', self.fonts['sm'], th['fg'], 1.2)
+        self._track(d, (38, 20), 'uncaged tech / est 1991', self.fonts['xs'], th['fg_dim'], 0.5)
+        clock = time.strftime('%H:%M:%S')
+        cw = d.textlength(clock, font=self.fonts['sm'])
+        d.text((W - cw - 8, 7), clock, font=self.fonts['sm'], fill=th['dim'])
+        sw = self._tw(d, screen.lower(), self.fonts['sm'], 1.2)
+        self._track(d, (W - cw - sw - 22, 7), screen.lower(), self.fonts['sm'], th['amber'], 1.2)
+        d.line([0, 32, W, 32], fill=th['amber_dim'])
+        d.line([W // 3, 32, 2 * W // 3, 32], fill=th['amber'])
+        return 40
 
     # ── status ──────────────────────────────────────────────────────
     def status(self, data: dict):
@@ -604,49 +708,63 @@ class Renderer:
         net = data['network']
         svc = data['services']
         mq = data['mqtt']
-        y = self._header(d, 'STATUS', time.strftime('%H:%M:%S'))
+        self._brand(d, 'status')
 
-        y = self._row(d, y, 'HOST', sys_.get('hostname') or '?')
-        y = self._row(d, y, 'UPTIME', fmt_uptime(sys_.get('uptime') or 0))
+        # SYSTEM panel
+        y = self._panel(d, (8, 40, 233, 184), label='system', bracket=True, live=True)
+        iw, ix = 233 - 8 - 22, 8 + 11
+        y = self._kv(d, ix, y, iw, 'host', sys_.get('hostname') or '?')
+        y = self._kv(d, ix, y, iw, 'uptime', fmt_uptime(sys_.get('uptime') or 0))
         ct = sys_.get('cpu_temp')
-        y = self._row(d, y, 'CPU TEMP', f"{ct:.0f}°C" if ct is not None else 'n/a',
-                      level_color(ct or 0, 70, 80, th) if ct is not None else th['dim'])
+        y = self._kv(d, ix, y, iw, 'cpu temp', f"{ct:.0f}°C" if ct is not None else 'n/a',
+                     level_color(ct or 0, 70, 80, th) if ct is not None else th['fg_dim'])
         ram = sys_.get('ram_pct')
-        y = self._row(d, y, 'RAM', f"{ram:.0f}%" if ram is not None else 'n/a',
-                      level_color(ram or 0, 80, 92, th) if ram is not None else th['dim'])
+        y = self._kv(d, ix, y, iw, 'ram', f"{ram:.0f}%" if ram is not None else 'n/a',
+                     level_color(ram or 0, 80, 92, th) if ram is not None else th['fg_dim'])
         disk = sys_.get('disk_pct')
-        y = self._row(d, y, 'DISK', f"{disk:.0f}%" if disk is not None else 'n/a',
-                      level_color(disk or 0, 85, 95, th) if disk is not None else th['dim'])
+        self._kv(d, ix, y, iw, 'disk', f"{disk:.0f}%" if disk is not None else 'n/a',
+                 level_color(disk or 0, 85, 95, th) if disk is not None else th['fg_dim'])
 
-        d.line([0, y + 2, self.width, y + 2], fill=th['panel']); y += 8
-        ssid = net.get('ssid') or '—'
+        # LINK panel
+        y = self._panel(d, (247, 40, 472, 184), label='link', meta='wifi·mqtt', bracket=True)
+        iw, ix = 472 - 247 - 22, 247 + 11
         bars, _ = signal_quality(net.get('signal_dbm'))
-        y = self._row(d, y, 'WIFI', f"{ssid} {'|' * bars}{'.' * (4 - bars)}",
-                      th['ok'] if net.get('ssid') else th['warn'])
-        y = self._row(d, y, 'IP', net.get('ip') or '—',
-                      th['fg'] if net.get('ip') else th['warn'])
-        y = self._row(d, y, 'INTERNET', 'online' if net.get('internet') else 'OFFLINE',
-                      th['ok'] if net.get('internet') else th['crit'])
+        y = self._kv(d, ix, y, iw, 'wi-fi', (net.get('ssid') or '—')[:14],
+                     th['teal'] if net.get('ssid') else th['warn'])
+        self._label(d, (ix, y + 1), 'signal')
+        self._bars(d, ix + iw - 35, y + 2, bars)
+        y += 20
+        y = self._kv(d, ix, y, iw, 'ip', net.get('ip') or '—',
+                     th['fg'] if net.get('ip') else th['warn'])
+        y = self._kv(d, ix, y, iw, 'internet', 'online' if net.get('internet') else 'OFFLINE',
+                     th['teal'] if net.get('internet') else th['crit'])
+        self._kv(d, ix, y, iw, 'mqtt', f"{mq['rate']:.0f} msg/s" if mq['connected'] else 'down',
+                 th['teal'] if mq['connected'] else th['crit'])
 
-        d.line([0, y + 2, self.width, y + 2], fill=th['panel']); y += 8
-        y = self._row(d, y, 'MQTT', f"up · {mq['rate']:.0f} msg/s" if mq['connected'] else 'DOWN',
-                      th['ok'] if mq['connected'] else th['crit'])
-        svc_color = (th['ok'] if svc['expected_running'] == svc['expected_count']
-                     else th['warn'] if svc['expected_running'] else th['crit'])
-        y = self._row(d, y, 'SERVICES',
-                      f"{svc['expected_running']}/{svc['expected_count']} ({svc['mode']})",
-                      svc_color)
+        # NODE panel (services count + mode + gps)
+        self._panel(d, (8, 192, 472, 300), label='node', meta=f"mode {svc['mode']}")
+        sc = (th['teal'] if svc['expected_running'] == svc['expected_count']
+              else th['warn'] if svc['expected_running'] else th['crit'])
+        self._label(d, (22, 216), 'services')
+        d.text((22, 230), f"{svc['expected_running']}/{svc['expected_count']}",
+               font=self.fonts['bxl'], fill=sc)
+        self._pill(d, 22, 272, f"mode · {svc['mode']}",
+                   th['amber'] if svc['mode'] != 'diag' else th['dim'])
         gps = data.get('gps')
+        self._label(d, (250, 216), 'gps')
         if gps and gps.get('lat') is not None:
-            y = self._row(d, y, 'GPS', f"{gps['lat']:.4f},{gps['lon']:.4f}", th['ok'])
+            d.text((250, 230), f"{gps['lat']:.4f}", font=self.fonts['lg'], fill=th['teal'])
+            d.text((250, 254), f"{gps['lon']:.4f}", font=self.fonts['lg'], fill=th['teal'])
         else:
-            y = self._row(d, y, 'GPS', 'No GPS', th['dim'])
+            self._track(d, (250, 234), 'NO FIX', self.fonts['md'], th['fg_dim'], 1.0)
+            d.text((250, 258), 'awaiting gps — never faked', font=self.fonts['xs'], fill=th['fg_deep'])
 
         alert = mq.get('last_alert')
         if alert:
-            msg = (alert.get('message') or '')[:46]
-            d.rectangle([0, self.height - 22, self.width, self.height], fill=th['header_bg'])
-            d.text((8, self.height - 19), f"! {msg}", font=self.fonts['sm'], fill=th['warn'])
+            msg = (alert.get('message') or '')[:52]
+            d.rectangle([0, self.height - 18, self.width, self.height], fill=th['header_bg'])
+            self._dot(d, 9, self.height - 9, th['warn'])
+            d.text((18, self.height - 16), msg, font=self.fonts['xs'], fill=th['warn'])
         return img
 
     # ── services ────────────────────────────────────────────────────
@@ -654,30 +772,36 @@ class Renderer:
         th = self.theme
         img, d = self._canvas()
         svc = data['services']
-        y0 = self._header(d, 'SERVICES',
-                          f"{svc['running']}/{svc['total']} up")
+        self._brand(d, 'services')
         states = svc['states']
         expected = svc['expected']
+        self._panel(d, (8, 40, 472, 300), label='units · watchdog',
+                    meta=f"{svc['running']}/{svc['total']} up · {svc['mode']}")
         names = sorted(states)
-        per_page = (self.height - y0 - 4) // 16
-        view = names[scroll:scroll + per_page]
-        y = y0
-        for name in view:
+        per_col, colw, y0 = 11, 228, 70
+        view = names[scroll:scroll + per_col * 2]
+        for i, name in enumerate(view):
+            col, row = divmod(i, per_col)
+            x = 20 + col * colw
+            yy = y0 + row * 20
             state = states[name]
             in_mode = name in expected
             color = service_state_color(state, th)
             if not in_mode and state != 'active':
-                color = th['dim']  # out-of-mode inactivity is expected
-            d.ellipse([10, y + 4, 18, y + 12], fill=color)
-            short = name.replace('drifter-', '')
-            d.text((26, y), short, font=self.fonts['sm'],
-                   fill=th['fg'] if in_mode else th['dim'])
-            w = d.textlength(state, font=self.fonts['sm'])
-            d.text((self.width - w - 8, y), state, font=self.fonts['sm'], fill=color)
-            y += 16
-        if scroll + per_page < len(names):
-            d.text((self.width - 14, self.height - 16), '▼',
-                   font=self.fonts['sm'], fill=th['accent'])
+                color = th['fg_deep']  # out-of-mode inactivity is expected
+            self._dot(d, x + 3, yy + 7, color)
+            short = name.replace('drifter-', '')[:15]
+            d.text((x + 14, yy), short, font=self.fonts['sm'],
+                   fill=th['fg'] if in_mode else th['fg_dim'])
+            stt = state[:6]
+            sw = d.textlength(stt, font=self.fonts['xs'])
+            d.text((x + colw - sw - 16, yy + 2), stt, font=self.fonts['xs'], fill=color)
+        # legend + scroll hint
+        self._dot(d, 22, 290, th['teal']); d.text((30, 285), 'ok', font=self.fonts['xs'], fill=th['fg_dim'])
+        self._dot(d, 70, 290, th['warn']); d.text((78, 285), 'starting', font=self.fonts['xs'], fill=th['fg_dim'])
+        self._dot(d, 150, 290, th['crit']); d.text((158, 285), 'down', font=self.fonts['xs'], fill=th['fg_dim'])
+        if scroll + per_col * 2 < len(names):
+            self._track(d, (self.width - 92, 285), 'action ▸ more', self.fonts['xs'], th['amber'], 0.5)
         return img
 
     # ── network ─────────────────────────────────────────────────────
@@ -686,58 +810,97 @@ class Renderer:
         img, d = self._canvas()
         net = data['network']
         auto = data.get('autoconnect')
-        y = self._header(d, 'NETWORK')
+        self._brand(d, 'network')
         bars, label = signal_quality(net.get('signal_dbm'))
-        y = self._row(d, y, 'SSID', net.get('ssid') or '—',
-                      th['ok'] if net.get('ssid') else th['warn'])
-        y = self._row(d, y, 'BSSID', net.get('bssid') or '—')
-        y = self._row(d, y, 'CHANNEL', str(net.get('channel') or '—'))
         dbm = net.get('signal_dbm')
-        y = self._row(d, y, 'SIGNAL',
-                      f"{dbm} dBm  {label}" if dbm is not None else 'n/a',
-                      level_color(bars, 2, 1, th, higher_is_worse=False))
-        d.line([0, y + 2, self.width, y + 2], fill=th['panel']); y += 8
-        y = self._row(d, y, 'IP', net.get('ip') or '—',
-                      th['fg'] if net.get('ip') else th['crit'])
-        y = self._row(d, y, 'GATEWAY', net.get('gateway') or '—')
-        y = self._row(d, y, 'DNS', ', '.join(net.get('dns') or []) or '—')
-        y = self._row(d, y, 'INTERNET', 'online' if net.get('internet') else 'OFFLINE',
-                      th['ok'] if net.get('internet') else th['crit'])
-        d.line([0, y + 2, self.width, y + 2], fill=th['panel']); y += 8
+
+        # WI-FI panel
+        y = self._panel(d, (8, 40, 472, 150), label='wi-fi', meta='client',
+                        bracket=True, live=bool(net.get('ssid')))
+        iw, ix = 472 - 16 - 22, 8 + 11
+        y = self._kv(d, ix, y, iw, 'ssid', net.get('ssid') or '—',
+                     th['teal'] if net.get('ssid') else th['warn'])
+        y = self._kv(d, ix, y, iw, 'bssid · ch', f"{net.get('bssid') or '—'}  ch{net.get('channel') or '?'}")
+        self._label(d, (ix, y + 1), 'signal')
+        self._bars(d, ix + 70, y + 2, bars)
+        sigtxt = f"{dbm} dBm · {label}" if dbm is not None else 'n/a'
+        sw = d.textlength(sigtxt, font=self.fonts['sm'])
+        d.text((472 - 11 - sw, y), sigtxt, font=self.fonts['sm'],
+               fill=level_color(bars, 2, 1, th, higher_is_worse=False))
+
+        # IP panel
+        y = self._panel(d, (8, 158, 472, 246), label='ip · routing')
+        y = self._kv(d, ix, y, iw, 'address', net.get('ip') or '—',
+                     th['fg'] if net.get('ip') else th['crit'])
+        y = self._kv(d, ix, y, iw, 'gateway', net.get('gateway') or '—')
+        y = self._kv(d, ix, y, iw, 'internet', 'online' if net.get('internet') else 'OFFLINE',
+                     th['teal'] if net.get('internet') else th['crit'])
+
+        # RADIO panel (one wi-fi, explicit owner)
+        self._panel(d, (8, 254, 472, 308), label='radio · one wi-fi owner')
         if auto:
             state = auto.get('state', '?')
-            color = (th['ok'] if state in ('connected', 'client')
-                     else th['warn'] if 'fallback' in state or state == 'ap'
+            ap = auto.get('ap_fallback') or state == 'ap'
+            owner = 'ap · tether (MZ1312_DRIFTER)' if ap else f'client · {state}'
+            color = (th['teal'] if state in ('connected', 'client') and not ap
+                     else th['warn'] if ap or 'fallback' in str(state)
                      else th['crit'] if state in ('searching', 'offline') else th['fg'])
-            y = self._row(d, y, 'AUTOCONNECT', state, color)
-            if auto.get('ap_fallback'):
-                y = self._row(d, y, 'AP MODE', 'active (SSH in)', th['warn'])
+            self._pill(d, 22, 276, 'AP' if ap else 'CLIENT', color)
+            d.text((78, 278), owner, font=self.fonts['sm'], fill=color)
         else:
-            y = self._row(d, y, 'AUTOCONNECT', 'no status yet', th['dim'])
+            self._track(d, (22, 278), 'NO STATUS YET', self.fonts['sm'], th['fg_dim'], 1.0)
         return img
 
     # ── diagnostics ─────────────────────────────────────────────────
     def diagnostics(self, data: dict):
         th = self.theme
         img, d = self._canvas()
-        y = self._header(d, 'DIAGNOSTICS', 'journal -p err')
-        for line in data.get('errors', [])[-9:]:
-            d.text((6, y), line[:62], font=self.fonts['sm'], fill=th['crit'])
-            y += 15
-            if y > self.height - 30:
-                break
-        alert = data['mqtt'].get('last_alert')
-        d.rectangle([0, self.height - 24, self.width, self.height], fill=th['header_bg'])
-        if alert:
-            msg = (alert.get('message') or '')[:54]
-            d.text((6, self.height - 20), f"alert: {msg}",
-                   font=self.fonts['sm'], fill=th['warn'])
+        self._brand(d, 'diagnostics')
+        errors = [e for e in data.get('errors', []) if e]
+        clean = (not errors) or (len(errors) == 1 and errors[0] in
+                                 ('no recent errors', 'journalctl unavailable'))
+        y = self._panel(d, (8, 40, 472, 270), label='journal · priority err',
+                        meta='-p err', live=clean)
+        if clean:
+            self._honest(d, (8, 40, 472, 270), 'no-key', 'no recent errors',
+                         'journal -p err is clear')
         else:
-            d.text((6, self.height - 20), 'no recent drifter/alert',
-                   font=self.fonts['sm'], fill=th['dim'])
+            yy = y + 2
+            for line in errors[-10:]:
+                self._dot(d, 15, yy + 7, th['crit'], r=2)
+                d.text((24, yy), line[:60], font=self.fonts['xs'], fill=th['crit'])
+                yy += 16
+                if yy > 262:
+                    break
+        # alert footer
+        alert = data['mqtt'].get('last_alert')
+        self._panel(d, (8, 276, 472, 308), label='last alert')
+        if alert:
+            msg = (alert.get('message') or '')[:48]
+            self._dot(d, 100, 292, th['warn'])
+            d.text((110, 285), msg, font=self.fonts['sm'], fill=th['warn'])
+        else:
+            self._track(d, (100, 286), 'NONE · BUS QUIET', self.fonts['sm'], th['fg_dim'], 1.0)
         return img
 
-    # ── vehicle ─────────────────────────────────────────────────────
+    # ── vehicle (hero gauges) ───────────────────────────────────────
+    def _gauge(self, d, box, label, meta, value, unit, color, frac, stale):
+        th = self.theme
+        x0, y0, x1, y1 = box
+        self._panel(d, box, label=label, meta=('stale' if stale else meta),
+                    bracket=True, live=not stale)
+        num = f"{value:.0f}" if isinstance(value, (int, float)) else '—'
+        col = th['fg_dim'] if stale else color
+        d.text((x0 + 14, y0 + 26), num, font=self.fonts['bhuge'], fill=col)
+        nw = d.textlength(num, font=self.fonts['bhuge'])
+        if unit:
+            d.text((x0 + 14 + nw + 6, y0 + 56), unit, font=self.fonts['sm'], fill=th['fg_dim'])
+        # tape bar
+        bx0, bx1, by = x0 + 14, x1 - 14, y1 - 13
+        d.rectangle([bx0, by, bx1, by + 4], fill=th['bg1'])
+        fw = (bx1 - bx0) * max(0.0, min(1.0, frac))
+        d.rectangle([bx0, by, bx0 + fw, by + 4], fill=col)
+
     def vehicle(self, data: dict):
         th = self.theme
         img, d = self._canvas()
@@ -745,46 +908,42 @@ class Renderer:
         dtcs = data['mqtt']['dtcs']
         v_ts = data['mqtt'].get('vehicle_ts', 0.0)
         connected = bool(v)
-        # Stale = data arrived once but the bus has since gone quiet (engine off
-        # / link dropped). Surfacing it stops frozen gauges reading as live.
-        stale = connected and v_ts and (time.time() - v_ts) > LCD_OBD_STALE_S
-        sub = 'no OBD' if not connected else ('OBD stale' if stale else 'OBD')
-        y = self._header(d, 'VEHICLE', sub)
+        stale = bool(connected and v_ts and (time.time() - v_ts) > LCD_OBD_STALE_S)
+        self._brand(d, 'vehicle')
         if not connected:
-            d.text((self.width // 2 - 70, self.height // 2 - 20), 'No OBD data',
-                   font=self.fonts['lg'], fill=th['dim'])
+            # Honest no-data state — never show fake zeros at the wheel (§2.4).
+            self._panel(d, (8, 40, 472, 308))
+            self._honest(d, (8, 40, 472, 308), 'no-hw', 'ecu not connected',
+                         'can0 idle — plug in obd-ii')
             return img
 
-        def gauge(x, y0, label, value, unit, color):
-            d.text((x, y0), label, font=self.fonts['sm'], fill=th['dim'])
-            txt = f"{value:.0f}" if isinstance(value, (int, float)) else '—'
-            d.text((x, y0 + 16), txt, font=self.fonts['xl'], fill=color)
-            d.text((x + d.textlength(txt, font=self.fonts['xl']) + 4, y0 + 34),
-                   unit, font=self.fonts['sm'], fill=th['dim'])
+        rpm, spd = v.get('rpm'), v.get('speed')
+        cool, volt = v.get('coolant'), v.get('voltage')
+        self._gauge(d, (8, 40, 233, 168), 'rpm · crank', 'can·50ms',
+                    rpm if rpm is not None else '—', 'rpm',
+                    level_color(rpm or 0, 5500, 6500, th), (rpm or 0) / 7000.0, stale)
+        self._gauge(d, (247, 40, 472, 168), 'speed', 'km/h',
+                    spd if spd is not None else '—', 'km/h', th['cyan'],
+                    (spd or 0) / 160.0, stale)
+        self._gauge(d, (8, 176, 233, 288), 'coolant', '°C',
+                    cool if cool is not None else '—', '°C',
+                    level_color(cool or 0, 104, 108, th), ((cool or 40) - 40) / 80.0, stale)
+        self._gauge(d, (247, 176, 472, 288), 'battery', 'V',
+                    volt if volt is not None else '—', 'V',
+                    level_color(volt or 14, 13.2, 12.0, th, higher_is_worse=False),
+                    ((volt or 11) - 11) / 4.0, stale)
 
-        rpm = v.get('rpm')
-        spd = v.get('speed')
-        cool = v.get('coolant')
-        volt = v.get('voltage')
-        gauge(16, 44, 'RPM', rpm if rpm is not None else '—', '',
-              level_color(rpm or 0, 5500, 6500, th))
-        gauge(self.width // 2 + 8, 44, 'SPEED', spd if spd is not None else '—', 'km/h', th['fg'])
-        gauge(16, 130, 'COOLANT', cool if cool is not None else '—', '°C',
-              level_color(cool or 0, 104, 108, th))
-        gauge(self.width // 2 + 8, 130, 'BATT',
-              volt if volt is not None else '—', 'V',
-              level_color(volt or 14, 13.2, 12.0, th, higher_is_worse=False))
-        d.line([0, 214, self.width, 214], fill=th['panel'])
+        # DTC strip
+        self._panel(d, (8, 292, 472, 316))
         if dtcs:
-            # Decode the lead fault to plain language; colour by severity and
-            # tally the rest. "P0301 Cylinder 1 Misfire  +2" beats raw codes.
             label, sev = decode_dtc(str(dtcs[0]))
             color = th['crit'] if sev == 'RED' else th['warn']
             more = f"  +{len(dtcs) - 1}" if len(dtcs) > 1 else ''
-            d.text((10, 222), f"{label}{more}"[:60],
-                   font=self.fonts['sm'], fill=color)
+            self._dot(d, 18, 304, color)
+            d.text((28, 297), f"{label}{more}"[:58], font=self.fonts['sm'], fill=color)
         else:
-            d.text((10, 222), 'DTC: none', font=self.fonts['md'], fill=th['ok'])
+            self._dot(d, 18, 304, th['teal'])
+            self._track(d, (28, 298), 'DTC · NONE', self.fonts['sm'], th['teal'], 1.0)
         return img
 
 

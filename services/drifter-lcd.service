@@ -10,6 +10,11 @@ Type=simple
 WorkingDirectory=/opt/drifter
 # Needs /dev/fb1 (video group) + GPIO buttons (gpio group) — runs as root so a
 # fresh deploy works before group membership/udev settle. Override pins via env.
+# Re-init the SPI panel before each start: if the panel is connected AFTER the
+# fbtft driver probed at boot, its ILI9486 controller never got the init
+# sequence and shows white. Unbind→rebind re-sends it. '-' = never block the
+# dash if the device path differs; runs as root (no User=).
+ExecStartPre=-/bin/sh -c 'D=/sys/bus/spi/drivers/fb_ili9486; echo spi0.0 > $D/unbind 2>/dev/null; sleep 0.3; echo spi0.0 > $D/bind 2>/dev/null; sleep 1'
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/lcd_dashboard.py
 Restart=on-failure
 RestartSec=5

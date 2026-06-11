@@ -42,16 +42,15 @@ export function PmDock({ active, onPick }) {
   );
 }
 
-// ── PHONE · FOOT ────────────────────────────────────────────────
-export function DirPhoneFoot({ t, onNav }) {
+// ── PHONE · RF (passive intel) ──────────────────────────────────
+export function DirPhoneRf({ t, onNav }) {
   const simRaw = useSim();
   const sim = { ...simRaw, mode: 'foot' };
-  const [armed, setArmed] = React.useState(false);
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column', padding: '12px 12px 0', gap: 9 }} data-screen-label="A′ · POCKET FOOT">
-      <PmHead sim={sim} mode="foot · armed" />
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column', padding: '12px 12px 0', gap: 9 }} data-screen-label="A′ · POCKET RF">
+      <PmHead sim={sim} mode="rf · passive" />
 
-      <PmTile label="rf · sweep" meta={`peak ${sim.rf.peakMhz}M`}>
+      <PmTile label="rf · sweep" meta={`peak ${sim.rf.peakMhz}M · receive-only`}>
         <SpectrumStrip spectrum={sim.rf.spectrum} h={40} />
       </PmTile>
 
@@ -69,7 +68,27 @@ export function DirPhoneFoot({ t, onNav }) {
         <HonestState kind="no-hw" label="bt adapter down" hint="surveillance blind — tap to reset hci0" compact />
       </PmTile>
 
-      <PmTile label="marauder · deauth" meta="gated">
+      <PmTile label="counter-surveillance" meta="ghost · passive">
+        <div className="mono" style={{ fontSize: 9, color: 'var(--fg-mute)' }}>trackers 0 · imsi-suspects 0 · alpr idle</div>
+        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 4 }}>needs sdr + bt feeds to flag</div>
+      </PmTile>
+
+      <div style={{ flex: 1 }}></div>
+      <PmDock active="rf" onPick={onNav} />
+    </div>
+  );
+}
+
+// ── PHONE · ARSENAL (offensive, gated) ──────────────────────────
+export function DirPhoneFoot({ t, onNav }) {
+  const simRaw = useSim();
+  const sim = { ...simRaw, mode: 'foot' };
+  const [armed, setArmed] = React.useState(false);
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column', padding: '12px 12px 0', gap: 9 }} data-screen-label="A′ · POCKET ARSENAL">
+      <PmHead sim={sim} mode="arms · gated" />
+
+      <PmTile label="marauder · deauth" meta="offensive · gated">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className="mono" style={{ fontSize: 8.5, color: 'var(--fg-mute)', flex: 1 }}>allowlist 2 APs · ch 6 · 30 s</span>
           {armed ? (
@@ -81,6 +100,16 @@ export function DirPhoneFoot({ t, onNav }) {
             <button type="button" className="mono" onClick={() => setArmed(true)} style={{ fontSize: 9, color: 'var(--acc)', border: '1px solid var(--stroke-acc)', background: 'transparent', borderRadius: 5, padding: '8px 16px', cursor: 'pointer', letterSpacing: '0.1em' }}>ARM</button>
           )}
         </div>
+        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 6 }}>two-leg confirm-token · 120s expiry · no optimistic flip</div>
+      </PmTile>
+
+      <PmTile label="wi-fi audit" meta="allowlist-gated">
+        <div className="mono" style={{ fontSize: 9, color: 'var(--fg-mute)' }}>{sim.recon.auditAllowlist.length ? sim.recon.auditAllowlist.join(' · ') : 'allowlist empty — disabled'}</div>
+        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 4 }}>passive handshake/pmkid capture · no deauth-to-force</div>
+      </PmTile>
+
+      <PmTile label="hid · badusb" meta="arm → confirm → run">
+        <HonestState kind="no-hw" label="native gadget unconfigured" hint="dr_mode=host — nothing can be typed" compact />
       </PmTile>
 
       <PmTile label="sentry" meta="no optimistic flip">

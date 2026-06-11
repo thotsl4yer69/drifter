@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import socket
 import sys
 import time
+from pathlib import Path
 
 try:
     from config import MQTT_HOST, MQTT_PORT, TOPICS, make_mqtt_client
@@ -40,8 +42,38 @@ GPSD_HOST = '127.0.0.1'
 GPSD_PORT = 2947
 RECONNECT_BACKOFF_MAX = 30
 PUBLISH_TOPIC = TOPICS.get('gps_fix', 'drifter/gps/fix')
+# feeds.py and gps_helper.py read position from this file, NOT from MQTT — so a
+# real gpsd fix never reached the feeds/POI/aircraft pipeline (it stayed
+# "awaiting fix") until the phone POSTed a manual one. Mirror every real fix here.
+GPS_STATE_PATH = Path('/opt/drifter/state/gps.json')
 
 _running = True
+
+
+def write_gps_state(fix: dict) -> None:
+    """Atomically mirror a real gpsd fix to state/gps.json (the disk source of
+    truth feeds.origin()/gps_helper read). Only ever called with a genuine
+    mode>=2 fix from parse_tpv — never fabricates a position."""
+    try:
+        payload = {
+            'fix': True,
+            'lat': fix['lat'],
+            'lng': fix['lng'],
+            'lon': fix['lng'],
+            'speed': fix.get('speed_mps'),
+            'heading': fix.get('track_deg'),
+            'track': fix.get('track_deg'),
+            'alt_m': fix.get('alt_m'),
+            'mode': fix.get('mode'),
+            'ts': fix.get('ts', time.time()),
+            'source': 'gpsd',
+        }
+        GPS_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = GPS_STATE_PATH.with_name(GPS_STATE_PATH.name + '.tmp')
+        tmp.write_text(json.dumps(payload))
+        os.replace(tmp, GPS_STATE_PATH)
+    except OSError as e:
+        log.warning(f"gps.json write failed: {e}")
 
 
 def _sig(_signo, _frame):
@@ -128,6 +160,9 @@ def main() -> int:
                         mqtt.publish(PUBLISH_TOPIC, json.dumps(fix), retain=True)
                     except Exception as e:
                         log.warning(f"publish failed: {e}")
+                    # Mirror to disk so feeds.py/gps_helper (which read the file,
+                    # not MQTT) see the live position — closes the GPS→feeds gap.
+                    write_gps_state(fix)
         except (TimeoutError, ConnectionRefusedError, ConnectionError, OSError) as e:
             log.info(f"gpsd unreachable ({e}) — retrying in {backoff}s")
             time.sleep(backoff)

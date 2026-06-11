@@ -51,7 +51,13 @@ log = logging.getLogger(__name__)
 # ── Ollama defaults (overridden per-call if needed) ──
 OLLAMA_HOST = "localhost"
 OLLAMA_PORT = 11434
-OLLAMA_MODEL = "llama3.2:3b"
+# Sourced from config (env OLLAMA_MODEL, default qwen2.5:1.5b). Was previously
+# hardcoded to llama3.2:3b — a model that is NOT installed, so every Vivi/Analyst
+# call 404'd or triggered an unwanted cold-pull and defeated the keep-warm.
+try:
+    from config import OLLAMA_MODEL
+except ImportError:  # pragma: no cover - config always present in the venv
+    OLLAMA_MODEL = "qwen2.5:1.5b"
 
 # ── HTTP session — reused across requests for connection pooling ──
 _session = requests.Session()

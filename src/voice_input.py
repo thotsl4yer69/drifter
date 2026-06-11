@@ -249,7 +249,9 @@ def route_transcript(text: str):
             'session_id': 'voice',
             'ts': time.time(),
         })
-        mqtt_client.publish(TOPICS['vivi_query'], payload)
+        # vivi_v2 subscribes to vivi2/query — publishing to the legacy vivi/query
+        # (v1, deleted) was a dead-end so spoken questions never reached Vivi.
+        mqtt_client.publish(TOPICS.get('vivi2_query', 'drifter/vivi2/query'), payload)
         log.info(f"Vivi query: {text[:60]}")
 
 
