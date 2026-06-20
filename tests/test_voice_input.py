@@ -119,18 +119,20 @@ class TestRouteTranscript:
         from config import TOPICS
         voice_input.route_transcript("why is the coolant temp so high")
         topics_called = [c[0][0] for c in reset_mqtt.publish.call_args_list]
-        assert TOPICS['vivi_query'] in topics_called
+        # route_transcript routes voice queries to the v2 Vivi brain, which
+        # subscribes to vivi2/query (see voice_input.route_transcript).
+        assert TOPICS['vivi2_query'] in topics_called
 
     def test_query_payload_has_query_text(self, reset_mqtt):
         from config import TOPICS
         text = "what does the coolant warning light mean"
         voice_input.route_transcript(text)
         for call in reset_mqtt.publish.call_args_list:
-            if call[0][0] == TOPICS['vivi_query']:
+            if call[0][0] == TOPICS['vivi2_query']:
                 payload = json.loads(call[0][1])
                 assert payload['query'] == text
                 return
-        pytest.fail("vivi_query not published")
+        pytest.fail("vivi2_query not published")
 
     def test_empty_transcript_does_nothing(self, reset_mqtt):
         voice_input.route_transcript("")
