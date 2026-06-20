@@ -14,6 +14,7 @@ import subprocess
 import time
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 import yaml
@@ -507,7 +508,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     # Cockpit v4 static server — serves the Vite build from /opt/drifter/ui/v4.
-    _V4_MIME = {
+    _V4_MIME: ClassVar[dict] = {
         '.html': 'text/html; charset=utf-8', '.js': 'application/javascript',
         '.mjs': 'application/javascript', '.css': 'text/css; charset=utf-8',
         '.json': 'application/json', '.webmanifest': 'application/manifest+json',
