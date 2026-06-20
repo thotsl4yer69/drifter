@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylised radar/pulse glyph in brand amber on the dark adaptive bg. -->
+    <path
+        android:fillColor="#F2A900"
+        android:pathData="M54,30 L60,52 L82,54 L60,56 L54,78 L48,56 L26,54 L48,52 Z" />
+    <path
+        android:strokeColor="#F2A900"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,38 m-20,0 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0"
+        android:strokeAlpha="0.55" />
+</vector>

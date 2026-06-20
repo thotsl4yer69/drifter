@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Drifter dashboard serves /healthz and /api/* over plain HTTP on
+  10.42.0.1:8080 (the hotspot). The host is user-configurable to any LAN
+  address, so cleartext is permitted app-wide — this is a local-network
+  diagnostics tool, not an internet client. The Pi's own HTTPS listener
+  (8443) is self-signed and only used by the browser for geolocation; the
+  app uses the HTTP API surface.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

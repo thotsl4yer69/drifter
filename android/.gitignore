@@ -1,0 +1,14 @@
+# Android / Gradle build artifacts
+.gradle/
+build/
+app/build/
+captures/
+.cxx/
+
+# Local SDK location
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
