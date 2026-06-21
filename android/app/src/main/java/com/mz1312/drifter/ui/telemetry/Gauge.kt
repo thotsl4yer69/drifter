@@ -1,5 +1,7 @@
 package com.mz1312.drifter.ui.telemetry
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,9 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mz1312.drifter.ui.theme.DataFont
 import com.mz1312.drifter.ui.theme.StatusAmber
 import com.mz1312.drifter.ui.theme.StatusGreen
 import com.mz1312.drifter.ui.theme.StatusGrey
@@ -74,6 +77,8 @@ fun Gauge(spec: GaugeSpec, value: Double?, modifier: Modifier = Modifier) {
         (((value - spec.min) / (spec.max - spec.min)).coerceIn(0.0, 1.0)).toFloat()
     }
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    // Sweep eases to the new reading instead of snapping — reads like a real needle.
+    val animFrac by animateFloatAsState(targetValue = frac, animationSpec = tween(600), label = "gaugeSweep")
 
     Box(modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)) {
@@ -86,14 +91,24 @@ fun Gauge(spec: GaugeSpec, value: Double?, modifier: Modifier = Modifier) {
             val total = 270f
             drawArc(track, start, total, false, topLeft, arcSize, style = stroke)
             if (value != null) {
-                drawArc(color, start, total * frac, false, topLeft, arcSize, style = stroke)
+                // Soft glow under the value sweep — wider, translucent, same colour.
+                drawArc(
+                    color.copy(alpha = 0.22f),
+                    start,
+                    total * animFrac,
+                    false,
+                    Offset(inset, inset),
+                    arcSize,
+                    style = Stroke(width = sw * 2.1f, cap = StrokeCap.Round),
+                )
+                drawArc(color, start, total * animFrac, false, topLeft, arcSize, style = stroke)
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 if (value == null) "--" else format(value, spec.decimals),
                 style = MaterialTheme.typography.titleLarge,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = DataFont,
                 fontWeight = FontWeight.Bold,
                 color = color,
             )
