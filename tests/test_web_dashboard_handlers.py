@@ -1997,3 +1997,97 @@ def test_pwa_manifest_is_valid_and_on_brand():
     assert data['display'] == 'standalone'
     assert data['background_color'] == '#07090d'   # canonical near-black
     assert data['icons'] and any(i['type'] == 'image/svg+xml' for i in data['icons'])
+
+
+# ── /api/logs/<unit> — read-only journalctl tail ──────────────────────
+
+from urllib.parse import urlparse as _urlparse
+
+
+def _build_logs_handler(path: str, peer: str = '127.0.0.1'):
+    """Wire a DashboardHandler enough to call _serve_logs via the GET path."""
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler.client_address = (peer, 0)
+    handler.send_error = MagicMock()
+    handler._serve_json = MagicMock()
+    return handler, _urlparse(path)
+
+
+def test_logs_route_registered_in_do_get():
+    """The /api/logs/ prefix must dispatch to _serve_logs (smoke: callable)."""
+    assert callable(h.DashboardHandler._serve_logs)
+
+
+def test_logs_rejects_remote_peer():
+    handler, parsed = _build_logs_handler('/api/logs/canbridge', peer='192.168.1.50')
+    handler._serve_logs('canbridge', parsed)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 403
+    handler._serve_json.assert_not_called()
+
+
+def test_logs_rejects_unknown_unit():
+    """Fail-closed: an arbitrary string must never reach journalctl (404)."""
+    handler, parsed = _build_logs_handler('/api/logs/etc-passwd')
+    handler._serve_logs('etc-passwd', parsed)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 404
+    handler._serve_json.assert_not_called()
+
+
+def test_logs_rejects_injection_attempt():
+    """A unit with shell metacharacters is not in the allowlist → 404."""
+    handler, parsed = _build_logs_handler('/api/logs/canbridge;rm')
+    handler._serve_logs('canbridge;rm', parsed)
+    handler.send_error.assert_called_once()
+    assert handler.send_error.call_args[0][0] == 404
+
+
+def test_logs_returns_lines_for_known_unit(monkeypatch):
+    """A valid unit returns the journalctl lines, newest last."""
+    fake = MagicMock(returncode=0, stdout='line one\nline two\n', stderr='')
+    run = MagicMock(return_value=fake)
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler, parsed = _build_logs_handler('/api/logs/canbridge?n=2')
+    handler._serve_logs('canbridge?n=2', parsed)
+    # journalctl invoked with the full systemd unit and a literal arg vector.
+    argv = run.call_args[0][0]
+    assert argv[0] == 'journalctl'
+    assert 'drifter-canbridge' in argv
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['ok'] is True
+    assert payload['unit'] == 'drifter-canbridge'
+    assert payload['lines'] == ['line one', 'line two']
+
+
+def test_logs_accepts_full_unit_name(monkeypatch):
+    fake = MagicMock(returncode=0, stdout='x\n', stderr='')
+    monkeypatch.setattr(h.subprocess, 'run', MagicMock(return_value=fake))
+    handler, parsed = _build_logs_handler('/api/logs/drifter-canbridge')
+    handler._serve_logs('drifter-canbridge', parsed)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['unit'] == 'drifter-canbridge'
+    assert payload['ok'] is True
+
+
+def test_logs_clamps_line_count(monkeypatch):
+    """n is clamped to [1, _LOG_MAX_LINES] before reaching journalctl."""
+    fake = MagicMock(returncode=0, stdout='', stderr='')
+    run = MagicMock(return_value=fake)
+    monkeypatch.setattr(h.subprocess, 'run', run)
+    handler, parsed = _build_logs_handler('/api/logs/canbridge?n=999999')
+    handler._serve_logs('canbridge?n=999999', parsed)
+    argv = run.call_args[0][0]
+    n_arg = argv[argv.index('-n') + 1]
+    assert int(n_arg) == h._LOG_MAX_LINES
+
+
+def test_logs_handles_missing_journalctl(monkeypatch):
+    """No journalctl (e.g. bench/non-systemd) → ok:False, not a 500."""
+    monkeypatch.setattr(h.subprocess, 'run',
+                        MagicMock(side_effect=FileNotFoundError()))
+    handler, parsed = _build_logs_handler('/api/logs/canbridge')
+    handler._serve_logs('canbridge', parsed)
+    payload = handler._serve_json.call_args[0][0]
+    assert payload['ok'] is False
+    assert 'journalctl' in payload['error']

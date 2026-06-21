@@ -8,6 +8,9 @@ import com.mz1312.drifter.AppContainer
 import com.mz1312.drifter.DrifterApp
 import com.mz1312.drifter.data.DrifterRepository
 import com.mz1312.drifter.data.model.ApiResult
+import com.mz1312.drifter.data.model.AssistantReply
+import com.mz1312.drifter.data.model.ChatMessage
+import com.mz1312.drifter.data.model.ChatRole
 import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.data.model.ModeInfo
 import com.mz1312.drifter.data.model.TelemetryEvent
@@ -83,6 +86,13 @@ class DrifterViewModel(
     private val _telemetry = MutableStateFlow(TelemetryUiState())
     val telemetry: StateFlow<TelemetryUiState> = _telemetry.asStateFlow()
     private var telemetryJob: Job? = null
+
+    // ── AI assistant ───────────────────────────────────────────────────
+    private val _chat = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chat: StateFlow<List<ChatMessage>> = _chat.asStateFlow()
+
+    private val _assistantBusy = MutableStateFlow(false)
+    val assistantBusy: StateFlow<Boolean> = _assistantBusy.asStateFlow()
 
     // ── One-shot messages (snackbars) ──────────────────────────────────
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -223,6 +233,31 @@ class DrifterViewModel(
             signals = next,
             frameCount = prev.frameCount + 1,
         )
+    }
+
+    // ── Assistant turn ──────────────────────────────────────────────────
+    fun askAssistant(text: String) {
+        val q = text.trim()
+        if (q.isEmpty() || _assistantBusy.value) return
+        val withUser = _chat.value + ChatMessage(ChatRole.USER, q)
+        _chat.value = withUser
+        _assistantBusy.value = true
+        viewModelScope.launch {
+            val reply = repo.askAssistant(withUser)
+            val msg = when (reply) {
+                is AssistantReply.Ok -> ChatMessage(ChatRole.ASSISTANT, reply.text, via = reply.via)
+                is AssistantReply.Refused ->
+                    ChatMessage(ChatRole.ASSISTANT, reply.explanation, via = "refused")
+                is AssistantReply.Failed ->
+                    ChatMessage(ChatRole.ASSISTANT, reply.message, via = "error")
+            }
+            _chat.value = _chat.value + msg
+            _assistantBusy.value = false
+        }
+    }
+
+    fun clearChat() {
+        _chat.value = emptyList()
     }
 
     fun updateSettings(next: AppSettings) {

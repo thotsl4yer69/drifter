@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mz1312.drifter.data.store.AppSettings
@@ -41,6 +42,8 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
     var wsPort by rememberSaveable { mutableStateOf(current.wsPort.toString()) }
     var poll by rememberSaveable { mutableStateOf(current.pollSeconds.toString()) }
     var auto by rememberSaveable { mutableStateOf(current.autoRefresh) }
+    var apiKey by rememberSaveable { mutableStateOf(current.claudeApiKey) }
+    var model by rememberSaveable { mutableStateOf(current.claudeModel) }
 
     fun save() {
         vm.updateSettings(
@@ -50,6 +53,8 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 wsPort = wsPort.toIntOrNull() ?: AppSettings.DEFAULT_WS_PORT,
                 pollSeconds = poll.toIntOrNull() ?: AppSettings.DEFAULT_POLL_SECONDS,
                 autoRefresh = auto,
+                claudeApiKey = apiKey.trim(),
+                claudeModel = model.trim().ifBlank { AppSettings.DEFAULT_CLAUDE_MODEL },
             ),
         )
         vm.refreshNow()
@@ -107,6 +112,34 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 supportingText = { Text("2–60s. /healthz is cached 2s server-side, so frequent polling is cheap.") },
                 enabled = auto,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        SectionCard("AI assistant brain") {
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = { apiKey = it },
+                label = { Text("Claude API key") },
+                supportingText = {
+                    Text(
+                        "Enables the cloud brain — it works even when the Pi is " +
+                            "unreachable. Stored on-device only. Leave blank to use the " +
+                            "Pi's own on-board LLM (down when the Pi is).",
+                    )
+                },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = model,
+                onValueChange = { model = it },
+                label = { Text("Claude model") },
+                supportingText = { Text("Default ${AppSettings.DEFAULT_CLAUDE_MODEL} (most capable). Use a faster model for snappier, cheaper replies.") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

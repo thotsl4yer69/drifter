@@ -16,6 +16,7 @@ the node is running with no display attached.
 | Feature | Why it matters headless |
 |---|---|
 | **Connection Doctor** | Probes every port the Pi should expose (8080/8081/8082/8443/35000/1883) **from the phone**, with latency + a plain-English verdict and fix steps. Runs even when the node is totally unreachable — the one diagnostic the web UI can never give you. |
+| **AI Assistant** | A free-form troubleshooting chat — *not* a fixed checklist. It gathers a live snapshot (health + port probes + **real `journalctl` logs** of failing services) and an LLM reasons over it, so it can help with faults nobody pre-wrote a fix for. Backed by **Claude** (works even when the Pi is down) with the **Pi's on-board LLM** as fallback. |
 | **Service triage** | Parses `/healthz`, groups all units by domain, and distinguishes *failed* (real fault, HTTP 503) from *hardware-pending* (dongle not plugged in — expected on the bench). Per-service remediation baked in from `CLAUDE.md`/`config.py`. |
 | **Remote control** | Switch persona (`diag`/`drive`/`foot`/`both`) and start/stop/restart arsenal units over the gated `/api` surface — and it surfaces the node's own refusals (403 off-subnet, 409 in drive mode) instead of failing silently. |
 | **Arsenal / Carsenal** | Read-only status fan-out for the Kali-backed red-team + CAN-offense tooling (CAN discovery & captures, Flipper, Marauder, Kismet, HID, Ghost), with the foot-mode gate enforced. |
@@ -26,17 +27,40 @@ the node is running with no display attached.
 
 ```
 data/
-  model/        Healthz, ModeInfo, results, TelemetryEvent, ApiResult
-  net/          DrifterApi (OkHttp), ConnectionDoctor (TCP probes), TelemetrySocket (WS)
-  store/        SettingsStore (DataStore: host/ports/poll)
-  Knowledge.kt  per-service role + remediation + hw-pending/Kali tags
+  model/        Healthz, ModeInfo, results, TelemetryEvent, LogsResponse, Chat, ApiResult
+  net/          DrifterApi (OkHttp), ConnectionDoctor (TCP probes), TelemetrySocket (WS),
+                AssistantClient (Anthropic Messages API over OkHttp)
+  store/        SettingsStore (DataStore: host/ports/poll + Claude key/model)
+  Knowledge.kt        per-service role + remediation + hw-pending/Kali tags
+  AssistantEngine.kt  system prompt (embedded architecture) + live-snapshot builder
   DrifterRepository.kt
 ui/
-  DrifterViewModel.kt   one AndroidViewModel: polling, health, doctor, arsenal, telemetry
-  overview/  doctor/  services/  arsenal/  telemetry/  settings/
+  DrifterViewModel.kt   one AndroidViewModel: polling, health, doctor, arsenal, telemetry, chat
+  overview/  doctor/  assistant/  services/  arsenal/  telemetry/  settings/
   common/    Loadable, reusable Compose components
   theme/     MZ1312 amber-on-black Material 3 theme
 ```
+
+### The AI Assistant brain
+
+The assistant turns the app from a fixed lookup table into something that can
+diagnose *anything*, because it reasons over live evidence instead of a
+hard-coded list:
+
+- **Evidence**: each turn the app gathers `/healthz`, the Connection Doctor port
+  probes, and the last journal lines of any genuinely-failed service via a new
+  read-only **`GET /api/logs/<unit>`** endpoint on the Pi (added in
+  `src/web_dashboard_handlers.py`; same `10.42.0.0/24` gate as the rest of
+  `/api`, allowlisted to known units, `journalctl` invoked with a literal arg
+  vector — never a shell).
+- **Brain**: with a Claude API key set (Settings), the cloud model answers and
+  keeps working even when the Pi is unreachable; on any cloud failure — or with
+  no key — it falls back to the Pi's own on-board LLM (`POST /api/query`).
+- **Client**: `AssistantClient` calls `POST https://api.anthropic.com/v1/messages`
+  directly over OkHttp (the official Anthropic *Java* SDK targets the server JVM
+  and is a poor fit on Android). Default model `claude-opus-4-8`, adaptive
+  thinking, no sampling params, with `stop_reason: "refusal"` handled. The key
+  is stored on-device in DataStore only.
 
 - **Kotlin + Jetpack Compose (Material 3)**, single-Activity, bottom-nav.
 - **OkHttp** for HTTP + WebSocket, **kotlinx.serialization** for JSON,
@@ -69,3 +93,7 @@ compileSdk 35, minSdk 26 (Android 8.0+).
    **Settings** if the Pi is on another LAN.
 3. **Overview** shows node health at a glance; if it's unreachable, tap
    **Run Connection Doctor** for the port-by-port verdict.
+4. **(Optional) Settings → AI assistant brain**: paste a Claude API key to
+   enable the cloud brain (recommended — it works even when the Pi is down).
+   Without a key the **Assistant** tab still works via the Pi's on-board LLM,
+   but only while the Pi itself is reachable.

@@ -21,6 +21,11 @@ data/
 # cockpit-v4's data adapter is source code, not a runtime data dir — track it.
 !cockpit-v4/src/data/
 !cockpit-v4/src/data/**
+# The Android app's Kotlin `data/` package is ALSO source — without this the
+# unanchored `data/` rule swallows the whole data layer (models, net clients,
+# repository) and ships a non-compiling app.
+!android/app/src/main/java/com/mz1312/drifter/data/
+!android/app/src/main/java/com/mz1312/drifter/data/**
 reports/
 .vscode/
 .idea/

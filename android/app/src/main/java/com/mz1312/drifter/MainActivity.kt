@@ -31,6 +31,7 @@ import androidx.navigation.compose.rememberNavController
 import com.mz1312.drifter.ui.DrifterViewModel
 import com.mz1312.drifter.ui.DrifterViewModelFactory
 import com.mz1312.drifter.ui.arsenal.ArsenalScreen
+import com.mz1312.drifter.ui.assistant.AssistantScreen
 import com.mz1312.drifter.ui.doctor.DoctorScreen
 import com.mz1312.drifter.ui.nav.Destination
 import com.mz1312.drifter.ui.overview.OverviewScreen
@@ -119,6 +120,7 @@ private fun DrifterApp(vm: DrifterViewModel) {
         ) {
             composable(Destination.Overview.route) { OverviewScreen(vm, navController) }
             composable(Destination.Doctor.route) { DoctorScreen(vm) }
+            composable(Destination.Assistant.route) { AssistantScreen(vm) }
             composable(Destination.Services.route) { ServicesScreen(vm) }
             composable(Destination.Arsenal.route) { ArsenalScreen(vm) }
             composable(Destination.Telemetry.route) { TelemetryScreen(vm) }
