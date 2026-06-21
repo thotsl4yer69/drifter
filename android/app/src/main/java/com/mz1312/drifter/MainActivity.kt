@@ -78,7 +78,23 @@ private fun DrifterApp(vm: DrifterViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("$title  ·  ${settings.host}") },
+                title = {
+                    androidx.compose.foundation.layout.Column {
+                        Text(
+                            "MZ1312 · DRIFTER",
+                            style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "$title  ·  ${settings.host}",
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                ),
                 actions = {
                     IconButton(onClick = { vm.refreshNow() }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
@@ -94,7 +110,9 @@ private fun DrifterApp(vm: DrifterViewModel) {
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
                 Destination.bottomBar.forEach { dest ->
                     NavigationBarItem(
                         selected = currentRoute == dest.route,
@@ -107,6 +125,13 @@ private fun DrifterApp(vm: DrifterViewModel) {
                         },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
                         label = { Text(dest.label) },
+                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                            selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                            selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                            indicatorColor = androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            unselectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }
