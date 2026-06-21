@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -23,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -67,6 +69,25 @@ private fun DrifterApp(vm: DrifterViewModel) {
     val snackbar = remember { SnackbarHostState() }
 
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val health by vm.health.collectAsStateWithLifecycle()
+
+    // Live link pip shown in the app bar on every tab — at-a-glance "can I reach
+    // the node?" without opening Overview.
+    val connSeverity = when (val h = health) {
+        is com.mz1312.drifter.ui.common.Loadable.Success -> when (h.value.health) {
+            com.mz1312.drifter.data.model.Healthz.Health.OK ->
+                com.mz1312.drifter.ui.common.Severity.GOOD
+            com.mz1312.drifter.data.model.Healthz.Health.HW_PENDING ->
+                com.mz1312.drifter.ui.common.Severity.WARN
+            com.mz1312.drifter.data.model.Healthz.Health.DEGRADED ->
+                com.mz1312.drifter.ui.common.Severity.BAD
+            com.mz1312.drifter.data.model.Healthz.Health.UNKNOWN ->
+                com.mz1312.drifter.ui.common.Severity.NEUTRAL
+        }
+        is com.mz1312.drifter.ui.common.Loadable.Error ->
+            com.mz1312.drifter.ui.common.Severity.BAD
+        else -> com.mz1312.drifter.ui.common.Severity.NEUTRAL
+    }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         vm.messages.collectLatest { snackbar.showSnackbar(it) }
@@ -96,6 +117,10 @@ private fun DrifterApp(vm: DrifterViewModel) {
                     scrolledContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
                 ),
                 actions = {
+                    com.mz1312.drifter.ui.common.StatusDot(connSeverity, 9)
+                    androidx.compose.foundation.layout.Spacer(
+                        Modifier.width(8.dp),
+                    )
                     IconButton(onClick = { vm.refreshNow() }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                     }
