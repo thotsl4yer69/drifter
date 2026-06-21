@@ -31,7 +31,11 @@ class HealthWatchWorker(
         val state = AlertState(applicationContext)
         val previous = state.last
         if (current != previous) {
-            notifyTransition(previous, current, settings.host)
+            // Only alert on a transition from an established baseline. The first
+            // observation (previous == null) just records state — otherwise
+            // enabling alerts while away from the car would fire a bogus
+            // "unreachable" the instant the watch first runs.
+            if (previous != null) notifyTransition(previous, current, settings.host)
             state.last = current
         }
         return Result.success()
