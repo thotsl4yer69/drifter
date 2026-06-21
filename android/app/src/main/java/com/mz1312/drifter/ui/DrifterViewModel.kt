@@ -40,10 +40,14 @@ import kotlinx.serialization.json.JsonPrimitive
 data class TelemetryUiState(
     val socket: SocketState = SocketState.Closed("idle"),
     val signals: Map<String, SignalValue> = emptyMap(),
+    /** Rolling recent numeric values per signal, for sparklines. */
+    val history: Map<String, List<Float>> = emptyMap(),
     val frameCount: Long = 0,
 ) {
     val connected: Boolean get() = socket is SocketState.Open
 }
+
+private const val HISTORY_LEN = 40
 
 data class SignalValue(val display: String, val ts: Double)
 
@@ -232,10 +236,19 @@ class DrifterViewModel(
 
     private fun applyFrame(event: TelemetryEvent) {
         val prev = _telemetry.value
+        val display = displayValue(event.data)
         val next = LinkedHashMap(prev.signals)
-        next[event.shortTopic] = SignalValue(displayValue(event.data), event.ts)
+        next[event.shortTopic] = SignalValue(display, event.ts)
+
+        // Append to the per-signal history ring when the value is numeric.
+        val history = display.toFloatOrNull()?.let { num ->
+            val updated = (prev.history[event.shortTopic].orEmpty() + num).takeLast(HISTORY_LEN)
+            LinkedHashMap(prev.history).apply { put(event.shortTopic, updated) }
+        } ?: prev.history
+
         _telemetry.value = prev.copy(
             signals = next,
+            history = history,
             frameCount = prev.frameCount + 1,
         )
     }

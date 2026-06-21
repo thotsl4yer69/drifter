@@ -87,8 +87,8 @@ fun TelemetryScreen(vm: DrifterViewModel) {
             item { SectionLabel("Vehicle vitals") }
             items(gauges.chunked(3), key = { row -> "g-" + row.joinToString(",") { it.first } }) { rowItems ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    rowItems.forEach { (_, spec, v) ->
-                        Gauge(spec, v, Modifier.weight(1f))
+                    rowItems.forEach { (key, spec, v) ->
+                        GaugeTile(spec, v, state.history[key].orEmpty(), Modifier.weight(1f))
                     }
                     // Keep gauges square in a partial final row.
                     repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }

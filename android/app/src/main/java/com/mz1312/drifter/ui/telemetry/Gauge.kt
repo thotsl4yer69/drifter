@@ -3,8 +3,10 @@ package com.mz1312.drifter.ui.telemetry
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -14,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -107,3 +110,36 @@ fun Gauge(spec: GaugeSpec, value: Double?, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** A gauge with a rolling trend sparkline beneath it. */
+@Composable
+fun GaugeTile(spec: GaugeSpec, value: Double?, history: List<Float>, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Gauge(spec, value, Modifier.fillMaxWidth())
+        Sparkline(history, bandColor(spec, value))
+    }
+}
+
+/** A thin rolling line chart of recent values, min/max auto-scaled. */
+@Composable
+fun Sparkline(values: List<Float>, color: Color, modifier: Modifier = Modifier) {
+    if (values.size < 2) {
+        Spacer(modifier.fillMaxWidth().height(SPARK_HEIGHT))
+        return
+    }
+    Canvas(modifier.fillMaxWidth().height(SPARK_HEIGHT).padding(horizontal = 8.dp)) {
+        val min = values.min()
+        val max = values.max()
+        val range = (max - min).takeIf { it > 0f } ?: 1f
+        val dx = if (values.size > 1) size.width / (values.size - 1) else size.width
+        val path = Path()
+        values.forEachIndexed { i, v ->
+            val x = i * dx
+            val y = size.height - ((v - min) / range) * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
+private val SPARK_HEIGHT = 22.dp
