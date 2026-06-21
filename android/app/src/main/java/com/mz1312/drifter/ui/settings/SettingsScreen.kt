@@ -125,8 +125,8 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 supportingText = {
                     Text(
                         "Enables the cloud brain — it works even when the Pi is " +
-                            "unreachable. Stored on-device only. Leave blank to use the " +
-                            "Pi's own on-board LLM (down when the Pi is).",
+                            "unreachable. Stored encrypted on-device (Android Keystore). " +
+                            "Leave blank to use the Pi's own on-board LLM (down when the Pi is).",
                     )
                 },
                 singleLine = true,

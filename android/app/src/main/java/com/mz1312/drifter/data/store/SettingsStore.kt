@@ -46,6 +46,10 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 class SettingsStore(private val context: Context) {
 
+    // The Claude API key lives in the Keystore-backed encrypted store, not in
+    // (plaintext) DataStore. Everything else stays in DataStore.
+    private val secure = SecureStore(context)
+
     private object Keys {
         val HOST = stringPreferencesKey("host")
         val HTTP_PORT = intPreferencesKey("http_port")
@@ -63,20 +67,24 @@ class SettingsStore(private val context: Context) {
             wsPort = p[Keys.WS_PORT] ?: AppSettings.DEFAULT_WS_PORT,
             pollSeconds = (p[Keys.POLL] ?: AppSettings.DEFAULT_POLL_SECONDS).coerceIn(2, 60),
             autoRefresh = p[Keys.AUTO] ?: true,
-            claudeApiKey = p[Keys.CLAUDE_KEY] ?: "",
+            // Prefer the encrypted store; fall back to any legacy plaintext key
+            // from an older build (migrated to the encrypted store on next save).
+            claudeApiKey = secure.apiKey.ifBlank { p[Keys.CLAUDE_KEY].orEmpty() },
             claudeModel = p[Keys.CLAUDE_MODEL]?.ifBlank { null } ?: AppSettings.DEFAULT_CLAUDE_MODEL,
         )
     }
 
     suspend fun update(settings: AppSettings) {
+        secure.apiKey = settings.claudeApiKey.trim()
         context.dataStore.edit { p ->
             p[Keys.HOST] = settings.host.trim()
             p[Keys.HTTP_PORT] = settings.httpPort
             p[Keys.WS_PORT] = settings.wsPort
             p[Keys.POLL] = settings.pollSeconds.coerceIn(2, 60)
             p[Keys.AUTO] = settings.autoRefresh
-            p[Keys.CLAUDE_KEY] = settings.claudeApiKey.trim()
             p[Keys.CLAUDE_MODEL] = settings.claudeModel.trim().ifBlank { AppSettings.DEFAULT_CLAUDE_MODEL }
+            // Drop any legacy plaintext copy now that it lives encrypted.
+            p.remove(Keys.CLAUDE_KEY)
         }
     }
 }
