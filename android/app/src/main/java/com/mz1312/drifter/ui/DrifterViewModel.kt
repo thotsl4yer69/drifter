@@ -36,6 +36,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Live telemetry view: socket state + the latest value per topic + a feed. */
 data class TelemetryUiState(
@@ -49,6 +51,16 @@ data class TelemetryUiState(
 }
 
 private const val HISTORY_LEN = 40
+private const val GPS_PATH_LEN = 600
+
+/** A plain lat/lng point (kept provider-agnostic; the map layer maps to LatLng). */
+data class LatLngPoint(val lat: Double, val lng: Double)
+
+/** Current GPS fix + the drive path so far, off the `drifter/gps/fix` topic. */
+data class GpsState(
+    val current: LatLngPoint? = null,
+    val path: List<LatLngPoint> = emptyList(),
+)
 
 data class SignalValue(val display: String, val ts: Double)
 
@@ -92,6 +104,10 @@ class DrifterViewModel(
     private val _telemetry = MutableStateFlow(TelemetryUiState())
     val telemetry: StateFlow<TelemetryUiState> = _telemetry.asStateFlow()
     private var telemetryJob: Job? = null
+
+    // ── GPS (derived from the same telemetry stream) ───────────────────
+    private val _gps = MutableStateFlow(GpsState())
+    val gps: StateFlow<GpsState> = _gps.asStateFlow()
 
     // ── Service logs (lazy, per-unit) ───────────────────────────────────
     private val _logs = MutableStateFlow<Map<String, Loadable<List<String>>>>(emptyMap())
@@ -236,6 +252,8 @@ class DrifterViewModel(
     }
 
     private fun applyFrame(event: TelemetryEvent) {
+        if (event.shortTopic == "gps/fix") applyGpsFix(event.data)
+
         val prev = _telemetry.value
         val display = displayValue(event.data)
         val next = LinkedHashMap(prev.signals)
@@ -303,6 +321,17 @@ class DrifterViewModel(
 
     fun clearChat() {
         _chat.value = emptyList()
+    }
+
+    private fun applyGpsFix(data: JsonElement) {
+        val obj = data as? JsonObject ?: return
+        val lat = obj["lat"]?.jsonPrimitive?.doubleOrNull ?: return
+        val lng = (obj["lng"] ?: obj["lon"])?.jsonPrimitive?.doubleOrNull ?: return
+        val point = LatLngPoint(lat, lng)
+        val prev = _gps.value
+        // Skip duplicate fixes (a stationary node republishes the same point).
+        if (prev.current == point) return
+        _gps.value = GpsState(current = point, path = (prev.path + point).takeLast(GPS_PATH_LEN))
     }
 
     fun updateSettings(next: AppSettings) {

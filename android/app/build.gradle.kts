@@ -20,6 +20,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        // Google Maps key is injected from a Gradle property, never committed:
+        // set MAPS_API_KEY in ~/.gradle/gradle.properties, pass -PMAPS_API_KEY=…,
+        // or export ORG_GRADLE_PROJECT_MAPS_API_KEY (e.g. a CI secret). Empty is
+        // fine — the app still builds; the map just renders blank without a key.
+        manifestPlaceholders["MAPS_API_KEY"] =
+            (project.findProperty("MAPS_API_KEY") as String?).orEmpty()
     }
 
     buildTypes {
@@ -63,6 +70,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.maps.compose)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)

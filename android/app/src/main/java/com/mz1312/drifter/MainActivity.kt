@@ -185,6 +185,7 @@ private fun DrifterApp(vm: DrifterViewModel) {
             composable(Destination.Services.route) { ServicesScreen(vm) }
             composable(Destination.Arsenal.route) { ArsenalScreen(vm) }
             composable(Destination.Telemetry.route) { TelemetryScreen(vm) }
+            composable(Destination.Map.route) { com.mz1312.drifter.ui.map.MapScreen(vm) }
             composable(Destination.SETTINGS_ROUTE) {
                 SettingsScreen(vm, onDone = { navController.popBackStack() })
             }
