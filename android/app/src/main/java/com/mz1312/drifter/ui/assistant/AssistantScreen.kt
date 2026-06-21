@@ -29,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mz1312.drifter.data.model.ChatMessage
 import com.mz1312.drifter.data.model.ChatRole
+import com.mz1312.drifter.data.model.ProposedAction
 import com.mz1312.drifter.ui.DrifterViewModel
 
 /**
@@ -84,7 +86,9 @@ fun AssistantScreen(vm: DrifterViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             ) {
-                items(chat) { msg -> ChatBubble(msg) }
+                items(chat) { msg ->
+                    ChatBubble(msg, enabled = !busy, onAction = { vm.runProposedAction(it) })
+                }
                 if (busy) {
                     item { ThinkingBubble() }
                 }
@@ -168,7 +172,7 @@ private fun EmptyState(hasCloudBrain: Boolean, enabled: Boolean, onAsk: (String)
 }
 
 @Composable
-private fun ChatBubble(msg: ChatMessage) {
+private fun ChatBubble(msg: ChatMessage, enabled: Boolean, onAction: (ProposedAction) -> Unit) {
     val mine = msg.role == ChatRole.USER
     val isProblem = msg.via == "error" || msg.via == "refused"
     val container = when {
@@ -204,6 +208,18 @@ private fun ChatBubble(msg: ChatMessage) {
                         style = MaterialTheme.typography.labelSmall,
                         color = onContainer.copy(alpha = 0.7f),
                     )
+                }
+                if (!mine && msg.actions.isNotEmpty()) {
+                    Spacer(Modifier.padding(top = 6.dp))
+                    msg.actions.forEach { act ->
+                        OutlinedButton(
+                            onClick = { onAction(act) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(act.label)
+                        }
+                    }
                 }
             }
         }

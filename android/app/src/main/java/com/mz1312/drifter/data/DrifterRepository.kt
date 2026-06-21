@@ -8,6 +8,7 @@ import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.data.model.LogsResponse
 import com.mz1312.drifter.data.model.ModeInfo
 import com.mz1312.drifter.data.model.ModeSwitchResult
+import com.mz1312.drifter.data.model.ProposedAction
 import com.mz1312.drifter.data.model.ServiceActionResult
 import com.mz1312.drifter.data.net.AssistantClient
 import com.mz1312.drifter.data.net.ConnectionDoctor
@@ -93,10 +94,15 @@ class DrifterRepository {
         val s = settings
         if (s.hasCloudBrain) {
             val system = AssistantEngine.systemPrompt(buildSnapshot())
+            val proposed = mutableListOf<ProposedAction>()
             val reply = AssistantClient(s.claudeApiKey, s.claudeModel)
                 .ask(system, history, AssistantEngine.tools()) { name, input ->
-                    executeTool(name, input)
+                    if (name == "propose_fix") proposeFix(input, proposed)
+                    else executeTool(name, input)
                 }
+            if (reply is AssistantReply.Ok && proposed.isNotEmpty()) {
+                return reply.copy(actions = proposed.distinctBy { it.kind to it.target })
+            }
             if (reply !is AssistantReply.Failed) return reply
             // Cloud brain failed — try the Pi's on-board LLM before giving up.
             piFallback(history)?.let { return it }
@@ -107,6 +113,24 @@ class DrifterRepository {
                 "LLM didn't answer. Add a key to enable the cloud brain — it keeps " +
                 "working even when the Pi itself is unreachable.",
         )
+    }
+
+    /** Record a proposed fix and acknowledge it to the model (does NOT run it). */
+    private fun proposeFix(input: JsonObject, sink: MutableList<ProposedAction>): String {
+        val action = input["action"]?.jsonPrimitive?.contentOrNull ?: "restart_service"
+        var target = input["target"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        if (target.isEmpty()) return "error: missing 'target'"
+        return when (action) {
+            "set_mode" -> {
+                sink += ProposedAction("set_mode", target, "Switch to $target mode")
+                "Proposed to the operator: switch to $target mode. They confirm with a tap."
+            }
+            else -> {
+                if (!target.startsWith("drifter-")) target = "drifter-$target"
+                sink += ProposedAction("restart_service", target, "Restart $target")
+                "Proposed to the operator: restart $target. They confirm with a tap — do not assume it ran."
+            }
+        }
     }
 
     /** Execute one read-only assistant tool call against the node. */

@@ -84,6 +84,12 @@ object AssistantEngine {
         Prefer pulling a service's logs over speculating about it. Investigate
         first, then answer.
 
+        When the fix is restarting a service or switching mode, call
+        propose_fix(action, target, reason) — that gives the operator a one-tap
+        confirm button. Do NOT claim you restarted anything; you propose, they
+        tap. propose_fix is the ONLY action with side effects; everything else
+        you can read freely.
+
         ## How to answer
         Lead with the likely cause in one sentence, then the fix as numbered
         steps. Distinguish "broken" from "waiting for hardware" and from
@@ -153,6 +159,67 @@ object AssistantEngine {
                     buildJsonObject {
                         put("type", "object")
                         put("properties", buildJsonObject {})
+                    },
+                )
+            },
+        )
+        add(
+            buildJsonObject {
+                put("name", "propose_fix")
+                put(
+                    "description",
+                    "Recommend a corrective action to the operator as a one-tap confirm " +
+                        "button. Does NOT execute — the operator confirms. Use for the only " +
+                        "two side-effecting fixes available: restarting a service or " +
+                        "switching the node's mode.",
+                )
+                put(
+                    "input_schema",
+                    buildJsonObject {
+                        put("type", "object")
+                        put(
+                            "properties",
+                            buildJsonObject {
+                                put(
+                                    "action",
+                                    buildJsonObject {
+                                        put("type", "string")
+                                        put(
+                                            "enum",
+                                            buildJsonArray {
+                                                add("restart_service")
+                                                add("set_mode")
+                                            },
+                                        )
+                                    },
+                                )
+                                put(
+                                    "target",
+                                    buildJsonObject {
+                                        put("type", "string")
+                                        put(
+                                            "description",
+                                            "service unit (e.g. drifter-canbridge) or mode " +
+                                                "(diag/drive/foot/both)",
+                                        )
+                                    },
+                                )
+                                put(
+                                    "reason",
+                                    buildJsonObject {
+                                        put("type", "string")
+                                        put("description", "short why, shown to the operator")
+                                    },
+                                )
+                            },
+                        )
+                        put(
+                            "required",
+                            buildJsonArray {
+                                add("action")
+                                add("target")
+                            },
+                        )
                     },
                 )
             },

@@ -14,6 +14,7 @@ import com.mz1312.drifter.data.model.ChatRole
 import com.mz1312.drifter.data.model.FailureKind
 import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.data.model.ModeInfo
+import com.mz1312.drifter.data.model.ProposedAction
 import com.mz1312.drifter.data.model.TelemetryEvent
 import com.mz1312.drifter.data.net.DoctorReport
 import com.mz1312.drifter.data.net.SocketSignal
@@ -280,7 +281,8 @@ class DrifterViewModel(
         viewModelScope.launch {
             val reply = repo.askAssistant(withUser)
             val msg = when (reply) {
-                is AssistantReply.Ok -> ChatMessage(ChatRole.ASSISTANT, reply.text, via = reply.via)
+                is AssistantReply.Ok ->
+                    ChatMessage(ChatRole.ASSISTANT, reply.text, via = reply.via, actions = reply.actions)
                 is AssistantReply.Refused ->
                     ChatMessage(ChatRole.ASSISTANT, reply.explanation, via = "refused")
                 is AssistantReply.Failed ->
@@ -288,6 +290,14 @@ class DrifterViewModel(
             }
             _chat.value = _chat.value + msg
             _assistantBusy.value = false
+        }
+    }
+
+    /** Run a fix the assistant proposed (operator-confirmed via the chat button). */
+    fun runProposedAction(action: ProposedAction) {
+        when (action.kind) {
+            "set_mode" -> setMode(action.target)
+            else -> serviceAction(action.target, "restart")
         }
     }
 
