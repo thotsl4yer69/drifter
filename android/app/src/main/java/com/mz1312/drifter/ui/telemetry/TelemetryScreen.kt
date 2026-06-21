@@ -29,12 +29,6 @@ import com.mz1312.drifter.ui.common.SectionCard
 import com.mz1312.drifter.ui.common.Severity
 import com.mz1312.drifter.ui.common.StatusPill
 
-/** Topics surfaced first — the vehicle vitals an operator scans for. */
-private val PRIORITY = listOf(
-    "engine/rpm", "vehicle/speed", "engine/coolant", "power/voltage",
-    "vehicle/fuel_lvl", "engine/load", "engine/throttle", "engine/iat",
-)
-
 @Composable
 fun TelemetryScreen(vm: DrifterViewModel) {
     val state by vm.telemetry.collectAsStateWithLifecycle()
@@ -53,9 +47,12 @@ fun TelemetryScreen(vm: DrifterViewModel) {
         is SocketState.Closed -> Severity.NEUTRAL to "CLOSED"
     }
 
-    val priority = PRIORITY.mapNotNull { key -> state.signals[key]?.let { key to it } }
+    // Signals with a gauge spec that we've actually received → render as gauges.
+    val gauges = SIGNAL_SPECS.entries
+        .filter { state.signals.containsKey(it.key) }
+        .map { (key, spec) -> Triple(key, spec, state.signals[key]?.display?.toDoubleOrNull()) }
     val rest = state.signals.entries
-        .filter { it.key !in PRIORITY }
+        .filter { it.key !in SIGNAL_SPECS }
         .sortedBy { it.key }
         .map { it.key to it.value }
 
@@ -86,9 +83,17 @@ fun TelemetryScreen(vm: DrifterViewModel) {
             }
         }
 
-        if (priority.isNotEmpty()) {
+        if (gauges.isNotEmpty()) {
             item { SectionLabel("Vehicle vitals") }
-            items(priority, key = { "p-${it.first}" }) { (topic, v) -> SignalRow(topic, v) }
+            items(gauges.chunked(3), key = { row -> "g-" + row.joinToString(",") { it.first } }) { rowItems ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    rowItems.forEach { (_, spec, v) ->
+                        Gauge(spec, v, Modifier.weight(1f))
+                    }
+                    // Keep gauges square in a partial final row.
+                    repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
 
         if (rest.isNotEmpty()) {
