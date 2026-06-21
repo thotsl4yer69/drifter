@@ -9,6 +9,14 @@
     <!-- Background node-health alerts (Android 13+ runtime-prompts for this). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- See the system speech recognizer (Android 11+ package visibility) so the
+         assistant's hands-free voice input is offered. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".DrifterApp"
         android:allowBackup="true"

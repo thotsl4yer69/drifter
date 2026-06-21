@@ -1,5 +1,10 @@
 package com.mz1312.drifter.ui.assistant
 
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -241,6 +248,19 @@ private fun Composer(
     enabled: Boolean,
     onSend: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val speechAvailable = remember { SpeechRecognizer.isRecognitionAvailable(context) }
+    // System speech recognizer — hands-free input while driving. The intent-based
+    // recognizer shows its own UI and handles the mic permission itself, so we
+    // need no RECORD_AUDIO grant. The transcript fills the box for a quick review.
+    val voiceLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()?.takeIf { it.isNotBlank() }
+            ?.let { onValueChange(it) }
+    }
+
     Row(
         Modifier.fillMaxWidth().padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -254,6 +274,23 @@ private fun Composer(
             maxLines = 4,
         )
         Spacer(Modifier.padding(4.dp))
+        if (speechAvailable) {
+            IconButton(
+                enabled = enabled,
+                onClick = {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(
+                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                        )
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask Drifter…")
+                    }
+                    runCatching { voiceLauncher.launch(intent) }
+                },
+            ) {
+                Icon(Icons.Filled.Mic, contentDescription = "Voice input")
+            }
+        }
         IconButton(
             onClick = onSend,
             enabled = enabled && value.isNotBlank(),
