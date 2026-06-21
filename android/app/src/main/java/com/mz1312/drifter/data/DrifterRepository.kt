@@ -19,6 +19,8 @@ import com.mz1312.drifter.data.store.AppSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Single seam between the UI and one Drifter node. Rebuilds its HTTP client
@@ -91,7 +93,10 @@ class DrifterRepository {
         val s = settings
         if (s.hasCloudBrain) {
             val system = AssistantEngine.systemPrompt(buildSnapshot())
-            val reply = AssistantClient(s.claudeApiKey, s.claudeModel).ask(system, history)
+            val reply = AssistantClient(s.claudeApiKey, s.claudeModel)
+                .ask(system, history, AssistantEngine.tools()) { name, input ->
+                    executeTool(name, input)
+                }
             if (reply !is AssistantReply.Failed) return reply
             // Cloud brain failed — try the Pi's on-board LLM before giving up.
             piFallback(history)?.let { return it }
@@ -102,6 +107,39 @@ class DrifterRepository {
                 "LLM didn't answer. Add a key to enable the cloud brain — it keeps " +
                 "working even when the Pi itself is unreachable.",
         )
+    }
+
+    /** Execute one read-only assistant tool call against the node. */
+    private suspend fun executeTool(name: String, input: JsonObject): String {
+        val a = api()
+        return when (name) {
+            "get_logs" -> {
+                val svc = input["service"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (svc.isEmpty()) {
+                    "error: missing 'service'"
+                } else when (val r = a.logs(svc, 80)) {
+                    is ApiResult.Ok ->
+                        if (!r.value.ok) "error: ${r.value.error ?: "logs unavailable"}"
+                        else r.value.lines.joinToString("\n").ifBlank { "(no recent log lines for $svc)" }
+                    is ApiResult.Err -> "error: ${r.message}"
+                }
+            }
+            "get_healthz" -> when (val r = a.healthz()) {
+                is ApiResult.Ok -> {
+                    val h = r.value
+                    "status=${h.status} mode=${h.mode} node=${h.nodeId} " +
+                        "failed=${h.servicesFailed} hw_pending=${h.servicesHwPending} " +
+                        "mqtt_connected=${h.mqttConnected} telemetry_fresh=${h.telemetryFresh} " +
+                        "active=${h.activeCount}/${h.totalCount}"
+                }
+                is ApiResult.Err -> "healthz error (the node may be degraded or unreachable): ${r.message}"
+            }
+            "get_telemetry" -> when (val r = a.getObject("/api/state")) {
+                is ApiResult.Ok -> r.value.toString().take(4000)
+                is ApiResult.Err -> "telemetry unavailable: ${r.message}"
+            }
+            else -> "error: unknown tool '$name'"
+        }
     }
 
     /** Gather the live evidence the model reasons over. */

@@ -2,6 +2,11 @@ package com.mz1312.drifter.data
 
 import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.data.net.ProbeResult
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Builds the prompt the cloud brain reasons over. The whole point of the
@@ -69,15 +74,90 @@ object AssistantEngine {
         When you recommend one of these, say exactly which (e.g. "restart
         drifter-dashboard", "switch to foot mode").
 
+        ## Tools — investigate, don't guess
+        You can call these read-only tools to gather evidence yourself:
+        - get_logs(service): last ~80 journal lines for a unit (short or full
+          name, e.g. "canbridge"). Pull the logs of ANY service you suspect —
+          don't limit yourself to what's in the snapshot.
+        - get_healthz(): re-fetch current status / failed vs hw-pending / mqtt.
+        - get_telemetry(): latest live vehicle signals.
+        Prefer pulling a service's logs over speculating about it. Investigate
+        first, then answer.
+
         ## How to answer
         Lead with the likely cause in one sentence, then the fix as numbered
         steps. Distinguish "broken" from "waiting for hardware" and from
-        "expected for this mode". Be concrete and brief. You can read services'
-        actual journal logs in the snapshot — quote the telling line. If the
-        evidence is insufficient, say what to check or which log to pull next.
-        You cannot physically touch the car; for hands-on fixes (plug in a dongle,
-        reseat a cable) give exact instructions for the operator to do.
+        "expected for this mode". Be concrete and brief. Quote the telling log
+        line. You cannot physically touch the car; for hands-on fixes (plug in a
+        dongle, reseat a cable) give exact instructions for the operator to do.
     """.trimIndent()
+
+    /** Read-only diagnostic tools the assistant can call to investigate. */
+    fun tools(): JsonArray = buildJsonArray {
+        add(
+            buildJsonObject {
+                put("name", "get_logs")
+                put(
+                    "description",
+                    "Read the last ~80 journald log lines for one drifter service unit " +
+                        "(e.g. 'drifter-canbridge' or just 'canbridge'). Use this to see " +
+                        "WHY a service is failing.",
+                )
+                put(
+                    "input_schema",
+                    buildJsonObject {
+                        put("type", "object")
+                        put(
+                            "properties",
+                            buildJsonObject {
+                                put(
+                                    "service",
+                                    buildJsonObject {
+                                        put("type", "string")
+                                        put("description", "unit name, short or full form")
+                                    },
+                                )
+                            },
+                        )
+                        put("required", buildJsonArray { add("service") })
+                    },
+                )
+            },
+        )
+        add(
+            buildJsonObject {
+                put("name", "get_healthz")
+                put(
+                    "description",
+                    "Re-fetch the node's current /healthz: status, mode, which services " +
+                        "are failed vs hardware-pending, and mqtt/telemetry freshness.",
+                )
+                put(
+                    "input_schema",
+                    buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {})
+                    },
+                )
+            },
+        )
+        add(
+            buildJsonObject {
+                put("name", "get_telemetry")
+                put(
+                    "description",
+                    "Get the node's latest live telemetry snapshot (engine/vehicle signals) as JSON.",
+                )
+                put(
+                    "input_schema",
+                    buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {})
+                    },
+                )
+            },
+        )
+    }
 
     fun systemPrompt(snapshot: String): String =
         "$ARCHITECTURE\n\n## LIVE NODE SNAPSHOT (captured just now)\n$snapshot"

@@ -7,7 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -21,20 +22,17 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Minimal Anthropic Messages API client (`POST /v1/messages`).
+ * Anthropic Messages API client with an agentic tool-use loop. Claude can call
+ * the read-only diagnostic tools we declare (pull a specific service's logs,
+ * re-check /healthz, read live telemetry) to investigate on its own, instead of
+ * being limited to whatever snapshot we pre-bundled — the full realisation of
+ * "assist with anything."
  *
- * Why raw HTTP and not the official SDK: the claude-api guidance maps Kotlin to
- * the Anthropic *Java* SDK, but that SDK targets the server JVM (java.net.http,
- * a large method count) and is a poor fit inside an Android app. The app already
- * depends on OkHttp, so we call the documented REST contract directly — the
- * supported path when the SDK doesn't fit the platform.
- *
- * Contract details that matter (and are easy to get wrong from memory):
- *   - headers: `x-api-key`, `anthropic-version: 2023-06-01`, `content-type`.
- *   - `thinking: {type: "adaptive"}` — the only thinking mode on Opus 4.8.
- *   - NO `temperature` / `top_p` / `budget_tokens` — all 400 on Opus 4.8.
- *   - a safety decline is HTTP 200 with `stop_reason: "refusal"`; check it
- *     before reading `content`, or you index into an empty array.
+ * Raw HTTP over OkHttp (the official Java SDK targets the server JVM and is a
+ * poor fit on Android). Contract details that matter: `x-api-key` +
+ * `anthropic-version`, adaptive thinking, no sampling params. When `stop_reason`
+ * is `tool_use` we echo the assistant's content back verbatim (so the required
+ * thinking blocks survive), run each tool, and return the results.
  */
 class AssistantClient(
     private val apiKey: String,
@@ -48,68 +46,124 @@ class AssistantClient(
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    suspend fun ask(system: String, history: List<ChatMessage>): AssistantReply =
-        withContext(Dispatchers.IO) {
-            val messages = buildJsonArray {
-                history.filter { it.text.isNotBlank() }.forEach { m ->
-                    add(
-                        buildJsonObject {
-                            put("role", if (m.role == ChatRole.USER) "user" else "assistant")
-                            put("content", m.text)
-                        },
+    /** Carries an early-exit reply (HTTP error, refusal, parse failure) out of
+     *  the loop without unwinding through every call site. */
+    private class StopWithReply(val reply: AssistantReply) : Exception()
+
+    suspend fun ask(
+        system: String,
+        history: List<ChatMessage>,
+        tools: JsonArray,
+        executeTool: suspend (name: String, input: JsonObject) -> String,
+    ): AssistantReply = withContext(Dispatchers.IO) {
+        val messages = mutableListOf<JsonElement>()
+        history.filter { it.text.isNotBlank() }.forEach { m ->
+            messages += buildJsonObject {
+                put("role", if (m.role == ChatRole.USER) "user" else "assistant")
+                put("content", m.text)
+            }
+        }
+
+        try {
+            repeat(MAX_ITERATIONS) {
+                val root = postRaw(buildPayload(system, tools, messages))
+
+                if (root["stop_reason"]?.jsonPrimitive?.contentOrNull == "refusal") {
+                    val why = root["stop_details"]?.jsonObject
+                        ?.get("explanation")?.jsonPrimitive?.contentOrNull
+                    return@withContext AssistantReply.Refused(
+                        why ?: "Claude declined this request for safety reasons.",
                     )
                 }
-            }
-            val payload = buildJsonObject {
-                put("model", model)
-                put("max_tokens", MAX_TOKENS)
-                put("system", system)
-                put("thinking", buildJsonObject { put("type", "adaptive") })
-                put("messages", messages)
-            }.toString()
 
-            val request = Request.Builder()
-                .url(ENDPOINT)
-                .addHeader("x-api-key", apiKey)
-                .addHeader("anthropic-version", ANTHROPIC_VERSION)
-                .addHeader("content-type", "application/json")
-                .post(payload.toRequestBody(JSON_MEDIA))
-                .build()
+                val content = root["content"] as? JsonArray ?: JsonArray(emptyList())
 
-            try {
-                client.newCall(request).execute().use { resp ->
-                    val raw = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) httpError(resp.code, raw) else parse(raw)
+                if (root["stop_reason"]?.jsonPrimitive?.contentOrNull == "tool_use") {
+                    // Echo the assistant turn verbatim (keeps thinking blocks intact).
+                    messages += buildJsonObject {
+                        put("role", "assistant")
+                        put("content", content)
+                    }
+                    // Run each tool here in the coroutine body (executeTool is
+                    // suspend — it can't be called inside a buildJsonArray lambda).
+                    val resultBlocks = mutableListOf<JsonElement>()
+                    for (block in content) {
+                        val o = block.jsonObject
+                        if (o["type"]?.jsonPrimitive?.contentOrNull != "tool_use") continue
+                        val id = o["id"]?.jsonPrimitive?.contentOrNull ?: continue
+                        val name = o["name"]?.jsonPrimitive?.contentOrNull ?: continue
+                        val input = o["input"] as? JsonObject ?: JsonObject(emptyMap())
+                        val out = runCatching { executeTool(name, input) }
+                            .getOrElse { "tool error: ${it.message}" }
+                        resultBlocks += buildJsonObject {
+                            put("type", "tool_result")
+                            put("tool_use_id", id)
+                            put("content", out)
+                        }
+                    }
+                    messages += buildJsonObject {
+                        put("role", "user")
+                        put("content", JsonArray(resultBlocks))
+                    }
+                    // …and loop for the next turn.
+                } else {
+                    val text = content.mapNotNull { b ->
+                        val o = b.jsonObject
+                        if (o["type"]?.jsonPrimitive?.contentOrNull == "text") {
+                            o["text"]?.jsonPrimitive?.contentOrNull
+                        } else {
+                            null
+                        }
+                    }.joinToString("\n").trim()
+                    return@withContext if (text.isBlank()) {
+                        AssistantReply.Failed("Claude returned an empty answer.")
+                    } else {
+                        AssistantReply.Ok(text, via = "Claude · $model")
+                    }
                 }
-            } catch (e: IOException) {
-                AssistantReply.Failed("Couldn't reach Claude: ${e.message ?: "network error"}")
             }
+            AssistantReply.Failed(
+                "The assistant kept investigating past its step limit — try a narrower question.",
+            )
+        } catch (e: StopWithReply) {
+            e.reply
         }
+    }
 
-    private fun parse(raw: String): AssistantReply {
-        val root = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
-            ?: return AssistantReply.Failed("Claude returned a response that couldn't be parsed.")
+    private fun buildPayload(system: String, tools: JsonArray, messages: List<JsonElement>): String =
+        buildJsonObject {
+            put("model", model)
+            put("max_tokens", MAX_TOKENS)
+            put("system", system)
+            put("thinking", buildJsonObject { put("type", "adaptive") })
+            if (tools.isNotEmpty()) put("tools", tools)
+            put("messages", JsonArray(messages))
+        }.toString()
 
-        if (root["stop_reason"]?.jsonPrimitive?.contentOrNull == "refusal") {
-            val why = root["stop_details"]?.jsonObject
-                ?.get("explanation")?.jsonPrimitive?.contentOrNull
-            return AssistantReply.Refused(why ?: "Claude declined this request for safety reasons.")
+    /** POST one turn; returns the parsed root or throws [StopWithReply]. */
+    private fun postRaw(payload: String): JsonObject {
+        val request = Request.Builder()
+            .url(ENDPOINT)
+            .addHeader("x-api-key", apiKey)
+            .addHeader("anthropic-version", ANTHROPIC_VERSION)
+            .addHeader("content-type", "application/json")
+            .post(payload.toRequestBody(JSON_MEDIA))
+            .build()
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: IOException) {
+            throw StopWithReply(
+                AssistantReply.Failed("Couldn't reach Claude: ${e.message ?: "network error"}"),
+            )
         }
-
-        val blocks = root["content"] as? JsonArray ?: JsonArray(emptyList())
-        val text = blocks.mapNotNull { block ->
-            val o = block.jsonObject
-            if (o["type"]?.jsonPrimitive?.contentOrNull == "text") {
-                o["text"]?.jsonPrimitive?.contentOrNull
-            } else {
-                null
+        response.use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw StopWithReply(httpError(resp.code, raw))
+            return runCatching { json.parseToJsonElement(raw).jsonObject }.getOrElse {
+                throw StopWithReply(
+                    AssistantReply.Failed("Claude returned a response that couldn't be parsed."),
+                )
             }
-        }.joinToString("\n").trim()
-
-        return if (text.isBlank()) {
-            AssistantReply.Failed("Claude returned an empty answer.")
-        } else {
-            AssistantReply.Ok(text, via = "Claude · $model")
         }
     }
 
@@ -133,6 +187,7 @@ class AssistantClient(
         const val ENDPOINT = "https://api.anthropic.com/v1/messages"
         const val ANTHROPIC_VERSION = "2023-06-01"
         const val MAX_TOKENS = 4096
+        const val MAX_ITERATIONS = 6
         val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     }
 }
