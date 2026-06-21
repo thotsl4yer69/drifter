@@ -1,0 +1,59 @@
+name: android-build
+
+# Builds the Drifter Diagnostics Android app. Doubles as the compile gate for
+# the Kotlin/Compose code (CI here has the Android SDK this dev environment
+# doesn't) and publishes a downloadable debug APK as a build artifact, so the
+# app can be installed without Android Studio.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-build.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build debug apk
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up jdk 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: set up android sdk
+        uses: android-actions/setup-android@v3
+
+      - name: make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: assemble debug apk
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: android lint
+        # Non-blocking: surfaces lint findings without failing the build on
+        # style/baseline nits. assembleDebug above is the hard compile gate.
+        continue-on-error: true
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: upload debug apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: drifter-diagnostics-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

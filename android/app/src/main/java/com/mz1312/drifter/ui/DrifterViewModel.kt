@@ -11,6 +11,7 @@ import com.mz1312.drifter.data.model.ApiResult
 import com.mz1312.drifter.data.model.AssistantReply
 import com.mz1312.drifter.data.model.ChatMessage
 import com.mz1312.drifter.data.model.ChatRole
+import com.mz1312.drifter.data.model.FailureKind
 import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.data.model.ModeInfo
 import com.mz1312.drifter.data.model.TelemetryEvent
@@ -86,6 +87,10 @@ class DrifterViewModel(
     private val _telemetry = MutableStateFlow(TelemetryUiState())
     val telemetry: StateFlow<TelemetryUiState> = _telemetry.asStateFlow()
     private var telemetryJob: Job? = null
+
+    // ── Service logs (lazy, per-unit) ───────────────────────────────────
+    private val _logs = MutableStateFlow<Map<String, Loadable<List<String>>>>(emptyMap())
+    val logs: StateFlow<Map<String, Loadable<List<String>>>> = _logs.asStateFlow()
 
     // ── AI assistant ───────────────────────────────────────────────────
     private val _chat = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -233,6 +238,23 @@ class DrifterViewModel(
             signals = next,
             frameCount = prev.frameCount + 1,
         )
+    }
+
+    // ── Service logs ────────────────────────────────────────────────────
+    fun fetchLogs(unit: String) {
+        _logs.value = _logs.value + (unit to Loadable.Loading)
+        viewModelScope.launch {
+            val cell: Loadable<List<String>> = when (val r = repo.logs(unit, 120)) {
+                is ApiResult.Ok ->
+                    if (r.value.ok) {
+                        Loadable.Success(r.value.lines)
+                    } else {
+                        Loadable.Error(FailureKind.BAD_RESPONSE, r.value.error ?: "journalctl unavailable")
+                    }
+                is ApiResult.Err -> Loadable.Error(r.kind, r.message)
+            }
+            _logs.value = _logs.value + (unit to cell)
+        }
     }
 
     // ── Assistant turn ──────────────────────────────────────────────────

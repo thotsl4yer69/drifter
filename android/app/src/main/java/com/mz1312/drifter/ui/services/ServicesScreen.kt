@@ -1,6 +1,7 @@
 package com.mz1312.drifter.ui.services
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -23,6 +25,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +48,7 @@ private data class ServiceRow(
 @Composable
 fun ServicesScreen(vm: DrifterViewModel) {
     val health by vm.health.collectAsStateWithLifecycle()
+    val logs by vm.logs.collectAsStateWithLifecycle()
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
     val h = (health as? Loadable.Success)?.value
@@ -81,8 +85,10 @@ fun ServicesScreen(vm: DrifterViewModel) {
                 ServiceCard(
                     row = row,
                     expanded = expanded[row.unit] == true,
+                    logsCell = logs[row.unit],
                     onToggle = { expanded[row.unit] = !(expanded[row.unit] ?: false) },
                     onAction = { action -> vm.serviceAction(row.unit, action) },
+                    onFetchLogs = { vm.fetchLogs(row.unit) },
                 )
             }
         }
@@ -115,8 +121,10 @@ private fun CategoryHeader(category: ServiceCategory, rows: List<ServiceRow>) {
 private fun ServiceCard(
     row: ServiceRow,
     expanded: Boolean,
+    logsCell: Loadable<List<String>>?,
     onToggle: () -> Unit,
     onAction: (String) -> Unit,
+    onFetchLogs: () -> Unit,
 ) {
     val doc = Knowledge.docFor(row.unit)
     val sev = when {
@@ -175,8 +183,67 @@ private fun ServiceCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    Spacer(Modifier.height(12.dp))
+                    LogsSection(logsCell = logsCell, onFetchLogs = onFetchLogs)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Read-only journal tail for the unit, fetched on demand from GET
+ * /api/logs/<unit>. Lets the operator see *why* a service is down without
+ * the AI assistant — and gives the assistant's evidence a human-readable home.
+ */
+@Composable
+private fun LogsSection(logsCell: Loadable<List<String>>?, onFetchLogs: () -> Unit) {
+    when (logsCell) {
+        null, Loadable.Idle -> TextButton(onClick = onFetchLogs) { Text("View recent logs") }
+        Loadable.Loading -> Text(
+            "Loading logs…",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        is Loadable.Success -> {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Recent journal",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onFetchLogs) { Text("Refresh") }
+            }
+            val lines = logsCell.value
+            if (lines.isEmpty()) {
+                Text(
+                    "No recent journal entries.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(8.dp),
+                ) {
+                    lines.takeLast(60).forEach { Mono(it) }
+                }
+            }
+        }
+        is Loadable.Error -> {
+            Text(
+                "Couldn't load logs: ${logsCell.message}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            TextButton(onClick = onFetchLogs) { Text("Retry") }
         }
     }
 }

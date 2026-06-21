@@ -5,6 +5,7 @@ import com.mz1312.drifter.data.model.AssistantReply
 import com.mz1312.drifter.data.model.ChatMessage
 import com.mz1312.drifter.data.model.ChatRole
 import com.mz1312.drifter.data.model.Healthz
+import com.mz1312.drifter.data.model.LogsResponse
 import com.mz1312.drifter.data.model.ModeInfo
 import com.mz1312.drifter.data.model.ModeSwitchResult
 import com.mz1312.drifter.data.model.ServiceActionResult
@@ -57,6 +58,10 @@ class DrifterRepository {
     // ── Service control ───────────────────────────────────────────────
     suspend fun serviceAction(unit: String, action: String): ApiResult<ServiceActionResult> =
         api().serviceAction(unit, action)
+
+    /** Read-only journal tail for one unit (GET /api/logs/<unit>). */
+    suspend fun logs(unit: String, lines: Int = 120): ApiResult<LogsResponse> =
+        api().logs(unit, lines)
 
     // ── Arsenal / Carsenal read surface ───────────────────────────────
     suspend fun arsenal(): ApiResult<JsonObject> = api().getObject("/api/arsenal")
