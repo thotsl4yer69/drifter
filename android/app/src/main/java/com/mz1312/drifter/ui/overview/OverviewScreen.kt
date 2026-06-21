@@ -51,8 +51,8 @@ fun OverviewScreen(vm: DrifterViewModel, nav: NavController) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         when (val h = health) {
-            is Loadable.Success -> HealthyView(h.value, mode?.choices ?: emptyList(), vm)
-            is Loadable.Error -> UnreachableView(h, nav)
+            is Loadable.Success -> HealthyView(h.value, mode?.choices ?: emptyList(), vm, nav)
+            is Loadable.Error -> UnreachableView(h, nav, vm)
             else -> SectionCard("Connecting…") {
                 Text(
                     if (refreshing) "Probing the node…" else "No data yet.",
@@ -69,9 +69,12 @@ fun OverviewScreen(vm: DrifterViewModel, nav: NavController) {
     }
 }
 
+private const val DIAGNOSE_PROMPT =
+    "What's wrong with the node right now, and how do I fix it?"
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel) {
+private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel, nav: NavController) {
     val (sev, label) = when (h.health) {
         Healthz.Health.OK -> Severity.GOOD to "NODE OK"
         Healthz.Health.HW_PENDING -> Severity.WARN to "HW PENDING"
@@ -102,10 +105,15 @@ private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel)
         SectionCard("Failed services", trailing = { StatusPill("${h.servicesFailed.size}", Severity.BAD) }) {
             BulletList(h.servicesFailed)
             Text(
-                "These count against the mode and return /healthz 503. Open the Services tab to restart.",
+                "These count against the mode and return /healthz 503. Open Services to restart, or let the assistant investigate.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = {
+                vm.askAssistant(DIAGNOSE_PROMPT)
+                nav.navigate(Destination.Assistant.route)
+            }) { Text("Diagnose with AI") }
         }
     }
 
@@ -141,7 +149,7 @@ private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel)
 }
 
 @Composable
-private fun UnreachableView(err: Loadable.Error, nav: NavController) {
+private fun UnreachableView(err: Loadable.Error, nav: NavController, vm: DrifterViewModel) {
     val hint = when (err.kind) {
         FailureKind.FORBIDDEN -> "The node answered with 403 — your phone isn't on the 10.42.0.0/24 hotspot. Join MZ1312_DRIFTER."
         FailureKind.TIMEOUT -> "The node accepted the connection but didn't answer in time. The dashboard may be wedged — try the Doctor, then restart drifter-dashboard."
@@ -156,8 +164,16 @@ private fun UnreachableView(err: Loadable.Error, nav: NavController) {
         Spacer(Modifier.height(8.dp))
         Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                vm.askAssistant(DIAGNOSE_PROMPT)
+                nav.navigate(Destination.Assistant.route)
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Ask the assistant what's wrong") }
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { nav.navigate(Destination.Doctor.route) }) { Text("Run Connection Doctor") }
+            OutlinedButton(onClick = { nav.navigate(Destination.Doctor.route) }) { Text("Connection Doctor") }
             OutlinedButton(onClick = { nav.navigate(Destination.SETTINGS_ROUTE) }) { Text("Settings") }
         }
     }

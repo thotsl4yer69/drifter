@@ -1,5 +1,6 @@
 package com.mz1312.drifter.ui.assistant
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -63,7 +65,11 @@ fun AssistantScreen(vm: DrifterViewModel) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (chat.isEmpty()) {
-                EmptyState(hasCloudBrain = settings.hasCloudBrain)
+                EmptyState(
+                    hasCloudBrain = settings.hasCloudBrain,
+                    enabled = !busy,
+                    onAsk = { vm.askAssistant(it) },
+                )
             }
             LazyColumn(
                 state = listState,
@@ -102,7 +108,7 @@ fun AssistantScreen(vm: DrifterViewModel) {
 }
 
 @Composable
-private fun EmptyState(hasCloudBrain: Boolean) {
+private fun EmptyState(hasCloudBrain: Boolean, enabled: Boolean, onAsk: (String) -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -127,12 +133,16 @@ private fun EmptyState(hasCloudBrain: Boolean) {
             "What's wrong right now, and how do I fix it?",
             "drifter-canbridge is down — is that a real fault?",
             "Walk me through getting telemetry flowing again.",
-        ).forEach {
+        ).forEach { example ->
             Text(
-                "“$it”",
+                "“$example”",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 2.dp),
+                modifier = Modifier
+                    .padding(vertical = 3.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = enabled) { onAsk(example) }
+                    .padding(vertical = 3.dp, horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
         }
