@@ -14,6 +14,7 @@ import subprocess
 import time
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 import yaml
@@ -34,6 +35,7 @@ from config import (
     MODE_STATE_PATH,
     MODES,
     SENTRY_COMMANDS,
+    SERVICES,
     SETTINGS_SCHEMA,
     SETTINGS_SECTIONS,
     SHARED_SERVICES,
@@ -158,6 +160,15 @@ _SERVICE_UNITS = (
 _DRIVE_ONLY_UNITS = set(DRIVE_ONLY_SERVICES)
 assert not (_SERVICE_UNITS & _DRIVE_ONLY_UNITS), \
     "arsenal service allowlist must never include a DRIVE_ONLY unit"
+
+# Read-only log access (GET /api/logs/<unit>) is gated to this allowlist so an
+# arbitrary string can never be handed to journalctl. Every monitored unit is
+# fair game — the Android diagnostics assistant needs the actual error text from
+# a failing service (any mode) to reason about novel faults, but it is read-only
+# and local-network-only, never a control surface.
+_LOG_UNITS = set(SERVICES)
+_LOG_MAX_LINES = 1000
+_LOG_DEFAULT_LINES = 200
 
 # systemctl call timeout — start/stop of a small unit is sub-second; cap so a
 # wedged unit can't pin the handler thread.
@@ -461,6 +472,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith('/api/hid/payloads/'):
             self._serve_hid_payload(parsed.path[len('/api/hid/payloads/'):])
             return
+        if parsed.path.startswith('/api/logs/'):
+            self._serve_logs(parsed.path[len('/api/logs/'):], parsed)
+            return
         # Vivi avatar assets — the 3D viewer page fetches its GLB plus any
         # texture / animation bundles from here. Path-traversal guarded in
         # _serve_avatar_asset.
@@ -507,7 +521,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     # Cockpit v4 static server — serves the Vite build from /opt/drifter/ui/v4.
-    _V4_MIME = {
+    _V4_MIME: ClassVar[dict] = {
         '.html': 'text/html; charset=utf-8', '.js': 'application/javascript',
         '.mjs': 'application/javascript', '.css': 'text/css; charset=utf-8',
         '.json': 'application/json', '.webmanifest': 'application/manifest+json',
@@ -2015,6 +2029,60 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self.send_error(400, 'invalid JSON body')
             return None
+
+    def _serve_logs(self, raw_tail: str, parsed):
+        """Read-only journalctl tail for one drifter unit.
+
+        GET /api/logs/<unit>?n=<int> — the last N journal lines for
+        drifter-<unit>, newest last. This is the evidence source the Android
+        diagnostics assistant reasons over when a service is failing: an LLM
+        can't diagnose a novel fault it can't see, and the cockpit UI never
+        surfaced raw logs. Safety model, mirroring the rest of /api/*:
+
+          * _is_local_peer gated — 403 off 127.0.0.1 / 10.42.0.0/24.
+          * unit ∈ _LOG_UNITS (the monitored SERVICES set), fail-closed — an
+            arbitrary string can NEVER reach journalctl. Short or full form
+            both accepted ('canbridge' or 'drifter-canbridge').
+          * READ ONLY. journalctl is invoked with a fixed, fully-literal
+            argument vector (no shell); N is clamped to [1, _LOG_MAX_LINES].
+        Returns {unit, n, ok, lines[]} (+ error on failure).
+        """
+        peer = self.client_address[0] if self.client_address else ''
+        if not _is_local_peer(peer):
+            self.send_error(403, 'logs: local network only')
+            return
+        unit = (raw_tail or '').split('/', 1)[0].split('?', 1)[0].strip()
+        if unit and not unit.startswith('drifter-'):
+            unit = f'drifter-{unit}'
+        if unit not in _LOG_UNITS:
+            self.send_error(404, 'unknown unit')
+            return
+        try:
+            n = int(parse_qs(parsed.query).get('n', [str(_LOG_DEFAULT_LINES)])[0])
+        except (TypeError, ValueError):
+            n = _LOG_DEFAULT_LINES
+        n = max(1, min(n, _LOG_MAX_LINES))
+        try:
+            r = subprocess.run(
+                ['journalctl', '-u', unit, '-n', str(n),
+                 '--no-pager', '-o', 'short-iso'],
+                capture_output=True, text=True, timeout=5,
+            )
+        except FileNotFoundError:
+            self._serve_json({'unit': unit, 'n': n, 'ok': False, 'lines': [],
+                              'error': 'journalctl not available'})
+            return
+        except (subprocess.SubprocessError, OSError) as e:
+            self._serve_json({'unit': unit, 'n': n, 'ok': False, 'lines': [],
+                              'error': str(e)[:200]})
+            return
+        if r.returncode != 0:
+            self._serve_json({'unit': unit, 'n': n, 'ok': False, 'lines': [],
+                              'error': (r.stderr or r.stdout or '').strip()[:200]})
+            return
+        lines = [ln for ln in r.stdout.splitlines()
+                 if ln.strip() and not ln.startswith('-- No entries')]
+        self._serve_json({'unit': unit, 'n': n, 'ok': True, 'lines': lines})
 
     def _post_service(self, unit: str):
         """Start/stop/restart a foot-mode arsenal systemd unit.
