@@ -125,6 +125,10 @@ useless.
 
 ## Using it
 
+> Going to the car? **[`FIELD_TEST.md`](FIELD_TEST.md)** is the copy-paste
+> deploy + smoke-test runbook (get the APK, connect, what "good" looks like,
+> and the connection-trouble path).
+
 1. Tether the phone to the **MZ1312_DRIFTER** Wi-Fi.
 2. Launch the app — it defaults to `10.42.0.1:8080`. Or open **Settings** and tap
    **Detect on this Wi-Fi** to fill the host from the hotspot gateway.
