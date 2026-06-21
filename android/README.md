@@ -119,6 +119,13 @@ MAPS_API_KEY=AIza...your-key...
 # or, e.g. in CI:  export ORG_GRADLE_PROJECT_MAPS_API_KEY=AIza...
 ```
 
+**CI builds** (the `drifter-diagnostics-debug-apk` artifact) read the key from a
+GitHub Actions secret — add it once under **Settings → Secrets and variables →
+Actions → `MAPS_API_KEY`** and every CI APK from then on has maps baked in. The
+key never lands in source: `android-build.yml` passes it through as
+`ORG_GRADLE_PROJECT_MAPS_API_KEY`, and an unset secret just yields the "no key"
+banner.
+
 Mint it in Google Cloud (Maps SDK for Android) and **restrict it** to the
 `com.mz1312.drifter` package + your signing cert's SHA-1 so a leaked copy is
 useless.
