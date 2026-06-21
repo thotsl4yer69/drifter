@@ -22,7 +22,33 @@ fleet repo's `inventory.yaml` lives at
 | One-shot deploy | [`scripts/oneshot.sh`](scripts/oneshot.sh) | Stage-gated wrapper around `install.sh` (10 apt+venv → 20 diagnose → 30 smoke → 40 enable services → curl /healthz) |
 | Operator CLI | [`src/diagnose.py`](src/diagnose.py) + [`bin/drifter`](bin/drifter) | `drifter {diagnose,status,logs,restart,healthz,version}` |
 | Health endpoint | `/healthz` on `drifter-dashboard` (port 8080) | Returns 200/503 + JSON of services + telemetry freshness |
+| Android app | [`android/`](android/) | Field-diagnostics companion for the **headless** node — see below |
 | This file | `CLAUDE.md` | Operator handoff |
+
+## Android companion app (headless diagnostics)
+
+When the Pi runs headless in the car and the web cockpit won't load, the
+phone app is how you find out *why* and fix it. It is not a re-skin of the
+dashboard: it adds a **Connection Doctor** (probes every expected port from
+the phone, even when the node is unreachable), **proactive background health
+alerts**, an **agentic Claude-backed assistant** (Pi on-board LLM as fallback)
+that pulls live logs/healthz/telemetry on its own, cockpit gauge telemetry, a
+live GPS map, and service triage with on-demand `journalctl` tails over the
+gated `/api`.
+
+- **Get it:** CI builds a debug APK on every push and uploads the
+  **`drifter-diagnostics-debug-apk`** artifact (Actions → latest `android-build`
+  on `main`) — no Android Studio needed.
+- **In-car runbook:** [`android/FIELD_TEST.md`](android/FIELD_TEST.md)
+  (install, connect to the `MZ1312_DRIFTER` hotspot, smoke checklist).
+- **Full docs:** [`android/README.md`](android/README.md).
+- **Keys:** the Claude key is stored on the device's Android Keystore; the
+  Google Maps key is injected at build time from the `MAPS_API_KEY` GitHub
+  Actions secret (never committed). Maps also needs the **Maps SDK for Android**
+  API enabled in the Google Cloud project that owns the key.
+- **Pi-side surface it relies on:** the additive, gated, tested
+  `GET /api/logs/<unit>` endpoint (read-only `journalctl` tail; same
+  `10.42.0.0/24` ACL as the rest of `/api`).
 
 ## One-line deploy (from a fresh Pi over SSH)
 
