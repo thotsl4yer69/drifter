@@ -25,8 +25,9 @@ android {
         // set MAPS_API_KEY in ~/.gradle/gradle.properties, pass -PMAPS_API_KEY=…,
         // or export ORG_GRADLE_PROJECT_MAPS_API_KEY (e.g. a CI secret). Empty is
         // fine — the app still builds; the map just renders blank without a key.
-        manifestPlaceholders["MAPS_API_KEY"] =
-            (project.findProperty("MAPS_API_KEY") as String?).orEmpty()
+        val mapsApiKey = (project.findProperty("MAPS_API_KEY") as String?).orEmpty()
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("boolean", "MAPS_KEY_PRESENT", mapsApiKey.isNotEmpty().toString())
     }
 
     buildTypes {

@@ -129,6 +129,22 @@ fun MapScreen(vm: DrifterViewModel) {
             }
         }
 
+        if (!com.mz1312.drifter.BuildConfig.MAPS_KEY_PRESENT) {
+            Surface(
+                Modifier.align(Alignment.TopCenter).padding(12.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(
+                    "No Google Maps key in this build — the map can't load tiles. Build with " +
+                        "-PMAPS_API_KEY=… (see android/README) to enable it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+        }
+
         if (gps.current == null) {
             Surface(
                 Modifier.align(Alignment.BottomCenter).padding(16.dp),

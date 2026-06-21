@@ -100,7 +100,27 @@ cd android
 ```
 
 Gradle wrapper 8.9 is committed. Toolchain: AGP 8.7, Kotlin 2.1, compileSdk 35,
-minSdk 26 (Android 8.0+).
+minSdk 26 (Android 8.0+). CI also runs `testDebugUnitTest` as a gate.
+
+### Google Maps key (for the Map tab)
+
+The key is injected from a Gradle property into the manifest — **never
+committed**. Without it the app still builds and runs; only the Map tab can't
+load tiles (it shows a banner saying so). To enable maps, supply your key one of:
+
+```properties
+# ~/.gradle/gradle.properties  (recommended for local builds)
+MAPS_API_KEY=AIza...your-key...
+```
+
+```bash
+./gradlew assembleDebug -PMAPS_API_KEY=AIza...   # one-off
+# or, e.g. in CI:  export ORG_GRADLE_PROJECT_MAPS_API_KEY=AIza...
+```
+
+Mint it in Google Cloud (Maps SDK for Android) and **restrict it** to the
+`com.mz1312.drifter` package + your signing cert's SHA-1 so a leaked copy is
+useless.
 
 ## Using it
 
