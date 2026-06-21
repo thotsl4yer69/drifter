@@ -79,7 +79,8 @@ shell). See `src/web_dashboard_handlers.py` and `tests/test_web_dashboard_handle
 - **Kotlin + Jetpack Compose (Material 3)**, single-Activity, bottom-nav,
   dark-first instrument theme.
 - **OkHttp** (HTTP + WebSocket + Anthropic API), **kotlinx.serialization**,
-  **DataStore** + **security-crypto** (encrypted key), **WorkManager**
+  **DataStore** + a direct **Android Keystore** AES-256-GCM helper for the
+  encrypted key (no maintenance-mode `security-crypto`), **WorkManager**
   (background watch). No Hilt — a tiny hand-rolled `AppContainer`.
 - Talks plain **HTTP** to the dashboard (all `/api` is server-gated to
   `127.0.0.1` + `10.42.0.0/24`, so the phone must be on the `MZ1312_DRIFTER`
