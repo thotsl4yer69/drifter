@@ -2,6 +2,7 @@ package com.mz1312.drifter.ui.arsenal
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +41,7 @@ private val ARSENAL_CATEGORIES = setOf(
     ServiceCategory.CARSENAL, ServiceCategory.RECON, ServiceCategory.COUNTER,
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ArsenalScreen(vm: DrifterViewModel) {
     val health by vm.health.collectAsStateWithLifecycle()

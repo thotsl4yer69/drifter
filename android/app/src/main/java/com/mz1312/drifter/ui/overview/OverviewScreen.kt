@@ -2,6 +2,7 @@ package com.mz1312.drifter.ui.overview
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,6 +69,7 @@ fun OverviewScreen(vm: DrifterViewModel, nav: NavController) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel) {
     val (sev, label) = when (h.health) {

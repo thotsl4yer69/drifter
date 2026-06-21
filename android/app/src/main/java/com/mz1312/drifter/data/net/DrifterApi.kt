@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
  *   - POST /api/mode/<name>             (switch persona)
  *   - POST /api/service/<unit>          (start|stop|restart arsenal unit; foot-mode)
  *
- * All /api/* (everything except /healthz) is gated server-side to
+ * Every /api endpoint (everything except /healthz) is gated server-side to
  * 127.0.0.1 + 10.42.0.0/24, so the phone must be on the MZ1312_DRIFTER
  * hotspot; a 403 here means "you're not on the hotspot subnet".
  */
