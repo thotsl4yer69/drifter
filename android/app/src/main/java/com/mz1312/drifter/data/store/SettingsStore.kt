@@ -18,6 +18,8 @@ data class AppSettings(
     val wsPort: Int = DEFAULT_WS_PORT,
     val pollSeconds: Int = DEFAULT_POLL_SECONDS,
     val autoRefresh: Boolean = true,
+    /** Watch the node in the background and notify on degrade/offline/recover. */
+    val backgroundAlerts: Boolean = false,
     /** Anthropic API key for the cloud troubleshooting brain (blank = Pi-only). */
     val claudeApiKey: String = "",
     /** Model id for the cloud brain. Defaults to the most capable Claude. */
@@ -56,6 +58,7 @@ class SettingsStore(private val context: Context) {
         val WS_PORT = intPreferencesKey("ws_port")
         val POLL = intPreferencesKey("poll_seconds")
         val AUTO = booleanPreferencesKey("auto_refresh")
+        val ALERTS = booleanPreferencesKey("background_alerts")
         val CLAUDE_KEY = stringPreferencesKey("claude_api_key")
         val CLAUDE_MODEL = stringPreferencesKey("claude_model")
     }
@@ -67,6 +70,7 @@ class SettingsStore(private val context: Context) {
             wsPort = p[Keys.WS_PORT] ?: AppSettings.DEFAULT_WS_PORT,
             pollSeconds = (p[Keys.POLL] ?: AppSettings.DEFAULT_POLL_SECONDS).coerceIn(2, 60),
             autoRefresh = p[Keys.AUTO] ?: true,
+            backgroundAlerts = p[Keys.ALERTS] ?: false,
             // Prefer the encrypted store; fall back to any legacy plaintext key
             // from an older build (migrated to the encrypted store on next save).
             claudeApiKey = secure.apiKey.ifBlank { p[Keys.CLAUDE_KEY].orEmpty() },
@@ -82,6 +86,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.WS_PORT] = settings.wsPort
             p[Keys.POLL] = settings.pollSeconds.coerceIn(2, 60)
             p[Keys.AUTO] = settings.autoRefresh
+            p[Keys.ALERTS] = settings.backgroundAlerts
             p[Keys.CLAUDE_MODEL] = settings.claudeModel.trim().ifBlank { AppSettings.DEFAULT_CLAUDE_MODEL }
             // Drop any legacy plaintext copy now that it lives encrypted.
             p.remove(Keys.CLAUDE_KEY)

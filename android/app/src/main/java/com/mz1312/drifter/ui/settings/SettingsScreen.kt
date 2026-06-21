@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mz1312.drifter.data.alerts.HealthWatch
 import com.mz1312.drifter.data.net.NetworkInspector
 import com.mz1312.drifter.data.store.AppSettings
 import com.mz1312.drifter.ui.DrifterViewModel
@@ -46,6 +47,7 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
     var auto by rememberSaveable { mutableStateOf(current.autoRefresh) }
     var apiKey by rememberSaveable { mutableStateOf(current.claudeApiKey) }
     var model by rememberSaveable { mutableStateOf(current.claudeModel) }
+    var alerts by rememberSaveable { mutableStateOf(current.backgroundAlerts) }
 
     val context = LocalContext.current
     val inspector = remember { NetworkInspector(context) }
@@ -59,10 +61,12 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 wsPort = wsPort.toIntOrNull() ?: AppSettings.DEFAULT_WS_PORT,
                 pollSeconds = poll.toIntOrNull() ?: AppSettings.DEFAULT_POLL_SECONDS,
                 autoRefresh = auto,
+                backgroundAlerts = alerts,
                 claudeApiKey = apiKey.trim(),
                 claudeModel = model.trim().ifBlank { AppSettings.DEFAULT_CLAUDE_MODEL },
             ),
         )
+        if (alerts) HealthWatch.enable(context) else HealthWatch.disable(context)
         vm.refreshNow()
         onDone()
     }
@@ -145,6 +149,24 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        SectionCard("Background alerts") {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Watch the node in the background", style = MaterialTheme.typography.bodyLarge)
+                Switch(checked = alerts, onCheckedChange = { alerts = it })
+            }
+            Text(
+                "Checks the node roughly every 15 min even when the app is closed, and " +
+                    "notifies you when it goes offline, degrades, or recovers. Quiet about " +
+                    "dongles-not-plugged-in. Needs notification permission.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
