@@ -25,10 +25,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mz1312.drifter.data.net.NetworkInspector
 import com.mz1312.drifter.data.store.AppSettings
 import com.mz1312.drifter.ui.DrifterViewModel
 import com.mz1312.drifter.ui.common.SectionCard
@@ -44,6 +46,10 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
     var auto by rememberSaveable { mutableStateOf(current.autoRefresh) }
     var apiKey by rememberSaveable { mutableStateOf(current.claudeApiKey) }
     var model by rememberSaveable { mutableStateOf(current.claudeModel) }
+
+    val context = LocalContext.current
+    val inspector = remember { NetworkInspector(context) }
+    var detectMsg by remember { mutableStateOf<String?>(null) }
 
     fun save() {
         vm.updateSettings(
@@ -74,6 +80,31 @@ fun SettingsScreen(vm: DrifterViewModel, onDone: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(onClick = {
+                    val info = inspector.inspect()
+                    detectMsg = when {
+                        info.gateway != null -> {
+                            host = info.gateway
+                            "Found node at ${info.gateway}" +
+                                if (info.onWifi) " on Wi-Fi" else " (not on Wi-Fi?)"
+                        }
+                        !info.onWifi -> "Not on Wi-Fi — connect to MZ1312_DRIFTER first."
+                        else -> "No gateway found; keeping ${AppSettings.DEFAULT_HOST}."
+                    }
+                }) { Text("Detect on this Wi-Fi") }
+                detectMsg?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
