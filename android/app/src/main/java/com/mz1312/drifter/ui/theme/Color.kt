@@ -40,3 +40,19 @@ val StatusCyan = Color(0xFF54D9E6)
 
 /** Translucent halo colours for glowing status indicators. */
 fun Color.glow(alpha: Float = 0.28f): Color = copy(alpha = alpha)
+
+// ── Ambient backdrop + glass ─────────────────────────────────────────────────
+// The app paints a deep gradient backdrop with faint amber/cyan light leaks so
+// flat black never reads as "off". Cards float on it as hairline-lit glass.
+val BackdropTop = Color(0xFF0B1016)      // gradient origin (slightly lifted)
+val BackdropBottom = Color(0xFF05070A)   // gradient base (near-black)
+val AmberHalo = Color(0x1FFFB020)        // top-left warm light leak (~12%)
+val CyanHalo = Color(0x1454D9E6)         // lower-right cool light leak (~8%)
+
+/** Top highlight + body for the glass card fill (drawn as a vertical gradient). */
+val GlassTop = Color(0xFF1A2230)
+val GlassBottom = Color(0xFF121821)
+
+/** Hairline edges: brighter at the top lip, fading down — sells the glass. */
+val GlassEdgeTop = Color(0x40FFFFFF)
+val GlassEdgeBottom = Color(0x0AFFFFFF)

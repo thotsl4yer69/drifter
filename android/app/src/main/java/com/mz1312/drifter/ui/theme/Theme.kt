@@ -1,10 +1,16 @@
 package com.mz1312.drifter.ui.theme
 
 import android.app.Activity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -74,3 +80,44 @@ fun DrifterTheme(
         content = content,
     )
 }
+
+/**
+ * The app's ambient backdrop: a deep vertical gradient with two faint, offset
+ * light leaks (warm amber top-left, cool cyan lower-right) so the cockpit reads
+ * as lit glass rather than flat black. Screens render their content on top.
+ */
+@Composable
+fun DrifterBackground(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .drawBehind {
+                drawRect(Brush.verticalGradient(listOf(BackdropTop, BackdropBottom)))
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(AmberHalo, Color.Transparent),
+                        center = Offset(size.width * 0.15f, size.height * 0.04f),
+                        radius = size.maxDimension * 0.6f,
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(CyanHalo, Color.Transparent),
+                        center = Offset(size.width * 0.92f, size.height * 0.88f),
+                        radius = size.maxDimension * 0.7f,
+                    ),
+                )
+            },
+    ) {
+        content()
+    }
+}
+
+/** Vertical glass fill for cards (lifted top → settled bottom). */
+fun glassFill(): Brush = Brush.verticalGradient(listOf(GlassTop, GlassBottom))
+
+/** Hairline edge for cards — bright top lip fading down. */
+fun glassEdge(): Brush = Brush.verticalGradient(listOf(GlassEdgeTop, GlassEdgeBottom))
