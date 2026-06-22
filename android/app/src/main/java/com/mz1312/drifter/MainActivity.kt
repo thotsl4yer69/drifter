@@ -5,6 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -13,33 +19,44 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.ui.DrifterViewModel
 import com.mz1312.drifter.ui.DrifterViewModelFactory
 import com.mz1312.drifter.ui.arsenal.ArsenalScreen
 import com.mz1312.drifter.ui.assistant.AssistantScreen
+import com.mz1312.drifter.ui.common.Loadable
+import com.mz1312.drifter.ui.common.Severity
+import com.mz1312.drifter.ui.common.StatusDot
 import com.mz1312.drifter.ui.doctor.DoctorScreen
 import com.mz1312.drifter.ui.nav.Destination
 import com.mz1312.drifter.ui.overview.OverviewScreen
 import com.mz1312.drifter.ui.services.ServicesScreen
 import com.mz1312.drifter.ui.settings.SettingsScreen
 import com.mz1312.drifter.ui.telemetry.TelemetryScreen
+import com.mz1312.drifter.ui.theme.DataFont
+import com.mz1312.drifter.ui.theme.DrifterBackground
 import com.mz1312.drifter.ui.theme.DrifterTheme
 import kotlinx.coroutines.flow.collectLatest
 
@@ -55,7 +72,9 @@ class MainActivity : ComponentActivity() {
         maybeRequestNotificationPermission()
         setContent {
             DrifterTheme {
-                DrifterApp(viewModel)
+                DrifterBackground {
+                    DrifterApp(viewModel)
+                }
             }
         }
     }
@@ -85,22 +104,17 @@ private fun DrifterApp(vm: DrifterViewModel) {
     // Live link pip shown in the app bar on every tab — at-a-glance "can I reach
     // the node?" without opening Overview.
     val connSeverity = when (val h = health) {
-        is com.mz1312.drifter.ui.common.Loadable.Success -> when (h.value.health) {
-            com.mz1312.drifter.data.model.Healthz.Health.OK ->
-                com.mz1312.drifter.ui.common.Severity.GOOD
-            com.mz1312.drifter.data.model.Healthz.Health.HW_PENDING ->
-                com.mz1312.drifter.ui.common.Severity.WARN
-            com.mz1312.drifter.data.model.Healthz.Health.DEGRADED ->
-                com.mz1312.drifter.ui.common.Severity.BAD
-            com.mz1312.drifter.data.model.Healthz.Health.UNKNOWN ->
-                com.mz1312.drifter.ui.common.Severity.NEUTRAL
+        is Loadable.Success -> when (h.value.health) {
+            Healthz.Health.OK -> Severity.GOOD
+            Healthz.Health.HW_PENDING -> Severity.WARN
+            Healthz.Health.DEGRADED -> Severity.BAD
+            Healthz.Health.UNKNOWN -> Severity.NEUTRAL
         }
-        is com.mz1312.drifter.ui.common.Loadable.Error ->
-            com.mz1312.drifter.ui.common.Severity.BAD
-        else -> com.mz1312.drifter.ui.common.Severity.NEUTRAL
+        is Loadable.Error -> Severity.BAD
+        else -> Severity.NEUTRAL
     }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         vm.messages.collectLatest { snackbar.showSnackbar(it) }
     }
 
@@ -108,30 +122,36 @@ private fun DrifterApp(vm: DrifterViewModel) {
         ?: if (currentRoute == Destination.SETTINGS_ROUTE) "Settings" else "Drifter"
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
-                    androidx.compose.foundation.layout.Column {
+                    Column {
                         Text(
                             "MZ1312 · DRIFTER",
-                            style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            "$title  ·  ${settings.host}",
-                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            title,
+                            style = MaterialTheme.typography.titleLarge,
                         )
                     }
                 },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
                 ),
                 actions = {
-                    com.mz1312.drifter.ui.common.StatusDot(connSeverity, 9)
-                    androidx.compose.foundation.layout.Spacer(
-                        Modifier.width(8.dp),
+                    Text(
+                        settings.host,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = DataFont,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.width(10.dp))
+                    StatusDot(connSeverity, 8)
+                    Spacer(Modifier.width(6.dp))
                     IconButton(onClick = { vm.refreshNow() }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                     }
@@ -147,7 +167,7 @@ private fun DrifterApp(vm: DrifterViewModel) {
         },
         bottomBar = {
             NavigationBar(
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
             ) {
                 Destination.bottomBar.forEach { dest ->
                     NavigationBarItem(
@@ -160,13 +180,13 @@ private fun DrifterApp(vm: DrifterViewModel) {
                             }
                         },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
-                        label = { Text(dest.label) },
-                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-                            selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                            selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                            indicatorColor = androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                            unselectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        label = { Text(dest.label, style = MaterialTheme.typography.labelSmall) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                     )
                 }
@@ -178,6 +198,10 @@ private fun DrifterApp(vm: DrifterViewModel) {
             navController = navController,
             startDestination = Destination.Overview.route,
             modifier = Modifier.padding(padding),
+            enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 18 } },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(220)) },
+            popExitTransition = { fadeOut(tween(160)) },
         ) {
             composable(Destination.Overview.route) { OverviewScreen(vm, navController) }
             composable(Destination.Doctor.route) { DoctorScreen(vm) }
