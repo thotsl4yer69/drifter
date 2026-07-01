@@ -49,11 +49,16 @@ step "Deploying mesh dashboard"
 cp "${REPO_DIR}/src/mesh_dashboard.html" "${DRIFTER_DIR}/"
 ok "mesh_dashboard.html deployed"
 
-step "Installing systemd unit"
-cp "${REPO_DIR}/services/drifter-mesh.service" /etc/systemd/system/
+step "Installing systemd units"
+# Three units: discovery (foreground) + coordinator + bridge, each supervised
+# by systemd. Enabling drifter-mesh pulls the other two up (Wants=), and they
+# PartOf=drifter-mesh so stop/restart propagates.
+for u in drifter-mesh drifter-mesh-coordinator drifter-mesh-bridge; do
+    cp "${REPO_DIR}/services/${u}.service" /etc/systemd/system/
+done
 systemctl daemon-reload
-systemctl enable drifter-mesh 2>/dev/null
-ok "drifter-mesh enabled"
+systemctl enable drifter-mesh drifter-mesh-coordinator drifter-mesh-bridge 2>/dev/null
+ok "drifter-mesh (+coordinator +bridge) enabled"
 
 step "Starting service"
 systemctl restart drifter-mesh

@@ -1,5 +1,5 @@
 [Unit]
-Description=MZ1312 DRIFTER Replay + Recorder
+Description=MZ1312 DRIFTER Replay
 After=drifter-broker.target
 Wants=drifter-broker.target
 StartLimitIntervalSec=60
@@ -8,8 +8,11 @@ StartLimitBurst=5
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
+# Session recording is drifter-session-recorder.service — do NOT launch
+# session_recorder.py here too. It used to be a backgrounded ExecStartPost
+# child, which double-ran the recorder (two MQTT subscriptions, duplicate
+# recordings) whenever both units were enabled, and was unsupervised.
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/replay_engine.py
-ExecStartPost=/bin/sh -c '/opt/drifter/venv/bin/python3 /opt/drifter/session_recorder.py &'
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

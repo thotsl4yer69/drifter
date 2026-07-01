@@ -1,18 +1,18 @@
 [Unit]
-Description=MZ1312 DRIFTER Mesh (discovery + coordinator + bridge)
+Description=MZ1312 DRIFTER Mesh (discovery)
 After=drifter-broker.target network.target
-Wants=drifter-broker.target
+# The coordinator and bridge are now their own supervised units, pulled up with
+# this lane (they PartOf=drifter-mesh so stop/restart propagates). Previously
+# they were backgrounded ExecStartPost `&` children — unsupervised, never
+# restarted if they died, and orphaned on stop.
+Wants=drifter-broker.target drifter-mesh-coordinator.service drifter-mesh-bridge.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
-# Runs discovery in foreground; coordinator + bridge are launched separately
-# (or wire up a tiny supervisor). Default ships with discovery on for simplicity.
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/mesh_discovery.py
-ExecStartPost=/bin/sh -c '/opt/drifter/venv/bin/python3 /opt/drifter/mesh_coordinator.py &'
-ExecStartPost=/bin/sh -c '/opt/drifter/venv/bin/python3 /opt/drifter/mesh_bridge.py &'
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
