@@ -105,7 +105,7 @@ if ($CopyOnly) {
         Write-Host ""
         Write-Host "  Next steps:" -ForegroundColor Cyan
         Write-Host "    1. Reboot the Pi:  ssh $SshTarget 'sudo reboot'" -ForegroundColor White
-        Write-Host "    2. Connect phone to Wi-Fi: MZ1312_DRIFTER / uncaged1312" -ForegroundColor White
+        Write-Host "    2. Connect phone to Wi-Fi: MZ1312_DRIFTER (PSK: nmcli --show-secrets connection show MZ1312_DRIFTER)" -ForegroundColor White
         Write-Host "    3. Open RealDash -> TCP CAN -> 10.42.0.1:35000" -ForegroundColor White
         Write-Host "    4. Wire OBD-II pigtail into USB2CANFD terminals" -ForegroundColor White
         Write-Host "    5. After warm-up drive, calibrate:" -ForegroundColor White

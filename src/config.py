@@ -1122,10 +1122,13 @@ LCD_OBD_STALE_S = float(os.getenv("LCD_OBD_STALE_S", "5.0"))
 #  operator can always SSH in to fix things.
 # ═══════════════════════════════════════════════════════════════════
 # Known client SSIDs to join, in priority order. The phone hotspot SSID/PSK
-# default to the operator's "Drifter" phone hotspot so the node auto-joins it
-# out of the box; both still honour an env override for a different phone.
+# come from the environment (/opt/drifter/.env — see config/.env.example);
+# there is NO hardcoded PSK default, because a committed Wi-Fi password is a
+# secret leak. Empty PSK means auto_connect skips joining the phone hotspot
+# until the operator sets it (auto_connect.py guards on a truthy PSK), so the
+# node still boots and falls back to its own recovery AP.
 PHONE_HOTSPOT_SSID = os.getenv("PHONE_HOTSPOT_SSID", "Drifter")
-PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "54232105")
+PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "")
 AUTOCONNECT_KNOWN_SSIDS = [
     s.strip() for s in os.getenv(
         "AUTOCONNECT_KNOWN_SSIDS",

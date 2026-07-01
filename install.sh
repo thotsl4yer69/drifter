@@ -565,9 +565,25 @@ step 9 "Configuring Wi-Fi hotspot"
 
 # Preserve existing hotspot profile + rotated PSK (operator may have changed it).
 # Only create from defaults if it doesn't exist yet.
+#
+# PSK sourcing (no committed secret): use $DRIFTER_HOTSPOT_PSK if the operator
+# exported it (or set it in the shell / .env sourced before install), otherwise
+# generate a unique 16-char PSK for THIS node. A shared hardcoded PSK across
+# every deploy is a secret leak; a per-node random PSK is both safe and
+# reproducible. The chosen PSK is printed once here and the operator can always
+# recover it later with: nmcli --show-secrets connection show MZ1312_DRIFTER
+HOTSPOT_PSK_SHOWN=""   # what to tell the operator at the end
 if nmcli con show "MZ1312_DRIFTER" &>/dev/null; then
     ok "Hotspot MZ1312_DRIFTER already configured — preserving PSK"
+    HOTSPOT_PSK_SHOWN="nmcli --show-secrets connection show MZ1312_DRIFTER"
 else
+    HOTSPOT_PSK="${DRIFTER_HOTSPOT_PSK:-}"
+    if [ -z "$HOTSPOT_PSK" ]; then
+        # SIGPIPE-safe under `set -o pipefail`: head closes the pipe, tr dies
+        # with 141, `|| true` absorbs it so the pipeline still succeeds.
+        HOTSPOT_PSK="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 16 || true)"
+        warn "No \$DRIFTER_HOTSPOT_PSK set — generated a unique per-node PSK: ${HOTSPOT_PSK}"
+    fi
     nmcli con add type wifi \
         ifname wlan0 \
         con-name "MZ1312_DRIFTER" \
@@ -580,8 +596,9 @@ else
         ipv4.method shared \
         ipv4.addresses 10.42.0.1/24 \
         wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "uncaged1312" 2>/dev/null
-    ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+        wifi-sec.psk "$HOTSPOT_PSK" 2>/dev/null
+    ok "Hotspot: MZ1312_DRIFTER / 10.42.0.1 (PSK set — recover via nmcli --show-secrets)"
+    HOTSPOT_PSK_SHOWN="$HOTSPOT_PSK"
 fi
 
 # ── 10. systemd Services ──
@@ -701,7 +718,7 @@ echo -e "  ${CYAN}Reboot now:${NC} sudo reboot"
 echo ""
 echo -e "  After reboot:"
 echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC}"
-echo -e "     Password: ${CYAN}uncaged1312${NC}"
+echo -e "     Password: ${CYAN}${HOTSPOT_PSK_SHOWN}${NC}"
 echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
 echo -e "     (or MQTT → ${CYAN}10.42.0.1:1883${NC})"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"

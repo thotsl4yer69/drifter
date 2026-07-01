@@ -21,7 +21,7 @@ drifter:
   # ── Operational metadata ───────────────────────────────────────────
   vehicle:     "2004 Jaguar X-Type 2.5 V6 (AJ-V6)"
   hardware:    "Raspberry Pi 4 / Kali ARM64"
-  hotspot:     MZ1312_DRIFTER                # WPA2 PSK: uncaged1312
+  hotspot:     MZ1312_DRIFTER                # WPA2 PSK: per-node (nmcli --show-secrets connection show MZ1312_DRIFTER)
   hotspot_ip:  10.42.0.1/24
   ports:
     dashboard: 8080

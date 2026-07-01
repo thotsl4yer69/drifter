@@ -100,9 +100,12 @@ cd drifter && sudo ./install.sh
 # 1. Reboot
 sudo reboot
 
-# 2. Connect phone to Wi-Fi: MZ1312_DRIFTER / uncaged1312
+# 2. Connect phone to Wi-Fi: MZ1312_DRIFTER
+#    (PSK is set per-node at install — recover it on the Pi with:
+#     nmcli --show-secrets connection show MZ1312_DRIFTER)
 # 3. Open RealDash → TCP CAN → 10.42.0.1:35000
-#    (or MQTT → 10.42.0.1:1883)
+#    (the MQTT broker is bound to localhost only; phones reach the node
+#     over HTTP/WS on 10.42.0.1:8080/8081, never MQTT directly)
 # 4. Plug phone into Pioneer via USB
 # 5. Screw OBD-II pigtail CAN-H/CAN-L into USB2CANFD terminals
 # 6. After first warm-up drive, run calibration:

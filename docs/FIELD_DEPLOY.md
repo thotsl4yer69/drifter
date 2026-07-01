@@ -133,8 +133,9 @@ of [`/CLAUDE.md`](../CLAUDE.md) from `needs-human` to `ok` and bump the
 ## Side-of-the-road quick reference
 
 You're at a service station, the Jag won't start, the HUD is dark.
-Tether your phone to `MZ1312_DRIFTER` (PSK `uncaged1312`). You should
-get DHCP'd into `10.42.0.x`. SSH from a phone terminal app:
+Tether your phone to `MZ1312_DRIFTER` (the PSK is set per-node at install —
+recover it on the Pi with `nmcli --show-secrets connection show MZ1312_DRIFTER`).
+You should get DHCP'd into `10.42.0.x`. SSH from a phone terminal app:
 
 ```bash
 ssh kali@10.42.0.1
