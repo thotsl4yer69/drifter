@@ -54,11 +54,34 @@ _local = threading.local()
 
 
 def _conn():
-    """Return a per-thread reusable connection with row_factory."""
+    """Return a per-thread reusable connection with row_factory.
+
+    WAL + busy_timeout are set on every connection for two reasons:
+
+    - Power-cut safety: the vehicle drops power without a clean shutdown
+      constantly. WAL journaling recovers cleanly on the next open, and
+      drifter-db-checkpoint.service folds the WAL back on shutdown — but that
+      checkpoint is a no-op unless the DB is actually in WAL mode, which nothing
+      set before. WAL is persistent per-DB, so setting it here is idempotent.
+    - Concurrency: several services/threads write this DB. Without WAL a reader
+      blocks writers (and vice versa), and without busy_timeout a contended
+      write raises "database is locked" immediately instead of waiting.
+
+    synchronous=NORMAL is the standard WAL pairing — durable across app crashes,
+    and on a checkpointing DB a power cut can lose only the last few uncommitted
+    transactions, never corrupt the file.
+    """
     conn = getattr(_local, 'conn', None)
     if conn is None:
-        conn = sqlite3.connect(str(config.DB_PATH), check_same_thread=False)
+        conn = sqlite3.connect(str(config.DB_PATH), check_same_thread=False,
+                               timeout=5.0)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+        except sqlite3.Error as e:  # pragma: no cover - defensive
+            log.warning(f"Could not set WAL pragmas on {config.DB_PATH}: {e}")
         _local.conn = conn
     return conn
 
