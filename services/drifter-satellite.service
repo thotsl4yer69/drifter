@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Satellite Manager (ESP32 nodes)
-After=nanomq.service network.target
-Wants=nanomq.service
+After=drifter-broker.target network.target
+Wants=drifter-broker.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

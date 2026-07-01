@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Passive BLE Scanner
-After=bluetooth.service nanomq.service
-Wants=bluetooth.service nanomq.service
+After=drifter-broker.target bluetooth.service
+Wants=drifter-broker.target bluetooth.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

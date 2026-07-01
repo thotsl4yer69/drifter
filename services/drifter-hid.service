@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER HID Injection Service — Rubber Ducky / BadUSB (ARM→CONFIRM→RUN)
-After=network.target nanomq.service mosquitto.service
-Wants=nanomq.service
+After=drifter-broker.target network.target
+Wants=drifter-broker.target
 
 # Pi crash-loop guard (project rule — the Pi has crash-looped twice
 # without these). MUST stay present.

@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER boot reason reporter (one-shot)
-After=local-fs.target network-online.target mosquitto.service
-Wants=network-online.target
+After=drifter-broker.target local-fs.target network-online.target
+Wants=drifter-broker.target network-online.target
 
 [Service]
 Type=oneshot

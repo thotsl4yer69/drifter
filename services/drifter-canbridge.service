@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER CAN Bridge
-After=network.target nanomq.service
-Wants=nanomq.service
+After=drifter-broker.target network.target
+Wants=drifter-broker.target
 # NO StartLimitAction=reboot-force here (removed 2026-06-10).
 # A missing telemetry source — no USB2CANFD plugged in, no K-line adapter,
 # adapter popped off mid-drive, or the ECU simply being off — is a NORMAL,

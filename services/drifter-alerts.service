@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Alert Engine
-After=nanomq.service drifter-canbridge.service
-Wants=nanomq.service
+After=drifter-broker.target drifter-canbridge.service
+Wants=drifter-broker.target
 # Vehicle-survival hardening 2026-06-10: NO StartLimitAction=reboot-force.
 # This consumes CAN telemetry (After=drifter-canbridge); the old
 # reboot-force + StartLimitBurst=5 meant a crash here — e.g. on a no-CAN /

@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Vivi v2 Voice Assistant
-After=nanomq.service sound.target
-Wants=nanomq.service
+After=drifter-broker.target sound.target
+Wants=drifter-broker.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

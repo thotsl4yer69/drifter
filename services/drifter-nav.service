@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Navigation Engine
-After=nanomq.service
-Wants=nanomq.service
+After=drifter-broker.target
+Wants=drifter-broker.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

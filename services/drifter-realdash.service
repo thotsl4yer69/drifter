@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER RealDash TCP CAN Bridge
-After=nanomq.service drifter-canbridge.service
-Wants=nanomq.service
+After=drifter-broker.target drifter-canbridge.service
+Wants=drifter-broker.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

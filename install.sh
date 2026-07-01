@@ -15,16 +15,20 @@ set -eo pipefail
 # is idempotent — dpkg no-ops if already installed).
 SKIP_APT=0
 WITH_7B=0
+WITH_NANOMQ=0
 for arg in "$@"; do
     case "$arg" in
         --skip-apt) SKIP_APT=1 ;;
         --with-7b) WITH_7B=1 ;;
+        --with-nanomq) WITH_NANOMQ=1 ;;
         -h|--help)
-            echo "Usage: sudo ./install.sh [--skip-apt] [--with-7b]"
-            echo "  --skip-apt: skip step 1 system update/upgrade"
-            echo "  --with-7b:  also pull qwen2.5:7b (opt-in; ~4.7GB). The Pi 5"
-            echo "              can't hold 7b warm alongside Vivi — only pull it"
-            echo "              if you'll run the analyst standalone/offline."
+            echo "Usage: sudo ./install.sh [--skip-apt] [--with-7b] [--with-nanomq]"
+            echo "  --skip-apt:     skip step 1 system update/upgrade"
+            echo "  --with-7b:      also pull qwen2.5:7b (opt-in; ~4.7GB). The Pi 5"
+            echo "                  can't hold 7b warm alongside Vivi — only pull it"
+            echo "                  if you'll run the analyst standalone/offline."
+            echo "  --with-nanomq:  use NanoMQ as the MQTT broker instead of the"
+            echo "                  default Mosquitto (installed from the EMQX repo)."
             exit 0
             ;;
         *)
@@ -122,26 +126,45 @@ else
     }
 fi
 
-# ── 3. NanoMQ MQTT Broker ──
-step 3 "Installing NanoMQ MQTT broker"
-if command -v nanomq &>/dev/null; then
-    ok "NanoMQ already installed"
-elif command -v mosquitto &>/dev/null; then
-    ok "Mosquitto already installed (MQTT broker)"
-    systemctl enable mosquitto 2>/dev/null || true
-elif [[ "${SKIP_APT:-0}" != "1" ]]; then
-    # Try the official install script
-    if curl -s https://assets.emqx.com/images/install-nanomq-deb.sh | bash 2>/dev/null; then
-        apt-get install -y -qq nanomq 2>/dev/null
-        ok "NanoMQ installed from EMQX repo"
-    else
-        warn "NanoMQ repo unavailable, installing Mosquitto as fallback"
-        apt-get install -y -qq mosquitto 2>/dev/null
-        systemctl enable mosquitto
-        ok "Mosquitto installed as MQTT broker"
+# ── 3. MQTT Broker ──
+# DETERMINISTIC broker choice. Default = Mosquitto (in Debian/Kali apt, no
+# third-party curl|bash). --with-nanomq opts into NanoMQ from the EMQX repo.
+# Previously the broker was decided by whether a piped remote install script
+# happened to succeed, so a fresh flash could end up on EITHER broker depending
+# on network conditions — and the unit files only ordered against one of them.
+# Now the broker is a deliberate choice and every service orders against the
+# stable drifter-broker.target (wired to whichever broker we pick, in step 10).
+BROKER_UNIT=""   # concrete broker service, used to wire drifter-broker.target
+step 3 "Installing MQTT broker"
+if [[ "${WITH_NANOMQ:-0}" == "1" ]]; then
+    if command -v nanomq &>/dev/null; then
+        ok "NanoMQ already installed"
+        BROKER_UNIT="nanomq.service"
+    elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+        if curl -fsS https://assets.emqx.com/images/install-nanomq-deb.sh | bash; then
+            apt-get install -y -qq nanomq
+            systemctl enable nanomq 2>/dev/null || true
+            BROKER_UNIT="nanomq.service"
+            ok "NanoMQ installed from EMQX repo"
+        else
+            warn "NanoMQ repo unavailable — falling back to Mosquitto"
+        fi
     fi
-else
-    warn "No MQTT broker found — skipped install (--skip-apt)"
+fi
+# Default path (or NanoMQ fallback): Mosquitto.
+if [[ -z "$BROKER_UNIT" ]]; then
+    if command -v mosquitto &>/dev/null; then
+        ok "Mosquitto already installed (MQTT broker)"
+    elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+        apt-get install -y -qq mosquitto
+        ok "Mosquitto installed as MQTT broker"
+    else
+        warn "No MQTT broker found — skipped install (--skip-apt)"
+    fi
+    if command -v mosquitto &>/dev/null; then
+        systemctl enable mosquitto 2>/dev/null || true
+        BROKER_UNIT="mosquitto.service"
+    fi
 fi
 
 # ── 4. TTS Engine ──
@@ -611,18 +634,37 @@ elif command -v nanomq &>/dev/null; then
     cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq.conf
 fi
 
-# Deploy all service + timer files
+# Deploy all service + timer + target files
 for svc in ${REPO_DIR}/services/*.service; do
     cp "$svc" /etc/systemd/system/
 done
-# Timer units must be copied too (otherwise enable below fails with
-# "Unit not found"). nullglob so the glob expands to nothing if no .timer
-# files exist, instead of looping over the literal '*.timer' string.
+# Timer + target units must be copied too (otherwise enable below fails with
+# "Unit not found"). nullglob so the glob expands to nothing if no matching
+# files exist, instead of looping over the literal glob string.
 shopt -s nullglob
 for tmr in ${REPO_DIR}/services/*.timer; do
     cp "$tmr" /etc/systemd/system/
 done
+for tgt in ${REPO_DIR}/services/*.target; do
+    cp "$tgt" /etc/systemd/system/
+done
 shopt -u nullglob
+
+# Wire drifter-broker.target to whichever broker step 3 installed. Every MQTT
+# consumer orders `After=drifter-broker.target Wants=drifter-broker.target`; this
+# drop-in is what makes that target actually pull in + order after the real
+# broker. Written fresh each run so a broker switch (mosquitto<->nanomq) is
+# picked up. If no broker was installed (--skip-apt on a broker-less box) we
+# fall back to mosquitto.service so the wiring is still valid once one exists.
+BROKER_UNIT="${BROKER_UNIT:-mosquitto.service}"
+mkdir -p /etc/systemd/system/drifter-broker.target.d
+cat > /etc/systemd/system/drifter-broker.target.d/10-broker.conf <<BROKERCONF
+# Generated by install.sh — concrete broker for drifter-broker.target.
+[Unit]
+Wants=${BROKER_UNIT}
+After=${BROKER_UNIT}
+BROKERCONF
+ok "drifter-broker.target → ${BROKER_UNIT}"
 
 # Sudoers drop-ins — narrow NOPASSWD entries for the dashboards.
 # Ships drifter-mode.sudoers (mode-switch) AND drifter-service.sudoers
@@ -664,12 +706,10 @@ SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect dri
 # both drive the SPI LCD — they are mutually exclusive. The deploy enables both
 # here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
 # the lcd_dashboard menu UI, or disable drifter-lcd to keep the mirror.
-if command -v nanomq &>/dev/null; then
-    systemctl enable nanomq 2>/dev/null || true
-else
-    # Mosquitto is already enabled
-    true
-fi
+# The broker itself was enabled in step 3. Enable the stable broker anchor that
+# every MQTT consumer orders against (its drop-in, written above, wires it to
+# the concrete broker).
+systemctl enable drifter-broker.target 2>/dev/null || true
 
 for svc in $SERVICES; do
     systemctl enable "$svc" 2>/dev/null

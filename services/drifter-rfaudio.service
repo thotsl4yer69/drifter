@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER rfaudio — on-demand RTL-SDR → speaker (emergency listen)
-After=nanomq.service mosquitto.service sound.target
-Wants=nanomq.service mosquitto.service
+After=drifter-broker.target sound.target
+Wants=drifter-broker.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
