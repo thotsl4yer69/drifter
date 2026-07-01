@@ -233,6 +233,42 @@ def load_settings() -> dict:
     return settings
 
 
+def atomic_write_text(path, text: str) -> None:
+    """Write text to `path` atomically (crash/power-cut safe).
+
+    In a vehicle the Pi loses power without a clean shutdown constantly. A
+    plain `open(path, 'w')` leaves a truncated/half-written file if power drops
+    mid-write, which then fails to parse on next boot. This writes to a sibling
+    temp file, fsyncs it, and os.replace()s it into place — os.replace is atomic
+    on POSIX, so a reader ever sees either the old file or the complete new one,
+    never a partial. Dependency-free so the whole fleet can share it via config.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        with open(tmp, 'w') as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        # Don't leave the temp file behind on failure.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_json(path, data, *, indent: int = 2) -> None:
+    """Serialize `data` as JSON and write it to `path` atomically.
+
+    See atomic_write_text for the crash-safety rationale.
+    """
+    atomic_write_text(path, json.dumps(data, indent=indent))
+
+
 def save_settings(settings: dict) -> bool:
     """Persist user settings to settings.json.
 
@@ -246,9 +282,7 @@ def save_settings(settings: dict) -> bool:
         if not isinstance(settings, dict):
             return False
         filtered = {k: v for k, v in settings.items() if k in SETTINGS_DEFAULTS}
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(filtered, f, indent=2)
+        atomic_write_json(SETTINGS_FILE, filtered)
         return True
     except Exception as e:
         _log.warning(f"Failed to save settings: {e}")

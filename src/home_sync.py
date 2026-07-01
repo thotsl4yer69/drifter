@@ -21,6 +21,7 @@ from config import (
     NANOB_HOST,
     NANOB_PORT,
     NANOB_USER,
+    atomic_write_json,
     make_mqtt_client,
 )
 
@@ -94,10 +95,9 @@ def load_sync_state():
 
 
 def save_sync_state(state):
-    """Save sync state to disk."""
+    """Save sync state to disk atomically (power-cut safe)."""
     try:
-        with open(SYNC_STATE_FILE, 'w') as f:
-            json.dump(state, f)
+        atomic_write_json(SYNC_STATE_FILE, state, indent=None)
     except OSError as e:
         log.warning(f"Failed to save sync state: {e}")
 
