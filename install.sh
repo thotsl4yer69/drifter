@@ -703,9 +703,10 @@ rm -f "${DRIFTER_DIR}/state/mode"
 # expects.
 SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-dashboard drifter-flipper drifter-fly-catcher drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-realdash drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
 # NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
-# both drive the SPI LCD — they are mutually exclusive. The deploy enables both
-# here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
-# the lcd_dashboard menu UI, or disable drifter-lcd to keep the mirror.
+# both drive the SPI LCD and are mutually exclusive. The deploy enables ONLY
+# drifter-lcd (it is in config.SERVICES; fbmirror is not). To use the plain
+# mirror instead: `systemctl enable --now drifter-fbmirror` and
+# `systemctl disable --now drifter-lcd`.
 # The broker itself was enabled in step 3. Enable the stable broker anchor that
 # every MQTT consumer orders against (its drop-in, written above, wires it to
 # the concrete broker).

@@ -635,7 +635,10 @@ REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
-# Canonical list of 19 active systemd services.
+# Canonical list of the monitored systemd services — the single source of
+# truth. /healthz checks exactly this set, oneshot.sh starts it, and
+# install.sh enables it (tests/test_deploy_service_lists.py enforces the sync).
+# Do not hardcode a count in prose; it drifts. Use len(SERVICES).
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",
