@@ -143,6 +143,27 @@ def _load_yaml_config() -> None:
         log.warning(f"safety.yaml load failed: {e}")
 
 
+# Safety coolant thresholds are derived from the engine's normal operating high
+# plus these fixed margins, so they scale to whatever car is active. The X-Type
+# runs 98°C normal-high → 108/115, i.e. the historical SAFETY_CFG defaults, so
+# its behaviour is unchanged.
+_COOLANT_AMBER_MARGIN = 10.0   # °C above normal operating high
+_COOLANT_RED_MARGIN = 17.0
+
+
+def _apply_profile() -> None:
+    """Re-apply per-vehicle safety limits from the ACTIVE vehicle profile:
+    over-rev from the redline, and coolant amber/red derived from the engine's
+    normal operating high. Called at startup and on a live drifter/vehicle/
+    profile update. safety.yaml still overrides on top (re-applied by the
+    caller), so an operator's explicit limits always win."""
+    SAFETY_CFG['overrev_rpm'] = vehicle_profile.redline_rpm()
+    normal_high = vehicle_profile.engine_params().get('coolant_normal_high')
+    if isinstance(normal_high, (int, float)):
+        SAFETY_CFG['coolant_amber_c'] = float(normal_high) + _COOLANT_AMBER_MARGIN
+        SAFETY_CFG['coolant_red_c'] = float(normal_high) + _COOLANT_RED_MARGIN
+
+
 # ── Rule functions: each returns (level, key, message) or None ──
 # Rules read _state under the lock; callers must hold _state_lock.
 
@@ -334,6 +355,16 @@ def on_message(client, userdata, msg) -> None:
         _on_snapshot(data if isinstance(data, dict) else {})
         return
 
+    if topic == TOPICS.get('vehicle_profile') or topic.endswith('/vehicle/profile'):
+        prof = data.get('profile') if isinstance(data, dict) else None
+        if isinstance(prof, dict):
+            vehicle_profile.set_active(prof)
+            _apply_profile()
+            _load_yaml_config()  # operator's safety.yaml limits re-win
+            log.info(f"Vehicle profile applied — overrev={SAFETY_CFG['overrev_rpm']}, "
+                     f"coolant_red={SAFETY_CFG['coolant_red_c']}")
+        return
+
     if not isinstance(data, dict):
         return
 
@@ -380,6 +411,7 @@ def on_connect(client, userdata, flags, rc) -> None:
         (TOPICS['driver_fatigue'], 0),
         (TOPICS['weather_current'], 0),
         (TOPICS['location_elevation'], 0),
+        (TOPICS['vehicle_profile'], 0),
     ])
     log.info("MQTT connected — subscriptions active")
 
@@ -457,9 +489,9 @@ def _make_client_id() -> str:
 
 def main() -> None:
     log.info("DRIFTER Safety Engine starting...")
-    # Seed the per-vehicle over-rev limit from the active profile (redline
-    # varies by engine), then let safety.yaml override if the operator set one.
-    SAFETY_CFG['overrev_rpm'] = vehicle_profile.redline_rpm()
+    # Seed per-vehicle safety limits (over-rev redline, coolant thresholds) from
+    # the active profile, then let safety.yaml override if the operator set one.
+    _apply_profile()
     _load_yaml_config()
 
     running = True
