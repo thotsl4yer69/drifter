@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Public Feeds Aggregator
-After=network-online.target mosquitto.service
-Wants=network-online.target mosquitto.service
+After=drifter-broker.target network-online.target
+Wants=drifter-broker.target network-online.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

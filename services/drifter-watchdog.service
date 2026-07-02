@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Watchdog — Service & System Health Monitor
-After=nanomq.service drifter-canbridge.service
-Wants=nanomq.service
+After=drifter-broker.target drifter-canbridge.service
+Wants=drifter-broker.target
 # Vehicle-survival hardening 2026-06-10: NO StartLimitAction=reboot-force.
 # The watchdog's real job is restarting individual wedged units (it only ever
 # runs `systemctl restart <unit>`, never reboots). The systemd reboot-force

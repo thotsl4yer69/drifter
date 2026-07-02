@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Wi-Fi Hotspot Auto-Connector
-After=NetworkManager.service nanomq.service
-Wants=NetworkManager.service
+After=drifter-broker.target NetworkManager.service
+Wants=drifter-broker.target NetworkManager.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

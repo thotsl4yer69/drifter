@@ -233,6 +233,42 @@ def load_settings() -> dict:
     return settings
 
 
+def atomic_write_text(path, text: str) -> None:
+    """Write text to `path` atomically (crash/power-cut safe).
+
+    In a vehicle the Pi loses power without a clean shutdown constantly. A
+    plain `open(path, 'w')` leaves a truncated/half-written file if power drops
+    mid-write, which then fails to parse on next boot. This writes to a sibling
+    temp file, fsyncs it, and os.replace()s it into place — os.replace is atomic
+    on POSIX, so a reader ever sees either the old file or the complete new one,
+    never a partial. Dependency-free so the whole fleet can share it via config.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        with open(tmp, 'w') as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        # Don't leave the temp file behind on failure.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_json(path, data, *, indent: int | None = 2) -> None:
+    """Serialize `data` as JSON and write it to `path` atomically.
+
+    See atomic_write_text for the crash-safety rationale.
+    """
+    atomic_write_text(path, json.dumps(data, indent=indent))
+
+
 def save_settings(settings: dict) -> bool:
     """Persist user settings to settings.json.
 
@@ -246,13 +282,39 @@ def save_settings(settings: dict) -> bool:
         if not isinstance(settings, dict):
             return False
         filtered = {k: v for k, v in settings.items() if k in SETTINGS_DEFAULTS}
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(filtered, f, indent=2)
+        atomic_write_json(SETTINGS_FILE, filtered)
         return True
     except Exception as e:
         _log.warning(f"Failed to save settings: {e}")
         return False
+
+
+def resolve_device(env_var: str, stable: str, default: str) -> str:
+    """Pick a serial/char device path, preferring stability over raw ordering.
+
+    Raw /dev/ttyUSB0 / ttyACM0 numbers are assigned in USB enumeration order,
+    so plugging the OBD dongle before vs after the GPS can swap them and break
+    boot. The install ships udev rules (config/99-drifter-serial.rules) that
+    create stable, role-named symlinks (/dev/drifter-obd, ...). Resolution:
+
+      1. Explicit env override (operator knows best) — always wins.
+      2. The stable udev symlink, if it currently exists.
+      3. The historical raw path as a last resort, so a node that hasn't
+         installed/confirmed the udev rule still behaves exactly as before.
+
+    The couple of stat() calls at import are negligible (unlike the deferred
+    /proc/device-tree platform probe) and keep every caller's `serial.Serial(
+    CONST)` site unchanged.
+    """
+    override = os.getenv(env_var)
+    if override:
+        return override
+    try:
+        if stable and os.path.exists(stable):
+            return stable
+    except OSError:  # pragma: no cover - defensive
+        pass
+    return default
 
 # ── MQTT ──
 MQTT_HOST = "localhost"
@@ -635,7 +697,10 @@ REPORTS_DIR = DRIFTER_DIR / "reports"
 ANALYST_BASELINE_SESSIONS = 10
 
 # ── Services ──
-# Canonical list of 19 active systemd services.
+# Canonical list of the monitored systemd services — the single source of
+# truth. /healthz checks exactly this set, oneshot.sh starts it, and
+# install.sh enables it (tests/test_deploy_service_lists.py enforces the sync).
+# Do not hardcode a count in prose; it drifts. Use len(SERVICES).
 SERVICES = [
     "drifter-canbridge",
     "drifter-alerts",
@@ -681,6 +746,8 @@ SERVICES = [
     # Counter-surveillance — Ghost Protocol (Shade Core hardware + sw correlator)
     "drifter-ghost",         # ghost_protocol.py — tracker/IMSI/ALPR/RF correlator
     "drifter-ghost-voice",   # speaks drifter/ghost/alert via alert_message
+    # Multi-vehicle — VIN detect → active profile (drives per-car thresholds)
+    "drifter-vehicleid",     # vehicle_id.py — publishes drifter/vehicle/profile
 ]
 
 # ── Modes ──
@@ -735,6 +802,7 @@ SHARED_SERVICES = [
     "drifter-autoconnect", # Wi-Fi hotspot auto-connect + AP fallback (both modes)
     "drifter-ghost",       # counter-surveillance correlator (runs in both modes)
     "drifter-ghost-voice", # speaks ghost alerts (runs in both modes)
+    "drifter-vehicleid",   # VIN → active vehicle profile (runs in all modes)
 ]
 # Lean diagnostics floor (RAM safety valve). A curated SUBSET of SERVICES —
 # vehicle telemetry + driver-safety only, deliberately excluding every heavy
@@ -762,6 +830,7 @@ DIAG_SERVICES = [
     "drifter-homesync",    # background rsync to home node
     "drifter-weather",     # OpenWeatherMap poller (network-only, light)
     "drifter-location",    # Elevation + Places (network-only, light)
+    "drifter-vehicleid",   # VIN → active profile (lightweight; drives per-car thresholds)
 ]
 
 MODES = {
@@ -863,7 +932,7 @@ CAN_AI_MIN_SATURATED_IDS = 6       # stop once this many IDs reach MIN_SAMPLES
 CAN_SNIFF_BUFFER = 5000
 CAN_SNIFF_SUMMARY_HZ = 1
 COIL_TYPE = "COP"      # Coil-on-plug, 6 individual coils
-COMMS_MODEM_DEV = "/dev/ttyUSB2"
+COMMS_MODEM_DEV = resolve_device("COMMS_MODEM_DEV", "/dev/drifter-modem", "/dev/ttyUSB2")
 COMMS_NOTIFY_BACKENDS = ("ntfy", "telegram", "discord")
 COMPRESSION_RATIO = 10.0
 CRASH_ACCEL_G_THRESHOLD = 3.0       # peak g over 100ms = crash
@@ -914,7 +983,7 @@ NAV_CAMERA_BEARING_TOLERANCE_DEG = 60   # camera must be within ±this of travel
 NAV_CAMERA_WARN_METERS = 300
 NAV_GEOFENCES_FILE = DATA_DIR / "geofences.json"
 NAV_GPS_BAUD = 9600
-NAV_GPS_DEVICE = "/dev/ttyACM0"
+NAV_GPS_DEVICE = resolve_device("NAV_GPS_DEVICE", "/dev/drifter-gps", "/dev/ttyACM0")
 NAV_OSRM_HOST = "router.project-osrm.org"
 NAV_REROUTE_OFF_THRESHOLD = 50      # m off-route triggers reroute
 NAV_ROUTE_CACHE_DIR = DATA_DIR / "routes"
@@ -923,7 +992,7 @@ NAV_STATUS_PUBLISH_SEC = 5
 NAV_TILE_CACHE_DIR = DATA_DIR / "tiles"
 OBD_POLL_HZ = 5
 OBD_SERIAL_BAUD = 38400
-OBD_SERIAL_DEV = "/dev/ttyUSB0"
+OBD_SERIAL_DEV = resolve_device("OBD_SERIAL_DEV", "/dev/drifter-obd", "/dev/ttyUSB0")
 PEAK_HP = 194          # bhp @ 6800 RPM
 PEAK_TORQUE_NM = 245   # Nm @ 3500 RPM
 PRESENCE_DEPARTURE_GRACE = 120     # seconds offline before "departed"
@@ -1122,10 +1191,13 @@ LCD_OBD_STALE_S = float(os.getenv("LCD_OBD_STALE_S", "5.0"))
 #  operator can always SSH in to fix things.
 # ═══════════════════════════════════════════════════════════════════
 # Known client SSIDs to join, in priority order. The phone hotspot SSID/PSK
-# default to the operator's "Drifter" phone hotspot so the node auto-joins it
-# out of the box; both still honour an env override for a different phone.
+# come from the environment (/opt/drifter/.env — see config/.env.example);
+# there is NO hardcoded PSK default, because a committed Wi-Fi password is a
+# secret leak. Empty PSK means auto_connect skips joining the phone hotspot
+# until the operator sets it (auto_connect.py guards on a truthy PSK), so the
+# node still boots and falls back to its own recovery AP.
 PHONE_HOTSPOT_SSID = os.getenv("PHONE_HOTSPOT_SSID", "Drifter")
-PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "54232105")
+PHONE_HOTSPOT_PSK = os.getenv("PHONE_HOTSPOT_PSK", "")
 AUTOCONNECT_KNOWN_SSIDS = [
     s.strip() for s in os.getenv(
         "AUTOCONNECT_KNOWN_SSIDS",

@@ -98,7 +98,14 @@ fi
 
 # ── 4. systemd services ──
 echo -e "\n${AMBER}[4/8] systemd Services${NC}"
-SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-voice drifter-vivi drifter-hotspot drifter-homesync drifter-watchdog drifter-realdash drifter-rf drifter-wardrive drifter-fbmirror drifter-anomaly drifter-analyst drifter-voicein drifter-flipper drifter-opsec drifter-bleconv drifter-gps"
+# Derive the monitored set from config.SERVICES (the source of truth) so this
+# checker can never drift from what /healthz actually monitors. Falls back to a
+# minimal telemetry-core list only if the deployed config can't be imported.
+SERVICES=$(/opt/drifter/venv/bin/python3 -c "
+import sys; sys.path.insert(0, '/opt/drifter')
+from config import SERVICES
+print(' '.join(SERVICES))
+" 2>/dev/null) || SERVICES="drifter-canbridge drifter-alerts drifter-dashboard drifter-logger drifter-watchdog"
 # Hardware-optional: services that crash-loop cleanly until their dongle
 # is plugged in. Reported as warnings even in-mode so a bench install
 # without USB2CANFD/RTL-SDR/microphone still passes the deploy contract.
@@ -209,7 +216,7 @@ if command -v ollama &>/dev/null; then
     if ollama list 2>/dev/null | grep -q "qwen"; then
         ok "LLM model available"
     else
-        warn "No LLM model pulled — run: ollama pull qwen2.5:7b"
+        warn "No LLM model pulled — run: ollama pull qwen2.5:1.5b"
     fi
 else
     warn "Ollama not installed — LLM mechanic unavailable (offline AI disabled)"

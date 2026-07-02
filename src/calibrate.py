@@ -25,6 +25,7 @@ from config import (
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
+    atomic_write_json,
     make_mqtt_client,
 )
 
@@ -167,10 +168,8 @@ def load_calibration():
 
 
 def save_calibration(cal):
-    """Write calibration to disk."""
-    CALIBRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CALIBRATION_FILE, 'w') as f:
-        json.dump(cal, f, indent=2)
+    """Write calibration to disk atomically (power-cut safe)."""
+    atomic_write_json(CALIBRATION_FILE, cal)
     log.info(f"Calibration saved to {CALIBRATION_FILE}")
 
 

@@ -56,7 +56,15 @@ def _load_secret() -> str:
 
 def _init_db() -> sqlite3.Connection:
     Path(FLEET_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(FLEET_DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(FLEET_DB_PATH), check_same_thread=False, timeout=5.0)
+    # WAL + busy_timeout: power-cut-safe recovery + concurrent read/write, same
+    # rationale as db.py. WAL is persistent per-DB, so this is idempotent.
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.Error as e:  # pragma: no cover - defensive
+        log.warning("Could not set WAL pragmas on %s: %s", FLEET_DB_PATH, e)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS vehicles (

@@ -35,6 +35,7 @@ from config import (
     TPMS_POSITIONS,
     TPMS_SENSOR_FILE,
     TPMS_STALE_TIMEOUT,
+    atomic_write_json,
     make_mqtt_client,
 )
 from hw_probe import probe_rtl_sdr, publish_hw_state
@@ -219,8 +220,7 @@ class TPMSState:
                 'sensors': self.sensor_map,
                 'saved': time.strftime('%Y-%m-%d %H:%M:%S'),
             }
-            with open(TPMS_SENSOR_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
+            atomic_write_json(TPMS_SENSOR_FILE, data)
             log.info("TPMS sensor mapping saved")
         except Exception as e:
             log.warning(f"Could not save TPMS sensors: {e}")

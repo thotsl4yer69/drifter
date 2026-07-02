@@ -1,0 +1,20 @@
+[Unit]
+# MZ1312 DRIFTER — stable MQTT-broker anchor.
+#
+# Every drifter service that talks to MQTT orders against THIS target instead
+# of a concrete broker unit, because the node may run either Mosquitto (the
+# default) or NanoMQ (opt-in via install.sh --with-nanomq). Ordering against a
+# concrete `nanomq.service`/`mosquitto.service` was fragile: an `After=` on a
+# broker that wasn't installed is silently a no-op, so consumers could start
+# before the real broker was up.
+#
+# install.sh drops in the concrete wiring at
+#   /etc/systemd/system/drifter-broker.target.d/10-broker.conf
+# which adds `Wants=`/`After=` the broker that was actually installed, so this
+# target becomes active only once that broker has started. Consumers order
+# `After=drifter-broker.target Wants=drifter-broker.target` and no longer care
+# which broker won.
+Description=MZ1312 DRIFTER MQTT broker ready (Mosquitto or NanoMQ)
+
+[Install]
+WantedBy=multi-user.target

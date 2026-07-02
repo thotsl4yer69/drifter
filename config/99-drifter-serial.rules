@@ -1,0 +1,44 @@
+# MZ1312 DRIFTER — stable serial-device symlinks
+#
+# WHY: raw /dev/ttyUSB0 / /dev/ttyACM0 numbers are handed out in USB
+# enumeration order. Plug the OBD dongle in before vs after the GPS and they
+# swap — which silently points obd_bridge at the GPS (or worse). These rules
+# create role-named symlinks that always follow the SAME physical device, so
+# enumeration order can't break boot. config.resolve_device() prefers these
+# symlinks and falls back to the raw path if a rule isn't present, so a node
+# that hasn't set these up still behaves exactly as before.
+#
+# ── HARDWARE CONFIRMATION REQUIRED ──────────────────────────────────────────
+# The VID:PIDs below cover the common dongles, but you MUST confirm yours,
+# because several USB-serial devices share a chipset (an ELM327 clone, an
+# ESP32-Marauder, and an LTE modem can ALL enumerate as CH340 1a86:7523 or
+# CP210x 10c4:ea60). If you have more than one device on the same chipset, a
+# VID:PID rule alone would grab the wrong one — disambiguate by the per-device
+# serial. Find your device's attributes with:
+#
+#     udevadm info -a -n /dev/ttyUSB0 | grep -E 'idVendor|idProduct|serial'
+#
+# then either fill in ATTRS{serial}=="..." on the matching rule below, or set
+# the explicit path via env on the unit (e.g. OBD_SERIAL_DEV=/dev/ttyUSB1).
+# After editing:  sudo udevadm control --reload-rules && sudo udevadm trigger
+# ─────────────────────────────────────────────────────────────────────────────
+
+# GPS — u-blox 7/8 (distinctive VID:PID, safe to match by ID). Adjust if your
+# GPS dongle is a different chipset (e.g. Prolific/SiRF) — confirm via udevadm.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a7", SYMLINK+="drifter-gps"
+
+# ── TEMPLATES — uncomment + confirm the identifiers for YOUR hardware ────────
+# These are commented out on purpose: matching by shared chipset alone risks
+# tagging the wrong device. Uncomment the one(s) you use and, if you run more
+# than one device on that chipset, add ATTRS{serial}=="<your-serial>".
+#
+# OBD-II ELM327 (CH340 clone — the most common):
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="drifter-obd"
+# OBD-II ELM327 (CP210x variant):
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="drifter-obd"
+#
+# ESP32-Marauder (CP210x — disambiguate from an ELM327 by serial!):
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="<esp32-serial>", SYMLINK+="drifter-marauder"
+#
+# LTE / 4G modem (comms_bridge — fixed index /dev/ttyUSB2 today):
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="<vid>", ATTRS{idProduct}=="<pid>", SYMLINK+="drifter-modem"

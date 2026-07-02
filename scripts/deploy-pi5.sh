@@ -119,13 +119,20 @@ fi
 
 # ── PHASE 6 — enable services ────────────────────────────────
 phase 6 "enable + start services"
-SERVICES=(
-    drifter-canbridge drifter-alerts drifter-logger drifter-anomaly
-    drifter-analyst drifter-voice drifter-vivi drifter-hotspot drifter-homesync
-    drifter-watchdog drifter-realdash drifter-rf drifter-wardrive
-    drifter-dashboard drifter-fbmirror drifter-voicein drifter-flipper
-    drifter-opsec
+# Derive the service set from config.SERVICES (source of truth) so this deploy
+# path can't drift from /healthz / oneshot / install. Prefer the deployed
+# config, fall back to the repo copy, then to a minimal core list.
+mapfile -t SERVICES < <(
+    "$DRIFTER_DIR/venv/bin/python3" -c "
+import sys; sys.path.insert(0, '$DRIFTER_DIR'); sys.path.insert(0, '$REPO_DIR/src')
+from config import SERVICES
+print('\n'.join(SERVICES))
+" 2>/dev/null
 )
+if [ "${#SERVICES[@]}" -eq 0 ]; then
+    warn "could not import config.SERVICES — using minimal core list"
+    SERVICES=(drifter-canbridge drifter-alerts drifter-logger drifter-watchdog drifter-dashboard)
+fi
 if confirm "enable + restart ${#SERVICES[@]} services now?"; then
     systemctl daemon-reload
     for svc in "${SERVICES[@]}"; do

@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER GPS publisher (gpsd → MQTT)
-After=gpsd.service nanomq.service
-Wants=gpsd.service nanomq.service
+After=drifter-broker.target gpsd.service
+Wants=drifter-broker.target gpsd.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

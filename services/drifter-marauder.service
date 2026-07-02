@@ -1,7 +1,7 @@
 [Unit]
 Description=MZ1312 DRIFTER Marauder bridge (Wi-Fi/BLE recon + active)
-After=network-online.target mosquitto.service drifter-flipper.service
-Wants=mosquitto.service
+After=drifter-broker.target network-online.target drifter-flipper.service
+Wants=drifter-broker.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

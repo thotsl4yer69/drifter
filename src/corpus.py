@@ -32,6 +32,25 @@ log = logging.getLogger(__name__)
 CORPUS_DIR = Path("/opt/drifter/corpus")
 STATE_DIR = Path("/opt/drifter/state")
 DB_PATH = STATE_DIR / "corpus.db"
+
+
+def _open_db():
+    """Open corpus.db in WAL with a busy_timeout (power-cut safe + concurrent).
+
+    Same rationale as db.py: the vehicle loses power without a clean shutdown,
+    and multiple writers/readers touch this DB. WAL recovers cleanly and
+    busy_timeout lets a contended write wait instead of raising immediately.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.Error as e:  # pragma: no cover - defensive
+        log.warning("Could not set WAL pragmas on %s: %s", DB_PATH, e)
+    return conn
+
+
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBED_DIM = 384  # MiniLM L6 v2 output size
 
@@ -61,7 +80,7 @@ _model = None  # lazy-loaded
 
 def _connect() -> sqlite3.Connection:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _open_db()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -261,7 +280,7 @@ def corpus_search(query: str, k: int = 3,
         log.warning(f"corpus_search embed failed: {e}")
         return []
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = _open_db()
     cur = conn.cursor()
     cur.execute(
         "SELECT source_path, section, content, tags, vehicle, "
@@ -298,7 +317,7 @@ def corpus_search_lexical(query: str, k: int = 3,
     if not terms:
         return []
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _open_db()
         rows = conn.execute(
             "SELECT source_path, section, content, tags, vehicle, "
             "confidence, topic FROM chunks"
@@ -384,7 +403,7 @@ def stats() -> dict:
         return {'files': 0, 'chunks': 0, 'embedding_dim': EMBED_DIM,
                 'last_rebuild_ts': 0, 'corpus_dir': str(CORPUS_DIR),
                 'db_path': str(DB_PATH), 'db_bytes': 0}
-    conn = sqlite3.connect(DB_PATH)
+    conn = _open_db()
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM chunks")
     chunks = cur.fetchone()[0]

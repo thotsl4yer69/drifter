@@ -1,0 +1,20 @@
+[Unit]
+Description=MZ1312 DRIFTER Mesh Bridge
+# Own unit instead of a backgrounded ExecStartPost child of drifter-mesh (see
+# drifter-mesh-coordinator.service for the rationale).
+After=drifter-broker.target network.target drifter-mesh.service
+Wants=drifter-broker.target
+PartOf=drifter-mesh.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/mesh_bridge.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

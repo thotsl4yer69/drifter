@@ -38,3 +38,12 @@ reports/
 .claude/
 .venv/
 outputs/
+
+# Per-vehicle profiles are keyed by real VIN (vehicles/<VIN>.yaml) and are
+# operator PII, not sample data. Keep the generic default.yaml tracked; treat
+# every real VIN profile as local-only so a public repo never carries a VIN.
+# An already-committed VIN profile stays tracked until the operator runs
+# `git rm --cached vehicles/<VIN>.yaml` (see RELEASE-CHECKLIST.md).
+vehicles/*.yaml
+!vehicles/default.yaml
+vehicles/*.json

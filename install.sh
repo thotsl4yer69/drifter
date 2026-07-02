@@ -15,16 +15,20 @@ set -eo pipefail
 # is idempotent — dpkg no-ops if already installed).
 SKIP_APT=0
 WITH_7B=0
+WITH_NANOMQ=0
 for arg in "$@"; do
     case "$arg" in
         --skip-apt) SKIP_APT=1 ;;
         --with-7b) WITH_7B=1 ;;
+        --with-nanomq) WITH_NANOMQ=1 ;;
         -h|--help)
-            echo "Usage: sudo ./install.sh [--skip-apt] [--with-7b]"
-            echo "  --skip-apt: skip step 1 system update/upgrade"
-            echo "  --with-7b:  also pull qwen2.5:7b (opt-in; ~4.7GB). The Pi 5"
-            echo "              can't hold 7b warm alongside Vivi — only pull it"
-            echo "              if you'll run the analyst standalone/offline."
+            echo "Usage: sudo ./install.sh [--skip-apt] [--with-7b] [--with-nanomq]"
+            echo "  --skip-apt:     skip step 1 system update/upgrade"
+            echo "  --with-7b:      also pull qwen2.5:7b (opt-in; ~4.7GB). The Pi 5"
+            echo "                  can't hold 7b warm alongside Vivi — only pull it"
+            echo "                  if you'll run the analyst standalone/offline."
+            echo "  --with-nanomq:  use NanoMQ as the MQTT broker instead of the"
+            echo "                  default Mosquitto (installed from the EMQX repo)."
             exit 0
             ;;
         *)
@@ -122,26 +126,45 @@ else
     }
 fi
 
-# ── 3. NanoMQ MQTT Broker ──
-step 3 "Installing NanoMQ MQTT broker"
-if command -v nanomq &>/dev/null; then
-    ok "NanoMQ already installed"
-elif command -v mosquitto &>/dev/null; then
-    ok "Mosquitto already installed (MQTT broker)"
-    systemctl enable mosquitto 2>/dev/null || true
-elif [[ "${SKIP_APT:-0}" != "1" ]]; then
-    # Try the official install script
-    if curl -s https://assets.emqx.com/images/install-nanomq-deb.sh | bash 2>/dev/null; then
-        apt-get install -y -qq nanomq 2>/dev/null
-        ok "NanoMQ installed from EMQX repo"
-    else
-        warn "NanoMQ repo unavailable, installing Mosquitto as fallback"
-        apt-get install -y -qq mosquitto 2>/dev/null
-        systemctl enable mosquitto
-        ok "Mosquitto installed as MQTT broker"
+# ── 3. MQTT Broker ──
+# DETERMINISTIC broker choice. Default = Mosquitto (in Debian/Kali apt, no
+# third-party curl|bash). --with-nanomq opts into NanoMQ from the EMQX repo.
+# Previously the broker was decided by whether a piped remote install script
+# happened to succeed, so a fresh flash could end up on EITHER broker depending
+# on network conditions — and the unit files only ordered against one of them.
+# Now the broker is a deliberate choice and every service orders against the
+# stable drifter-broker.target (wired to whichever broker we pick, in step 10).
+BROKER_UNIT=""   # concrete broker service, used to wire drifter-broker.target
+step 3 "Installing MQTT broker"
+if [[ "${WITH_NANOMQ:-0}" == "1" ]]; then
+    if command -v nanomq &>/dev/null; then
+        ok "NanoMQ already installed"
+        BROKER_UNIT="nanomq.service"
+    elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+        if curl -fsS https://assets.emqx.com/images/install-nanomq-deb.sh | bash; then
+            apt-get install -y -qq nanomq
+            systemctl enable nanomq 2>/dev/null || true
+            BROKER_UNIT="nanomq.service"
+            ok "NanoMQ installed from EMQX repo"
+        else
+            warn "NanoMQ repo unavailable — falling back to Mosquitto"
+        fi
     fi
-else
-    warn "No MQTT broker found — skipped install (--skip-apt)"
+fi
+# Default path (or NanoMQ fallback): Mosquitto.
+if [[ -z "$BROKER_UNIT" ]]; then
+    if command -v mosquitto &>/dev/null; then
+        ok "Mosquitto already installed (MQTT broker)"
+    elif [[ "${SKIP_APT:-0}" != "1" ]]; then
+        apt-get install -y -qq mosquitto
+        ok "Mosquitto installed as MQTT broker"
+    else
+        warn "No MQTT broker found — skipped install (--skip-apt)"
+    fi
+    if command -v mosquitto &>/dev/null; then
+        systemctl enable mosquitto 2>/dev/null || true
+        BROKER_UNIT="mosquitto.service"
+    fi
 fi
 
 # ── 4. TTS Engine ──
@@ -288,7 +311,7 @@ source ${DRIFTER_DIR}/venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet \
     python-can \
-    "paho-mqtt>=2.0" \
+    "paho-mqtt>=2.0,<3.0" \
     psutil \
     websockets \
     requests \
@@ -513,9 +536,21 @@ mkdir -p ${DRIFTER_DIR}/logs/sessions ${DRIFTER_DIR}/state
 chown -R drifter:drifter ${DRIFTER_DIR}/state ${DRIFTER_DIR}/logs 2>/dev/null || true
 ok "Log/state directories created"
 
-# Analyst data directories and API key placeholder
+# Analyst data directories and the API-key / tunables env file.
 mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
-touch ${DRIFTER_DIR}/.env
+# Seed /opt/drifter/.env from the committed example on first install so the
+# operator has a documented, commented template to fill in (keys, hotspot PSK,
+# uplink SSID). Never overwrite an existing .env — it holds real secrets.
+if [ ! -f "${DRIFTER_DIR}/.env" ]; then
+    if [ -f "${REPO_DIR}/config/.env.example" ]; then
+        cp "${REPO_DIR}/config/.env.example" "${DRIFTER_DIR}/.env"
+        ok ".env seeded from config/.env.example (fill in your keys)"
+    else
+        touch "${DRIFTER_DIR}/.env"
+    fi
+else
+    ok ".env already present — preserving operator secrets"
+fi
 ok "Analyst data directories created"
 
 # Hand everything under DRIFTER_DIR to the drifter user. The services that
@@ -536,8 +571,13 @@ step 8 "Configuring CAN interface"
 cp "${REPO_DIR}/config/setup-can.sh" /usr/local/bin/drifter-setup-can
 chmod +x /usr/local/bin/drifter-setup-can
 cp "${REPO_DIR}/config/80-can.rules" /etc/udev/rules.d/
+# Stable serial-device symlinks (/dev/drifter-gps, -obd, ...) so USB
+# enumeration order can't swap devices. config.resolve_device() prefers these
+# and falls back to the raw path, so installing them is always safe.
+cp "${REPO_DIR}/config/99-drifter-serial.rules" /etc/udev/rules.d/
 udevadm control --reload-rules 2>/dev/null || true
-ok "CAN auto-detection configured"
+udevadm trigger 2>/dev/null || true
+ok "CAN + serial-device udev rules configured"
 
 # zram compressed-swap OOM backstop (no disk swap on a car-mounted SD Pi).
 # drifter-zram.service is shipped by the services/*.service glob below;
@@ -565,9 +605,25 @@ step 9 "Configuring Wi-Fi hotspot"
 
 # Preserve existing hotspot profile + rotated PSK (operator may have changed it).
 # Only create from defaults if it doesn't exist yet.
+#
+# PSK sourcing (no committed secret): use $DRIFTER_HOTSPOT_PSK if the operator
+# exported it (or set it in the shell / .env sourced before install), otherwise
+# generate a unique 16-char PSK for THIS node. A shared hardcoded PSK across
+# every deploy is a secret leak; a per-node random PSK is both safe and
+# reproducible. The chosen PSK is printed once here and the operator can always
+# recover it later with: nmcli --show-secrets connection show MZ1312_DRIFTER
+HOTSPOT_PSK_SHOWN=""   # what to tell the operator at the end
 if nmcli con show "MZ1312_DRIFTER" &>/dev/null; then
     ok "Hotspot MZ1312_DRIFTER already configured — preserving PSK"
+    HOTSPOT_PSK_SHOWN="Password: (unchanged — recover with: nmcli --show-secrets connection show MZ1312_DRIFTER)"
 else
+    HOTSPOT_PSK="${DRIFTER_HOTSPOT_PSK:-}"
+    if [ -z "$HOTSPOT_PSK" ]; then
+        # SIGPIPE-safe under `set -o pipefail`: head closes the pipe, tr dies
+        # with 141, `|| true` absorbs it so the pipeline still succeeds.
+        HOTSPOT_PSK="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 16 || true)"
+        warn "No \$DRIFTER_HOTSPOT_PSK set — generated a unique per-node PSK: ${HOTSPOT_PSK}"
+    fi
     nmcli con add type wifi \
         ifname wlan0 \
         con-name "MZ1312_DRIFTER" \
@@ -580,8 +636,9 @@ else
         ipv4.method shared \
         ipv4.addresses 10.42.0.1/24 \
         wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "uncaged1312" 2>/dev/null
-    ok "Hotspot: MZ1312_DRIFTER (PSK via nmcli --show-secrets) / 10.42.0.1"
+        wifi-sec.psk "$HOTSPOT_PSK" 2>/dev/null
+    ok "Hotspot: MZ1312_DRIFTER / 10.42.0.1 (PSK set — recover via nmcli --show-secrets)"
+    HOTSPOT_PSK_SHOWN="Password: ${HOTSPOT_PSK}"
 fi
 
 # ── 10. systemd Services ──
@@ -594,18 +651,37 @@ elif command -v nanomq &>/dev/null; then
     cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq.conf
 fi
 
-# Deploy all service + timer files
+# Deploy all service + timer + target files
 for svc in ${REPO_DIR}/services/*.service; do
     cp "$svc" /etc/systemd/system/
 done
-# Timer units must be copied too (otherwise enable below fails with
-# "Unit not found"). nullglob so the glob expands to nothing if no .timer
-# files exist, instead of looping over the literal '*.timer' string.
+# Timer + target units must be copied too (otherwise enable below fails with
+# "Unit not found"). nullglob so the glob expands to nothing if no matching
+# files exist, instead of looping over the literal glob string.
 shopt -s nullglob
 for tmr in ${REPO_DIR}/services/*.timer; do
     cp "$tmr" /etc/systemd/system/
 done
+for tgt in ${REPO_DIR}/services/*.target; do
+    cp "$tgt" /etc/systemd/system/
+done
 shopt -u nullglob
+
+# Wire drifter-broker.target to whichever broker step 3 installed. Every MQTT
+# consumer orders `After=drifter-broker.target Wants=drifter-broker.target`; this
+# drop-in is what makes that target actually pull in + order after the real
+# broker. Written fresh each run so a broker switch (mosquitto<->nanomq) is
+# picked up. If no broker was installed (--skip-apt on a broker-less box) we
+# fall back to mosquitto.service so the wiring is still valid once one exists.
+BROKER_UNIT="${BROKER_UNIT:-mosquitto.service}"
+mkdir -p /etc/systemd/system/drifter-broker.target.d
+cat > /etc/systemd/system/drifter-broker.target.d/10-broker.conf <<BROKERCONF
+# Generated by install.sh — concrete broker for drifter-broker.target.
+[Unit]
+Wants=${BROKER_UNIT}
+After=${BROKER_UNIT}
+BROKERCONF
+ok "drifter-broker.target → ${BROKER_UNIT}"
 
 # Sudoers drop-ins — narrow NOPASSWD entries for the dashboards.
 # Ships drifter-mode.sudoers (mode-switch) AND drifter-service.sudoers
@@ -637,22 +713,21 @@ rm -f /etc/systemd/system/drifter-llm.service
 # Drop the stale file so it can't drift out of sync with mode.state.
 rm -f "${DRIFTER_DIR}/state/mode"
 
-# The first 38 entries are config.py SERVICES verbatim (the set /healthz
+# The leading entries are config.py SERVICES verbatim (the set /healthz
 # monitors); the trailing three are boot/oneshot aux units that run but aren't
 # health-checked. tests/test_deploy_service_lists.py enforces that this list is
 # a superset of config.SERVICES so the deploy always enables what /healthz
 # expects.
-SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-dashboard drifter-flipper drifter-fly-catcher drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-realdash drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
+SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-dashboard drifter-flipper drifter-fly-catcher drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-realdash drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-vehicleid drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
 # NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
-# both drive the SPI LCD — they are mutually exclusive. The deploy enables both
-# here; pick ONE on the Pi: `systemctl disable --now drifter-fbmirror` to use
-# the lcd_dashboard menu UI, or disable drifter-lcd to keep the mirror.
-if command -v nanomq &>/dev/null; then
-    systemctl enable nanomq 2>/dev/null || true
-else
-    # Mosquitto is already enabled
-    true
-fi
+# both drive the SPI LCD and are mutually exclusive. The deploy enables ONLY
+# drifter-lcd (it is in config.SERVICES; fbmirror is not). To use the plain
+# mirror instead: `systemctl enable --now drifter-fbmirror` and
+# `systemctl disable --now drifter-lcd`.
+# The broker itself was enabled in step 3. Enable the stable broker anchor that
+# every MQTT consumer orders against (its drop-in, written above, wires it to
+# the concrete broker).
+systemctl enable drifter-broker.target 2>/dev/null || true
 
 for svc in $SERVICES; do
     systemctl enable "$svc" 2>/dev/null
@@ -701,9 +776,8 @@ echo -e "  ${CYAN}Reboot now:${NC} sudo reboot"
 echo ""
 echo -e "  After reboot:"
 echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC}"
-echo -e "     Password: ${CYAN}uncaged1312${NC}"
+echo -e "     ${HOTSPOT_PSK_SHOWN}"
 echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
-echo -e "     (or MQTT → ${CYAN}10.42.0.1:1883${NC})"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
 echo -e "  4. Screw OBD-II pigtail into USB2CANFD terminals"
 echo -e "  5. After first warm-up: ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"

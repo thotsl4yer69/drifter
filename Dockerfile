@@ -25,7 +25,6 @@ COPY README.md ./
 RUN pip install --upgrade pip && \
     pip install --prefix=/install . && \
     pip install --prefix=/install \
-        "paho-mqtt<2.0" \
         flask \
         flask-sock \
         zeroconf \

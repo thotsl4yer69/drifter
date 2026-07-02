@@ -16,6 +16,7 @@ import time
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
+import vin_decoder
 from config import (
     MQTT_HOST,
     MQTT_PORT,
@@ -173,18 +174,45 @@ def write_active_profile(profile: dict) -> None:
         log.warning(f"Could not write active profile: {e}")
 
 
+def _decoded_seed(vin: str | None) -> dict:
+    """Deterministic offline VIN decode → {make, year} we're confident about,
+    used to seed the profile and to fill gaps a local/AI profile leaves. No
+    network, no LLM. Region/make/year come straight from the VIN structure."""
+    d = vin_decoder.decode(vin)
+    seed = {}
+    if d.get("make"):
+        seed["make"] = d["make"]
+    if d.get("year"):
+        seed["year"] = d["year"]
+    return seed
+
+
 def resolve_profile(vin: str | None) -> dict:
-    """Try local YAML, then AI, finally fall back to defaults."""
+    """Resolve the active profile for a VIN.
+
+    Precedence (later overrides earlier): config defaults → deterministic VIN
+    decode (make/year, offline) → a shipped/cached vehicles/<VIN>.yaml → AI
+    generation. The deterministic decode means we identify the make/year of
+    almost any post-1981 car without the LLM; the LLM (or a hand-authored YAML)
+    only fills specs/known-issues it can't carry.
+    """
     base = dict(VEHICLE_DEFAULTS)
+    seed = _decoded_seed(vin)
+    base.update(seed)
     if vin:
         loaded = load_profile(vin) or generate_profile(vin)
         if loaded:
             base.update({k: v for k, v in loaded.items() if v is not None})
+            # Deterministic decode wins over an AI guess for make/year — the VIN
+            # structure is authoritative for those. A hand-authored local YAML
+            # still wins (it may correct a WMI the table doesn't know).
+            if loaded.get('source') != 'local':
+                base.update(seed)
             base['vin'] = vin
             base['source'] = loaded.get('source', 'local')
             return base
     base['vin'] = vin or 'unknown'
-    base['source'] = 'defaults'
+    base['source'] = 'vin-decoded' if seed else 'defaults'
     return base
 
 

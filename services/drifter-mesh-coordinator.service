@@ -1,0 +1,21 @@
+[Unit]
+Description=MZ1312 DRIFTER Mesh Coordinator
+# Own unit instead of a backgrounded ExecStartPost child of drifter-mesh:
+# systemd now supervises it (restarts it if it dies) and stops it cleanly with
+# the mesh lane. PartOf so stop/restart of drifter-mesh propagates here.
+After=drifter-broker.target network.target drifter-mesh.service
+Wants=drifter-broker.target
+PartOf=drifter-mesh.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/mesh_coordinator.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

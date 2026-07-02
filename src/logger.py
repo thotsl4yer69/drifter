@@ -24,6 +24,7 @@ from config import (
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
+    atomic_write_json,
     make_mqtt_client,
 )
 
@@ -144,10 +145,8 @@ class DriveSession:
         }
 
     def save_summary(self):
-        SESSION_DIR.mkdir(parents=True, exist_ok=True)
         path = SESSION_DIR / f"session_{self.session_id}.json"
-        with open(path, 'w') as f:
-            json.dump(self.summary(), f, indent=2)
+        atomic_write_json(path, self.summary())
         log.info(f"Session summary saved: {path.name}")
 
 

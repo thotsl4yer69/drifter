@@ -90,13 +90,16 @@ else
 fi
 
 # ── 7. Verify Ollama ──
-step 7 "Checking Ollama llama3.2:3b model (offline fallback)"
+# ONE model for the whole fleet: config.OLLAMA_MODEL / vivi.yaml ollama_model /
+# install.sh all use qwen2.5:1.5b. Pull that same tag here — the old llama3.2:3b
+# was an unused download the running config never resolved to.
+step 7 "Checking Ollama qwen2.5:1.5b model"
 if command -v ollama &>/dev/null; then
-    ollama list 2>/dev/null | grep -q "llama3.2:3b" && \
-        ok "llama3.2:3b already present" || {
-        warn "Pulling llama3.2:3b (this takes a few minutes)..."
-        ollama pull llama3.2:3b 2>/dev/null && ok "llama3.2:3b ready" || \
-            warn "Pull failed — run 'ollama pull llama3.2:3b' manually"
+    ollama list 2>/dev/null | grep -q "qwen2.5:1.5b" && \
+        ok "qwen2.5:1.5b already present" || {
+        warn "Pulling qwen2.5:1.5b (this takes a few minutes)..."
+        ollama pull qwen2.5:1.5b 2>/dev/null && ok "qwen2.5:1.5b ready" || \
+            warn "Pull failed — run 'ollama pull qwen2.5:1.5b' manually"
     }
 else
     warn "Ollama not found — install with: curl -fsSL https://ollama.com/install.sh | sh"
