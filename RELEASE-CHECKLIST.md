@@ -61,10 +61,10 @@ from **yellow → green**.
 - [x] `CAPABILITIES.md` — plain does / does-not, defensive framing, offensive
       suite documented as gated (authorized-use only).
 - [x] `RELEASE-CHECKLIST.md` — this file.
-- [ ] **(in progress)** README rewrite: correct service count (38), broker
-      (Mosquitto default), CAN adapter (slcan/K-line reality), mode model,
-      remove the stale PSK, fix the unreachable `10.42.0.1:1883` instruction,
-      and add honest capability framing.
+- [x] README rewrite: corrected service count (38), broker (Mosquitto default),
+      CAN adapter (slcan/K-line reality), added the mode model, removed the
+      stale PSK, fixed the unreachable `10.42.0.1:1883` instruction, and added
+      honest capability framing (links CAPABILITIES.md).
 - [x] LICENSE present and complete (MIT, © 2026 MZ1312 UNCAGED TECHNOLOGY).
 - [ ] **(optional)** SECURITY.md + CHANGELOG.md.
 
