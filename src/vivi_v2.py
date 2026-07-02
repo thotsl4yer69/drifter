@@ -100,6 +100,19 @@ _personality_cache: str | None = None
 _aplay_available: bool | None = None
 
 
+def _apply_profile_placeholders(text: str) -> str:
+    """Fill {vehicle}/{engine}/{known_issues} placeholders in a personality
+    template from the ACTIVE vehicle profile, so a shipped default persona
+    adapts to whatever car is plugged in. Text with no placeholders is returned
+    unchanged, so a hand-written operator persona still works verbatim."""
+    return (
+        text.replace('{vehicle}', vehicle_profile.prompt_identity())
+            .replace('{engine}', vehicle_profile.engine_code()
+                     or (vehicle_profile.spec('engine') or ''))
+            .replace('{known_issues}', vehicle_profile.known_issues_text())
+    )
+
+
 def _load_personality() -> str:
     global _personality_cache
     if _personality_cache is not None:
@@ -108,7 +121,7 @@ def _load_personality() -> str:
         if VIVI2_PERSONALITY_FILE.exists():
             text = VIVI2_PERSONALITY_FILE.read_text(encoding='utf-8').strip()
             if text:
-                _personality_cache = text
+                _personality_cache = _apply_profile_placeholders(text)
                 return _personality_cache
     except OSError as e:
         log.debug(f"personality load: {e}")
