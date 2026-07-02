@@ -1067,17 +1067,28 @@ STROKE_MM = 79.5
 THERMOSTAT_FULL_C = 97      # Fully open
 VEHICLES_DIR = DRIFTER_DIR / "vehicles"
 VEHICLE_MAKE = "Jaguar"
+# GENERIC fallback profile for an UNIDENTIFIED vehicle (VIN unreadable or no
+# vehicles/<VIN>.yaml). Deliberately NOT the X-Type's numbers — a node with an
+# unknown car must not be told it's a Jaguar. The identified X-Type still gets
+# its own profile (config base or vehicles/<VIN>.yaml); this only governs the
+# unknown case. Mirrors vehicles/default.yaml (which resolve_profile prefers when
+# present, so the base is operator-editable without a code change). Alert
+# thresholds/calibration are NOT set here — they fall through to the config base,
+# which are reasonable general-ICE defaults.
 VEHICLE_DEFAULTS = {
-    "make": VEHICLE_MAKE,
-    "model": VEHICLE_MODEL,
-    "year": VEHICLE_YEAR,
-    "engine": VEHICLE_ENGINE,
-    "fuel_type": FUEL_TYPE,
-    "tank_litres": TRIP_FUEL_TANK_LITRES,
-    "avg_consumption_l_per_100km": TRIP_AVG_CONSUMPTION_L_PER_100KM,
-    "tire_size": TIRE_SIZE,
-    "tire_pressure_front": TIRE_PRESSURE_FRONT,
-    "tire_pressure_rear": TIRE_PRESSURE_REAR,
+    "make": "Unknown",
+    "model": "Unknown",
+    "year": None,
+    "engine": "Unknown",
+    "fuel_type": "petrol",
+    "tank_litres": 60.0,
+    "avg_consumption_l_per_100km": 9.0,
+    "tire_size": "195/65R15",
+    "tire_pressure_front": 32,
+    "tire_pressure_rear": 32,
+    "drivetrain": "unknown",
+    "transmission": "unknown",
+    "known_issues": [],
 }
 VEHICLE_PROFILE_FILE = DRIFTER_DIR / "vehicle.yaml"
 VIN_DETECT_RETRIES = 3

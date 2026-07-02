@@ -189,7 +189,10 @@ def resolve_profile(vin: str | None) -> dict:
     almost any post-1981 car without the LLM; the LLM (or a hand-authored YAML)
     only fills specs/known-issues it can't carry.
     """
-    base = dict(VEHICLE_DEFAULTS)
+    # Generic base for an unidentified car: the operator-editable
+    # vehicles/default.yaml if present, else config.VEHICLE_DEFAULTS. Neither is
+    # X-Type-specific — an unknown car must not inherit Jaguar specs.
+    base = load_profile("default") or dict(VEHICLE_DEFAULTS)
     seed = _decoded_seed(vin)
     base.update(seed)
     if vin:

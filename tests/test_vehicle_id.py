@@ -15,6 +15,16 @@ def test_resolve_no_vin_falls_back_to_defaults():
     prof = vehicle_id.resolve_profile(None)
     assert prof["vin"] == "unknown"
     assert prof["source"] == "defaults"
+    # The unidentified fallback must be GENERIC, not the X-Type's numbers.
+    assert prof["make"] == "Unknown"
+    assert prof["make"] != "Jaguar"
+
+
+def test_config_vehicle_defaults_are_generic():
+    import config
+    assert config.VEHICLE_DEFAULTS["make"] == "Unknown"
+    assert config.VEHICLE_DEFAULTS["fuel_type"] == "petrol"
+    assert config.VEHICLE_DEFAULTS.get("known_issues") == []
 
 
 def test_resolve_unknown_vin_uses_deterministic_decode(monkeypatch):
