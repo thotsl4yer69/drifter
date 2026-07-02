@@ -23,6 +23,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
+import vehicle_profile
 import vivi_memory
 import vivi_rf_intent
 import vivi_sentinel
@@ -34,9 +35,6 @@ from config import (
     PIPER_MODEL,
     PIPER_MODEL_DIR,
     TOPICS,
-    VEHICLE_ENGINE,
-    VEHICLE_MODEL,
-    VEHICLE_YEAR,
     VIVI2_HISTORY_TURNS,
     VIVI2_PERSONALITY_FILE,
     VIVI2_PROACTIVE_COOLDOWN_S,
@@ -65,9 +63,8 @@ _MIN_SENTENCE_CHARS = 12
 _SAFETY_ALERT_TTL_S = 300
 
 # ── Default personality (overridden by /opt/drifter/vivi_personality.txt) ──
-DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {VEHICLE_YEAR} {VEHICLE_MODEL} \
-({VEHICLE_ENGINE}). You know this car cold: AJ-V6 quirks, plastic thermostat housing failures, \
-coil packs, Haldex coupling, JF506E gearbox. You also handle Spotify, navigation, trip stats, \
+DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {vehicle_profile.prompt_identity()}. \
+You know this car cold — {vehicle_profile.known_issues_text()}. You also handle Spotify, navigation, trip stats, \
 crash response, and sentry mode now. You have live weather (conditions, rain-in-the-next-hour, \
 fog/ice/wind alerts) and nearby places (petrol, mechanic, car wash, parking) — answer "where's \
 the nearest..." from the Nearby places list, and warn about weather like rain or fog when it \
@@ -845,7 +842,7 @@ def main() -> None:
 
     _publish_status("starting")
     time.sleep(1)
-    speak(f"Vivi v2 online. {VEHICLE_YEAR} {VEHICLE_MODEL}, ready when you are.")
+    speak(f"Vivi v2 online. {vehicle_profile.display_name()}, ready when you are.")
     _publish_status("idle")
     log.info("Vivi v2 LIVE")
 

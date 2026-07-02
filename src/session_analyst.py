@@ -16,6 +16,7 @@ from pathlib import Path
 
 import db
 import llm_client_v2 as llm_client
+import vehicle_profile
 from config import (
     ANALYST_BASELINE_SESSIONS,
     LOG_DIR,
@@ -36,17 +37,7 @@ log = logging.getLogger(__name__)
 # Structured-diagnosis system prompt (moved here from the deleted llm_client
 # v1 shim `query_llm`, which hard-wired this exact text). Owned by the only
 # caller now; llm_client_v2.query() takes the system prompt explicitly.
-SYSTEM_PROMPT = """You are an expert diagnostic technician specialising in the \
-2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, \
-right-hand-drive, AWD vehicle with Jatco JF506E 5-speed automatic.
-
-You receive structured telemetry data and anomaly events from a live OBD-II/CAN bus \
-monitoring system (DRIFTER). Analyse the data and produce a structured diagnosis.
-
-CRITICAL: Return valid JSON ONLY — no markdown fences, no explanation outside the JSON.
-
-JSON structure required:
-{
+_DIAGNOSIS_SCHEMA = """{
   "primary_suspect": {
     "diagnosis": "...",
     "confidence": 0-100,
@@ -60,23 +51,43 @@ JSON structure required:
   "action_items": ["..."],
   "safety_critical": true/false,
   "safety_note": "..."
-}
+}"""
 
-VEHICLE CONTEXT:
-- Known history: valve cover gasket oil leak into plug wells, prior spark plug overtorque failure
-- Current symptoms: P0303 cylinder 3 misfire, cruise control disabled above 3000rpm, rough idle
-- Suspected vacuum leaks: PCV hose, IMT valve O-ring, brake booster hose
-- AWD system: Haldex coupling + PTU (known weak point in Australian heat)
 
-Rules:
-- Be specific to the X-Type — cite known failure modes (thermostat housing, coil packs, MAF, vacuum leaks, valve cover gaskets, solenoid C)
-- THINK THROUGH the diagnosis — consider interconnected failures (e.g., oil leak → coil death → misfire → cruise disable)
-- Rank by probability, cite the actual data values that support each suspect
-- Give actionable tests (smoke test, coil swap test, compression test, multimeter reading)
-- Flag anything safety-critical immediately with safety_critical: true
-- Cost estimates in AUD (Australian Dollars)
-- Consider Australian conditions (heat stress on cooling, rubber, fluids)
-"""
+def build_system_prompt() -> str:
+    """Structured-diagnosis system prompt, grounded in the ACTIVE vehicle
+    profile (identity + known failure modes) so it adapts to whatever car is
+    plugged in. Current symptoms/DTCs are delivered live in the context packet,
+    not hardcoded here."""
+    ki_block = vehicle_profile.known_issues_block()
+    ki_section = f"\n{ki_block}" if ki_block else ""
+    return (
+        f"You are an expert diagnostic technician for the "
+        f"{vehicle_profile.prompt_identity()}.\n\n"
+        "You receive structured telemetry data and anomaly events from a live "
+        "OBD-II/CAN bus monitoring system (DRIFTER). Analyse the data and "
+        "produce a structured diagnosis.\n\n"
+        "CRITICAL: Return valid JSON ONLY — no markdown fences, no explanation "
+        "outside the JSON.\n\n"
+        "JSON structure required:\n"
+        f"{_DIAGNOSIS_SCHEMA}\n"
+        f"{ki_section}"
+        "\nRules:\n"
+        "- Be specific to this vehicle — cite its known failure modes where the "
+        "data supports them\n"
+        "- THINK THROUGH the diagnosis — consider interconnected failures\n"
+        "- Rank by probability, cite the actual data values that support each "
+        "suspect\n"
+        "- Give actionable tests (smoke test, coil swap test, compression test, "
+        "multimeter reading)\n"
+        "- Flag anything safety-critical immediately with safety_critical: true\n"
+        "- Give cost estimates in the operator's local currency\n"
+    )
+
+
+# Built once at import from the profile active at process start; call
+# build_system_prompt() for a fresh build after a live profile change.
+SYSTEM_PROMPT = build_system_prompt()
 
 # Topic → sensor name mapping (for compute_sensor_avgs)
 TOPIC_TO_SENSOR = {
@@ -143,7 +154,7 @@ def build_context_packet(
 ) -> str:
     """Assemble the diagnostic context packet to send to the LLM."""
     lines = [
-        "VEHICLE: 2004 Jaguar X-Type 2.5L V6 (AJ-V6)",
+        f"VEHICLE: {vehicle_profile.prompt_identity()}",
         "",
         f"SESSION: {session['session_id']}",
         f"  Duration: {int(session.get('duration_seconds', 0) // 60)}m",
@@ -203,7 +214,7 @@ def build_context_packet(
     # KB context
     if kb_entries:
         lines.append("")
-        lines.append("RELEVANT X-TYPE KNOWLEDGE:")
+        lines.append("RELEVANT VEHICLE KNOWLEDGE:")
         for entry in kb_entries:
             lines.append(entry)
 
@@ -294,7 +305,7 @@ def run_analysis(session: dict) -> dict | None:
 
     # 7. Call LLM
     try:
-        llm_result = llm_client.query(packet, SYSTEM_PROMPT)
+        llm_result = llm_client.query(packet, build_system_prompt())
     except Exception as e:
         log.error(f"LLM call failed: {e}")
         return None

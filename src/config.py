@@ -446,6 +446,21 @@ TIRE_SIZE = "205/55R16"
 TIRE_PRESSURE_FRONT = 30   # PSI factory spec
 TIRE_PRESSURE_REAR = 30    # PSI factory spec
 
+# Known failure modes for THIS vehicle (the AJ-V6 X-Type). This seeds the
+# vehicle-profile base so `vehicle_profile.known_issues()` is populated by
+# default — the LLM prompts (analyst/vivi/ai_diagnostics/…) build their
+# vehicle-context block from the ACTIVE profile's known_issues, so a different
+# car's profile replaces these rather than every prompt hardcoding "X-Type".
+VEHICLE_KNOWN_ISSUES = [
+    "Plastic thermostat housing (behind the timing cover) cracks and leaks — AJ-V6",
+    "Coil-on-plug (COP) coil pack failures cause cylinder misfires",
+    "MAF sensor drift/contamination drives lean fuel trims",
+    "Vacuum leaks — PCV hose, IMT valve O-ring, brake booster hose",
+    "Valve cover gasket oil leaks into the spark plug wells (kills coils)",
+    "Haldex AWD coupling + PTU wear (weak point in hot climates)",
+    "Jatco JF506E 5-speed automatic solenoid faults",
+]
+
 # ── Alert Levels ──
 LEVEL_OK = 0
 LEVEL_INFO = 1

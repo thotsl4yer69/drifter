@@ -20,13 +20,12 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 
 import llm_client_v2 as llm_client
+import vehicle_profile
 from config import (
     MQTT_HOST,
     MQTT_PORT,
     REPORTS_DIR,
     TOPICS,
-    VEHICLE,
-    VEHICLE_YEAR,
     make_mqtt_client,
 )
 
@@ -54,7 +53,7 @@ REPORT_SYSTEM = (
 
 def _summary_packet(session: dict) -> str:
     parts = [
-        f"VEHICLE: {VEHICLE_YEAR} {VEHICLE}",
+        f"VEHICLE: {vehicle_profile.prompt_identity()}",
         f"SESSION: {session.get('session_id', 'unknown')}",
         f"  Duration: {int(session.get('duration_seconds', 0) // 60)} min",
         f"  Distance: {session.get('distance_km', 0):.1f} km",
