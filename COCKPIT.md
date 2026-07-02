@@ -86,9 +86,13 @@ In order, before turning the key:
 
 - [ ] USB GPS dongle plugged in (or phone tethered to `MZ1312_DRIFTER`
       with browser geolocation enabled — must report `accuracy_m ≤ 100m`).
-- [ ] USB2CANFD adapter on `can0`/`slcan0` connected to the X-Type
-      OBD-II port. `drifter diagnose` should show `[PASS] can0 — link
-      UP, frames seen` once ignition is on.
+- [ ] Telemetry adapter on the OBD-II port. Two transports auto-select at
+      boot (`obd_transport.select_transport`): a raw CAN/CANable adapter runs
+      `drifter-canbridge`; a generic ELM327 runs `drifter-obdbridge` (needed
+      if the car — like the 2004 X-Type — is K-line, not CAN, on the OBD pins).
+      Force one with `DRIFTER_TRANSPORT=can|elm327` in `/opt/drifter/.env`.
+      `drifter diagnose` should show `[PASS] can0 — link UP, frames seen` (CAN)
+      once ignition is on; the ECU's supported PIDs are discovered per car.
 - [ ] C-Media USB audio dongle for voice alerts via the cabin speaker.
 - [ ] USB microphone for `drifter-voicein` if push-to-talk or
       wake-word voice input is wanted.
@@ -140,7 +144,7 @@ mosquitto_sub -h localhost -t 'drifter/#' -v
 drifter diagnose
 
 # Restart everything
-sudo systemctl restart drifter-{canbridge,gps,bleconv,rf,rfaudio,flipper,alerts,anomaly,analyst,thresholds,batcher,trip,logger,reporter,feeds,realdash,hotspot,homesync,voice,voicein,vivi,watchdog,dashboard,fbmirror}
+sudo systemctl restart drifter-{canbridge,obdbridge,gps,bleconv,rf,rfaudio,flipper,alerts,anomaly,analyst,thresholds,batcher,trip,logger,reporter,feeds,realdash,hotspot,homesync,voice,voicein,vivi,watchdog,dashboard,fbmirror}
 
 # Tail dashboard
 journalctl -u drifter-dashboard -f

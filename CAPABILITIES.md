@@ -34,11 +34,21 @@ default and the in-car `drive` persona never load them.
 
 ## Does do
 
+**Any OBD-II vehicle (petrol / diesel / hybrid / EV)**
+- Identifies the car by VIN and adapts thresholds, fuel math, DTC causes,
+  powertrain rules, and the AI prompts to that vehicle's profile.
+- Reads telemetry over **raw CAN (SocketCAN)** or a **generic ELM327 adapter**
+  (incl. K-line / J1850 / 29-bit) — auto-selected per car — with per-car PID
+  support discovery. EV/hybrid support is at the **standard-PID level**
+  (e.g. hybrid battery life); deep manufacturer-specific EV metrics are out of
+  scope. Full guide: [docs/VEHICLE_PROFILES.md](docs/VEHICLE_PROFILES.md).
+
 **Vehicle diagnostics & telemetry (the core)**
-- Reads OBD-II / CAN bus telemetry (RPM, coolant, fuel trims, MAF, voltage,
-  speed, DTCs) from a car you own, decoded for the specific vehicle profile.
-- Deterministic driver-safety alert engine (23 rules): overheating, lean/rich
-  fuel trims, alternator/battery faults, over-rev, TPMS pressure/temperature.
+- Reads OBD-II / CAN bus telemetry (RPM, coolant, fuel trims, MAF/MAP, voltage,
+  speed, DTCs) from a car you own, decoded for the active vehicle profile.
+- Deterministic driver-safety alert engine (24 powertrain-aware rules):
+  overheating, lean/rich fuel trims, alternator/battery faults, over-rev, TPMS
+  pressure/temperature, and EV/hybrid HV-battery health.
 - Adaptive baseline learning, rolling telemetry stats, per-trip distance/fuel,
   anomaly detection, and a post-drive report.
 - RealDash feed (TCP CAN) and a local web cockpit with a `/healthz` endpoint.
