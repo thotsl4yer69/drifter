@@ -33,6 +33,7 @@ TOPICS = {
     'oil_temp': 'drifter/engine/oil_temp',
     'fuel_rate': 'drifter/engine/fuel_rate',
     'ambient_air_temp': 'drifter/engine/ambient_temp',
+    'hybrid_batt_life': 'drifter/ev/battery_life',
     'fuel_lvl': 'drifter/vehicle/fuel_lvl',
     'alert_level': 'drifter/alert/level',
     'alert_message': 'drifter/alert/message',

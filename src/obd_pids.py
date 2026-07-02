@@ -20,16 +20,18 @@ echo) as a sequence and returns the scaled value, so a raw CAN frame slice and
 an ELM327 hex line decode identically. Every decoder is a pure function of its
 bytes — no hidden state — which is what lets both bridges share them.
 
-Each entry also carries a powertrain applicability tag (:data:`ICE` /
-:data:`ALL`) and its Mode-01 support-bitmap group, so the poller can (a) skip
-combustion-only PIDs on a pure EV and (b) request only PIDs the ECU actually
-reports (see ``obd_pids.supported_from_bitmaps`` + the bridges' discovery step).
+Each entry also carries a powertrain applicability tag (:data:`ALL` /
+:data:`ICE` / :data:`HYBRID`) and its Mode-01 support-bitmap group, so the
+poller can (a) skip combustion-only PIDs on a pure EV, skip electrified-only
+PIDs on a pure ICE car, and (b) request only PIDs the ECU actually reports (see
+``obd_pids.supported_from_bitmaps`` + the bridges' discovery step).
 
 Coverage is the full common standard set, not just the handful the X-Type
 happens to expose — notably **MAP (0x0B)** so a MAF-less car (many post-2010
 speed-density engines report MAP but not MAF) can still have air-mass/fuel
-estimated, plus oil temp, ambient temp, fuel pressure and engine fuel rate.
-Unsupported PIDs are simply never polled once discovery has run.
+estimated, plus oil temp, ambient temp, fuel pressure, engine fuel rate, and
+the standard hybrid/EV **battery life (0x5B)**. Unsupported PIDs are simply
+never polled once discovery has run.
 
 Dependency-light: imports only ``config`` (for ``TOPICS``) + stdlib. Safe to
 import from either bridge.
@@ -40,13 +42,19 @@ from __future__ import annotations
 from config import TOPICS
 
 # ── Powertrain applicability ─────────────────────────────────────────────────
-# A PID either applies to any powertrain (ALL) or only to a combustion engine
-# (ICE — petrol/diesel/hybrid). Pure EVs have no coolant/MAF/fuel-trim/O2, so
-# requesting those wastes bus time and can confuse a naive ECU gateway. The live
-# Mode-01 support bitmap is still the authoritative gate; this tag is the
-# fallback used before discovery has run (or when the ECU under-reports).
+# A PID applies to any powertrain (ALL), only to a combustion engine (ICE —
+# petrol/diesel/hybrid), or only to an electrified powertrain (HYBRID — hybrid or
+# pure EV, which have a traction battery). Pure EVs have no coolant/MAF/fuel-
+# trim/O2, so requesting those wastes bus time and can confuse a naive ECU
+# gateway; a pure ICE car has no traction battery. The live Mode-01 support
+# bitmap is still the authoritative gate; this tag is the fallback used before
+# discovery has run (or when the ECU under-reports).
 ALL = "all"
 ICE = "ice"
+HYBRID = "hybrid"
+
+_EV_FUEL = ("ev", "electric", "bev")
+_HYBRID_FUEL = ("hybrid", "phev", "hev", "mhev")
 
 
 def _group(pid: int) -> int:
@@ -112,6 +120,9 @@ _DEFS: list[Pid] = [
     Pid(0x46, 'ambient_air_temp', 'ambient_air_temp', lambda d: d[0] - 40,                    'C',    0.1, 1, ALL),
     Pid(0x5C, 'oil_temp',   'oil_temp',   lambda d: d[0] - 40,                                'C',    0.5, 1, ICE),
     Pid(0x5E, 'fuel_rate',  'fuel_rate',  lambda d: round(((d[0] * 256) + d[1]) / 20.0, 2),   'L/h',  1,   2, ICE),
+    # Electrified powertrain — standard hybrid/EV PIDs (deep manufacturer EV
+    # metrics are out of scope; these are the SAE-standard ones).
+    Pid(0x5B, 'hybrid_batt_life', 'hybrid_batt_life', lambda d: round(d[0] * 100 / 255.0, 1), '%',    0.2, 1, HYBRID),
 ]
 
 # Fast lookups (kept in module scope; both bridges read them at import).
@@ -149,14 +160,22 @@ def obd_pid_defs() -> dict[str, dict]:
 def applies_to(fuel_type: str | None) -> set[int]:
     """The subset of PIDs meaningful for a powertrain.
 
-    Pure EVs drop the combustion-only PIDs (coolant/MAF/O2/fuel-trim/…); every
-    other fuel type keeps the full set. This is the *powertrain* gate; the live
-    Mode-01 support bitmap is the authoritative *per-ECU* gate (see the bridges).
+    * pure EV  → universal PIDs + electrified (battery) PIDs; drop the
+      combustion-only ones (coolant/MAF/O2/fuel-trim/…).
+    * hybrid   → everything (it has both an engine and a traction battery).
+    * ICE (petrol/diesel/unknown) → universal + combustion; drop battery PIDs.
+
+    This is the *powertrain* gate; the live Mode-01 support bitmap is the
+    authoritative *per-ECU* gate (see the bridges).
     """
-    ev = (fuel_type or "").strip().lower() in ("ev", "electric", "bev")
-    if not ev:
-        return set(PID_TABLE)
-    return {p.pid for p in _DEFS if p.applies == ALL}
+    ft = (fuel_type or "").strip().lower()
+    ev = ft in _EV_FUEL
+    hybrid = ft in _HYBRID_FUEL
+    out: set[int] = set()
+    for p in _DEFS:
+        if p.applies == ALL or (p.applies == ICE and not ev) or (p.applies == HYBRID and (ev or hybrid)):
+            out.add(p.pid)
+    return out
 
 
 def supported_from_bitmaps(bitmaps: dict[int, int]) -> set[int]:

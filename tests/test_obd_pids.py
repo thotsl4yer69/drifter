@@ -118,13 +118,30 @@ class TestPowertrainGate:
         assert 0x10 not in ev  # MAF
         assert 0x06 not in ev  # STFT1
         assert 0x14 not in ev  # O2
-        # ...but universal PIDs (rpm, speed, voltage) stay.
-        assert {0x0C, 0x0D, 0x42} <= ev
+        # ...but universal PIDs (rpm, speed, voltage) + battery life stay.
+        assert {0x0C, 0x0D, 0x42, 0x5B} <= ev
 
-    def test_ice_keeps_everything(self):
-        assert obd_pids.applies_to('petrol') == set(obd_pids.PID_TABLE)
-        assert obd_pids.applies_to('diesel') == set(obd_pids.PID_TABLE)
-        assert obd_pids.applies_to(None) == set(obd_pids.PID_TABLE)
+    def test_ice_keeps_combustion_not_battery(self):
+        # petrol/diesel keep everything EXCEPT the electrified-only battery PID.
+        expected = set(obd_pids.PID_TABLE) - {0x5B}
+        assert obd_pids.applies_to('petrol') == expected
+        assert obd_pids.applies_to('diesel') == expected
+        assert obd_pids.applies_to(None) == expected
+
+    def test_hybrid_keeps_everything(self):
+        # a hybrid has both an engine and a traction battery.
+        assert obd_pids.applies_to('hybrid') == set(obd_pids.PID_TABLE)
+
+
+class TestElectrifiedPids:
+    def test_hybrid_battery_life_present(self):
+        assert 0x5B in obd_pids.PID_TABLE
+        p = obd_pids.PID_TABLE[0x5B]
+        assert p.name == 'hybrid_batt_life'
+        assert p.applies == obd_pids.HYBRID
+        # A*100/255 ; 0xFF -> 100%
+        assert obd_pids.can_pids()[0x5B]['decode']([0xFF]) == 100.0
+        assert obd_pids.can_pids()[0x5B]['decode']([0x80]) == 50.2
 
 
 class TestSupportBitmaps:

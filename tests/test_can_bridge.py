@@ -371,12 +371,13 @@ class TestPidDiscovery:
         bus = self._FakeBus([])
         assert can_bridge.query_supported_pids(bus, timeout=0.05) is None
 
-    def test_resolve_falls_back_to_full_table_when_silent(self):
+    def test_resolve_falls_back_to_powertrain_default_when_silent(self):
         bus = self._FakeBus([])
         with patch.object(can_bridge, 'query_supported_pids', return_value=None):
             pids = can_bridge._resolve_poll_pids(bus)
-        # Petrol default profile => full known table, in canonical order.
-        assert set(pids) == set(can_bridge.PIDS)
+        # Petrol default profile => full known table minus the EV-only battery PID.
+        assert set(pids) == set(can_bridge.PIDS) - {0x5B}
+        assert 0x5B not in pids
 
     def test_resolve_uses_discovered_subset(self):
         bus = self._FakeBus([])
@@ -480,8 +481,8 @@ class TestObdBridge:
         ser = MagicMock()
         with patch.object(ob, 'query_supported_pids', return_value=None):
             defs = ob.active_pid_defs(ser)
-        # Petrol default => full command-keyed table.
-        assert set(defs) == set(ob.PID_DEFS)
+        # Petrol default => full command-keyed table minus the EV-only battery PID.
+        assert set(defs) == {c for c, d in ob.PID_DEFS.items() if d['pid'] != 0x5B}
 
     def test_kline_switchover_documented(self):
         """The operator canbridge<->obdbridge switch-over must stay documented
