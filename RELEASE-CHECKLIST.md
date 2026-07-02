@@ -66,7 +66,9 @@ from **yellow → green**.
       stale PSK, fixed the unreachable `10.42.0.1:1883` instruction, and added
       honest capability framing (links CAPABILITIES.md).
 - [x] LICENSE present and complete (MIT, © 2026 MZ1312 UNCAGED TECHNOLOGY).
-- [ ] **(optional)** SECURITY.md + CHANGELOG.md.
+- [x] SECURITY.md — vuln-reporting policy, scope/authorized-use, secrets
+      handling, network exposure.
+- [ ] **(optional)** CHANGELOG.md.
 
 ## Secrets — must-do before public
 - [x] Removed the two committed WPA2 PSKs from source + docs; hotspot key is
