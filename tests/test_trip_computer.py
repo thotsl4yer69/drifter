@@ -119,3 +119,44 @@ def test_ev_instantaneous_consumption_is_none():
     state.tick(now, speed_kph=100.0, maf_gps=10.0)
     state.tick(now + 1, speed_kph=100.0, maf_gps=10.0)
     assert state.to_dict()['cur_l_per_100km'] is None
+
+
+# ── MAP-based speed-density estimate (MAF-less cars) ──
+
+def test_speed_density_maf_estimate_positive():
+    # X-Type default displacement (2.495 L) is applied by the autouse fixture.
+    assert round(trip_computer.DISPLACEMENT_L, 3) == 2.495
+    maf = trip_computer._speed_density_maf(rpm=2000, map_kpa=60, iat_c=25)
+    assert maf is not None and maf > 0
+
+
+def test_speed_density_scales_with_rpm_and_map():
+    low = trip_computer._speed_density_maf(1000, 40, 25)
+    high = trip_computer._speed_density_maf(3000, 90, 25)
+    assert high > low > 0
+
+
+def test_speed_density_needs_displacement():
+    saved = trip_computer.DISPLACEMENT_L
+    trip_computer.DISPLACEMENT_L = None
+    try:
+        assert trip_computer._speed_density_maf(2000, 60, 25) is None
+    finally:
+        trip_computer.DISPLACEMENT_L = saved
+
+
+def test_speed_density_rejects_bad_inputs():
+    assert trip_computer._speed_density_maf(None, 60, 25) is None
+    assert trip_computer._speed_density_maf(2000, None, 25) is None
+    assert trip_computer._speed_density_maf(0, 60, 25) is None
+    assert trip_computer._speed_density_maf(2000, 0, 25) is None
+
+
+def test_estimated_maf_accrues_fuel_via_tick():
+    # The estimate, once fed to tick(), accrues fuel like a real MAF reading.
+    maf = trip_computer._speed_density_maf(rpm=1500, map_kpa=50, iat_c=30)
+    state = make_state()
+    now = time.time()
+    for i in range(10):
+        state.tick(now + i, speed_kph=60.0, maf_gps=maf)
+    assert state.fuel_l > 0

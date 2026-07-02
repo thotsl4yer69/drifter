@@ -58,8 +58,45 @@ def _afr() -> float:
 # startup and on a live drifter/vehicle/profile update.
 IS_COMBUSTION = True
 
+# Engine displacement (litres) for the MAP-based speed-density air-mass estimate,
+# used when the car reports MAP (0x0B) but not MAF (0x10). Set from the profile.
+DISPLACEMENT_L: float | None = None
+
+# Speed-density constants: molar mass of air (g/mol), gas constant (kPa·L/mol·K),
+# and a nominal volumetric efficiency. VE varies with load; a fixed value makes
+# this a rough fallback estimate (only used when true MAF is unavailable).
+_MOLAR_MASS_AIR = 28.97
+_R_KPA_L = 8.314
+_VOLUMETRIC_EFFICIENCY = 0.85
+
 MAX_TICK_DT_SEC = 5.0      # ignore distance/fuel attribution across stalls > 5s
 MAF_STALE_SEC = 5.0        # don't report cur_l/100 from stale MAF
+
+
+def _speed_density_maf(rpm, map_kpa, iat_c) -> float | None:
+    """Estimate air-mass flow (g/s) from MAP for a MAF-less engine (speed
+    density). Needs RPM, MAP and a known displacement; returns None otherwise so
+    the caller falls back to no-fuel-tracking rather than a bogus number.
+
+      airflow = air_density(MAP, IAT) × volumetric_flow(displacement, VE, RPM)
+    """
+    if DISPLACEMENT_L is None or rpm is None or map_kpa is None:
+        return None
+    try:
+        rpm = float(rpm)
+        map_kpa = float(map_kpa)
+    except (TypeError, ValueError):
+        return None
+    if rpm <= 0 or map_kpa <= 0:
+        return None
+    try:
+        iat_k = (float(iat_c) if iat_c is not None else 20.0) + 273.15
+    except (TypeError, ValueError):
+        iat_k = 293.15
+    air_density = (map_kpa * _MOLAR_MASS_AIR) / (_R_KPA_L * iat_k)   # g/L
+    # 4-stroke: one intake charge per two revolutions → RPM/2 intakes per minute.
+    vol_flow = DISPLACEMENT_L * _VOLUMETRIC_EFFICIENCY * rpm / 120.0  # L/s
+    return air_density * vol_flow
 
 
 class TripState:
@@ -176,11 +213,13 @@ def _load_config() -> dict:
 
 def _apply_profile() -> None:
     """Re-read the powertrain from the active vehicle profile. Sets FUEL_TYPE
-    (density/AFR) and IS_COMBUSTION (whether the MAF→fuel math applies at all —
-    a pure EV has neither MAF nor fuel flow)."""
-    global FUEL_TYPE, IS_COMBUSTION
+    (density/AFR), IS_COMBUSTION (whether the MAF→fuel math applies at all — a
+    pure EV has neither MAF nor fuel flow), and DISPLACEMENT_L (for the MAP-based
+    speed-density estimate on MAF-less cars)."""
+    global FUEL_TYPE, IS_COMBUSTION, DISPLACEMENT_L
     FUEL_TYPE = vehicle_profile.fuel_type()
     IS_COMBUSTION = vehicle_profile.is_combustion()
+    DISPLACEMENT_L = vehicle_profile.displacement_l()
 
 
 def main() -> None:
@@ -219,10 +258,17 @@ def main() -> None:
             return
         topic = msg.topic
         if topic == TOPICS['snapshot'] and isinstance(data, dict):
+            maf = data.get('maf')
+            # MAF-less car (reports MAP but not MAF): estimate air mass by speed
+            # density so fuel/economy still track. A car that reports real MAF
+            # (e.g. the X-Type) always uses it — this only fills a gap.
+            if maf is None and IS_COMBUSTION:
+                maf = _speed_density_maf(
+                    data.get('rpm'), data.get('map'), data.get('iat'))
             state.tick(
                 data.get('ts', time.time()),
                 data.get('speed'),
-                data.get('maf'),
+                maf,
             )
         elif topic == TOPICS['weather_current'] and isinstance(data, dict):
             state.weather = data
