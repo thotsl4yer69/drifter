@@ -7,9 +7,19 @@ the public API so any future data reshuffling still works.
 """
 import sys
 
+import pytest
+
 sys.path.insert(0, 'src')
 
 import mechanic
+import vehicle_profile as vp
+
+
+@pytest.fixture(autouse=True)
+def _reset_profile():
+    vp.reload()
+    yield
+    vp.set_active(None)
 
 
 def test_data_loaded_non_empty():
@@ -58,6 +68,22 @@ def test_get_dtc_info_normalises_case():
 
 def test_get_dtc_info_unknown_returns_none():
     assert mechanic.get_dtc_info('P9999') is None
+
+
+def test_kb_applies_to_xtype_default():
+    # Default profile is the X-Type -> the KB applies, full search works.
+    assert mechanic.applies_to_active_vehicle() is True
+    assert mechanic.search('thermostat')
+
+
+def test_kb_gated_for_other_vehicle():
+    # A different car keeps only powertrain-generic hits — no Jaguar torque/spec.
+    vp.set_active({'make': 'Toyota', 'model': 'Corolla', 'engine': '1.8 I4'})
+    assert mechanic.applies_to_active_vehicle() is False
+    results = mechanic.search('thermostat')
+    assert all(r['type'] in {'emergency', 'telemetry_guide'} for r in results)
+    # A torque-spec query returns nothing vehicle-specific for another car.
+    assert not any(r['type'] == 'torque' for r in mechanic.search('crankshaft'))
     assert mechanic.get_dtc_info('') is None
     assert mechanic.get_dtc_info(None) is None
 
