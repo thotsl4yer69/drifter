@@ -536,9 +536,21 @@ mkdir -p ${DRIFTER_DIR}/logs/sessions ${DRIFTER_DIR}/state
 chown -R drifter:drifter ${DRIFTER_DIR}/state ${DRIFTER_DIR}/logs 2>/dev/null || true
 ok "Log/state directories created"
 
-# Analyst data directories and API key placeholder
+# Analyst data directories and the API-key / tunables env file.
 mkdir -p ${DRIFTER_DIR}/data ${DRIFTER_DIR}/reports
-touch ${DRIFTER_DIR}/.env
+# Seed /opt/drifter/.env from the committed example on first install so the
+# operator has a documented, commented template to fill in (keys, hotspot PSK,
+# uplink SSID). Never overwrite an existing .env — it holds real secrets.
+if [ ! -f "${DRIFTER_DIR}/.env" ]; then
+    if [ -f "${REPO_DIR}/config/.env.example" ]; then
+        cp "${REPO_DIR}/config/.env.example" "${DRIFTER_DIR}/.env"
+        ok ".env seeded from config/.env.example (fill in your keys)"
+    else
+        touch "${DRIFTER_DIR}/.env"
+    fi
+else
+    ok ".env already present — preserving operator secrets"
+fi
 ok "Analyst data directories created"
 
 # Hand everything under DRIFTER_DIR to the drifter user. The services that
