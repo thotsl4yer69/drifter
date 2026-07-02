@@ -23,6 +23,7 @@ from config import (
     TOPICS,
     make_mqtt_client,
 )
+from obd_pids import can_pids, two_byte_pids
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,30 +33,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── OBD-II PID Definitions ──
-# Standard OBD-II PIDs we poll via CAN (Mode 01)
-PIDS = {
-    0x0C: {'name': 'rpm',      'topic': TOPICS['rpm'],      'decode': lambda a, b: ((a * 256) + b) / 4.0,      'unit': 'rpm',  'hz': 10},
-    0x05: {'name': 'coolant',  'topic': TOPICS['coolant'],  'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x06: {'name': 'stft1',    'topic': TOPICS['stft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x07: {'name': 'ltft1',    'topic': TOPICS['ltft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x08: {'name': 'stft2',    'topic': TOPICS['stft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x09: {'name': 'ltft2',    'topic': TOPICS['ltft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x04: {'name': 'load',     'topic': TOPICS['load'],     'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 5},
-    0x0D: {'name': 'speed',    'topic': TOPICS['speed'],    'decode': lambda a, b=0: a,                         'unit': 'km/h', 'hz': 5},
-    0x0F: {'name': 'iat',      'topic': TOPICS['iat'],      'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x10: {'name': 'maf',      'topic': TOPICS['maf'],      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
-    0x11: {'name': 'throttle', 'topic': TOPICS['throttle'], 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
-    0x42: {'name': 'voltage',  'topic': TOPICS['voltage'],  'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
-    0x0E: {'name': 'timing',   'topic': TOPICS['timing'],   'decode': lambda a, b=0: (a / 2) - 64,             'unit': 'deg',  'hz': 5},
-    0x14: {'name': 'o2_b1s1',  'topic': TOPICS['o2_b1s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
-    0x15: {'name': 'o2_b2s1',  'topic': TOPICS['o2_b2s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
-    0x1F: {'name': 'run_time', 'topic': TOPICS['run_time'], 'decode': lambda a, b: (a * 256) + b,              'unit': 's',    'hz': 1},
-    0x2F: {'name': 'fuel_lvl', 'topic': TOPICS['fuel_lvl'], 'decode': lambda a, b=0: round((a * 100) / 255.0, 1), 'unit': '%', 'hz': 0.5},
-    0x33: {'name': 'baro',     'topic': TOPICS['baro'],     'decode': lambda a, b=0: a,                        'unit': 'kPa',  'hz': 0.1},
-}
+# The canonical PID table lives in obd_pids.py — the SINGLE source of truth
+# shared with the ELM327/K-line bridge (obd_bridge.py). `PIDS` is int-keyed with
+# a list-decoder (takes the data bytes A,B,… and returns the scaled value);
+# `TWO_BYTE_PIDS` is derived (PIDs whose decoder needs both A and B). can_native
+# imports `PIDS` from here, so keep the name.
+PIDS = can_pids()
 
-# Two-byte PID set (need both A and B bytes for decode)
-TWO_BYTE_PIDS = {0x0C, 0x10, 0x1F, 0x42}
+# Two-byte PID set (need both A and B bytes for decode) — derived from the table.
+TWO_BYTE_PIDS = two_byte_pids()
 
 # ── DTC Decoding ──
 DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
@@ -224,10 +210,10 @@ def decode_obd_response(msg):
 
     pid_def = PIDS[pid]
     try:
-        if pid in TWO_BYTE_PIDS:
-            value = pid_def['decode'](data[3], data[4])
-        else:
-            value = pid_def['decode'](data[3])
+        # Decoders take the data bytes (A, B, …) as a sequence, so a raw CAN
+        # frame slice and an ELM327 hex line decode identically. The response
+        # payload starts at byte 3 (after length + mode-echo + pid-echo).
+        value = pid_def['decode'](data[3:])
         return pid, value
     except (IndexError, ValueError) as e:
         log.warning(f"Decode error for PID 0x{pid:02X}: {e}")

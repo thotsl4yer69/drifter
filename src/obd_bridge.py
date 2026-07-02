@@ -55,6 +55,7 @@ from config import (
     TOPICS,
     make_mqtt_client,
 )
+from obd_pids import obd_pid_defs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,33 +65,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# PID definitions matching can_bridge.py's decoding semantics
-PID_DEFS = {
-    '010C': {'name': 'rpm',      'topic': TOPICS['rpm'],
-             'decode': lambda b: ((b[0] * 256) + b[1]) / 4.0, 'unit': 'rpm'},
-    '0105': {'name': 'coolant',  'topic': TOPICS['coolant'],
-             'decode': lambda b: b[0] - 40, 'unit': 'C'},
-    '0106': {'name': 'stft1',    'topic': TOPICS['stft1'],
-             'decode': lambda b: round((b[0] / 1.28) - 100, 2), 'unit': '%'},
-    '0107': {'name': 'ltft1',    'topic': TOPICS['ltft1'],
-             'decode': lambda b: round((b[0] / 1.28) - 100, 2), 'unit': '%'},
-    '0108': {'name': 'stft2',    'topic': TOPICS['stft2'],
-             'decode': lambda b: round((b[0] / 1.28) - 100, 2), 'unit': '%'},
-    '0109': {'name': 'ltft2',    'topic': TOPICS['ltft2'],
-             'decode': lambda b: round((b[0] / 1.28) - 100, 2), 'unit': '%'},
-    '0104': {'name': 'load',     'topic': TOPICS['load'],
-             'decode': lambda b: round(b[0] / 2.55, 1), 'unit': '%'},
-    '010D': {'name': 'speed',    'topic': TOPICS['speed'],
-             'decode': lambda b: b[0], 'unit': 'km/h'},
-    '010F': {'name': 'iat',      'topic': TOPICS['iat'],
-             'decode': lambda b: b[0] - 40, 'unit': 'C'},
-    '0110': {'name': 'maf',      'topic': TOPICS['maf'],
-             'decode': lambda b: round(((b[0] * 256) + b[1]) / 100.0, 2), 'unit': 'g/s'},
-    '0111': {'name': 'throttle', 'topic': TOPICS['throttle'],
-             'decode': lambda b: round(b[0] / 2.55, 1), 'unit': '%'},
-    '0142': {'name': 'voltage',  'topic': TOPICS['voltage'],
-             'decode': lambda b: round(((b[0] * 256) + b[1]) / 1000.0, 2), 'unit': 'V'},
-}
+# PID definitions — built from the canonical table in obd_pids.py (the SINGLE
+# source of truth shared with the raw-CAN bridge). Keyed by ELM327 command
+# string ('010C'); each decode() takes the data bytes (A, B, …) as a list. This
+# used to be a hand-copied subset that silently dropped timing / O2 / run-time /
+# fuel-level / baro on the K-line path — unifying means the ELM327 transport now
+# reports the same metric set as raw CAN.
+PID_DEFS = obd_pid_defs()
 
 
 def _open_elm() -> object | None:
