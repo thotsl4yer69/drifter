@@ -30,6 +30,7 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
+import vehicle_profile
 from config import (
     LEVEL_AMBER,
     LEVEL_INFO,
@@ -456,6 +457,9 @@ def _make_client_id() -> str:
 
 def main() -> None:
     log.info("DRIFTER Safety Engine starting...")
+    # Seed the per-vehicle over-rev limit from the active profile (redline
+    # varies by engine), then let safety.yaml override if the operator set one.
+    SAFETY_CFG['overrev_rpm'] = vehicle_profile.redline_rpm()
     _load_yaml_config()
 
     running = True

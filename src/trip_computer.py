@@ -15,6 +15,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
+import vehicle_profile
 from config import (
     DRIFTER_DIR,
     FUEL_TYPE,
@@ -169,14 +170,22 @@ def _load_config() -> dict:
 
 
 def main() -> None:
+    global FUEL_TYPE
     log.info("DRIFTER Trip Computer starting...")
     cfg = _load_config()
+    # Fuel math is per-vehicle: diesel has a different density/AFR, and tank +
+    # baseline consumption vary by car. Take them from the active vehicle
+    # profile, with config/trip.yaml as an operator override on top.
+    FUEL_TYPE = vehicle_profile.fuel_type()
     state = TripState(
         fuel_price=float(cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L)),
-        tank_l=float(cfg.get('tank_litres', TRIP_FUEL_TANK_LITRES)),
+        tank_l=float(cfg.get('tank_litres',
+                             vehicle_profile.spec('tank_litres', TRIP_FUEL_TANK_LITRES))),
         avg_l_per_100=float(cfg.get('avg_consumption_l_per_100km',
-                                    TRIP_AVG_CONSUMPTION_L_PER_100KM)),
+                                    vehicle_profile.spec('avg_consumption_l_per_100km',
+                                                         TRIP_AVG_CONSUMPTION_L_PER_100KM))),
     )
+    log.info(f"Trip fuel model: {FUEL_TYPE} (density {_density()} kg/L, tank {state.tank_l:.0f} L)")
 
     running = True
 

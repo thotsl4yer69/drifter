@@ -16,6 +16,7 @@ from collections import defaultdict, deque
 
 import paho.mqtt.client as mqtt
 
+import vehicle_profile
 from config import (
     ADAPTIVE_DRIFT_LIMIT,
     ADAPTIVE_LEARN_MIN_SAMPLES,
@@ -62,7 +63,15 @@ class Learner:
     def __init__(self) -> None:
         self.samples: dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
         self.session_count = 0
+        # Seed baselines from the active vehicle profile (idle RPM, voltage, MAF
+        # idle vary by engine) rather than the shipped AJ-V6 numbers; the learner
+        # then adapts these over the first few drives. Persisted state (_load)
+        # overrides on top.
         self.baselines = dict(DEFAULT_BASELINES)
+        self.baselines.update({
+            k: v for k, v in vehicle_profile.calibration().items()
+            if k in DEFAULT_BASELINES
+        })
         self.current_coolant = 0.0
         self.current_rpm = 0.0
         self.current_speed = 0.0
