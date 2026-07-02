@@ -77,6 +77,39 @@ class TestDecodeSemantics:
             assert self._can(pid)(data) == self._obd(pid)(data)
 
 
+class TestCommonStandardPids:
+    """MAP (for MAF-less cars) + other common standard PIDs are present and
+    decode to standard SAE scaling."""
+
+    def _dec(self, pid):
+        return obd_pids.can_pids()[pid]['decode']
+
+    def test_map_present_and_decodes_kpa(self):
+        assert 0x0B in obd_pids.PID_TABLE
+        # MAP is a raw kPa byte.
+        assert self._dec(0x0B)([0x64]) == 100
+        assert obd_pids.PID_TABLE[0x0B].name == 'map'
+
+    def test_map_is_combustion_only(self):
+        # A pure EV has no intake manifold — MAP must drop out for EVs.
+        assert 0x0B not in obd_pids.applies_to('ev')
+
+    def test_ambient_air_temp(self):
+        assert self._dec(0x46)([0x50]) == 40  # 0x50 - 40
+        # Ambient air temp is not engine-specific → available on any powertrain.
+        assert 0x46 in obd_pids.applies_to('ev')
+
+    def test_oil_temp(self):
+        assert self._dec(0x5C)([0x78]) == 80  # 0x78 - 40
+
+    def test_fuel_pressure(self):
+        assert self._dec(0x0A)([0x64]) == 300  # A * 3
+
+    def test_fuel_rate(self):
+        # ((A*256)+B)/20 ; A=0x00 B=0x64 -> 5.0 L/h
+        assert self._dec(0x5E)([0x00, 0x64]) == 5.0
+
+
 class TestPowertrainGate:
     def test_ev_drops_combustion_only_pids(self):
         ev = obd_pids.applies_to('ev')

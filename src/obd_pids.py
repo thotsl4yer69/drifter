@@ -25,6 +25,12 @@ Each entry also carries a powertrain applicability tag (:data:`ICE` /
 combustion-only PIDs on a pure EV and (b) request only PIDs the ECU actually
 reports (see ``obd_pids.supported_from_bitmaps`` + the bridges' discovery step).
 
+Coverage is the full common standard set, not just the handful the X-Type
+happens to expose — notably **MAP (0x0B)** so a MAF-less car (many post-2010
+speed-density engines report MAP but not MAF) can still have air-mass/fuel
+estimated, plus oil temp, ambient temp, fuel pressure and engine fuel rate.
+Unsupported PIDs are simply never polled once discovery has run.
+
 Dependency-light: imports only ``config`` (for ``TOPICS``) + stdlib. Safe to
 import from either bridge.
 UNCAGED TECHNOLOGY — EST 1991
@@ -83,24 +89,29 @@ class Pid:
 # tables in can_bridge.py / obd_bridge.py (the X-Type regression suite proves
 # it) — do NOT change existing scaling without a test update.
 _DEFS: list[Pid] = [
-    Pid(0x04, 'load',     'load',     lambda d: round(d[0] / 2.55, 1),                    '%',    5,   1, ALL),
-    Pid(0x05, 'coolant',  'coolant',  lambda d: d[0] - 40,                                'C',    1,   1, ICE),
-    Pid(0x06, 'stft1',    'stft1',    lambda d: round((d[0] / 1.28) - 100, 2),            '%',    5,   1, ICE),
-    Pid(0x07, 'ltft1',    'ltft1',    lambda d: round((d[0] / 1.28) - 100, 2),            '%',    1,   1, ICE),
-    Pid(0x08, 'stft2',    'stft2',    lambda d: round((d[0] / 1.28) - 100, 2),            '%',    5,   1, ICE),
-    Pid(0x09, 'ltft2',    'ltft2',    lambda d: round((d[0] / 1.28) - 100, 2),            '%',    1,   1, ICE),
-    Pid(0x0C, 'rpm',      'rpm',      lambda d: ((d[0] * 256) + d[1]) / 4.0,              'rpm',  10,  2, ALL),
-    Pid(0x0D, 'speed',    'speed',    lambda d: d[0],                                     'km/h', 5,   1, ALL),
-    Pid(0x0E, 'timing',   'timing',   lambda d: (d[0] / 2) - 64,                          'deg',  5,   1, ICE),
-    Pid(0x0F, 'iat',      'iat',      lambda d: d[0] - 40,                                'C',    1,   1, ICE),
-    Pid(0x10, 'maf',      'maf',      lambda d: round(((d[0] * 256) + d[1]) / 100.0, 2),  'g/s',  5,   2, ICE),
-    Pid(0x11, 'throttle', 'throttle', lambda d: round(d[0] / 2.55, 1),                    '%',    10,  1, ALL),
-    Pid(0x14, 'o2_b1s1',  'o2_b1s1',  lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
-    Pid(0x15, 'o2_b2s1',  'o2_b2s1',  lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
-    Pid(0x1F, 'run_time', 'run_time', lambda d: (d[0] * 256) + d[1],                      's',    1,   2, ALL),
-    Pid(0x2F, 'fuel_lvl', 'fuel_lvl', lambda d: round((d[0] * 100) / 255.0, 1),           '%',    0.5, 1, ICE),
-    Pid(0x33, 'baro',     'baro',     lambda d: d[0],                                     'kPa',  0.1, 1, ALL),
-    Pid(0x42, 'voltage',  'voltage',  lambda d: round(((d[0] * 256) + d[1]) / 1000.0, 2), 'V',    1,   2, ALL),
+    Pid(0x04, 'load',       'load',       lambda d: round(d[0] / 2.55, 1),                    '%',    5,   1, ALL),
+    Pid(0x05, 'coolant',    'coolant',    lambda d: d[0] - 40,                                'C',    1,   1, ICE),
+    Pid(0x06, 'stft1',      'stft1',      lambda d: round((d[0] / 1.28) - 100, 2),            '%',    5,   1, ICE),
+    Pid(0x07, 'ltft1',      'ltft1',      lambda d: round((d[0] / 1.28) - 100, 2),            '%',    1,   1, ICE),
+    Pid(0x08, 'stft2',      'stft2',      lambda d: round((d[0] / 1.28) - 100, 2),            '%',    5,   1, ICE),
+    Pid(0x09, 'ltft2',      'ltft2',      lambda d: round((d[0] / 1.28) - 100, 2),            '%',    1,   1, ICE),
+    Pid(0x0A, 'fuel_pressure', 'fuel_pressure', lambda d: d[0] * 3,                           'kPa',  1,   1, ICE),
+    Pid(0x0B, 'map',        'map',        lambda d: d[0],                                     'kPa',  5,   1, ICE),
+    Pid(0x0C, 'rpm',        'rpm',        lambda d: ((d[0] * 256) + d[1]) / 4.0,              'rpm',  10,  2, ALL),
+    Pid(0x0D, 'speed',      'speed',      lambda d: d[0],                                     'km/h', 5,   1, ALL),
+    Pid(0x0E, 'timing',     'timing',     lambda d: (d[0] / 2) - 64,                          'deg',  5,   1, ICE),
+    Pid(0x0F, 'iat',        'iat',        lambda d: d[0] - 40,                                'C',    1,   1, ICE),
+    Pid(0x10, 'maf',        'maf',        lambda d: round(((d[0] * 256) + d[1]) / 100.0, 2),  'g/s',  5,   2, ICE),
+    Pid(0x11, 'throttle',   'throttle',   lambda d: round(d[0] / 2.55, 1),                    '%',    10,  1, ALL),
+    Pid(0x14, 'o2_b1s1',    'o2_b1s1',    lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
+    Pid(0x15, 'o2_b2s1',    'o2_b2s1',    lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
+    Pid(0x1F, 'run_time',   'run_time',   lambda d: (d[0] * 256) + d[1],                      's',    1,   2, ALL),
+    Pid(0x2F, 'fuel_lvl',   'fuel_lvl',   lambda d: round((d[0] * 100) / 255.0, 1),           '%',    0.5, 1, ICE),
+    Pid(0x33, 'baro',       'baro',       lambda d: d[0],                                     'kPa',  0.1, 1, ALL),
+    Pid(0x42, 'voltage',    'voltage',    lambda d: round(((d[0] * 256) + d[1]) / 1000.0, 2), 'V',    1,   2, ALL),
+    Pid(0x46, 'ambient_air_temp', 'ambient_air_temp', lambda d: d[0] - 40,                    'C',    0.1, 1, ALL),
+    Pid(0x5C, 'oil_temp',   'oil_temp',   lambda d: d[0] - 40,                                'C',    0.5, 1, ICE),
+    Pid(0x5E, 'fuel_rate',  'fuel_rate',  lambda d: round(((d[0] * 256) + d[1]) / 20.0, 2),   'L/h',  1,   2, ICE),
 ]
 
 # Fast lookups (kept in module scope; both bridges read them at import).
