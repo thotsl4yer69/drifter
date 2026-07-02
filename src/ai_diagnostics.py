@@ -30,6 +30,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
+import dtc_catalog
 import llm_client_v2
 import vehicle_profile
 from config import (
@@ -37,7 +38,6 @@ from config import (
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
-    XTYPE_DTC_LOOKUP,
 )
 
 logging.basicConfig(
@@ -179,7 +179,7 @@ def _build_prompt(reason: str) -> str:
 
     dtc_lines: list[str] = []
     for code in active[:5]:
-        info = XTYPE_DTC_LOOKUP.get(code)
+        info = dtc_catalog.lookup(code)
         if info:
             cause = (info.get('cause') or '')[:120]
             dtc_lines.append(
@@ -188,7 +188,7 @@ def _build_prompt(reason: str) -> str:
         else:
             dtc_lines.append(f"  {code}: (no local lookup)")
     for code in pending[:3]:
-        info = XTYPE_DTC_LOOKUP.get(code)
+        info = dtc_catalog.lookup(code)
         dtc_lines.append(
             f"  PENDING {code}: {info.get('desc', '(unknown)') if info else '(unknown)'}"
         )

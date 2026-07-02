@@ -36,6 +36,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import dtc_catalog
 from config import (
     DEFAULT_MODE,
     LCD_BTN_ACTION,
@@ -62,7 +63,6 @@ from config import (
     PING_TIMEOUT_SEC,
     SERVICES,
     TOPICS,
-    XTYPE_DTC_LOOKUP,
     make_mqtt_client,
 )
 
@@ -150,11 +150,11 @@ def service_state_color(state: str, theme: dict) -> tuple:
 
 
 def decode_dtc(code: str) -> tuple[str, str]:
-    """Return (label, severity) for a DTC code from XTYPE_DTC_LOOKUP — turns a
-    raw 'P0301' into 'P0301 Cylinder 1 Misfire' so the fault is readable at the
-    wheel. Unknown codes fall back to (code, 'AMBER')."""
+    """Return (label, severity) for a DTC code from the active vehicle's DTC
+    overlay — turns a raw 'P0301' into 'P0301 Cylinder 1 Misfire' so the fault
+    is readable at the wheel. Unknown codes fall back to (code, 'AMBER')."""
     norm = str(code).strip().upper()
-    info = XTYPE_DTC_LOOKUP.get(norm) if norm else None
+    info = dtc_catalog.active_overlay().get(norm) if norm else None
     if info:
         return (f"{norm} {info.get('desc', '')}".strip(), info.get('severity', 'AMBER'))
     return (norm, 'AMBER')

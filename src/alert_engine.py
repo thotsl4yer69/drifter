@@ -15,6 +15,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
+import dtc_catalog
 import vehicle_profile
 from config import (
     CALIBRATION_DEFAULTS,
@@ -38,7 +39,6 @@ from config import (
     WARMUP_COOLANT_TARGET,
     WARMUP_COOLANT_THRESHOLD,
     WARMUP_TIME_MAX,
-    XTYPE_DTC_LOOKUP,
     make_mqtt_client,
 )
 
@@ -398,14 +398,18 @@ def rule_voltage_overcharge(state: VehicleState):
 
 
 def rule_active_dtcs(state: VehicleState):
-    """Report active DTCs with X-Type specific diagnosis."""
+    """Report active DTCs with the active vehicle's diagnosis overlay."""
     if not state.active_dtcs and not state.pending_dtcs:
         return None
 
+    # Per-vehicle DTC overlay for whatever car is active (the X-Type overlay by
+    # default). Overlay-only here so the safety path stays behaviour-exact; the
+    # generic OBD-II base is used by the LLM-facing consumers instead.
+    overlay = dtc_catalog.active_overlay()
+
     if state.active_dtcs:
-        # Use X-Type DTC lookup for richer diagnosis
         first_code = state.active_dtcs[0]
-        lookup = XTYPE_DTC_LOOKUP.get(first_code)
+        lookup = overlay.get(first_code)
 
         if lookup:
             severity = LEVEL_RED if lookup['severity'] == 'RED' else LEVEL_AMBER
@@ -423,7 +427,7 @@ def rule_active_dtcs(state: VehicleState):
 
     if state.pending_dtcs:
         first_code = state.pending_dtcs[0]
-        lookup = XTYPE_DTC_LOOKUP.get(first_code)
+        lookup = overlay.get(first_code)
         if lookup:
             return (LEVEL_INFO,
                     f"Pending {first_code}: {lookup['desc']}. "

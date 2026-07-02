@@ -21,6 +21,7 @@ import yaml
 
 import ble_history
 import ble_persistence
+import dtc_catalog
 import hid_ducky
 import hid_inject
 import vehicle_profile
@@ -41,7 +42,6 @@ from config import (
     SETTINGS_SECTIONS,
     SHARED_SERVICES,
     TOPICS,
-    XTYPE_DTC_LOOKUP,
     load_settings,
     save_settings,
     validate_settings_payload,
@@ -1617,14 +1617,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def _serve_dtc_lookup(self, parsed):
         """DTC click handler — corpus first (full description, ECU action,
-        likely causes), legacy XTYPE_DTC_LOOKUP as a tiny built-in fallback
-        for codes the corpus hasn't been rebuilt with.
+        likely causes), the dtc_catalog (active-vehicle overlay ← generic
+        OBD-II base) as a tiny built-in fallback for codes the corpus hasn't
+        been rebuilt with.
 
         Uses the torch-free static lookup (dtc_lookup_static) — NOT the
         semantic-fallback dtc_lookup — so this always-on, memory-capped HUD
         process never loads sentence-transformers/torch (would blow
         MemoryMax=512M and OOM-kill the dashboard). A static dtc/<code>.md
-        miss falls through to the built-in XTYPE_DTC_LOOKUP table below."""
+        miss falls through to the built-in dtc_catalog below."""
         code = parsed.path.rsplit('/', 1)[-1].upper()
         if not _DTC_RE.match(code):
             self.send_error(400, 'Invalid DTC code')
@@ -1638,7 +1639,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 'source':  hit.get('source'),
             })
             return
-        info = XTYPE_DTC_LOOKUP.get(code, {})
+        info = dtc_catalog.lookup(code) or {}
         self._serve_json({'code': code, **info})
 
     def _get_driver(self, parsed):
