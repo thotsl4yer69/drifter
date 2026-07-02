@@ -18,9 +18,9 @@ from **yellow → green**.
 - [x] Untracked backgrounded systemd children fixed: `drifter-mesh` split into
       supervised coordinator/bridge units; `drifter-replay` no longer
       double-runs `session_recorder.py`.
-- [ ] **(follow-up)** Apply WAL/`busy_timeout` to the secondary DBs
-      (`corpus.py`, `aircraft_db.py`, `vehicle_kb.py`, `fleet_server.py`) for
-      the same concurrency benefit. Lower priority — these are add-on services.
+- [x] Applied WAL/`busy_timeout` to the secondary write DBs (`corpus.db`,
+      `vehicle_kb.db`, `fleet.db`). `aircraft_db.py` is intentionally excluded —
+      it opens read-only (`mode=ro`), where WAL is neither applicable nor needed.
 
 ## Phase 2 — Resilience
 - [x] MQTT broker ordering unified behind `drifter-broker.target`; broker choice
@@ -51,11 +51,15 @@ from **yellow → green**.
       below the v2 client the code requires).
 - [x] Ollama model tag converged on `qwen2.5:1.5b` across install-vivi.sh and
       post-deploy-check.sh (matches `config.OLLAMA_MODEL` / `vivi.yaml`).
-- [ ] **(follow-up)** Dependency pinning: `pyproject.toml` uses floors only and
-      the Pi install uses a hand-typed unpinned list. Add bounded/locked
-      versions the Pi path actually consumes so a fresh install months later
-      can't drift-break. Deferred: pinning must be validated on ARM64 hardware
-      to avoid breaking the install, so it is a hardware-gated follow-up.
+- [x] `paho-mqtt` capped `>=2.0,<3.0` (pyproject + install.sh) — the code hard-
+      requires the v2 callback API; this is safe because 3.x doesn't exist yet,
+      so the ceiling can't fall below an installed version.
+- [ ] **(follow-up, HW-gated)** Broader dependency pinning: `pyproject.toml`
+      still uses floors only and the Pi install uses a hand-typed list. Adding
+      blanket version ceilings blind is unsafe — a ceiling set below the version
+      already resolved on the ARM64 Pi would break a fresh install. This needs a
+      lock generated/validated on real hardware (`pip freeze` on a known-good
+      node), so it is deferred to a hardware pass rather than guessed here.
 
 ## Phase 4 — Release polish
 - [x] `CAPABILITIES.md` — plain does / does-not, defensive framing, offensive
@@ -68,7 +72,7 @@ from **yellow → green**.
 - [x] LICENSE present and complete (MIT, © 2026 MZ1312 UNCAGED TECHNOLOGY).
 - [x] SECURITY.md — vuln-reporting policy, scope/authorized-use, secrets
       handling, network exposure.
-- [ ] **(optional)** CHANGELOG.md.
+- [x] CHANGELOG.md — Keep-a-Changelog summary of the hardening pass.
 
 ## Secrets — must-do before public
 - [x] Removed the two committed WPA2 PSKs from source + docs; hotspot key is
