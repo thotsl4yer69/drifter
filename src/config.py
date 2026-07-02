@@ -326,6 +326,21 @@ OBD_REQUEST_ID = 0x7DF
 OBD_RESPONSE_BASE = 0x7E8
 OBD_RESPONSE_END = 0x7EF
 
+# CAN-adapter USB allowlist (VID:PID) — positively-identified CAN-over-serial /
+# gs_usb adapters ONLY. can_bridge slcands a ttyACM/ttyUSB device only when its
+# VID:PID is on this list (never the Flipper/Marauder/GPS/mic serial ports), and
+# obd_transport uses it to auto-select the CAN vs ELM327 transport. Kept here
+# (not in can_bridge) so obd_transport can read it WITHOUT importing python-can
+# — obd_bridge must import on a K-line node that has no python-can. Mirrors the
+# allowlist in config/setup-can.sh — keep the two in sync.
+CAN_USB_IDS = {
+    ('0483', '5740'),  # STMicro VCP — CANable / slcan (cantact, CANtact-style)
+    ('1d50', '606f'),  # OpenMoko — candleLight / gs_usb (CANable gs_usb fw, CANtact)
+    ('1209', '2323'),  # pid.codes — CANable 2.0 (gs_usb)
+    ('16d0', '117e'),  # MCS — gs_usb USB2CAN (candleLight-class)
+    ('1cd2', '606f'),  # Geschwister Schneider gs_usb (original CANtact)
+}
+
 # CAN FD — native socketcan FD bridge (can_native.py / RDK X5).
 # The X-Type itself is classic CAN (500 kbps), but the RDK X5 + native
 # socketcan stack supports CAN FD with a faster data-phase bitrate. The
@@ -703,6 +718,7 @@ ANALYST_BASELINE_SESSIONS = 10
 # Do not hardcode a count in prose; it drifts. Use len(SERVICES).
 SERVICES = [
     "drifter-canbridge",
+    "drifter-obdbridge",    # ELM327/K-line transport (auto-selected vs canbridge)
     "drifter-alerts",
     "drifter-logger",
     "drifter-anomaly",
@@ -758,6 +774,7 @@ SERVICES = [
 # and the union must equal SERVICES (validated below).
 DRIVE_ONLY_SERVICES = [
     "drifter-canbridge",   # CAN bus needs vehicle ECUs present
+    "drifter-obdbridge",   # ELM327/K-line transport (idles unless auto-selected)
     "drifter-alerts",      # vehicle alerts
     "drifter-anomaly",     # telemetry anomaly detector
     "drifter-analyst",     # LLM session analyst over driving sessions
@@ -811,7 +828,8 @@ SHARED_SERVICES = [
 # `sudo drifter mode diag` when the node is memory-pressured; diagnostics and
 # the safety pipeline keep running on a fraction of the RAM.
 DIAG_SERVICES = [
-    "drifter-canbridge",   # CAN telemetry (swap to drifter-obdbridge on K-line cars)
+    "drifter-canbridge",   # CAN telemetry (raw SocketCAN transport)
+    "drifter-obdbridge",   # ELM327/K-line transport (auto-selected vs canbridge)
     "drifter-batcher",     # rolling telemetry window
     "drifter-thresholds",  # adaptive baseline learner
     "drifter-anomaly",     # telemetry anomaly detector

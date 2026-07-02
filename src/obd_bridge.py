@@ -15,25 +15,25 @@ text protocol, so this bridge works on either. ``ATSP0`` lets the ELM327
 auto-detect the protocol; ``detect_protocol()`` below reports what it landed
 on (CAN vs ISO/KWP K-line) for the operator + logs.
 
-OPERATOR: SWITCHING canbridge <-> obdbridge
--------------------------------------------
-The two are mutually exclusive telemetry sources (both publish the same
-TOPICS['snapshot'] etc). Run exactly one:
+OPERATOR: canbridge <-> obdbridge AUTO-SELECTION
+------------------------------------------------
+Both drifter-canbridge and drifter-obdbridge are enabled, monitored services,
+but they are mutually exclusive telemetry sources (both publish the same
+TOPICS['snapshot'] etc). To avoid double-publishing, each self-selects at boot
+via obd_transport.select_transport(): the transport that isn't chosen idles and
+publishes a hardware-pending status instead of telemetry. Selection prefers a
+raw SocketCAN / CANable adapter when present, else an ELM327 serial device.
 
-  * CAN car, raw socketcan adapter (USB2CANFD / CANable):
-        sudo systemctl disable --now drifter-obdbridge
-        sudo systemctl enable  --now drifter-canbridge
+  * CAN car with a raw socketcan adapter (USB2CANFD / CANable) → drifter-canbridge
+    runs, drifter-obdbridge idles (deferring_to_canbridge).
+  * K-line car (ISO 9141 / KWP2000), OR any car via a generic ELM327 →
+    drifter-obdbridge runs, drifter-canbridge idles (deferring_to_obdbridge).
 
-  * K-line car (ISO 9141 / KWP2000), OR any car via a generic ELM327:
-        sudo systemctl disable --now drifter-canbridge
-        sudo systemctl enable  --now drifter-obdbridge
-
-Not sure which? Plug in an ELM327, start drifter-obdbridge, and check:
+Force a transport with the DRIFTER_TRANSPORT env var (can | elm327) in
+/opt/drifter/.env. To confirm what obdbridge negotiated:
         journalctl -u drifter-obdbridge -n 30
 The startup line reports the auto-detected protocol (e.g. "ISO 9141-2
-(K-line)" vs "ISO 15765-4 CAN 11/500"). If it reports a CAN protocol and you
-have a raw socketcan adapter, prefer drifter-canbridge for the higher poll
-rate.
+(K-line)" vs "ISO 15765-4 CAN 11/500").
 
 GRACEFUL DEGRADE: like can_bridge, this NEVER exits / crash-loops when no
 adapter is present — it idles, publishes a 'hw_pending' status, and retries
@@ -46,6 +46,7 @@ import logging
 import signal
 import time
 
+import obd_transport
 import vehicle_profile
 from config import (
     MQTT_HOST,
@@ -209,15 +210,25 @@ def active_pid_defs(ser):
     return defs
 
 
+def _idle(running_ref, seconds=5.0):
+    """Sleep in short slices so SIGTERM is honoured promptly."""
+    for _ in range(int(seconds / 0.25)):
+        if not running_ref():
+            break
+        time.sleep(0.25)
+
+
 def main() -> None:
     log.info("DRIFTER OBD Bridge starting...")
-    ser = _open_elm()
 
     running = True
 
     def _handle_signal(sig, frame):
         nonlocal running
         running = False
+
+    def _running():
+        return running
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -236,31 +247,60 @@ def main() -> None:
         return
 
     client.loop_start()
-    # 'hw_pending' (not 'offline') while we have no modem yet: the service is
-    # alive and healthy, just waiting on the OBD adapter — same hardware-pending
-    # semantics as can_bridge so /healthz/cockpit treat it as pending, not failed.
-    client.publish(TOPICS['obd_status'], json.dumps({
-        'state': 'online' if ser else 'hw_pending',
-        'device': OBD_SERIAL_DEV,
-        'ts': time.time(),
-    }), retain=True)
-    if not ser:
-        log.warning("OBD Bridge running without modem — will idle and retry "
-                    "(degrades, never exits/crash-loops)")
 
     interval = 1.0 / max(OBD_POLL_HZ, 0.5)
     snapshot: dict = {}
     last_snap = 0.0
-    active_defs = active_pid_defs(ser) if ser else PID_DEFS
+    ser = None
+    active_defs = PID_DEFS
+    last_transport_check = 0.0
+    transport_ok = False
+    deferring = False
     while running:
+        # Transport arbitration (throttled): canbridge and obdbridge publish the
+        # same topics, so only the auto-selected transport runs. If a raw-CAN
+        # adapter is selected, idle here and defer — re-checking so a hot-plug
+        # can flip which transport owns telemetry without a restart.
+        now_mono = time.monotonic()
+        if last_transport_check == 0.0 or now_mono - last_transport_check >= 10.0:
+            transport_ok = obd_transport.select_transport() == obd_transport.ELM327
+            last_transport_check = now_mono
+        if not transport_ok:
+            if not deferring:
+                log.info("CAN transport selected — deferring to "
+                         "drifter-canbridge (obdbridge idle). Force with "
+                         "DRIFTER_TRANSPORT=elm327.")
+                deferring = True
+            if ser is not None:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+                ser = None
+            client.publish(TOPICS['obd_status'], json.dumps({
+                'state': 'hw_pending', 'reason': 'deferring_to_canbridge',
+                'ts': time.time(),
+            }), retain=True)
+            _idle(_running)
+            continue
+        deferring = False
+
         if ser is None:
-            time.sleep(5)
             ser = _open_elm()
             if ser is not None:
                 active_defs = active_pid_defs(ser)
                 client.publish(TOPICS['obd_status'], json.dumps({
                     'state': 'online', 'device': OBD_SERIAL_DEV, 'ts': time.time(),
                 }), retain=True)
+            else:
+                # No modem yet — alive and healthy, just hardware-pending. Same
+                # semantics as can_bridge so /healthz/cockpit treat it as
+                # pending, not failed. Degrades, never exits/crash-loops.
+                client.publish(TOPICS['obd_status'], json.dumps({
+                    'state': 'hw_pending', 'device': OBD_SERIAL_DEV,
+                    'ts': time.time(),
+                }), retain=True)
+                _idle(_running)
             continue
         for pid, info in active_defs.items():
             if not running:

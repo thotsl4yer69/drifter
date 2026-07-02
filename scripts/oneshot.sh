@@ -143,8 +143,8 @@ stage_start 40 "systemctl enable + start"
 SERVICES=(
     drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect
     drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge
-    drifter-dashboard drifter-flipper drifter-fly-catcher drifter-feeds
-    drifter-ghost drifter-ghost-voice drifter-gps drifter-hid
+    drifter-obdbridge drifter-dashboard drifter-flipper drifter-fly-catcher
+    drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid
     drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge
     drifter-lcd drifter-location drifter-logger drifter-marauder
     drifter-opsec drifter-realdash drifter-reporter drifter-rf

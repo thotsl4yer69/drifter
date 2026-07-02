@@ -14,9 +14,11 @@ import time
 import can
 
 import iso_tp
+import obd_transport
 import vehicle_profile
 from config import (
     CAN_BITRATE,
+    CAN_USB_IDS,
     MQTT_HOST,
     MQTT_PORT,
     OBD_REQUEST_ID,
@@ -70,19 +72,9 @@ NO_CAN_RETRY_INTERVAL = 5       # Seconds between interface-detection retries
 NO_CAN_STATUS_INTERVAL = 30
 
 # ── CAN-adapter USB allowlist (VID:PID) ──
-# Positively-identified CAN-over-serial / gs_usb adapters ONLY. We slcand a
-# /dev/ttyACM*|ttyUSB* device only when udev says its VID:PID is on THIS list,
-# so we never hijack the Flipper / Marauder / GPS / mic serial ports (they are
-# generic CH340/PL2303/CP210x serial and are NOT here). Mirrors the allowlist
-# in config/setup-can.sh — keep the two in sync.
-# TODO(phase2): move to config.py
-CAN_USB_IDS = {
-    ('0483', '5740'),  # STMicro VCP — CANable / slcan (cantact, CANtact-style)
-    ('1d50', '606f'),  # OpenMoko — candleLight / gs_usb (CANable gs_usb fw, CANtact)
-    ('1209', '2323'),  # pid.codes — CANable 2.0 (gs_usb)
-    ('16d0', '117e'),  # MCS — gs_usb USB2CAN (candleLight-class)
-    ('1cd2', '606f'),  # Geschwister Schneider gs_usb (original CANtact)
-}
+# The canonical allowlist now lives in config.CAN_USB_IDS (so obd_transport can
+# read it without importing python-can). Re-exported here under the historical
+# name — find_can_interface + tests reference `can_bridge.CAN_USB_IDS`.
 
 # ── State ──
 latest_values = {}
@@ -346,6 +338,33 @@ def _publish_status(mqtt_client, state, **extra):
         log.debug(f"status publish failed ({state}): {e}")
 
 
+def _await_can_transport(mqtt_client, running_fn):
+    """Block (while alive) until the raw-CAN transport is the selected one.
+
+    Returns True to proceed with CAN telemetry, or False if we were asked to
+    stop while deferring. When an ELM327 transport is auto-selected, we idle and
+    republish a fresh 'hw_pending' status so /healthz + the cockpit see the node
+    as hardware-pending (obdbridge is driving telemetry), not failed. This never
+    exits the process — a wrong-transport node degrades, it does not crash-loop.
+    """
+    last_status = 0.0
+    while running_fn():
+        if obd_transport.select_transport() == obd_transport.CAN:
+            return True
+        now = time.monotonic()
+        if now - last_status >= NO_CAN_STATUS_INTERVAL or last_status == 0.0:
+            log.info("ELM327 transport selected — deferring to drifter-obdbridge "
+                     "(canbridge idle). Force with DRIFTER_TRANSPORT=can.")
+            _publish_status(mqtt_client, "hw_pending",
+                            reason="deferring_to_obdbridge")
+            last_status = now
+        for _ in range(int(NO_CAN_RETRY_INTERVAL / 0.25)):
+            if not running_fn():
+                break
+            time.sleep(0.25)
+    return False
+
+
 def _acquire_bus(mqtt_client, running_fn):
     """Block (while alive) until a CAN interface is found and a bus opens.
 
@@ -420,6 +439,18 @@ def main():
 
     if not running:
         log.info("Shutting down before MQTT connected")
+        return
+
+    # ── Transport arbitration ──
+    # canbridge and obdbridge publish the same topics and are mutually
+    # exclusive. If the ELM327 (K-line/serial) transport is auto-selected, idle
+    # here instead of double-publishing — re-checking so a hot-plugged CAN
+    # adapter promotes us without a restart.
+    if not _await_can_transport(mqtt_client, _running):
+        log.info("Shutting down — stopped while deferring to obdbridge")
+        _publish_status(mqtt_client, "offline")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
         return
 
     # ── Acquire CAN interface (degrades, never exits) ──

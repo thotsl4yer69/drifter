@@ -392,6 +392,33 @@ class TestPidDiscovery:
         assert by_pid[0x0C]['interval'] == 1.0 / can_bridge.PIDS[0x0C]['hz']
 
 
+# ── Transport arbitration (canbridge <-> obdbridge, no double-publish) ──
+
+class TestTransportArbitration:
+    def test_proceeds_when_can_selected(self):
+        mqtt = MagicMock()
+        with patch.object(can_bridge.obd_transport, 'select_transport',
+                          return_value='can'):
+            assert can_bridge._await_can_transport(mqtt, lambda: True) is True
+
+    def test_defers_and_returns_false_when_stopped(self):
+        mqtt = MagicMock()
+        calls = {'n': 0}
+
+        def running():
+            calls['n'] += 1
+            return calls['n'] <= 1
+
+        with patch.object(can_bridge.obd_transport, 'select_transport',
+                          return_value='elm327'), \
+             patch.object(can_bridge.time, 'sleep'):
+            result = can_bridge._await_can_transport(mqtt, running)
+        assert result is False
+        payloads = [c.args[1] for c in mqtt.publish.call_args_list]
+        assert any('deferring_to_obdbridge' in p for p in payloads), \
+            "canbridge must publish a deferring hw_pending status"
+
+
 # ── OBD (K-line) bridge: protocol detect + graceful degrade ──
 
 class TestObdBridge:
