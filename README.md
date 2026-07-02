@@ -20,7 +20,9 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 - [Hardware](#hardware)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
+- [Operating Modes](#operating-modes)
 - [Services](#services)
+- [Capabilities](CAPABILITIES.md)
 - [MQTT Topics](#mqtt-topics)
 - [Diagnostic Rules](#diagnostic-rules)
 - [Calibration](#calibration)
@@ -47,12 +49,19 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 - **Monitors** its own health — watchdog restarts failed services automatically
 - **Syncs** logs and calibration data to the Sentient Core home network (nanob) when in range
 
+> **Scope:** DRIFTER is a **defensive, situational-awareness and diagnostics**
+> platform for a vehicle you own. It boots in a lean, defensive `diag` mode by
+> default. It ships advanced network/RF-testing tooling for **authorized use on
+> your own equipment**, gated behind a deliberately-selected `foot` persona —
+> see **[CAPABILITIES.md](CAPABILITIES.md)** for the honest does / does-not
+> scope, and **[operating modes](#operating-modes)** below.
+
 ## Hardware
 
 | Component | What You Need |
 |-----------|---------------|
 | Compute | Raspberry Pi 5 (8GB) + NVMe HAT + SSD |
-| CAN Interface | USB2CANFD V1 (or any gs_usb compatible adapter) |
+| CAN Interface | CANable / slcan adapter (STM `0483:5740`) → `slcan0`, or a gs_usb USB2CANFD → `can0`. Bench-validated on CANable/slcan. *Note: confirm whether your 2004 X-Type's OBD-II pins are CAN or K-line before wiring — see `docs/FIELD_DEPLOY.md`.* |
 | OBD-II Cable | OBD-II to bare-wire pigtail (Pins 6 & 14) |
 | RF | RTL-SDR v3/v4 dongle + 433 MHz antenna |
 | Display | Your phone (RealDash app) + Pioneer AA head unit |
@@ -129,7 +138,7 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
 ┌──────────────────────┴──────────────────────────────────┐
 │                 RASPBERRY PI 5                           │
 │                                                          │
-│  can_bridge.py ──→ MQTT (NanoMQ :1883)                  │
+│  can_bridge.py ──→ MQTT broker :1883 (localhost)        │
 │  rf_monitor.py ──→ ┘  │                                 │
 │  (RTL-SDR 433MHz)      │                                │
 │         ┌───────────────┼──────────────┐                 │
@@ -162,26 +171,53 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
               └─────────────────┘
 ```
 
+## Operating Modes
+
+DRIFTER runs one persona at a time; a fresh node boots in the lean **`diag`**
+floor and stays there until you switch (`sudo drifter mode <name>`). This is the
+primary capability gate — recon/offsec tooling exists **only** in `foot`/`both`.
+
+| Mode | What runs | Default |
+|---|---|---|
+| `diag` | Vehicle telemetry + driver-safety only (no LLM/STT/recon). | **yes** |
+| `drive` | Telemetry stack **+** assistant/LLM/voice. | opt-in |
+| `foot` | Recon / situational-awareness persona (Wi-Fi/BLE survey, RF). | opt-in |
+| `both` | Everything (bench/lab only — won't fit 8 GB comfortably). | opt-in |
+
+`MODES` in `src/config.py` decides which services count as "expected" per mode;
+`/healthz` reports `ok-hw-pending` when only hardware-dependent services are
+waiting on a dongle. See **[CAPABILITIES.md](CAPABILITIES.md)** for the full
+capability scope.
+
 ## Services
 
-| Service | What It Does | Auto-starts |
-|---------|-------------|-------------|
-| `nanomq` | MQTT message broker | Yes |
-| `drifter-canbridge` | CAN bus → MQTT translator (Mode 01 + DTC reads) | Yes |
-| `drifter-alerts` | Diagnostic rule engine (23 rules) | Yes |
-| `drifter-logger` | Telemetry → JSON logs with drive session detection | Yes |
-| `drifter-voice` | Piper TTS voice alerts | Yes |
-| `drifter-hotspot` | Wi-Fi AP for phone | Yes |
-| `drifter-homesync` | MQTT bridge + rsync log sync to nanob | Yes |
-| `drifter-watchdog` | Service health monitor + auto-restart | Yes |
-| `drifter-realdash` | MQTT → TCP CAN frame bridge for RealDash | Yes |
-| `drifter-rf` | RTL-SDR RF monitor — TPMS, spectrum, emergency bands | Yes |
-| `drifter-wardrive` | Passive Wi-Fi + Bluetooth scanning per drive | Yes |
-| `drifter-dashboard` | Web dashboard (HTTP :8080, WS :8081, audio :8082) | Yes |
-| `drifter-anomaly` | Z-score anomaly detection on telemetry | Yes |
-| `drifter-analyst` | Drive session analysis and reporting | Yes |
-| `drifter-voicein` | Vosk STT + OpenWakeWord voice input | Yes |
-| `drifter-fbmirror` | Framebuffer mirror for SPI LCD HUD | Yes |
+The monitored service set — **38 services** — is defined by `SERVICES` in
+[`src/config.py`](src/config.py), the single source of truth (`/healthz` checks
+exactly that set). Below is the **always-on core**; the remainder are
+mode-specific (telemetry-v2, GPS, weather/location, LCD, and the `foot`-only
+recon/offsec units documented in [CAPABILITIES.md](CAPABILITIES.md)). Which run
+depends on the current [mode](#operating-modes).
+
+| Service | What It Does |
+|---------|-------------|
+| *(broker)* `mosquitto` (default) or `nanomq` (`--with-nanomq`) | MQTT message broker on `localhost:1883` |
+| `drifter-canbridge` | CAN bus → MQTT translator (Mode 01 + DTC reads) |
+| `drifter-alerts` | Diagnostic rule engine (23 rules) |
+| `drifter-logger` | Telemetry → JSON logs with drive session detection |
+| `drifter-voice` | Piper TTS voice alerts |
+| `drifter-hotspot` | Wi-Fi AP for phone |
+| `drifter-homesync` | MQTT bridge + rsync log sync to nanob |
+| `drifter-watchdog` | Service health monitor + auto-restart |
+| `drifter-realdash` | MQTT → TCP CAN frame bridge for RealDash |
+| `drifter-rf` | RTL-SDR RF monitor — TPMS, spectrum, emergency bands |
+| `drifter-dashboard` | Web dashboard (HTTP :8080, WS :8081, audio :8082) |
+| `drifter-anomaly` | Z-score anomaly detection on telemetry |
+| `drifter-analyst` | Drive session analysis and reporting |
+| `drifter-voicein` | Vosk STT + OpenWakeWord voice input |
+| `drifter-lcd` | 3.5" SPI LCD in-car triage console |
+
+*(For the plain fb0→fb1 mirror instead of the LCD menu, enable
+`drifter-fbmirror` and disable `drifter-lcd` — they're mutually exclusive.)*
 
 ## MQTT Topics
 
@@ -351,7 +387,7 @@ drifter/
 │   ├── web_dashboard_audio.py   # Audio WebSocket bridge (port 8082)
 │   ├── web_dashboard_hardware.py# Hardware info helpers
 │   └── fbmirror.c               # Framebuffer mirror for SPI LCD
-├── services/                    # 18 active systemd units
+├── services/                    # unit files (superset of the 38 in config.SERVICES)
 │   ├── drifter-canbridge.service
 │   ├── drifter-alerts.service
 │   ├── drifter-logger.service
@@ -423,7 +459,7 @@ Installed automatically by `install.sh`:
 | `rsync` | Log sync to home network |
 | `librtlsdr-dev`, `rtl-sdr` | RTL-SDR drivers |
 | `slcand` | Serial-line CAN adapter |
-| `nanomq` or `mosquitto` | MQTT broker |
+| `mosquitto` (default) or `nanomq` (`--with-nanomq`) | MQTT broker |
 | `piper` or `espeak-ng` | Text-to-speech engine |
 | `rtl_433` | 433 MHz signal decoder |
 
