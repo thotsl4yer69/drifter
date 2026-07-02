@@ -288,6 +288,34 @@ def save_settings(settings: dict) -> bool:
         _log.warning(f"Failed to save settings: {e}")
         return False
 
+
+def resolve_device(env_var: str, stable: str, default: str) -> str:
+    """Pick a serial/char device path, preferring stability over raw ordering.
+
+    Raw /dev/ttyUSB0 / ttyACM0 numbers are assigned in USB enumeration order,
+    so plugging the OBD dongle before vs after the GPS can swap them and break
+    boot. The install ships udev rules (config/99-drifter-serial.rules) that
+    create stable, role-named symlinks (/dev/drifter-obd, ...). Resolution:
+
+      1. Explicit env override (operator knows best) — always wins.
+      2. The stable udev symlink, if it currently exists.
+      3. The historical raw path as a last resort, so a node that hasn't
+         installed/confirmed the udev rule still behaves exactly as before.
+
+    The couple of stat() calls at import are negligible (unlike the deferred
+    /proc/device-tree platform probe) and keep every caller's `serial.Serial(
+    CONST)` site unchanged.
+    """
+    override = os.getenv(env_var)
+    if override:
+        return override
+    try:
+        if stable and os.path.exists(stable):
+            return stable
+    except OSError:  # pragma: no cover - defensive
+        pass
+    return default
+
 # ── MQTT ──
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
@@ -900,7 +928,7 @@ CAN_AI_MIN_SATURATED_IDS = 6       # stop once this many IDs reach MIN_SAMPLES
 CAN_SNIFF_BUFFER = 5000
 CAN_SNIFF_SUMMARY_HZ = 1
 COIL_TYPE = "COP"      # Coil-on-plug, 6 individual coils
-COMMS_MODEM_DEV = "/dev/ttyUSB2"
+COMMS_MODEM_DEV = resolve_device("COMMS_MODEM_DEV", "/dev/drifter-modem", "/dev/ttyUSB2")
 COMMS_NOTIFY_BACKENDS = ("ntfy", "telegram", "discord")
 COMPRESSION_RATIO = 10.0
 CRASH_ACCEL_G_THRESHOLD = 3.0       # peak g over 100ms = crash
@@ -951,7 +979,7 @@ NAV_CAMERA_BEARING_TOLERANCE_DEG = 60   # camera must be within ±this of travel
 NAV_CAMERA_WARN_METERS = 300
 NAV_GEOFENCES_FILE = DATA_DIR / "geofences.json"
 NAV_GPS_BAUD = 9600
-NAV_GPS_DEVICE = "/dev/ttyACM0"
+NAV_GPS_DEVICE = resolve_device("NAV_GPS_DEVICE", "/dev/drifter-gps", "/dev/ttyACM0")
 NAV_OSRM_HOST = "router.project-osrm.org"
 NAV_REROUTE_OFF_THRESHOLD = 50      # m off-route triggers reroute
 NAV_ROUTE_CACHE_DIR = DATA_DIR / "routes"
@@ -960,7 +988,7 @@ NAV_STATUS_PUBLISH_SEC = 5
 NAV_TILE_CACHE_DIR = DATA_DIR / "tiles"
 OBD_POLL_HZ = 5
 OBD_SERIAL_BAUD = 38400
-OBD_SERIAL_DEV = "/dev/ttyUSB0"
+OBD_SERIAL_DEV = resolve_device("OBD_SERIAL_DEV", "/dev/drifter-obd", "/dev/ttyUSB0")
 PEAK_HP = 194          # bhp @ 6800 RPM
 PEAK_TORQUE_NM = 245   # Nm @ 3500 RPM
 PRESENCE_DEPARTURE_GRACE = 120     # seconds offline before "departed"

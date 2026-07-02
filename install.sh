@@ -559,8 +559,13 @@ step 8 "Configuring CAN interface"
 cp "${REPO_DIR}/config/setup-can.sh" /usr/local/bin/drifter-setup-can
 chmod +x /usr/local/bin/drifter-setup-can
 cp "${REPO_DIR}/config/80-can.rules" /etc/udev/rules.d/
+# Stable serial-device symlinks (/dev/drifter-gps, -obd, ...) so USB
+# enumeration order can't swap devices. config.resolve_device() prefers these
+# and falls back to the raw path, so installing them is always safe.
+cp "${REPO_DIR}/config/99-drifter-serial.rules" /etc/udev/rules.d/
 udevadm control --reload-rules 2>/dev/null || true
-ok "CAN auto-detection configured"
+udevadm trigger 2>/dev/null || true
+ok "CAN + serial-device udev rules configured"
 
 # zram compressed-swap OOM backstop (no disk swap on a car-mounted SD Pi).
 # drifter-zram.service is shipped by the services/*.service glob below;
