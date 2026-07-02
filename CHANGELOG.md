@@ -4,6 +4,42 @@ All notable changes to DRIFTER are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); the project is pre-1.0 and
 ships from the default branch.
 
+## [Unreleased] — Multi-vehicle (any OBD-II car)
+
+DRIFTER now targets **any OBD-II vehicle**, not just the reference X-Type. It
+identifies the car by VIN and drives thresholds, fuel math, DTC causes,
+powertrain rules, and the AI prompts off a per-vehicle profile. The X-Type stays
+the regression baseline — its behaviour is unchanged when its profile is active.
+See `docs/VEHICLE_PROFILES.md` for the profile seam + `vehicles/<VIN>.yaml`
+authoring guide.
+
+### Added
+- `src/obd_pids.py` — one canonical OBD-II Mode-01 PID table (decode math +
+  powertrain applicability + support-bitmap decode) that **both** transports
+  build from; adds MAP (0x0B, MAF-less cars), fuel pressure, oil/ambient temp,
+  fuel rate, and the standard hybrid/EV battery-life PID (0x5B).
+- Per-car **PID-support discovery** (Mode-01 0x00/0x20/0x40/0x60 bitmaps) on both
+  transports — poll only what the ECU reports; powertrain-default fallback.
+- `src/iso_tp.py` — ISO-TP flow control + multi-frame reassembly on the raw CAN
+  path (VIN over Mode 09, long DTC lists over Mode 03/07).
+- `src/obd_transport.py` — boot-time raw-CAN vs ELM327 auto-selection;
+  `drifter-obdbridge` is now a first-class monitored transport that idles instead
+  of double-publishing when canbridge owns the car (`DRIFTER_TRANSPORT` override).
+- `src/dtc_catalog.py` — generic OBD-II DTC base + per-vehicle overlay keyed off
+  the active profile.
+- EV/hybrid: standard battery-life PID, powertrain-aware polling, and an
+  HV-battery-health alert (no-op on ICE).
+- `docs/VEHICLE_PROFILES.md` profile-authoring guide.
+
+### Changed
+- LLM prompts (analyst / Vivi / ai_diagnostics / reporter / Ask-Mechanic + the
+  Vivi persona files) build vehicle identity + known issues from the active
+  profile instead of hardcoding the X-Type.
+- `mechanic.search` is gated off the active profile (a non-Jaguar car no longer
+  gets Jaguar torque/fuse/spec advice).
+- `config.VEHICLE_DEFAULTS` + `vehicles/default.yaml` are now generic — an
+  unidentified car no longer inherits the X-Type's specs.
+
 ## [Unreleased] — Release-readiness hardening
 
 A defensive, reliability- and reproducibility-focused pass across the node. See
