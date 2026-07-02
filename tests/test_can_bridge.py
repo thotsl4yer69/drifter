@@ -268,6 +268,63 @@ class TestGracefulDegrade:
         assert 'no CAN interface found' not in src
 
 
+# ── Mode-01 PID-support discovery (poll only what the ECU reports) ──
+
+class TestPidDiscovery:
+    """query_supported_pids probes the ECU's Mode-01 support bitmaps so the
+    poller only requests PIDs this particular car answers (works on any car)."""
+
+    class _FakeBus:
+        def __init__(self, responses):
+            # responses: list of (arb_id, data-bytes) returned by recv() in order
+            self._responses = list(responses)
+            self.sent = []
+
+        def send(self, msg):
+            self.sent.append(msg)
+
+        def recv(self, timeout=0):
+            if self._responses:
+                arb, data = self._responses.pop(0)
+                m = MagicMock()
+                m.arbitration_id = arb
+                m.data = bytes(data)
+                return m
+            return None
+
+    def test_bitmap_response_narrows_pid_set(self):
+        # Support bitmap for PIDs 0x04,0x05,0x0C -> 0x18100000, one frame.
+        frame = (0x7E8, [0x06, 0x41, 0x00, 0x18, 0x10, 0x00, 0x00])
+        bus = self._FakeBus([frame])
+        supported = can_bridge.query_supported_pids(bus, timeout=0.2)
+        assert supported == {0x04, 0x05, 0x0C}
+
+    def test_silent_bus_returns_none(self):
+        # No probe answered -> None so the caller can fall back, not poll nothing.
+        bus = self._FakeBus([])
+        assert can_bridge.query_supported_pids(bus, timeout=0.05) is None
+
+    def test_resolve_falls_back_to_full_table_when_silent(self):
+        bus = self._FakeBus([])
+        with patch.object(can_bridge, 'query_supported_pids', return_value=None):
+            pids = can_bridge._resolve_poll_pids(bus)
+        # Petrol default profile => full known table, in canonical order.
+        assert set(pids) == set(can_bridge.PIDS)
+
+    def test_resolve_uses_discovered_subset(self):
+        bus = self._FakeBus([])
+        with patch.object(can_bridge, 'query_supported_pids',
+                          return_value={0x0C, 0x05}):
+            pids = can_bridge._resolve_poll_pids(bus)
+        assert set(pids) == {0x0C, 0x05}
+
+    def test_build_schedule_uses_pid_hz(self):
+        sched = can_bridge._build_schedule([0x0C, 0x05])
+        assert len(sched) == 2
+        by_pid = {e['pid']: e for e in sched}
+        assert by_pid[0x0C]['interval'] == 1.0 / can_bridge.PIDS[0x0C]['hz']
+
+
 # ── OBD (K-line) bridge: protocol detect + graceful degrade ──
 
 class TestObdBridge:
@@ -312,6 +369,25 @@ class TestObdBridge:
         with patch.dict(sys.modules, {'serial': None}):
             # Importing serial as None makes `import serial` raise ImportError.
             assert ob._open_elm() is None
+
+    def test_pid_discovery_narrows_defs(self):
+        ob = self._import()
+        ser = MagicMock()
+        # ELM327 support-bitmap reply for 0x04,0x05,0x0C.
+        ser.read.return_value = b'41 00 18 10 00 00\r>'
+        with patch.object(ob.time, 'sleep'):
+            supported = ob.query_supported_pids(ser)
+        assert {0x04, 0x05, 0x0C} <= supported
+        # PIDs the bitmap did NOT flag must be excluded.
+        assert 0x42 not in supported
+
+    def test_active_defs_falls_back_when_silent(self):
+        ob = self._import()
+        ser = MagicMock()
+        with patch.object(ob, 'query_supported_pids', return_value=None):
+            defs = ob.active_pid_defs(ser)
+        # Petrol default => full command-keyed table.
+        assert set(defs) == set(ob.PID_DEFS)
 
     def test_kline_switchover_documented(self):
         """The operator canbridge<->obdbridge switch-over must stay documented

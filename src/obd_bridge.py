@@ -46,6 +46,7 @@ import logging
 import signal
 import time
 
+import vehicle_profile
 from config import (
     MQTT_HOST,
     MQTT_PORT,
@@ -55,7 +56,12 @@ from config import (
     TOPICS,
     make_mqtt_client,
 )
-from obd_pids import obd_pid_defs
+from obd_pids import (
+    SUPPORT_PROBE_PIDS,
+    applies_to,
+    obd_pid_defs,
+    supported_from_bitmaps,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -172,6 +178,37 @@ def _query_pid(ser, pid: str) -> list | None:
         return None
 
 
+def query_supported_pids(ser):
+    """Probe Mode-01 support bitmaps over the ELM327 and return the supported,
+    decodable PID set — or ``None`` if the adapter answered nothing (so the
+    caller can fall back to a powertrain-appropriate default)."""
+    bitmaps: dict[int, int] = {}
+    for probe in SUPPORT_PROBE_PIDS:
+        data = _query_pid(ser, f"01{probe:02X}")
+        if data and len(data) >= 4:
+            bitmaps[probe] = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]
+    if not bitmaps:
+        return None
+    return supported_from_bitmaps(bitmaps)
+
+
+def active_pid_defs(ser):
+    """Narrow PID_DEFS to what this ECU actually supports (per-car). Falls back
+    to the powertrain-default set when discovery is silent — a pure EV drops
+    the combustion-only PIDs; an ICE car keeps the full known table."""
+    supported = query_supported_pids(ser)
+    if supported:
+        defs = {c: d for c, d in PID_DEFS.items() if d['pid'] in supported}
+        log.info(f"PID discovery: ECU reports {len(defs)}/{len(PID_DEFS)} "
+                 f"known PIDs supported")
+        return defs
+    applicable = applies_to(vehicle_profile.fuel_type())
+    defs = {c: d for c, d in PID_DEFS.items() if d['pid'] in applicable}
+    log.info(f"PID discovery got no response — polling {len(defs)} "
+             f"powertrain-default PIDs")
+    return defs
+
+
 def main() -> None:
     log.info("DRIFTER OBD Bridge starting...")
     ser = _open_elm()
@@ -214,16 +251,18 @@ def main() -> None:
     interval = 1.0 / max(OBD_POLL_HZ, 0.5)
     snapshot: dict = {}
     last_snap = 0.0
+    active_defs = active_pid_defs(ser) if ser else PID_DEFS
     while running:
         if ser is None:
             time.sleep(5)
             ser = _open_elm()
             if ser is not None:
+                active_defs = active_pid_defs(ser)
                 client.publish(TOPICS['obd_status'], json.dumps({
                     'state': 'online', 'device': OBD_SERIAL_DEV, 'ts': time.time(),
                 }), retain=True)
             continue
-        for pid, info in PID_DEFS.items():
+        for pid, info in active_defs.items():
             if not running:
                 break
             data = _query_pid(ser, pid)

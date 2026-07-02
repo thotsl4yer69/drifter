@@ -13,6 +13,7 @@ import time
 
 import can
 
+import vehicle_profile
 from config import (
     CAN_BITRATE,
     MQTT_HOST,
@@ -23,7 +24,13 @@ from config import (
     TOPICS,
     make_mqtt_client,
 )
-from obd_pids import can_pids, two_byte_pids
+from obd_pids import (
+    SUPPORT_PROBE_PIDS,
+    applies_to,
+    can_pids,
+    supported_from_bitmaps,
+    two_byte_pids,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -220,6 +227,73 @@ def decode_obd_response(msg):
         return None
 
 
+def query_supported_pids(bus, timeout=1.0):
+    """Probe Mode-01 support bitmaps (0x00/0x20/0x40/0x60) over the raw bus.
+
+    Returns the set of PIDs the ECU reports supported AND that we can decode,
+    or ``None`` when the bus is silent (no probe answered) so the caller can
+    fall back to a powertrain-appropriate default rather than polling nothing.
+    Each probe answers in a single frame (mode+pid+4 bitmap bytes), so no
+    ISO-TP reassembly is needed here.
+    """
+    bitmaps: dict[int, int] = {}
+    for probe in SUPPORT_PROBE_PIDS:
+        send_obd_request(bus, probe)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                resp = bus.recv(timeout=0.1)
+            except can.CanError:
+                break
+            if resp is None:
+                break
+            if (resp.arbitration_id < OBD_RESPONSE_BASE
+                    or resp.arbitration_id > OBD_RESPONSE_END):
+                continue
+            d = resp.data
+            if len(d) >= 7 and d[1] == 0x41 and d[2] == probe:
+                bitmaps[probe] = (d[3] << 24) | (d[4] << 16) | (d[5] << 8) | d[6]
+                break
+    if not bitmaps:
+        return None
+    return supported_from_bitmaps(bitmaps)
+
+
+def _resolve_poll_pids(bus):
+    """Which PIDs to poll on this bus, in the table's canonical order.
+
+    Prefer the ECU's live Mode-01 support set (so we only request PIDs the car
+    actually answers — per-car, works on anything). If discovery is silent
+    (very old ECU, K-line quirk, bench), fall back to the powertrain-default
+    set: a pure EV drops the combustion-only PIDs, every ICE car keeps the full
+    known table (identical to the pre-discovery behaviour)."""
+    supported = query_supported_pids(bus)
+    if supported:
+        pids = [p for p in PIDS if p in supported]
+        log.info(f"PID discovery: ECU reports {len(pids)}/{len(PIDS)} "
+                 f"known PIDs supported")
+        return pids
+    applicable = applies_to(vehicle_profile.fuel_type())
+    pids = [p for p in PIDS if p in applicable]
+    log.info(f"PID discovery got no response — polling {len(pids)} "
+             f"powertrain-default PIDs")
+    return pids
+
+
+def _build_schedule(pids):
+    """Build the poll schedule (pid, interval, last_poll) for the given PIDs."""
+    schedule = []
+    for pid in pids:
+        info = PIDS[pid]
+        schedule.append({
+            'pid': pid,
+            'interval': 1.0 / info['hz'],
+            'last_poll': 0,
+            'info': info,
+        })
+    return schedule
+
+
 def decode_dtc(byte1, byte2):
     """Decode a 2-byte DTC into standard format (e.g., P0301)."""
     if byte1 == 0 and byte2 == 0:
@@ -372,17 +446,12 @@ def main():
         return
 
     # ── Polling Loop ──
-    # Build schedule: list of (pid, interval_seconds)
-    schedule = []
-    for pid, info in PIDS.items():
-        schedule.append({
-            'pid': pid,
-            'interval': 1.0 / info['hz'],
-            'last_poll': 0,
-            'info': info
-        })
+    # Discover which PIDs this ECU actually supports and poll only those (per
+    # car — works on anything, not just the X-Type). Falls back to the
+    # powertrain-default set on a silent bus.
+    schedule = _build_schedule(_resolve_poll_pids(bus))
 
-    log.info(f"Polling {len(schedule)} PIDs from Jaguar X-Type...")
+    log.info(f"Polling {len(schedule)} supported PIDs")
     log.info("DRIFTER CAN Bridge is LIVE")
 
     last_snapshot = 0.0
@@ -416,6 +485,9 @@ def main():
                 if bus is None:
                     break  # asked to stop while waiting
                 log.info(f"CAN interface reconnected on {iface}")
+                # Re-discover supported PIDs on the fresh bus — a different
+                # adapter/vehicle may have been plugged in during the outage.
+                schedule = _build_schedule(_resolve_poll_pids(bus))
                 last_dtc_check = 0.0  # re-probe DTCs on the fresh bus
                 continue
 
