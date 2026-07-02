@@ -15,6 +15,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
+import vehicle_profile
 from config import (
     CALIBRATION_DEFAULTS,
     CALIBRATION_FILE,
@@ -867,6 +868,63 @@ ALL_RULES = [
     rule_xtype_warmup_progress,
 ]
 
+# ── Powertrain / topology rule gating ────────────────────────────────────────
+# DRIFTER runs on any OBD-II car. The rule SET adapts to the active vehicle
+# profile: combustion-only rules are suppressed on EVs, and dual-bank rules are
+# suppressed on single-bank (inline / EV) engines. For the shipped V6 (or any
+# unidentified car, which falls back to the config vehicle) the full set runs,
+# so behaviour is unchanged.
+
+# Rules that need two banks (compare bank 1 vs bank 2 / whole-engine trims).
+_DUAL_BANK_RULES = {rule_vacuum_leak_both, rule_bank_imbalance}
+
+# Rules meaningful on ANY powertrain incl. pure EVs: the 12V electrical system,
+# stored DTCs, and tyre pressure/temperature. Everything else is combustion-
+# specific (fuel trims, coolant/thermostat, MAF, idle, cold-start, over-rev).
+_UNIVERSAL_RULES = {
+    rule_alternator, rule_voltage_overcharge, rule_active_dtcs,
+    rule_tpms_low_pressure, rule_tpms_rapid_loss, rule_tpms_temp,
+}
+
+# The live rule set — recomputed by _apply_profile(). Starts as the full set so
+# behaviour is unchanged until (if ever) a non-combustion/single-bank profile
+# is applied.
+ACTIVE_RULES = list(ALL_RULES)
+
+
+def _select_rules() -> list:
+    """Filter ALL_RULES for the active vehicle's powertrain + topology."""
+    rules = list(ALL_RULES)
+    if vehicle_profile.is_ev():
+        rules = [r for r in rules if r in _UNIVERSAL_RULES]
+    if vehicle_profile.bank_count() < 2:
+        rules = [r for r in rules if r not in _DUAL_BANK_RULES]
+    return rules
+
+
+def _apply_profile() -> None:
+    """Re-point the engine's thresholds, operating points, and rule set at the
+    active vehicle profile. Called at startup and whenever a new profile arrives
+    on drifter/vehicle/profile. With no profile active, every value equals the
+    original config constant, so nothing changes for the shipped vehicle."""
+    global THRESHOLDS, COOLANT_NORMAL_HIGH, COOLANT_NORMAL_LOW, THERMOSTAT_OPEN_C
+    global IDLE_RPM_WARM_HIGH, IDLE_RPM_WARM_LOW, MAF_IDLE_MAX, MAF_IDLE_MIN
+    global WARMUP_COOLANT_TARGET, WARMUP_COOLANT_THRESHOLD, WARMUP_TIME_MAX
+    global ACTIVE_RULES
+    THRESHOLDS = vehicle_profile.thresholds()
+    ep = vehicle_profile.engine_params()
+    COOLANT_NORMAL_LOW = ep.get('coolant_normal_low', COOLANT_NORMAL_LOW)
+    COOLANT_NORMAL_HIGH = ep.get('coolant_normal_high', COOLANT_NORMAL_HIGH)
+    THERMOSTAT_OPEN_C = ep.get('thermostat_open_c', THERMOSTAT_OPEN_C)
+    IDLE_RPM_WARM_LOW = ep.get('idle_rpm_warm_low', IDLE_RPM_WARM_LOW)
+    IDLE_RPM_WARM_HIGH = ep.get('idle_rpm_warm_high', IDLE_RPM_WARM_HIGH)
+    MAF_IDLE_MIN = ep.get('maf_idle_min', MAF_IDLE_MIN)
+    MAF_IDLE_MAX = ep.get('maf_idle_max', MAF_IDLE_MAX)
+    WARMUP_COOLANT_THRESHOLD = ep.get('warmup_coolant_threshold', WARMUP_COOLANT_THRESHOLD)
+    WARMUP_COOLANT_TARGET = ep.get('warmup_coolant_target', WARMUP_COOLANT_TARGET)
+    WARMUP_TIME_MAX = ep.get('warmup_time_max', WARMUP_TIME_MAX)
+    ACTIVE_RULES = _select_rules()
+
 
 # ── MQTT Callbacks ──
 state = VehicleState()
@@ -891,6 +949,21 @@ def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload)
         topic = msg.topic
+
+        # Vehicle profile update (retained) — re-point thresholds + rule set at
+        # the newly-identified car. Handled outside the state lock (it mutates
+        # module tuning, not VehicleState).
+        if topic == TOPICS.get('vehicle_profile') or topic.endswith('/vehicle/profile'):
+            prof = data.get('profile') if isinstance(data, dict) else None
+            if prof:
+                vehicle_profile.set_active(prof)
+                _apply_profile()
+                log.info(
+                    f"Vehicle profile applied: {vehicle_profile.display_name()} "
+                    f"— {len(ACTIVE_RULES)}/{len(ALL_RULES)} rules active "
+                    f"(fuel={vehicle_profile.fuel_type()}, banks={vehicle_profile.bank_count()})"
+                )
+            return
 
         with _state_lock:
             # DTC messages have a different structure
@@ -979,7 +1052,7 @@ def evaluate_rules(mqtt_client):
     # callback thread cannot mutate VehicleState mid-evaluation.
     triggered = {}  # rule_name -> (level, message)
     with _state_lock:
-        for rule in ALL_RULES:
+        for rule in ACTIVE_RULES:
             result = rule(state)
             if result:
                 triggered[rule.__name__] = result
@@ -1044,7 +1117,14 @@ def evaluate_rules(mqtt_client):
 
 def main():
     log.info("DRIFTER Alert Engine starting...")
-    log.info(f"Loaded {len(ALL_RULES)} diagnostic rules for Jaguar X-Type 2.5L V6")
+    # Apply any vehicle profile already on disk (vehicleid writes it on VIN
+    # detection). A retained drifter/vehicle/profile message will refine this
+    # live once we connect. With no profile, this is a no-op (config defaults).
+    _apply_profile()
+    log.info(
+        f"Loaded {len(ACTIVE_RULES)}/{len(ALL_RULES)} diagnostic rules for "
+        f"{vehicle_profile.display_name()}"
+    )
 
     # Load calibration if available
     try:

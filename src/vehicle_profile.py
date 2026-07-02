@@ -80,6 +80,20 @@ def _config_base() -> dict:
         # tuning blocks (nested)
         "thresholds": dict(config.THRESHOLDS),
         "calibration": dict(config.CALIBRATION_DEFAULTS),
+        # engine operating points (the coolant/idle/MAF/warmup windows that the
+        # alert engine reads directly, distinct from alert THRESHOLDS).
+        "engine_params": {
+            "coolant_normal_low": config.COOLANT_NORMAL_LOW,
+            "coolant_normal_high": config.COOLANT_NORMAL_HIGH,
+            "thermostat_open_c": config.THERMOSTAT_OPEN_C,
+            "idle_rpm_warm_low": config.IDLE_RPM_WARM_LOW,
+            "idle_rpm_warm_high": config.IDLE_RPM_WARM_HIGH,
+            "maf_idle_min": config.MAF_IDLE_MIN,
+            "maf_idle_max": config.MAF_IDLE_MAX,
+            "warmup_coolant_threshold": config.WARMUP_COOLANT_THRESHOLD,
+            "warmup_coolant_target": config.WARMUP_COOLANT_TARGET,
+            "warmup_time_max": config.WARMUP_TIME_MAX,
+        },
         # per-vehicle diagnostic prose used to ground LLM prompts / DTC hints.
         "known_issues": [],
     }
@@ -135,7 +149,7 @@ def _merge(base: dict, overlay: dict) -> dict:
     for k, v in (overlay or {}).items():
         if v is None:
             continue
-        if k in ("thresholds", "calibration") and isinstance(v, dict):
+        if k in ("thresholds", "calibration", "engine_params") and isinstance(v, dict):
             merged = dict(base.get(k) or {})
             merged.update({kk: vv for kk, vv in v.items() if vv is not None})
             out[k] = merged
@@ -187,6 +201,11 @@ def thresholds() -> dict:
 def calibration() -> dict:
     """Merged calibration baselines (config defaults ← profile overrides)."""
     return dict(get().get("calibration") or {})
+
+
+def engine_params() -> dict:
+    """Merged engine operating points (coolant/idle/MAF/warmup windows)."""
+    return dict(get().get("engine_params") or {})
 
 
 def spec(key: str, default=None):
