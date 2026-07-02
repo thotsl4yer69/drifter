@@ -13,6 +13,7 @@ import time
 
 import can
 
+import iso_tp
 import vehicle_profile
 from config import (
     CAN_BITRATE,
@@ -308,38 +309,25 @@ def decode_dtc(byte1, byte2):
 
 def request_dtcs(bus, mode=0x03):
     """Request DTCs using Mode 03 (stored) or Mode 07 (pending).
-    Returns list of DTC strings."""
-    data = [0x01, mode, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    msg = can.Message(
-        arbitration_id=OBD_REQUEST_ID,
-        data=data,
-        is_extended_id=False
-    )
-    try:
-        bus.send(msg)
-    except can.CanError as e:
-        log.warning(f"DTC request error (mode 0x{mode:02X}): {e}")
+    Returns list of DTC strings.
+
+    A car with many DTCs answers over multiple ISO-TP frames; iso_tp.request
+    sends the required Flow Control and reassembles them, so this reads every
+    code rather than just whatever fit in the first frame."""
+    payload = iso_tp.request(bus, [mode], timeout=0.5)
+    if not payload:
         return []
-
+    response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
+    if payload[0] != response_mode:
+        return []
+    # Reassembled payload = [response_mode, count, DTC1_hi, DTC1_lo, ...] — the
+    # DTC pairs start after the mode echo + count byte.
+    body = payload[2:]
     dtcs = []
-    # Collect responses (may be multi-frame)
-    deadline = time.monotonic() + 0.5
-    while time.monotonic() < deadline:
-        response = bus.recv(timeout=0.1)
-        if response is None:
-            break
-        if response.arbitration_id < OBD_RESPONSE_BASE or response.arbitration_id > OBD_RESPONSE_END:
-            continue
-
-        rd = response.data
-        response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
-        if len(rd) >= 2 and rd[1] == response_mode:
-            # Parse DTC pairs starting at byte 3
-            for i in range(3, len(rd) - 1, 2):
-                dtc = decode_dtc(rd[i], rd[i + 1])
-                if dtc:
-                    dtcs.append(dtc)
-
+    for i in range(0, len(body) - 1, 2):
+        dtc = decode_dtc(body[i], body[i + 1])
+        if dtc:
+            dtcs.append(dtc)
     return dtcs
 
 

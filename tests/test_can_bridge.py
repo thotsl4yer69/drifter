@@ -268,6 +268,73 @@ class TestGracefulDegrade:
         assert 'no CAN interface found' not in src
 
 
+# ── DTC read over ISO-TP (reassembles a long multi-frame DTC list) ──
+
+class _SentMsg:
+    def __init__(self, arbitration_id=0, data=None, is_extended_id=False):
+        self.arbitration_id = arbitration_id
+        self.data = list(data) if data is not None else []
+        self.is_extended_id = is_extended_id
+
+
+class _RealMsgCan:
+    """A `can` stand-in whose Message builds real objects (so iso_tp's sent
+    frames have inspectable .data), independent of the module-wide MagicMock."""
+    Message = _SentMsg
+    CanError = _FakeCanError
+
+
+class TestRequestDtcsIsoTp:
+    def setup_method(self):
+        import iso_tp
+        self._saved_can = iso_tp.can
+        iso_tp.can = _RealMsgCan
+
+    def teardown_method(self):
+        import iso_tp
+        iso_tp.can = self._saved_can
+
+    class _FakeBus:
+        def __init__(self, frames):
+            self._frames = list(frames)
+            self.sent = []
+
+        def send(self, msg):
+            self.sent.append(msg)
+
+        def recv(self, timeout=0):
+            if self._frames:
+                arb, data = self._frames.pop(0)
+                m = MagicMock()
+                m.arbitration_id = arb
+                m.data = bytes(data)
+                return m
+            return None
+
+    def test_single_frame_dtcs(self):
+        # Mode 03 SF: [len, 0x43, count, P0171(0x01,0x71)]
+        bus = self._FakeBus([(0x7E8, [0x04, 0x43, 0x01, 0x01, 0x71])])
+        assert can_bridge.request_dtcs(bus, mode=0x03) == ['P0171']
+
+    def test_multiframe_dtcs_reassembled(self):
+        # 3 DTCs won't fit one frame -> FF + CF, gated on flow control.
+        # payload = [0x43, 0x03, P0171, P0301, P0420]
+        frames = [
+            (0x7E8, [0x10, 0x08, 0x43, 0x03, 0x01, 0x71, 0x03, 0x01]),
+            (0x7E8, [0x21, 0x04, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        ]
+        bus = self._FakeBus(frames)
+        dtcs = can_bridge.request_dtcs(bus, mode=0x03)
+        assert dtcs == ['P0171', 'P0301', 'P0420']
+        # Flow control must have been emitted to 0x7E0.
+        fcs = [m for m in bus.sent if bytes(m.data)[:1] == b'\x30']
+        assert fcs and fcs[0].arbitration_id == 0x7E0
+
+    def test_no_response_returns_empty(self):
+        bus = self._FakeBus([])
+        assert can_bridge.request_dtcs(bus, mode=0x03) == []
+
+
 # ── Mode-01 PID-support discovery (poll only what the ECU reports) ──
 
 class TestPidDiscovery:
