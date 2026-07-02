@@ -68,6 +68,7 @@ def _config_base() -> dict:
             config.VEHICLE_ENGINE,
         ),
         "redline_rpm": getattr(config, "REDLINE_RPM", 6500),
+        "engine_code": getattr(config, "ENGINE_CODE", None),
         "drivetrain": getattr(config, "DRIVETRAIN", "unknown"),
         "transmission": getattr(config, "TRANSMISSION", "unknown"),
         # fuel / trip
@@ -95,7 +96,9 @@ def _config_base() -> dict:
             "warmup_time_max": config.WARMUP_TIME_MAX,
         },
         # per-vehicle diagnostic prose used to ground LLM prompts / DTC hints.
-        "known_issues": [],
+        # Seeded from config for the default (X-Type) vehicle; an active profile
+        # for a different car replaces the list.
+        "known_issues": list(getattr(config, "VEHICLE_KNOWN_ISSUES", []) or []),
     }
 
 
@@ -266,3 +269,33 @@ def redline_rpm() -> int:
 def known_issues() -> list:
     ki = get().get("known_issues") or []
     return list(ki) if isinstance(ki, (list, tuple)) else []
+
+
+def engine_code() -> str | None:
+    """Manufacturer engine code (e.g. 'AJ-V6'), if the profile carries one."""
+    return get().get("engine_code")
+
+
+def prompt_identity() -> str:
+    """Vehicle identity line for LLM prompts, e.g.
+    '2004 Jaguar X-Type 2.5 V6 (AJ-V6)'. Built from the active profile so the
+    prompts adapt to whatever car is plugged in instead of hardcoding one."""
+    name = display_name()
+    ec = engine_code()
+    return f"{name} ({ec})" if ec else name
+
+
+def known_issues_text(sep: str = "; ") -> str:
+    """The active vehicle's known failure modes as one prompt-ready string
+    (empty string if the profile lists none)."""
+    return sep.join(known_issues())
+
+
+def known_issues_block(header: str = "KNOWN FAILURE MODES for this vehicle:") -> str:
+    """A bulleted known-failure-modes block for a system prompt, or '' if the
+    active profile lists none (so a generic car simply omits the section)."""
+    issues = known_issues()
+    if not issues:
+        return ""
+    body = "\n".join(f"- {i}" for i in issues)
+    return f"{header}\n{body}\n"

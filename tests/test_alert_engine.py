@@ -50,11 +50,14 @@ from config import (
 @pytest.fixture(autouse=True)
 def reset_state():
     """Reset global state between tests to prevent leakage."""
+    import vehicle_profile
     alert_engine.engine_start_time = 0.0
     alert_engine.warmup_complete = False
+    vehicle_profile.reload()
     yield
     alert_engine.engine_start_time = 0.0
     alert_engine.warmup_complete = False
+    vehicle_profile.set_active(None)
 
 @pytest.fixture
 def state():
@@ -83,8 +86,8 @@ def fill_range(buf, values, ts_buf=None, ts_start=None):
 # ── Test: Rule Count ──
 
 def test_rule_count():
-    """Verify we have exactly 23 diagnostic rules."""
-    assert len(ALL_RULES) == 23
+    """Verify the diagnostic rule count (24 = 23 core/X-Type + EV battery)."""
+    assert len(ALL_RULES) == 24
 
 
 # ── Test: trend() per-sensor timestamp alignment ──
@@ -310,6 +313,42 @@ class TestVoltageOvercharge:
         result = rule_voltage_overcharge(state)
         assert result is not None
         assert result[0] == LEVEL_RED
+
+
+class TestEvBattery:
+    def _rule(self):
+        from alert_engine import rule_ev_battery_low
+        return rule_ev_battery_low
+
+    def test_no_data_is_noop(self, state):
+        # A pure ICE car never reports 0x5B — the rule must stay silent.
+        assert self._rule()(state) is None
+
+    def test_healthy_battery_none(self, state):
+        state.hybrid_batt_life.append(92.0)
+        assert self._rule()(state) is None
+
+    def test_low_battery_amber(self, state):
+        from config import LEVEL_AMBER
+        state.hybrid_batt_life.append(60.0)
+        level, msg = self._rule()(state)
+        assert level == LEVEL_AMBER
+        assert 'battery' in msg.lower()
+
+    def test_critical_battery_red(self, state):
+        from config import LEVEL_RED
+        state.hybrid_batt_life.append(30.0)
+        level, _ = self._rule()(state)
+        assert level == LEVEL_RED
+
+    def test_ev_rule_survives_ev_filter(self):
+        import vehicle_profile
+        from alert_engine import _select_rules, rule_coolant_critical, rule_ev_battery_low
+        vehicle_profile.set_active({'fuel_type': 'ev', 'engine': 'Electric'})
+        rules = _select_rules()
+        # EV keeps the battery-health rule but drops combustion-only rules.
+        assert rule_ev_battery_low in rules
+        assert rule_coolant_critical not in rules
 
 
 class TestActiveDTCs:

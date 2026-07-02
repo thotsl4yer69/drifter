@@ -1,18 +1,43 @@
 [Unit]
-Description=MZ1312 DRIFTER OBD-II ELM327 Bridge
-After=drifter-broker.target
+Description=MZ1312 DRIFTER OBD-II ELM327 Bridge (K-line / serial transport)
+After=drifter-broker.target network.target
 Wants=drifter-broker.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+# NO StartLimitAction / StartLimitBurst here — mirrors drifter-canbridge.
+# obdbridge is the ELM327/K-line telemetry transport. A missing adapter, an
+# ELM327 popped off mid-drive, the ECU being off, OR simply being the
+# non-selected transport on this vehicle (canbridge owns raw-CAN cars) is a
+# NORMAL condition. obd_bridge.py stays alive, idles hw-pending, and retries
+# in-process — so this unit must DEGRADE, never crash-loop into a reboot. A
+# plain Restart=on-failure remains as a last-resort net for a real crash/OOM,
+# with no StartLimitAction so it can never escalate.
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/obd_bridge.py
 Restart=on-failure
-RestartSec=5
+RestartSec=15
 Environment=PYTHONUNBUFFERED=1
+# The ELM327 device path / DRIFTER_TRANSPORT override may live in .env.
 EnvironmentFile=-/opt/drifter/.env
+
+# Diagnostics/safety CORE tier (same as canbridge): keep the telemetry
+# transport alive when the 8G Pi is under memory pressure. Bounded ring
+# buffers -> 256M ceiling; OOMScoreAdjust=-800 so the kernel sacrifices the
+# heavy AI/ML/voice services first.
+MemoryMax=256M
+OOMScoreAdjust=-800
+
+# --- Hardening (see AGENTS.md) --------------------------------------
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

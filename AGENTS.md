@@ -9,7 +9,7 @@ Brand: **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 Every module imports shared constants from [`src/config.py`](src/config.py) — the single source of truth for paths, thresholds, MQTT topics, vehicle specs, DTC lookup, v2 cascade settings, and the canonical `SERVICES` list.
 
 **Data flow (v2)**:
-- Ingest: `can_bridge.py` (primary) or `obd_bridge.py` (ELM327 fallback) → MQTT (Mosquitto on `localhost:1883`; NanoMQ supported via `--with-nanomq`)
+- Ingest: `can_bridge.py` (raw SocketCAN) **or** `obd_bridge.py` (ELM327, incl. K-line) → MQTT (Mosquitto on `localhost:1883`; NanoMQ via `--with-nanomq`). Both are monitored services and **auto-select at boot** via `obd_transport.select_transport()`; the non-selected one idles hw-pending so they never double-publish. Both build their PID tables from `obd_pids.py` (the single source of truth for the OBD-II PID set + decode math), probe Mode-01 support bitmaps to poll only supported PIDs, and use `iso_tp.py` for multi-frame (VIN, long DTC lists) on the raw path.
 - Aggregation: `telemetry_batcher.py` produces a rolling-window summary
 - Tier 1: `safety_engine.py` (local deterministic safety rules)
 - Tier 2: `ai_diagnostics.py` (Claude via `llm_client_v2.py`)
@@ -67,11 +67,11 @@ def rule_<name>(state: VehicleState) -> Optional[tuple[int, str]]:
 - Messages include actual values with units and actionable X-Type repair guidance
 - `evaluate_rules()` publishes only the highest-severity alert, with retain=True
 
-## Adding a New Sensor
+## Adding a New Sensor / OBD-II PID
 
-1. `config.py`: add threshold constants to `THRESHOLDS`, add topic to `TOPICS`
-2. `can_bridge.py`: add PID to `PIDS` dict with decode lambda, unit, hz
-3. `alert_engine.py`: add `deque` to `VehicleState`, add routing in `on_message()`, write rule(s), append to `ALL_RULES`
+1. `_config_topics.py`: add the topic to `TOPICS` (and thresholds to `config.THRESHOLDS` if the rule needs them)
+2. `obd_pids.py`: add one `Pid(...)` entry (pid, name, topic key, decode(list)->value, unit, hz, nbytes, applies) — this is the SINGLE source of truth; **both** `can_bridge` and `obd_bridge` pick it up automatically (do not edit their tables directly). Set `applies` to `ALL`, `ICE`, or `HYBRID` so the powertrain gate + discovery request it on the right cars.
+3. `alert_engine.py`: add `deque` to `VehicleState`, add routing in `on_message()`, write rule(s), append to `ALL_RULES` (and `_UNIVERSAL_RULES` if it applies to EVs)
 4. `realdash_bridge.py`: add frame packer function, add to `handle_client()` send loop
 5. `realdash/drifter_channels.xml`: add matching `<frame>` with correct conversion formula
 6. `tests/test_alert_engine.py`: add trigger, OK, and no-data test cases
@@ -120,7 +120,12 @@ sudo ./install.sh && sudo reboot
 | `ai_diagnostics.py` | Tier 2 Claude diagnoses | `ai_diag_*` |
 | `session_reporter.py` | Tier 3 post-drive narrative | `session_report`, `session_summary` |
 | `llm_client_v2.py` | Claude→Groq→Ollama cascade (library) | — |
-| `vehicle_id.py` | VIN auto-detect + profile resolution | `vehicle_id`, `vehicle_profile` |
+| `vehicle_id.py` | VIN auto-detect + profile resolution (ISO-TP VIN read) | `vehicle_id`, `vehicle_profile` |
+| `vehicle_profile.py` | active profile seam (config base ← active overlay); accessors `thresholds()`, `engine_params()`, `bank_count()`, `is_ev()`, `prompt_identity()`, `known_issues()` — **read this, not raw `config.*`, for per-vehicle values** | consumes `vehicle_profile` |
+| `obd_pids.py` | canonical OBD-II Mode-01 PID table + decode math (single source for both transports) + powertrain gate + support-bitmap decode | — |
+| `obd_transport.py` | boot-time raw-CAN vs ELM327 auto-selection (`DRIFTER_TRANSPORT` override) | — |
+| `iso_tp.py` | ISO-TP flow-control + multi-frame reassembly on the raw CAN path | — |
+| `dtc_catalog.py` | generic OBD-II DTC base + per-vehicle overlay keyed off the profile | — |
 | `adaptive_thresholds.py` | per-vehicle baseline learning | `thresholds_learned`, `thresholds_update` |
 | `vehicle_kb.py` | per-vehicle KB query/store | `kb_query`, `kb_response`, `kb_update` |
 | `vehicle_learn.py` | continuous learning into KB | `learn_event` |

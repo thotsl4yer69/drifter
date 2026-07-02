@@ -13,8 +13,12 @@ import time
 
 import can
 
+import iso_tp
+import obd_transport
+import vehicle_profile
 from config import (
     CAN_BITRATE,
+    CAN_USB_IDS,
     MQTT_HOST,
     MQTT_PORT,
     OBD_REQUEST_ID,
@@ -22,6 +26,13 @@ from config import (
     OBD_RESPONSE_END,
     TOPICS,
     make_mqtt_client,
+)
+from obd_pids import (
+    SUPPORT_PROBE_PIDS,
+    applies_to,
+    can_pids,
+    supported_from_bitmaps,
+    two_byte_pids,
 )
 
 logging.basicConfig(
@@ -32,30 +43,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── OBD-II PID Definitions ──
-# Standard OBD-II PIDs we poll via CAN (Mode 01)
-PIDS = {
-    0x0C: {'name': 'rpm',      'topic': TOPICS['rpm'],      'decode': lambda a, b: ((a * 256) + b) / 4.0,      'unit': 'rpm',  'hz': 10},
-    0x05: {'name': 'coolant',  'topic': TOPICS['coolant'],  'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x06: {'name': 'stft1',    'topic': TOPICS['stft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x07: {'name': 'ltft1',    'topic': TOPICS['ltft1'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x08: {'name': 'stft2',    'topic': TOPICS['stft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 5},
-    0x09: {'name': 'ltft2',    'topic': TOPICS['ltft2'],    'decode': lambda a, b=0: round((a / 1.28) - 100, 2), 'unit': '%', 'hz': 1},
-    0x04: {'name': 'load',     'topic': TOPICS['load'],     'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 5},
-    0x0D: {'name': 'speed',    'topic': TOPICS['speed'],    'decode': lambda a, b=0: a,                         'unit': 'km/h', 'hz': 5},
-    0x0F: {'name': 'iat',      'topic': TOPICS['iat'],      'decode': lambda a, b=0: a - 40,                   'unit': 'C',    'hz': 1},
-    0x10: {'name': 'maf',      'topic': TOPICS['maf'],      'decode': lambda a, b: round(((a * 256) + b) / 100.0, 2), 'unit': 'g/s', 'hz': 5},
-    0x11: {'name': 'throttle', 'topic': TOPICS['throttle'], 'decode': lambda a, b=0: round(a / 2.55, 1),       'unit': '%',    'hz': 10},
-    0x42: {'name': 'voltage',  'topic': TOPICS['voltage'],  'decode': lambda a, b: round(((a * 256) + b) / 1000.0, 2), 'unit': 'V', 'hz': 1},
-    0x0E: {'name': 'timing',   'topic': TOPICS['timing'],   'decode': lambda a, b=0: (a / 2) - 64,             'unit': 'deg',  'hz': 5},
-    0x14: {'name': 'o2_b1s1',  'topic': TOPICS['o2_b1s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
-    0x15: {'name': 'o2_b2s1',  'topic': TOPICS['o2_b2s1'],  'decode': lambda a, b=0: round(a / 200.0, 2),      'unit': 'V',    'hz': 5},
-    0x1F: {'name': 'run_time', 'topic': TOPICS['run_time'], 'decode': lambda a, b: (a * 256) + b,              'unit': 's',    'hz': 1},
-    0x2F: {'name': 'fuel_lvl', 'topic': TOPICS['fuel_lvl'], 'decode': lambda a, b=0: round((a * 100) / 255.0, 1), 'unit': '%', 'hz': 0.5},
-    0x33: {'name': 'baro',     'topic': TOPICS['baro'],     'decode': lambda a, b=0: a,                        'unit': 'kPa',  'hz': 0.1},
-}
+# The canonical PID table lives in obd_pids.py — the SINGLE source of truth
+# shared with the ELM327/K-line bridge (obd_bridge.py). `PIDS` is int-keyed with
+# a list-decoder (takes the data bytes A,B,… and returns the scaled value);
+# `TWO_BYTE_PIDS` is derived (PIDs whose decoder needs both A and B). can_native
+# imports `PIDS` from here, so keep the name.
+PIDS = can_pids()
 
-# Two-byte PID set (need both A and B bytes for decode)
-TWO_BYTE_PIDS = {0x0C, 0x10, 0x1F, 0x42}
+# Two-byte PID set (need both A and B bytes for decode) — derived from the table.
+TWO_BYTE_PIDS = two_byte_pids()
 
 # ── DTC Decoding ──
 DTC_PREFIXES = {0: 'P', 1: 'C', 2: 'B', 3: 'U'}
@@ -76,19 +72,9 @@ NO_CAN_RETRY_INTERVAL = 5       # Seconds between interface-detection retries
 NO_CAN_STATUS_INTERVAL = 30
 
 # ── CAN-adapter USB allowlist (VID:PID) ──
-# Positively-identified CAN-over-serial / gs_usb adapters ONLY. We slcand a
-# /dev/ttyACM*|ttyUSB* device only when udev says its VID:PID is on THIS list,
-# so we never hijack the Flipper / Marauder / GPS / mic serial ports (they are
-# generic CH340/PL2303/CP210x serial and are NOT here). Mirrors the allowlist
-# in config/setup-can.sh — keep the two in sync.
-# TODO(phase2): move to config.py
-CAN_USB_IDS = {
-    ('0483', '5740'),  # STMicro VCP — CANable / slcan (cantact, CANtact-style)
-    ('1d50', '606f'),  # OpenMoko — candleLight / gs_usb (CANable gs_usb fw, CANtact)
-    ('1209', '2323'),  # pid.codes — CANable 2.0 (gs_usb)
-    ('16d0', '117e'),  # MCS — gs_usb USB2CAN (candleLight-class)
-    ('1cd2', '606f'),  # Geschwister Schneider gs_usb (original CANtact)
-}
+# The canonical allowlist now lives in config.CAN_USB_IDS (so obd_transport can
+# read it without importing python-can). Re-exported here under the historical
+# name — find_can_interface + tests reference `can_bridge.CAN_USB_IDS`.
 
 # ── State ──
 latest_values = {}
@@ -224,14 +210,81 @@ def decode_obd_response(msg):
 
     pid_def = PIDS[pid]
     try:
-        if pid in TWO_BYTE_PIDS:
-            value = pid_def['decode'](data[3], data[4])
-        else:
-            value = pid_def['decode'](data[3])
+        # Decoders take the data bytes (A, B, …) as a sequence, so a raw CAN
+        # frame slice and an ELM327 hex line decode identically. The response
+        # payload starts at byte 3 (after length + mode-echo + pid-echo).
+        value = pid_def['decode'](data[3:])
         return pid, value
     except (IndexError, ValueError) as e:
         log.warning(f"Decode error for PID 0x{pid:02X}: {e}")
         return None
+
+
+def query_supported_pids(bus, timeout=1.0):
+    """Probe Mode-01 support bitmaps (0x00/0x20/0x40/0x60) over the raw bus.
+
+    Returns the set of PIDs the ECU reports supported AND that we can decode,
+    or ``None`` when the bus is silent (no probe answered) so the caller can
+    fall back to a powertrain-appropriate default rather than polling nothing.
+    Each probe answers in a single frame (mode+pid+4 bitmap bytes), so no
+    ISO-TP reassembly is needed here.
+    """
+    bitmaps: dict[int, int] = {}
+    for probe in SUPPORT_PROBE_PIDS:
+        send_obd_request(bus, probe)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                resp = bus.recv(timeout=0.1)
+            except can.CanError:
+                break
+            if resp is None:
+                break
+            if (resp.arbitration_id < OBD_RESPONSE_BASE
+                    or resp.arbitration_id > OBD_RESPONSE_END):
+                continue
+            d = resp.data
+            if len(d) >= 7 and d[1] == 0x41 and d[2] == probe:
+                bitmaps[probe] = (d[3] << 24) | (d[4] << 16) | (d[5] << 8) | d[6]
+                break
+    if not bitmaps:
+        return None
+    return supported_from_bitmaps(bitmaps)
+
+
+def _resolve_poll_pids(bus):
+    """Which PIDs to poll on this bus, in the table's canonical order.
+
+    Prefer the ECU's live Mode-01 support set (so we only request PIDs the car
+    actually answers — per-car, works on anything). If discovery is silent
+    (very old ECU, K-line quirk, bench), fall back to the powertrain-default
+    set: a pure EV drops the combustion-only PIDs, every ICE car keeps the full
+    known table (identical to the pre-discovery behaviour)."""
+    supported = query_supported_pids(bus)
+    if supported:
+        pids = [p for p in PIDS if p in supported]
+        log.info(f"PID discovery: ECU reports {len(pids)}/{len(PIDS)} "
+                 f"known PIDs supported")
+        return pids
+    applicable = applies_to(vehicle_profile.fuel_type())
+    pids = [p for p in PIDS if p in applicable]
+    log.info(f"PID discovery got no response — polling {len(pids)} "
+             f"powertrain-default PIDs")
+    return pids
+
+
+def _build_schedule(pids):
+    """Build the poll schedule (pid, interval, last_poll) for the given PIDs."""
+    schedule = []
+    for pid in pids:
+        info = PIDS[pid]
+        schedule.append({
+            'pid': pid,
+            'interval': 1.0 / info['hz'],
+            'last_poll': 0,
+            'info': info,
+        })
+    return schedule
 
 
 def decode_dtc(byte1, byte2):
@@ -248,38 +301,25 @@ def decode_dtc(byte1, byte2):
 
 def request_dtcs(bus, mode=0x03):
     """Request DTCs using Mode 03 (stored) or Mode 07 (pending).
-    Returns list of DTC strings."""
-    data = [0x01, mode, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    msg = can.Message(
-        arbitration_id=OBD_REQUEST_ID,
-        data=data,
-        is_extended_id=False
-    )
-    try:
-        bus.send(msg)
-    except can.CanError as e:
-        log.warning(f"DTC request error (mode 0x{mode:02X}): {e}")
+    Returns list of DTC strings.
+
+    A car with many DTCs answers over multiple ISO-TP frames; iso_tp.request
+    sends the required Flow Control and reassembles them, so this reads every
+    code rather than just whatever fit in the first frame."""
+    payload = iso_tp.request(bus, [mode], timeout=0.5)
+    if not payload:
         return []
-
+    response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
+    if payload[0] != response_mode:
+        return []
+    # Reassembled payload = [response_mode, count, DTC1_hi, DTC1_lo, ...] — the
+    # DTC pairs start after the mode echo + count byte.
+    body = payload[2:]
     dtcs = []
-    # Collect responses (may be multi-frame)
-    deadline = time.monotonic() + 0.5
-    while time.monotonic() < deadline:
-        response = bus.recv(timeout=0.1)
-        if response is None:
-            break
-        if response.arbitration_id < OBD_RESPONSE_BASE or response.arbitration_id > OBD_RESPONSE_END:
-            continue
-
-        rd = response.data
-        response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
-        if len(rd) >= 2 and rd[1] == response_mode:
-            # Parse DTC pairs starting at byte 3
-            for i in range(3, len(rd) - 1, 2):
-                dtc = decode_dtc(rd[i], rd[i + 1])
-                if dtc:
-                    dtcs.append(dtc)
-
+    for i in range(0, len(body) - 1, 2):
+        dtc = decode_dtc(body[i], body[i + 1])
+        if dtc:
+            dtcs.append(dtc)
     return dtcs
 
 
@@ -296,6 +336,33 @@ def _publish_status(mqtt_client, state, **extra):
                             json.dumps(payload), retain=True)
     except Exception as e:  # pragma: no cover - defensive
         log.debug(f"status publish failed ({state}): {e}")
+
+
+def _await_can_transport(mqtt_client, running_fn):
+    """Block (while alive) until the raw-CAN transport is the selected one.
+
+    Returns True to proceed with CAN telemetry, or False if we were asked to
+    stop while deferring. When an ELM327 transport is auto-selected, we idle and
+    republish a fresh 'hw_pending' status so /healthz + the cockpit see the node
+    as hardware-pending (obdbridge is driving telemetry), not failed. This never
+    exits the process — a wrong-transport node degrades, it does not crash-loop.
+    """
+    last_status = 0.0
+    while running_fn():
+        if obd_transport.select_transport() == obd_transport.CAN:
+            return True
+        now = time.monotonic()
+        if now - last_status >= NO_CAN_STATUS_INTERVAL or last_status == 0.0:
+            log.info("ELM327 transport selected — deferring to drifter-obdbridge "
+                     "(canbridge idle). Force with DRIFTER_TRANSPORT=can.")
+            _publish_status(mqtt_client, "hw_pending",
+                            reason="deferring_to_obdbridge")
+            last_status = now
+        for _ in range(int(NO_CAN_RETRY_INTERVAL / 0.25)):
+            if not running_fn():
+                break
+            time.sleep(0.25)
+    return False
 
 
 def _acquire_bus(mqtt_client, running_fn):
@@ -374,6 +441,18 @@ def main():
         log.info("Shutting down before MQTT connected")
         return
 
+    # ── Transport arbitration ──
+    # canbridge and obdbridge publish the same topics and are mutually
+    # exclusive. If the ELM327 (K-line/serial) transport is auto-selected, idle
+    # here instead of double-publishing — re-checking so a hot-plugged CAN
+    # adapter promotes us without a restart.
+    if not _await_can_transport(mqtt_client, _running):
+        log.info("Shutting down — stopped while deferring to obdbridge")
+        _publish_status(mqtt_client, "offline")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        return
+
     # ── Acquire CAN interface (degrades, never exits) ──
     log.info("Searching for CAN interface...")
     bus, iface = _acquire_bus(mqtt_client, _running)
@@ -386,17 +465,12 @@ def main():
         return
 
     # ── Polling Loop ──
-    # Build schedule: list of (pid, interval_seconds)
-    schedule = []
-    for pid, info in PIDS.items():
-        schedule.append({
-            'pid': pid,
-            'interval': 1.0 / info['hz'],
-            'last_poll': 0,
-            'info': info
-        })
+    # Discover which PIDs this ECU actually supports and poll only those (per
+    # car — works on anything, not just the X-Type). Falls back to the
+    # powertrain-default set on a silent bus.
+    schedule = _build_schedule(_resolve_poll_pids(bus))
 
-    log.info(f"Polling {len(schedule)} PIDs from Jaguar X-Type...")
+    log.info(f"Polling {len(schedule)} supported PIDs")
     log.info("DRIFTER CAN Bridge is LIVE")
 
     last_snapshot = 0.0
@@ -430,6 +504,9 @@ def main():
                 if bus is None:
                     break  # asked to stop while waiting
                 log.info(f"CAN interface reconnected on {iface}")
+                # Re-discover supported PIDs on the fresh bus — a different
+                # adapter/vehicle may have been plugged in during the outage.
+                schedule = _build_schedule(_resolve_poll_pids(bus))
                 last_dtc_check = 0.0  # re-probe DTCs on the fresh bus
                 continue
 

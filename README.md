@@ -10,13 +10,14 @@
 
 **MZ1312 UNCAGED TECHNOLOGY — EST 1991**
 
-Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turns your car into a self-diagnosing platform using a Raspberry Pi 5, USB CAN adapter, and deterministic diagnostic rules — no cloud, no subscriptions, no bullshit.
+Sentient Core vehicle intelligence node for **any OBD-II car**. Turns your car into a self-diagnosing platform using a Raspberry Pi 5, a CAN or ELM327 adapter, and deterministic diagnostic rules — no cloud, no subscriptions, no bullshit. It identifies the vehicle by VIN and adapts thresholds, fuel math, DTC causes, and the AI prompts to *that* car (petrol, diesel, hybrid, or EV). The reference vehicle is a 2004 Jaguar X-Type 2.5L V6; see **[docs/VEHICLE_PROFILES.md](docs/VEHICLE_PROFILES.md)** to run it on yours.
 
 ---
 
 ## Table of Contents
 
 - [What It Does](#what-it-does)
+- [Multi-Vehicle Support](#multi-vehicle-support)
 - [Hardware](#hardware)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
@@ -39,8 +40,9 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 
 ## What It Does
 
-- **Reads** the Jaguar's CAN bus via USB2CANFD adapter and OBD-II (Mode 01 live data + Mode 03/07 DTCs)
-- **Diagnoses** mechanical issues in real-time using 23 deterministic rules (vacuum leaks, fuel trim drift, coolant, alternator, intake heat soak, TPMS, DTC detection, stall detection, thermostat failure, coil pack degradation, MAF health, throttle body carbon, cold start monitoring, and more)
+- **Reads** any OBD-II vehicle — raw CAN via a SocketCAN/CANable adapter **or** a generic ELM327/K-line adapter, auto-selected at boot — Mode 01 live data + Mode 03/07 DTCs, with per-car PID-support discovery and ISO-TP reassembly (VIN, long DTC lists)
+- **Identifies** the car by VIN and drives a profile that adapts thresholds, fuel math, DTC causes, powertrain rules, and the AI prompts (petrol / diesel / hybrid / EV) — see [Multi-Vehicle Support](#multi-vehicle-support)
+- **Diagnoses** mechanical issues in real-time using 24 deterministic, powertrain-aware rules (vacuum leaks, fuel trim drift, coolant, alternator, intake heat soak, TPMS, DTC detection, stall detection, HV-battery health for EV/hybrid, plus X-Type-specific thermostat/coil/MAF/throttle/cold-start when the X-Type profile is active)
 - **Scans** the RF spectrum with RTL-SDR — TPMS tire pressure monitoring, 433 MHz signal decoding, emergency band scanning
 - **Displays** live telemetry on your Pioneer head unit via RealDash TCP CAN bridge + Android Auto
 - **Speaks** diagnostic alerts through your car speakers via Piper TTS
@@ -55,6 +57,35 @@ Sentient Core vehicle intelligence node for the 2004 Jaguar X-Type 2.5L V6. Turn
 > your own equipment**, gated behind a deliberately-selected `foot` persona —
 > see **[CAPABILITIES.md](CAPABILITIES.md)** for the honest does / does-not
 > scope, and **[operating modes](#operating-modes)** below.
+
+## Multi-Vehicle Support
+
+DRIFTER targets **any OBD-II vehicle** via standardized PIDs. It identifies the
+car by VIN and drives everything downstream off a per-vehicle *profile*.
+
+- **Identification** — `drifter-vehicleid` reads the VIN (Mode 09, ISO-TP
+  reassembled), decodes make/year offline (`src/vin_decoder.py`), loads a
+  `vehicles/<VIN>.yaml` if you authored one, else AI-generates and caches one.
+  Manual override: drop a `vehicles/<VIN>.yaml`.
+- **Transport auto-select** — both `drifter-canbridge` (raw SocketCAN) and
+  `drifter-obdbridge` (ELM327, incl. K-line / J1850 / 29-bit) are monitored
+  services; exactly one runs per car, chosen at boot (`src/obd_transport.py`).
+  Force it with `DRIFTER_TRANSPORT=can|elm327`.
+- **PID-support discovery** — each bridge probes the Mode-01 support bitmaps and
+  polls only the PIDs your ECU reports; the canonical PID table
+  (`src/obd_pids.py`) is the single source of truth for both transports and
+  covers MAP (MAF-less cars), oil/ambient temp, fuel rate, and the standard
+  hybrid/EV battery-life PID.
+- **Powertrain-aware** — the alert rules, fuel math, and DTC causes adapt to the
+  profile's `fuel_type`/topology. A pure EV suppresses combustion rules and
+  raises HV-battery-health alerts instead; a diesel switches AFR/density; a
+  V-engine keeps dual-bank rules an inline engine drops.
+- **DTC diagnosis** — a generic OBD-II base (`src/dtc_catalog.py`) describes
+  codes on any car, with a per-vehicle overlay (the X-Type's Jaguar-specific
+  causes) selected off the active profile.
+
+**Full guide + `vehicles/<VIN>.yaml` field reference:
+[docs/VEHICLE_PROFILES.md](docs/VEHICLE_PROFILES.md).**
 
 ## Hardware
 
@@ -144,7 +175,7 @@ sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto
 │         ┌───────────────┼──────────────┐                 │
 │         ▼               ▼              ▼                 │
 │   alert_engine      logger       voice_alerts            │
-│   (23 rules)      (sessions)    (Piper TTS)             │
+│   (24 rules)      (sessions)    (Piper TTS)             │
 │         │               │              │                 │
 │         ▼               ▼              ▼                 │
 │    MQTT pub        JSON logs     3.5mm audio             │
@@ -201,8 +232,9 @@ depends on the current [mode](#operating-modes).
 | Service | What It Does |
 |---------|-------------|
 | *(broker)* `mosquitto` (default) or `nanomq` (`--with-nanomq`) | MQTT message broker on `localhost:1883` |
-| `drifter-canbridge` | CAN bus → MQTT translator (Mode 01 + DTC reads) |
-| `drifter-alerts` | Diagnostic rule engine (23 rules) |
+| `drifter-canbridge` | Raw CAN (SocketCAN) → MQTT translator (Mode 01 + DTC reads) |
+| `drifter-obdbridge` | ELM327/K-line → MQTT translator; auto-selected vs canbridge per car |
+| `drifter-alerts` | Diagnostic rule engine (24 powertrain-aware rules) |
 | `drifter-logger` | Telemetry → JSON logs with drive session detection |
 | `drifter-voice` | Piper TTS voice alerts |
 | `drifter-hotspot` | Wi-Fi AP for phone |
@@ -290,6 +322,10 @@ drifter/rf/command          # JSON: commands (tpms_learn, assign, scan)
 | 21 | X-Type cold start | Cold idle monitoring (fast idle normal / too-low warning) | INFO/AMBER |
 | 22 | X-Type alternator age | Voltage 12.8-13.5V at >1500 RPM + declining trend | INFO |
 | 23 | X-Type warmup progress | Reports warmup completion, enables full diagnostics | INFO |
+| 24 | EV/hybrid HV battery | Hybrid battery pack life low (<70%) / critical (<40%) — EV/hybrid only, no-op on ICE | AMBER/RED |
+
+Rules 1–16 + 24 run on any powertrain; the X-Type rules (17–23) run only when
+the X-Type profile is active, and combustion rules are suppressed on a pure EV.
 
 ## Calibration
 
@@ -360,7 +396,7 @@ drifter/
 ├── src/
 │   ├── config.py                # Central configuration (thresholds, paths, topics)
 │   ├── can_bridge.py            # CAN → MQTT bridge (Mode 01 + DTC reads)
-│   ├── alert_engine.py          # Diagnostic rules (23 rules)
+│   ├── alert_engine.py          # Diagnostic rules (24 rules)
 │   ├── logger.py                # Telemetry logger (drive sessions, gzip compression)
 │   ├── voice_alerts.py          # TTS voice alerts
 │   ├── voice_input.py           # Wake-word / PTT STT → intent routing
@@ -485,7 +521,7 @@ pytest tests/ -v
 pytest tests/ -v --cov=src
 ```
 
-Tests cover all 23 diagnostic rules in the alert engine, including trigger conditions, OK conditions, and edge cases.
+Tests cover all 24 diagnostic rules in the alert engine, including trigger conditions, OK conditions, and edge cases.
 
 ## Checking System Status
 

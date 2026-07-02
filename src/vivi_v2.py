@@ -23,6 +23,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 
 import llm_client_v2
+import vehicle_profile
 import vivi_memory
 import vivi_rf_intent
 import vivi_sentinel
@@ -34,9 +35,6 @@ from config import (
     PIPER_MODEL,
     PIPER_MODEL_DIR,
     TOPICS,
-    VEHICLE_ENGINE,
-    VEHICLE_MODEL,
-    VEHICLE_YEAR,
     VIVI2_HISTORY_TURNS,
     VIVI2_PERSONALITY_FILE,
     VIVI2_PROACTIVE_COOLDOWN_S,
@@ -65,9 +63,8 @@ _MIN_SENTENCE_CHARS = 12
 _SAFETY_ALERT_TTL_S = 300
 
 # ── Default personality (overridden by /opt/drifter/vivi_personality.txt) ──
-DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {VEHICLE_YEAR} {VEHICLE_MODEL} \
-({VEHICLE_ENGINE}). You know this car cold: AJ-V6 quirks, plastic thermostat housing failures, \
-coil packs, Haldex coupling, JF506E gearbox. You also handle Spotify, navigation, trip stats, \
+DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {vehicle_profile.prompt_identity()}. \
+You know this car cold — {vehicle_profile.known_issues_text()}. You also handle Spotify, navigation, trip stats, \
 crash response, and sentry mode now. You have live weather (conditions, rain-in-the-next-hour, \
 fog/ice/wind alerts) and nearby places (petrol, mechanic, car wash, parking) — answer "where's \
 the nearest..." from the Nearby places list, and warn about weather like rain or fog when it \
@@ -103,6 +100,19 @@ _personality_cache: str | None = None
 _aplay_available: bool | None = None
 
 
+def _apply_profile_placeholders(text: str) -> str:
+    """Fill {vehicle}/{engine}/{known_issues} placeholders in a personality
+    template from the ACTIVE vehicle profile, so a shipped default persona
+    adapts to whatever car is plugged in. Text with no placeholders is returned
+    unchanged, so a hand-written operator persona still works verbatim."""
+    return (
+        text.replace('{vehicle}', vehicle_profile.prompt_identity())
+            .replace('{engine}', vehicle_profile.engine_code()
+                     or (vehicle_profile.spec('engine') or ''))
+            .replace('{known_issues}', vehicle_profile.known_issues_text())
+    )
+
+
 def _load_personality() -> str:
     global _personality_cache
     if _personality_cache is not None:
@@ -111,7 +121,7 @@ def _load_personality() -> str:
         if VIVI2_PERSONALITY_FILE.exists():
             text = VIVI2_PERSONALITY_FILE.read_text(encoding='utf-8').strip()
             if text:
-                _personality_cache = text
+                _personality_cache = _apply_profile_placeholders(text)
                 return _personality_cache
     except OSError as e:
         log.debug(f"personality load: {e}")
@@ -845,7 +855,7 @@ def main() -> None:
 
     _publish_status("starting")
     time.sleep(1)
-    speak(f"Vivi v2 online. {VEHICLE_YEAR} {VEHICLE_MODEL}, ready when you are.")
+    speak(f"Vivi v2 online. {vehicle_profile.display_name()}, ready when you are.")
     _publish_status("idle")
     log.info("Vivi v2 LIVE")
 

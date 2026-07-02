@@ -61,12 +61,33 @@ def _valid_vin(s: str) -> bool:
     return all(c in VIN_RE_CHARS for c in s.upper())
 
 
+def _parse_vin_payload(payload) -> str | None:
+    """Extract the VIN from a reassembled Mode 09 PID 02 response payload,
+    shaped ``[0x49, 0x02, count, <17 ASCII VIN bytes>]``. Some ECUs omit the
+    count byte, so both offsets are tried. Returns None if it isn't a valid VIN.
+    """
+    if not payload or len(payload) < 3 or payload[0] != 0x49 or payload[1] != 0x02:
+        return None
+    for start in (3, 2):  # standard carries a count byte at [2]; some skip it
+        raw = bytes(payload[start:])
+        vin = raw.decode('ascii', errors='replace').strip('\x00 ').strip()
+        if _valid_vin(vin):
+            return vin
+    return None
+
+
 def detect_vin_from_obd(retries: int = VIN_DETECT_RETRIES) -> str | None:
-    """Query VIN via python-can. Returns None if no CAN bus or no response."""
+    """Query VIN via python-can (Mode 09 PID 02). Returns None if no CAN bus or
+    no response.
+
+    The VIN spans multiple ISO-TP frames; iso_tp.request sends the required
+    Flow Control and reassembles them, so this works on strict ISO-TP ECUs that
+    won't stream Consecutive Frames unprompted (i.e. most modern cars)."""
     try:
         import can
 
-        from config import CAN_BITRATE, OBD_REQUEST_ID
+        import iso_tp
+        from config import CAN_BITRATE, VIN_OBD_MODE, VIN_OBD_PID
     except ImportError:
         log.warning("python-can not available — cannot read VIN over CAN")
         return None
@@ -79,39 +100,11 @@ def detect_vin_from_obd(retries: int = VIN_DETECT_RETRIES) -> str | None:
             time.sleep(1)
             continue
         try:
-            req = can.Message(
-                arbitration_id=OBD_REQUEST_ID,
-                data=[0x02, 0x09, 0x02, 0, 0, 0, 0, 0],
-                is_extended_id=False,
-            )
-            bus.send(req)
-            chunks: dict[int, bytes] = {}
-            deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                msg = bus.recv(timeout=0.2)
-                if msg is None:
-                    continue
-                if not (0x7E8 <= msg.arbitration_id <= 0x7EF):
-                    continue
-                data = bytes(msg.data)
-                if len(data) < 3:
-                    continue
-                # ISO-TP first frame
-                if data[0] & 0xF0 == 0x10:
-                    chunks[0] = data[5:]
-                # Consecutive frames
-                elif data[0] & 0xF0 == 0x20:
-                    idx = data[0] & 0x0F
-                    chunks[idx] = data[1:]
-                # Single frame
-                elif data[0] & 0xF0 == 0x00 and len(data) >= 7 and data[2] == 0x09:
-                    chunks[0] = data[5:]
-            if chunks:
-                raw = b''.join(chunks[k] for k in sorted(chunks))
-                vin = raw.decode('ascii', errors='replace').strip('\x00 ').strip()
-                if _valid_vin(vin):
-                    log.info(f"VIN detected: {vin}")
-                    return vin
+            payload = iso_tp.request(bus, [VIN_OBD_MODE, VIN_OBD_PID], timeout=2.0)
+            vin = _parse_vin_payload(payload)
+            if vin:
+                log.info(f"VIN detected: {vin}")
+                return vin
         finally:
             try:
                 bus.shutdown()
@@ -196,7 +189,10 @@ def resolve_profile(vin: str | None) -> dict:
     almost any post-1981 car without the LLM; the LLM (or a hand-authored YAML)
     only fills specs/known-issues it can't carry.
     """
-    base = dict(VEHICLE_DEFAULTS)
+    # Generic base for an unidentified car: the operator-editable
+    # vehicles/default.yaml if present, else config.VEHICLE_DEFAULTS. Neither is
+    # X-Type-specific — an unknown car must not inherit Jaguar specs.
+    base = load_profile("default") or dict(VEHICLE_DEFAULTS)
     seed = _decoded_seed(vin)
     base.update(seed)
     if vin:

@@ -30,16 +30,14 @@ import time
 
 import paho.mqtt.client as mqtt
 
+import dtc_catalog
 import llm_client_v2
+import vehicle_profile
 from config import (
     LEVEL_AMBER,
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
-    VEHICLE,
-    VEHICLE_ENGINE,
-    VEHICLE_YEAR,
-    XTYPE_DTC_LOOKUP,
 )
 
 logging.basicConfig(
@@ -78,12 +76,13 @@ _request_queue: "queue.Queue[tuple[str, bool]]" = queue.Queue(maxsize=4)
 _worker_running = threading.Event()
 
 SYSTEM_PROMPT = (
-    f"You are the in-vehicle diagnostic specialist for a {VEHICLE}. "
+    f"You are the in-vehicle diagnostic specialist for a "
+    f"{vehicle_profile.prompt_identity()}. "
     "You receive a 60s telemetry window plus any DTCs, current weather, and the "
     "safety event that triggered the request. Factor weather into your reasoning — "
-    "this engine runs richer when cold, is prone to heat-soak in high ambient temps, "
-    "and humidity/IAT shifts move fuel trims. Respond with JSON only — no prose "
-    "around it.\n\n"
+    "a combustion engine runs richer when cold, is prone to heat-soak in high "
+    "ambient temps, and humidity/IAT shifts move fuel trims. Respond with JSON "
+    "only — no prose around it.\n\n"
     "Schema:\n"
     "{\n"
     '  "primary_suspect": {"diagnosis": str, "confidence": int 0-100, '
@@ -180,22 +179,22 @@ def _build_prompt(reason: str) -> str:
 
     dtc_lines: list[str] = []
     for code in active[:5]:
-        info = XTYPE_DTC_LOOKUP.get(code)
+        info = dtc_catalog.lookup(code)
         if info:
             cause = (info.get('cause') or '')[:120]
             dtc_lines.append(
                 f"  {code} ({info.get('severity', '?')}): {info.get('desc', '?')} — {cause}"
             )
         else:
-            dtc_lines.append(f"  {code}: (no X-Type lookup)")
+            dtc_lines.append(f"  {code}: (no local lookup)")
     for code in pending[:3]:
-        info = XTYPE_DTC_LOOKUP.get(code)
+        info = dtc_catalog.lookup(code)
         dtc_lines.append(
             f"  PENDING {code}: {info.get('desc', '(unknown)') if info else '(unknown)'}"
         )
 
     parts = [
-        f"VEHICLE: {VEHICLE_YEAR} {VEHICLE} ({VEHICLE_ENGINE})",
+        f"VEHICLE: {vehicle_profile.prompt_identity()}",
         f"REASON: {reason}",
         "",
         "TELEMETRY WINDOW (last 60s):",

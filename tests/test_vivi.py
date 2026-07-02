@@ -56,6 +56,25 @@ def test_personality_traits():
     assert 'vivi' in lower
 
 
+def test_personality_placeholders_substituted():
+    """A templated persona file has {vehicle}/{known_issues} filled from the
+    active profile (default = X-Type), so the shipped persona adapts per car."""
+    from vivi_v2 import _apply_profile_placeholders
+    out = _apply_profile_placeholders(
+        "Riding in a {vehicle}. Known issues: {known_issues}.")
+    assert '{vehicle}' not in out
+    assert '{known_issues}' not in out
+    assert 'X-Type' in out              # default profile identity
+    assert 'thermostat' in out.lower()  # default known issues
+
+
+def test_personality_verbatim_without_placeholders():
+    """Plain operator text (no placeholders) is used unchanged."""
+    from vivi_v2 import _apply_profile_placeholders
+    text = "Custom persona with no placeholders."
+    assert _apply_profile_placeholders(text) == text
+
+
 # ── MQTT client ID ──
 
 def test_mqtt_client_id_convention():

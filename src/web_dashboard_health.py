@@ -89,7 +89,7 @@ def _healthz_payload() -> tuple[dict, int]:
     # for the mic, vivi for Ollama+Piper. These should warn (status:
     # degraded), not fail the healthz contract (HTTP 503).
     _HW_OPTIONAL = {
-        'drifter-canbridge', 'drifter-rf', 'drifter-vivi',
+        'drifter-canbridge', 'drifter-obdbridge', 'drifter-rf', 'drifter-vivi',
         'drifter-voicein', 'drifter-flipper', 'drifter-bleconv',
         'drifter-gps',
         # Community-tool services pending external installs / allowlist

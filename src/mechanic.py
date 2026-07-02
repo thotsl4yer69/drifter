@@ -22,7 +22,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import vehicle_profile
+
 log = logging.getLogger(__name__)
+
+# Result types that are powertrain-generic (apply to any car). Everything else
+# this KB returns is Jaguar-X-Type-specific and is filtered out when a different
+# vehicle is active (see applies_to_active_vehicle / search).
+_GENERIC_RESULT_TYPES = {'emergency', 'telemetry_guide'}
 
 # Data directory — sits next to this file.  When installed by install.sh the
 # files end up at /opt/drifter/data/mechanic/*.json.
@@ -61,6 +68,25 @@ LIGHTING_REFERENCE         = _load('lighting_reference',       {})
 # ═══════════════════════════════════════════════════════════════════
 #  Search
 # ═══════════════════════════════════════════════════════════════════
+
+def applies_to_active_vehicle() -> bool:
+    """True if this KB (a Jaguar X-Type reference) matches the ACTIVE vehicle
+    profile. For a different car only the powertrain-generic sections apply —
+    Jaguar torque/fuse/spec data would mislead. Defaults to True when either the
+    KB or the profile doesn't declare a make/model (conservative: the X-Type
+    node behaves exactly as before)."""
+    ident = VEHICLE_SPECS.get('identity') or {}
+    kb_make = str(ident.get('make', '')).strip().lower()
+    kb_model = str(ident.get('model', '')).strip().lower()
+    if not kb_make and not kb_model:
+        return True
+    p = vehicle_profile.identity()
+    make = str(p.get('make') or '').strip().lower()
+    model = str(p.get('model') or '').strip().lower()
+    if not make and not model:
+        return True
+    return make == kb_make and model == kb_model
+
 
 def _score_terms(terms: list[str], text: str) -> int:
     """Count how many times each term appears in ``text``."""
@@ -211,6 +237,12 @@ def search(query: str) -> list[dict]:
                 'title': f"{item.get('interval', '')}: {item.get('item', '')}",
                 'score': 3, 'data': item,
             })
+
+    # Keyed off the active profile: a non-Jaguar car keeps only the
+    # powertrain-generic hits (emergency procedures, telemetry interpretation)
+    # so it never gets X-Type-specific torque/fuse/spec advice.
+    if not applies_to_active_vehicle():
+        results = [r for r in results if r['type'] in _GENERIC_RESULT_TYPES]
 
     results.sort(key=lambda r: r['score'], reverse=True)
     return results[:20]

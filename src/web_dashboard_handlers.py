@@ -21,8 +21,10 @@ import yaml
 
 import ble_history
 import ble_persistence
+import dtc_catalog
 import hid_ducky
 import hid_inject
+import vehicle_profile
 import web_dashboard_state as state
 from ble_map_html import BLE_MAP_HTML
 from config import (
@@ -40,7 +42,6 @@ from config import (
     SETTINGS_SECTIONS,
     SHARED_SERVICES,
     TOPICS,
-    XTYPE_DTC_LOOKUP,
     load_settings,
     save_settings,
     validate_settings_payload,
@@ -1616,14 +1617,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def _serve_dtc_lookup(self, parsed):
         """DTC click handler — corpus first (full description, ECU action,
-        likely causes), legacy XTYPE_DTC_LOOKUP as a tiny built-in fallback
-        for codes the corpus hasn't been rebuilt with.
+        likely causes), the dtc_catalog (active-vehicle overlay ← generic
+        OBD-II base) as a tiny built-in fallback for codes the corpus hasn't
+        been rebuilt with.
 
         Uses the torch-free static lookup (dtc_lookup_static) — NOT the
         semantic-fallback dtc_lookup — so this always-on, memory-capped HUD
         process never loads sentence-transformers/torch (would blow
         MemoryMax=512M and OOM-kill the dashboard). A static dtc/<code>.md
-        miss falls through to the built-in XTYPE_DTC_LOOKUP table below."""
+        miss falls through to the built-in dtc_catalog below."""
         code = parsed.path.rsplit('/', 1)[-1].upper()
         if not _DTC_RE.match(code):
             self.send_error(400, 'Invalid DTC code')
@@ -1637,7 +1639,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 'source':  hit.get('source'),
             })
             return
-        info = XTYPE_DTC_LOOKUP.get(code, {})
+        info = dtc_catalog.lookup(code) or {}
         self._serve_json({'code': code, **info})
 
     def _get_driver(self, parsed):
@@ -2515,7 +2517,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             _mechanic_history_append('user', query)
             prompt = self._build_query_context(query)
             import llm_client_v2
-            result = llm_client_v2.query(prompt, CHAT_SYSTEM_PROMPT)
+            result = llm_client_v2.query(prompt, build_chat_system_prompt())
             text = result['text']
             _mechanic_history_append('assistant', text)
             # Phase 5.3 grounding validator — second line of defence
@@ -2574,7 +2576,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.wfile.flush()
 
             result = llm_client_v2.stream(
-                prompt, CHAT_SYSTEM_PROMPT, on_token=_emit_token)
+                prompt, build_chat_system_prompt(), on_token=_emit_token)
             # If the backend never streamed token-by-token (e.g. the cascade
             # served a non-streaming Ollama/Groq backend), on_token never
             # fired — emit the full text now so the client still renders it.
@@ -2706,29 +2708,38 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 # llm_client v1 shim (query_chat hard-wired this exact text); the v2 client
 # takes the system prompt explicitly via query()/stream(). This is the sole
 # caller now.
-CHAT_SYSTEM_PROMPT = """You are an expert diagnostic technician and mechanic specialising in the \
-2004 Jaguar X-Type 2.5L V6 (AJ-V6 engine). This is an Australian-delivered, \
-right-hand-drive, AWD vehicle with the Jatco JF506E 5-speed automatic.
+def build_chat_system_prompt() -> str:
+    """Conversational 'Ask Mechanic' system prompt, grounded in the ACTIVE
+    vehicle profile so it adapts to whatever car is plugged in. Live symptoms /
+    DTCs are supplied per-question in the query context, not hardcoded here."""
+    ki_block = vehicle_profile.known_issues_block()
+    ki_section = f"\n{ki_block}" if ki_block else ""
+    return (
+        f"You are an expert diagnostic technician and mechanic for the "
+        f"{vehicle_profile.prompt_identity()}.\n\n"
+        "You are running on DRIFTER — a vehicle intelligence system on Raspberry "
+        "Pi 5 (Kali Linux) with live OBD-II/CAN bus telemetry. You may be given "
+        "live sensor readings and knowledge base context alongside each "
+        "question.\n\n"
+        "Your approach:\n"
+        "- Be direct, practical, and experienced. Answer conversationally like a "
+        "real mechanic.\n"
+        "- Reference the live telemetry values when relevant (\"Your coolant is "
+        "at 95°C which suggests...\")\n"
+        "- Cite this vehicle's known failure modes when applicable\n"
+        "- Give actionable advice with difficulty ratings and local-currency "
+        "cost estimates\n"
+        "- ALWAYS prioritise safety — flag anything dangerous immediately\n"
+        "- Keep responses concise — the driver may be reading on a phone mounted "
+        "in the car\n\n"
+        "Do NOT return JSON. Respond in clear, readable text.\n"
+        f"{ki_section}"
+    )
 
-You are running on DRIFTER — a vehicle intelligence system on Raspberry Pi 5 \
-(Kali Linux) with live OBD-II/CAN bus telemetry. You may be given live sensor \
-readings and knowledge base context alongside each question.
 
-Your approach:
-- Be direct, practical, and experienced. Answer conversationally like a real mechanic.
-- Reference the live telemetry values when relevant ("Your coolant is at 95°C which suggests...")
-- Cite known X-Type failure modes when applicable (thermostat, coil packs, MAF, vacuum leaks)
-- Give actionable advice with difficulty ratings and AUD cost estimates
-- ALWAYS prioritise safety — flag anything dangerous immediately
-- Keep responses concise — the driver may be reading on a phone mounted in the car
-
-Do NOT return JSON. Respond in clear, readable text.
-
-VEHICLE CONTEXT:
-- Known history: valve cover gasket oil leak, prior spark plug overtorque failure
-- Current symptoms: P0303 cylinder 3 misfire, cruise control disabled, rough idle
-- Suspected: vacuum leaks (PCV hose, IMT valve O-ring, brake booster hose)
-"""
+# Built once at import from the profile active at process start; call
+# build_chat_system_prompt() for a fresh build after a live profile change.
+CHAT_SYSTEM_PROMPT = build_chat_system_prompt()
 
 # _FEEDS_SUMMARY_PATH, _format_feed_context and build_query_context now live
 # in web_dashboard_mechanic.py and are re-imported at the top of this module.

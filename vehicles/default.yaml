@@ -1,22 +1,24 @@
 # MZ1312 DRIFTER — Default Vehicle Profile
 # UNCAGED TECHNOLOGY — EST 1991
 #
-# Used when no VIN-specific file is present in this directory. Override
-# any field; everything not listed falls back to VEHICLE_DEFAULTS in
-# src/config.py.
+# The GENERIC base for an unidentified vehicle (VIN unreadable, or no
+# vehicles/<VIN>.yaml present). vehicle_id.resolve_profile prefers this file
+# over config.VEHICLE_DEFAULTS, so you can retune the generic base here without
+# editing code. Deliberately NOT the X-Type's numbers. Override any field per
+# vehicle in a vehicles/<VIN>.yaml.
 
 vin: "unknown"
 make: "Unknown"
 model: "Unknown"
-year: 2000
+year: null
 engine: "Unknown"
 fuel_type: "petrol"           # petrol | diesel | hybrid | ev
 tank_litres: 60
-avg_consumption_l_per_100km: 9.5
-tire_size: "205/55R16"
-tire_pressure_front: 30       # PSI
-tire_pressure_rear: 30        # PSI
-drivetrain: "FWD"
-transmission: "auto"
+avg_consumption_l_per_100km: 9.0
+tire_size: "195/65R15"        # common generic size — replace per vehicle
+tire_pressure_front: 32       # PSI
+tire_pressure_rear: 32        # PSI
+drivetrain: "unknown"
+transmission: "unknown"
 known_issues: []
 source: "default"
