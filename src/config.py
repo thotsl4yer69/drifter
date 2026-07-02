@@ -261,7 +261,7 @@ def atomic_write_text(path, text: str) -> None:
         raise
 
 
-def atomic_write_json(path, data, *, indent: int = 2) -> None:
+def atomic_write_json(path, data, *, indent: int | None = 2) -> None:
     """Serialize `data` as JSON and write it to `path` atomically.
 
     See atomic_write_text for the crash-safety rationale.

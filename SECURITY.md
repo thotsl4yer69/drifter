@@ -30,7 +30,12 @@ within the law in your jurisdiction.
 - API keys live only in `/opt/drifter/.env` (git-ignored), seeded from
   `config/.env.example`.
 - Per-vehicle profiles (`vehicles/<VIN>.yaml`) contain a real VIN and are
-  git-ignored as operator PII.
+  operator PII. `.gitignore` prevents **new** VIN profiles from being committed
+  (only `vehicles/default.yaml` is tracked). One real profile
+  (`vehicles/SAJEA51D44XD39283.yaml`) was committed before this policy and is
+  still tracked — before publishing, remove it with
+  `git rm --cached vehicles/SAJEA51D44XD39283.yaml` (it stays on the Pi under
+  `/opt/drifter/vehicles/`). See `RELEASE-CHECKLIST.md`.
 
 If you are deploying from a fork or an older revision: **rotate any API keys
 that were ever committed to git history** (earlier revisions hardcoded live
@@ -38,8 +43,9 @@ OpenWeatherMap / Google Maps keys — treat them as compromised).
 
 ## Network exposure
 
-- The MQTT broker binds to `localhost:1883`; phones/clients reach the node over
-  HTTP/WS on the `10.42.0.0/24` hotspot subnet, never MQTT directly.
+- The MQTT broker binds to loopback `127.0.0.1:1883` (both Mosquitto and the
+  shipped `config/nanomq.conf`); phones/clients reach the node over HTTP/WS on
+  the `10.42.0.0/24` hotspot subnet, never MQTT directly.
 - The `/api` control surface is ACL-scoped to the hotspot subnet and localhost.
 - Service-control and OPSEC actions are gated by narrowly-enumerated `sudoers`
   drop-ins (the arsenal set deliberately excludes drive-only units).

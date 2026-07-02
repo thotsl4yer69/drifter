@@ -311,7 +311,7 @@ source ${DRIFTER_DIR}/venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet \
     python-can \
-    "paho-mqtt>=2.0" \
+    "paho-mqtt>=2.0,<3.0" \
     psutil \
     websockets \
     requests \
@@ -615,7 +615,7 @@ step 9 "Configuring Wi-Fi hotspot"
 HOTSPOT_PSK_SHOWN=""   # what to tell the operator at the end
 if nmcli con show "MZ1312_DRIFTER" &>/dev/null; then
     ok "Hotspot MZ1312_DRIFTER already configured — preserving PSK"
-    HOTSPOT_PSK_SHOWN="nmcli --show-secrets connection show MZ1312_DRIFTER"
+    HOTSPOT_PSK_SHOWN="Password: (unchanged — recover with: nmcli --show-secrets connection show MZ1312_DRIFTER)"
 else
     HOTSPOT_PSK="${DRIFTER_HOTSPOT_PSK:-}"
     if [ -z "$HOTSPOT_PSK" ]; then
@@ -638,7 +638,7 @@ else
         wifi-sec.key-mgmt wpa-psk \
         wifi-sec.psk "$HOTSPOT_PSK" 2>/dev/null
     ok "Hotspot: MZ1312_DRIFTER / 10.42.0.1 (PSK set — recover via nmcli --show-secrets)"
-    HOTSPOT_PSK_SHOWN="$HOTSPOT_PSK"
+    HOTSPOT_PSK_SHOWN="Password: ${HOTSPOT_PSK}"
 fi
 
 # ── 10. systemd Services ──
@@ -776,9 +776,8 @@ echo -e "  ${CYAN}Reboot now:${NC} sudo reboot"
 echo ""
 echo -e "  After reboot:"
 echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC}"
-echo -e "     Password: ${CYAN}${HOTSPOT_PSK_SHOWN}${NC}"
+echo -e "     ${HOTSPOT_PSK_SHOWN}"
 echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
-echo -e "     (or MQTT → ${CYAN}10.42.0.1:1883${NC})"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
 echo -e "  4. Screw OBD-II pigtail into USB2CANFD terminals"
 echo -e "  5. After first warm-up: ${CYAN}sudo /opt/drifter/venv/bin/python3 /opt/drifter/calibrate.py --auto${NC}"
