@@ -6,7 +6,6 @@ failed write must not leave a temp turd behind. These are the writers the
 audit flagged (calibration, TPMS map, settings, session summary, sync state).
 """
 import json
-import os
 
 import config
 
