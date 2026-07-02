@@ -22,6 +22,8 @@ from config import (
     CALIBRATION_FILE,
     COOLANT_NORMAL_HIGH,
     COOLANT_NORMAL_LOW,
+    EV_BATTERY_LIFE_AMBER,
+    EV_BATTERY_LIFE_RED,
     IDLE_RPM_WARM_HIGH,
     IDLE_RPM_WARM_LOW,
     LEVEL_AMBER,
@@ -85,6 +87,7 @@ class VehicleState:
     voltage: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     iat: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     maf: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    hybrid_batt_life: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     timestamps: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     coolant_ts: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     voltage_ts: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
@@ -438,6 +441,25 @@ def rule_active_dtcs(state: VehicleState):
             return (LEVEL_INFO,
                     f"Pending DTCs: {codes}. "
                     f"Intermittent faults detected — may self-clear or escalate.")
+    return None
+
+
+def rule_ev_battery_low(state: VehicleState):
+    """EV/hybrid traction-battery health (Mode 01 PID 0x5B, "hybrid battery pack
+    remaining life"). Only fires when the car actually reports it — a pure ICE
+    car never publishes drifter/ev/battery_life, so this is a no-op there."""
+    life = state.latest(state.hybrid_batt_life)
+    if life is None:
+        return None
+    if life <= EV_BATTERY_LIFE_RED:
+        return (LEVEL_RED,
+                f"HV battery pack life critically low: {life:.0f}%. Traction "
+                f"battery is heavily degraded — expect reduced range and power. "
+                f"Have the pack tested.")
+    if life <= EV_BATTERY_LIFE_AMBER:
+        return (LEVEL_AMBER,
+                f"HV battery pack life low: {life:.0f}%. Traction battery is "
+                f"degrading — monitor range and charge health.")
     return None
 
 
@@ -857,6 +879,7 @@ ALL_RULES = [
     rule_intake_temp,
     rule_voltage_overcharge,
     rule_active_dtcs,
+    rule_ev_battery_low,
     rule_stalled,
     # TPMS
     rule_tpms_low_pressure,
@@ -887,6 +910,7 @@ _DUAL_BANK_RULES = {rule_vacuum_leak_both, rule_bank_imbalance}
 # specific (fuel trims, coolant/thermostat, MAF, idle, cold-start, over-rev).
 _UNIVERSAL_RULES = {
     rule_alternator, rule_voltage_overcharge, rule_active_dtcs,
+    rule_ev_battery_low,
     rule_tpms_low_pressure, rule_tpms_rapid_loss, rule_tpms_temp,
 }
 
@@ -1017,6 +1041,8 @@ def on_message(client, userdata, msg):
                 state.iat.append(value)
             elif topic.endswith('/maf'):
                 state.maf.append(value)
+            elif topic.endswith('/battery_life'):
+                state.hybrid_batt_life.append(value)
 
             state.timestamps.append(ts)
 
@@ -1170,7 +1196,7 @@ def main():
 
     # Subscribe to telemetry domains used by diagnostic rules.
     # Uses wildcards matching the TOPICS hierarchy (drifter/{domain}/...).
-    for domain in ('engine', 'vehicle', 'power', 'diag', 'rf/tpms'):
+    for domain in ('engine', 'vehicle', 'power', 'diag', 'ev', 'rf/tpms'):
         client.subscribe(f"drifter/{domain}/#")
     client.loop_start()
 

@@ -461,6 +461,12 @@ VEHICLE_KNOWN_ISSUES = [
     "Jatco JF506E 5-speed automatic solenoid faults",
 ]
 
+# ── EV / hybrid traction-battery health (Mode 01 PID 0x5B) ──
+# Thresholds for the "hybrid battery pack remaining life" alert. Only fires on a
+# car that actually reports 0x5B (EV/hybrid); a pure ICE car never publishes it.
+EV_BATTERY_LIFE_AMBER = int(os.getenv("EV_BATTERY_LIFE_AMBER", "70"))  # % remaining
+EV_BATTERY_LIFE_RED = int(os.getenv("EV_BATTERY_LIFE_RED", "40"))     # % remaining
+
 # ── Alert Levels ──
 LEVEL_OK = 0
 LEVEL_INFO = 1
