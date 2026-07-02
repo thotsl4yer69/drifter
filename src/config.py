@@ -746,6 +746,8 @@ SERVICES = [
     # Counter-surveillance — Ghost Protocol (Shade Core hardware + sw correlator)
     "drifter-ghost",         # ghost_protocol.py — tracker/IMSI/ALPR/RF correlator
     "drifter-ghost-voice",   # speaks drifter/ghost/alert via alert_message
+    # Multi-vehicle — VIN detect → active profile (drives per-car thresholds)
+    "drifter-vehicleid",     # vehicle_id.py — publishes drifter/vehicle/profile
 ]
 
 # ── Modes ──
@@ -800,6 +802,7 @@ SHARED_SERVICES = [
     "drifter-autoconnect", # Wi-Fi hotspot auto-connect + AP fallback (both modes)
     "drifter-ghost",       # counter-surveillance correlator (runs in both modes)
     "drifter-ghost-voice", # speaks ghost alerts (runs in both modes)
+    "drifter-vehicleid",   # VIN → active vehicle profile (runs in all modes)
 ]
 # Lean diagnostics floor (RAM safety valve). A curated SUBSET of SERVICES —
 # vehicle telemetry + driver-safety only, deliberately excluding every heavy
@@ -827,6 +830,7 @@ DIAG_SERVICES = [
     "drifter-homesync",    # background rsync to home node
     "drifter-weather",     # OpenWeatherMap poller (network-only, light)
     "drifter-location",    # Elevation + Places (network-only, light)
+    "drifter-vehicleid",   # VIN → active profile (lightweight; drives per-car thresholds)
 ]
 
 MODES = {

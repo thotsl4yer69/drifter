@@ -13,6 +13,10 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/opt/drifter/.env
+# Part of the diagnostics core (config.DIAG_SERVICES): it publishes the active
+# vehicle profile every other diagnostic reads. Protect it from the global
+# OOM-killer so a heavy service can't take the car's identity down with it.
+OOMScoreAdjust=-800
 
 [Install]
 WantedBy=multi-user.target
