@@ -53,6 +53,11 @@ def _afr() -> float:
     return DIESEL_AFR if FUEL_TYPE == 'diesel' else AFR_STOICH
 
 
+# True when the active vehicle burns fuel (ICE/diesel/hybrid). A pure EV has no
+# MAF and no fuel flow, so the MAF→fuel math is skipped for it. Recomputed at
+# startup and on a live drifter/vehicle/profile update.
+IS_COMBUSTION = True
+
 MAX_TICK_DT_SEC = 5.0      # ignore distance/fuel attribution across stalls > 5s
 MAF_STALE_SEC = 5.0        # don't report cur_l/100 from stale MAF
 
@@ -95,7 +100,7 @@ class TripState:
             if km > 0 and km < 1.0:  # sanity cap
                 self.distance_km += km
 
-        if maf_gps is not None:
+        if maf_gps is not None and IS_COMBUSTION:
             self.last_maf_gps = float(maf_gps)
             self.last_maf_ts = ts
             # Fuel mass flow = MAF / AFR (g/s). Convert g/s -> L/s -> L
@@ -125,7 +130,7 @@ class TripState:
             and self.last_ts is not None
             and self.last_ts - self.last_maf_ts <= MAF_STALE_SEC
         )
-        if maf_fresh and self.last_speed_kph > 1.0:
+        if maf_fresh and self.last_speed_kph > 1.0 and IS_COMBUSTION:
             litres_per_hour = self.last_maf_gps / _afr() * 3600.0 / 1000.0 / _density()
             cur_l_per_100 = round(litres_per_hour / max(self.last_speed_kph, 0.1) * 100.0, 2)
         avg_l_per_100 = None
@@ -169,14 +174,23 @@ def _load_config() -> dict:
         return {}
 
 
+def _apply_profile() -> None:
+    """Re-read the powertrain from the active vehicle profile. Sets FUEL_TYPE
+    (density/AFR) and IS_COMBUSTION (whether the MAF→fuel math applies at all —
+    a pure EV has neither MAF nor fuel flow)."""
+    global FUEL_TYPE, IS_COMBUSTION
+    FUEL_TYPE = vehicle_profile.fuel_type()
+    IS_COMBUSTION = vehicle_profile.is_combustion()
+
+
 def main() -> None:
-    global FUEL_TYPE
+    global FUEL_TYPE, IS_COMBUSTION
     log.info("DRIFTER Trip Computer starting...")
     cfg = _load_config()
-    # Fuel math is per-vehicle: diesel has a different density/AFR, and tank +
-    # baseline consumption vary by car. Take them from the active vehicle
-    # profile, with config/trip.yaml as an operator override on top.
-    FUEL_TYPE = vehicle_profile.fuel_type()
+    # Fuel math is per-vehicle: diesel has a different density/AFR, an EV has no
+    # fuel at all, and tank + baseline consumption vary by car. Take them from
+    # the active vehicle profile, with config/trip.yaml as an operator override.
+    _apply_profile()
     state = TripState(
         fuel_price=float(cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L)),
         tank_l=float(cfg.get('tank_litres',
@@ -233,6 +247,13 @@ def main() -> None:
                 }))
                 # Clear accumulators so the next session starts at zero even if no 'start' event fires.
                 state.reset()
+        elif topic == TOPICS.get('vehicle_profile') or topic.endswith('/vehicle/profile'):
+            prof = data.get('profile') if isinstance(data, dict) else None
+            if isinstance(prof, dict):
+                vehicle_profile.set_active(prof)
+                _apply_profile()
+                log.info(f"Vehicle profile applied — fuel_model={FUEL_TYPE}, "
+                         f"combustion={IS_COMBUSTION}")
 
     client.on_message = on_message
 
@@ -253,6 +274,7 @@ def main() -> None:
         (TOPICS['drive_session'], 0),
         (TOPICS['weather_current'], 0),
         (TOPICS['location_elevation'], 0),
+        (TOPICS['vehicle_profile'], 0),
     ])
     client.loop_start()
     log.info(f"Trip Computer LIVE — fuel £{state.fuel_price}/L, tank {state.tank_l}L")
