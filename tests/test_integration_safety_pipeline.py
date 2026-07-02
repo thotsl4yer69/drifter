@@ -220,12 +220,15 @@ def _reset_module_globals():
     telemetry_batcher._buffers.clear()
 
     # adaptive_thresholds learner — rebuild a learner with no persisted state.
-    from adaptive_thresholds import DEFAULT_BASELINES, Learner
+    from adaptive_thresholds import DEFAULT_BASELINES, LEARNED_KEYS, Learner
     fresh = Learner.__new__(Learner)
     fresh.samples = adaptive_thresholds.defaultdict(
         lambda: adaptive_thresholds.deque(maxlen=20000))
     fresh.session_count = 0
     fresh.baselines = dict(DEFAULT_BASELINES)
+    # Powertrain-filtered learned set (mirrors __init__); the full set here since
+    # the pipeline test drives the combustion X-Type default.
+    fresh.learned_keys = set(LEARNED_KEYS)
     fresh.current_coolant = 0.0
     fresh.current_rpm = 0.0
     fresh.current_speed = 0.0
