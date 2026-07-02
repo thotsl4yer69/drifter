@@ -69,6 +69,7 @@ def _config_base() -> dict:
         ),
         "redline_rpm": getattr(config, "REDLINE_RPM", 6500),
         "engine_code": getattr(config, "ENGINE_CODE", None),
+        "displacement_cc": getattr(config, "DISPLACEMENT_CC", None),
         "drivetrain": getattr(config, "DRIVETRAIN", "unknown"),
         "transmission": getattr(config, "TRANSMISSION", "unknown"),
         # fuel / trip
@@ -274,6 +275,16 @@ def known_issues() -> list:
 def engine_code() -> str | None:
     """Manufacturer engine code (e.g. 'AJ-V6'), if the profile carries one."""
     return get().get("engine_code")
+
+
+def displacement_l() -> float | None:
+    """Engine displacement in litres, or None if unknown. Used for the
+    speed-density (MAP-based) air-mass estimate on MAF-less cars."""
+    cc = get().get("displacement_cc")
+    try:
+        return float(cc) / 1000.0 if cc else None
+    except (TypeError, ValueError):
+        return None
 
 
 def prompt_identity() -> str:

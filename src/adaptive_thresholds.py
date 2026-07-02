@@ -59,6 +59,13 @@ DEFAULT_BASELINES = {
 }
 
 
+# Learned keys that only make sense on a combustion engine (fuel trims + MAF),
+# and the subset that needs a second bank. A pure EV / single-bank engine never
+# learns these — otherwise it would build meaningless baselines from stale zeros.
+_COMBUSTION_KEYS = {'stft1', 'stft2', 'ltft1', 'ltft2', 'maf'}
+_BANK2_KEYS = {'stft2', 'ltft2'}
+
+
 class Learner:
     def __init__(self) -> None:
         self.samples: dict[str, deque] = defaultdict(lambda: deque(maxlen=20000))
@@ -72,10 +79,36 @@ class Learner:
             k: v for k, v in vehicle_profile.calibration().items()
             if k in DEFAULT_BASELINES
         })
+        # The set of sensors we actually learn, filtered for this powertrain.
+        self.learned_keys = self._eligible_keys()
         self.current_coolant = 0.0
         self.current_rpm = 0.0
         self.current_speed = 0.0
         self._load()
+
+    @staticmethod
+    def _eligible_keys() -> set:
+        """Which LEARNED_KEYS apply to the ACTIVE vehicle's powertrain/topology.
+
+        A pure EV drops the fuel-trim + MAF baselines (no combustion); a
+        single-bank engine drops the bank-2 (stft2/ltft2) baselines. A V6 (or any
+        unidentified car → config default) keeps them all, so the X-Type learns
+        exactly as before."""
+        keys = set(LEARNED_KEYS)
+        if not vehicle_profile.is_combustion():
+            keys -= _COMBUSTION_KEYS
+        if vehicle_profile.bank_count() < 2:
+            keys -= _BANK2_KEYS
+        return keys
+
+    def refresh_profile(self) -> None:
+        """Re-apply the active vehicle profile (recompute the eligible learned
+        set + re-seed any profile-specified calibration). Called on a live
+        drifter/vehicle/profile update so a VIN change re-targets the learner."""
+        self.learned_keys = self._eligible_keys()
+        for k, v in vehicle_profile.calibration().items():
+            if k in DEFAULT_BASELINES:
+                self.baselines[k] = v
 
     def _load(self) -> None:
         if not STATE_FILE.exists():
@@ -108,7 +141,8 @@ class Learner:
         )
 
     def ingest(self, key: str, value: float) -> None:
-        if key not in LEARNED_KEYS:
+        # Only learn keys that apply to this powertrain (self.learned_keys).
+        if key not in self.learned_keys:
             return
         # rpm/maf are always eligible at warm idle (matches above gate)
         if not self._eligible():
@@ -118,7 +152,8 @@ class Learner:
     def end_session(self) -> dict[str, float]:
         """At session end, update baselines if we collected enough."""
         updated = False
-        for key, baseline_key in LEARNED_KEYS.items():
+        for key in self.learned_keys:
+            baseline_key = LEARNED_KEYS[key]
             buf = self.samples.get(key)
             if not buf or len(buf) < ADAPTIVE_LEARN_MIN_SAMPLES:
                 continue
@@ -199,6 +234,13 @@ def on_message(client, userdata, msg) -> None:
                 'reason': 'session_end',
                 'ts': time.time(),
             }))
+    elif topic == TOPICS.get('vehicle_profile') or topic.endswith('/vehicle/profile'):
+        prof = data.get('profile') if isinstance(data, dict) else None
+        if isinstance(prof, dict):
+            vehicle_profile.set_active(prof)
+            _learner.refresh_profile()
+            log.info(f"Vehicle profile applied — learning "
+                     f"{sorted(_learner.learned_keys)}")
 
 
 def main() -> None:
@@ -231,8 +273,11 @@ def main() -> None:
     client.subscribe([
         (TOPICS['snapshot'], 0),
         (TOPICS['drive_session'], 0),
+        (TOPICS['vehicle_profile'], 0),
     ])
     client.loop_start()
+    # Apply whatever profile is already on disk before the first learn cycle.
+    _learner.refresh_profile()
     _learner.publish(client)
     log.info("Adaptive Thresholds LIVE")
 

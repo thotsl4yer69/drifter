@@ -8,15 +8,29 @@ from unittest.mock import patch
 
 import pytest
 
+import vehicle_profile as vp
+
+
+@pytest.fixture(autouse=True)
+def _reset_profile():
+    # The Learner's eligible key set depends on the active profile — keep each
+    # test isolated at the X-Type default.
+    vp.reload()
+    yield
+    vp.set_active(None)
+
+
+def _new_learner():
+    from adaptive_thresholds import Learner
+    with patch('adaptive_thresholds.STATE_FILE') as mock_path:
+        mock_path.exists.return_value = False
+        return Learner()
+
 
 @pytest.fixture()
 def fresh_learner():
     """Return a fresh Learner with no persisted state."""
-    from adaptive_thresholds import Learner
-    with patch('adaptive_thresholds.STATE_FILE') as mock_path:
-        mock_path.exists.return_value = False
-        learner = Learner()
-    return learner
+    return _new_learner()
 
 
 def _warm_idle_learner(learner):
@@ -90,6 +104,40 @@ def test_end_session_requires_full_min_samples_per_key(fresh_learner):
         fresh_learner.ingest('voltage', 13.0)
     baselines = fresh_learner.end_session()
     assert baselines['voltage_baseline'] == DEFAULT_BASELINES['voltage_baseline']
+
+
+def test_v6_default_keeps_all_learned_keys():
+    from adaptive_thresholds import LEARNED_KEYS
+    learner = _new_learner()  # default profile = X-Type V6, combustion
+    assert learner.learned_keys == set(LEARNED_KEYS)
+
+
+def test_ev_drops_combustion_learned_keys():
+    from adaptive_thresholds import _COMBUSTION_KEYS
+    vp.set_active({'fuel_type': 'ev', 'engine': 'Electric'})
+    learner = _new_learner()
+    assert not (_COMBUSTION_KEYS & learner.learned_keys)  # no fuel-trim/MAF
+    assert {'rpm', 'voltage'} <= learner.learned_keys      # universal kept
+    # A combustion-key sample is ignored on an EV.
+    _warm_idle_learner(learner)
+    learner.ingest('maf', 3.8)
+    assert 'maf' not in learner.samples
+
+
+def test_single_bank_drops_bank2_keys():
+    vp.set_active({'engine': '2.0 I4', 'fuel_type': 'petrol'})  # bank_count -> 1
+    learner = _new_learner()
+    assert 'stft2' not in learner.learned_keys
+    assert 'ltft2' not in learner.learned_keys
+    assert {'stft1', 'ltft1', 'maf'} <= learner.learned_keys
+
+
+def test_refresh_profile_retargets_learned_keys():
+    learner = _new_learner()          # X-Type: all keys
+    assert 'maf' in learner.learned_keys
+    vp.set_active({'fuel_type': 'ev', 'engine': 'Electric'})
+    learner.refresh_profile()
+    assert 'maf' not in learner.learned_keys
 
 
 def test_end_session_increments_session_count(fresh_learner):
