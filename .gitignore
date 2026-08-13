@@ -1,49 +1,65 @@
+# Python/runtime
 __pycache__/
 .pytest_cache/
 *.pyc
 *.pyo
 venv/
+.venv/
 .env
+.env.local
+.env.*.local
 logs/
 *.log
 *.wav
 *.db
+*.sqlite
+*.sqlite3
 *.onnx
 *.onnx.json
 calibration.json
 settings.json
 tpms_sensors.json
+outputs/
+reports/
+
+# Runtime data. Mechanic/cockpit/Android data packages below are source and are
+# explicitly re-included.
 data/
-# ...but the mechanic knowledge-base lives under src/data/mechanic and
-# IS source code — track it explicitly.
 !src/data/
 !src/data/**
-# cockpit-v4's data adapter is source code, not a runtime data dir — track it.
 !cockpit-v4/src/data/
 !cockpit-v4/src/data/**
-# The Android app's Kotlin `data/` package is ALSO source — without this the
-# unanchored `data/` rule swallows the whole data layer (models, net clients,
-# repository) and ships a non-compiling app.
 !android/app/src/main/java/com/mz1312/drifter/data/
 !android/app/src/main/java/com/mz1312/drifter/data/**
-reports/
-.vscode/
-.idea/
 
-# OMC/superpowers runtime — local agent state, not for the repo
-.omc/
-.superpowers/
-
-# Feature-side additions
-.claude/
-.venv/
-outputs/
-
-# Per-vehicle profiles are keyed by real VIN (vehicles/<VIN>.yaml) and are
-# operator PII, not sample data. Keep the generic default.yaml tracked; treat
-# every real VIN profile as local-only so a public repo never carries a VIN.
-# An already-committed VIN profile stays tracked until the operator runs
-# `git rm --cached vehicles/<VIN>.yaml` (see RELEASE-CHECKLIST.md).
+# Per-vehicle profiles are keyed by real VIN and are operator PII.
 vehicles/*.yaml
 !vehicles/default.yaml
 vehicles/*.json
+
+# Android/local build state and signing material
+android/local.properties
+local.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+android/**/build/
+.gradle/
+
+# IDE / agent-local state
+.vscode/
+.idea/
+.omc/
+.superpowers/
+.claude/
+
+# Backups / local archives
+*.bak
+*.zip
+
+# OS noise
+.DS_Store
+Thumbs.db
