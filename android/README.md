@@ -1,150 +1,154 @@
-# Drifter Diagnostics — Android companion app
+# DRIFTER Diagnostics — Android Companion
 
-A field-diagnostics phone app for the **DRIFTER** Raspberry Pi telemetry node
-(MZ1312 UNCAGED TECHNOLOGY). The Pi runs **headless** in the Jaguar, so when
-something goes wrong there is no screen to look at — this app is the operator's
-window into the node from the tethered phone.
+**Native Android diagnostics and control surface for the DRIFTER Raspberry Pi vehicle node.**
 
-It is **not** a re-skin of the web dashboard. The cockpit at `10.42.0.1:8080`
-shows you telemetry *once you can reach it*. This app is the other half:
-**figure out why you can't reach it, fix it, and have the node watch itself** —
-proactive, agentic, and instrument-grade.
+> **Status: Supporting software prototype.** This app is part of the wider [DRIFTER](../README.md) hardware-integrated prototype. It helps inspect node health, telemetry and logs from a tethered phone; it is not represented as an instrument-certified diagnostic tool or a universal vehicle-repair system.
 
-## What it does that the dashboard can't
+## Why it exists
 
-| Feature | Why it matters headless |
-|---|---|
-| **Proactive alerts** | A background `WorkManager` job checks the node ~every 15 min even when the app is closed, and pushes an Android notification the moment it goes **offline / degrades / recovers** — staying silent on harmless "dongle not plugged in" states. Turns "open to check" into "it tells you." |
-| **Agentic AI assistant** | A free-form troubleshooting chat that **investigates on its own**: it runs the Anthropic tool-use loop with read-only tools (`get_logs`, `get_healthz`, `get_telemetry`) and pulls the exact evidence it needs — not just a pre-bundled snapshot. Backed by **Claude** (works even when the Pi is down) with the **Pi's on-board LLM** as fallback. One-tap **"Diagnose with AI"** from any problem. |
-| **Connection Doctor** | Probes every port the Pi should expose (8080/8081/8082/8443/35000/1883) **from the phone**, with latency + a plain-English verdict and fix steps. Runs even when the node is totally unreachable — the one diagnostic the web UI can never give you. |
-| **Cockpit telemetry** | The live `ws://host:8081` fan-out rendered as a real instrument cluster: Canvas arc **gauges** (RPM, coolant, speed, battery, fuel, load, throttle, intake) with green→amber→red threshold bands and a rolling **sparkline** trend under each. |
-| **Service triage + logs** | Parses `/healthz`, groups units by domain, distinguishes *failed* (HTTP 503) from *hardware-pending* (expected on the bench), and shows each service's recent `journalctl` tail on demand. Restart / mode-switch over the gated `/api`, surfacing the node's own refusals (403 off-subnet, 409 in drive mode). |
-| **Arsenal / Carsenal** | Read-only status fan-out for the Kali-backed red-team + CAN-offense tooling (CAN discovery & captures, Flipper, Marauder, Kismet, HID, Ghost), foot-mode gate enforced. |
-| **Trust + onboarding** | Claude key stored **encrypted** (Android Keystore), one-tap **"Detect node on this Wi-Fi"** (the hotspot gateway is the Pi), and a live **link pip** in the app bar on every tab. |
-| **Knows the gotchas** | E.g. MQTT 1883 is loopback-only since the 2026-05-18 hardening, so "closed from the phone" is reported as **correct**, not a fault — a naive port scan would cry wolf. |
+The DRIFTER Pi normally runs headless. The Android companion provides a local operator interface when a browser dashboard alone is not enough — especially when the phone needs to determine whether the node is reachable before the normal dashboard can be used.
+
+The app focuses on:
+
+- node health and reachability;
+- connection diagnostics;
+- live telemetry presentation;
+- service status and bounded administrative actions;
+- read-only log retrieval;
+- optional AI-assisted troubleshooting based on the evidence the app can retrieve.
 
 ## Architecture
 
+```text
+Android phone
+    │
+    ├── HTTP health/API requests
+    ├── WebSocket telemetry
+    └── optional cloud AI request
+            │
+            ▼
+    DRIFTER Raspberry Pi
+      health / logs / telemetry
+            │
+            ▼
+      bounded operator UI
 ```
+
+Repository layout:
+
+```text
 data/
-  model/        Healthz, ModeInfo, LogsResponse, PiQueryResponse, Chat, TelemetryEvent, ApiResult
-  net/          DrifterApi (OkHttp), ConnectionDoctor (TCP probes), TelemetrySocket (WS),
-                AssistantClient (Anthropic Messages API + tool-use loop), NetworkInspector
-  alerts/       HealthWatchWorker (CoroutineWorker), HealthWatch (scheduler),
-                AlertNotifier (channel + notification), AlertState (transition dedupe)
-  store/        SettingsStore (DataStore), SecureStore (Keystore-encrypted API key)
-  Knowledge.kt        per-service role + remediation + hw-pending/Kali tags
-  AssistantEngine.kt  system prompt (embedded architecture) + snapshot + tool defs
-  DrifterRepository.kt  + the agentic tool executor
+  model/       API and telemetry models
+  net/         HTTP/WebSocket clients and connection diagnostics
+  alerts/      WorkManager health checks and notifications
+  store/       DataStore + Android Keystore-backed secret storage
+  Knowledge.kt
+  AssistantEngine.kt
+  DrifterRepository.kt
+
 ui/
-  DrifterViewModel.kt   one AndroidViewModel: polling, health, doctor, services, logs,
-                        arsenal, telemetry (+ history), chat
-  overview/ doctor/ assistant/ services/ arsenal/
-  telemetry/  Gauge.kt (Canvas arc gauge + sparkline) + screen
+  overview/
+  doctor/
+  assistant/
+  services/
+  telemetry/
   settings/
-  common/    Loadable, reusable "glass" Compose components
-  theme/     MZ1312 "graphite glass" design system (Color/Type/Theme)
+  common/
+  theme/
 ```
 
-### The agentic AI assistant
+## Main capabilities
 
-The assistant diagnoses *anything* because it reasons over live evidence and can
-**fetch more on demand** — not a hard-coded checklist:
+### Connection Doctor
 
-- **Tools**: it runs the Anthropic tool-use loop (`AssistantClient`, capped at 6
-  steps). On `stop_reason: "tool_use"` it echoes the assistant turn verbatim
-  (preserving adaptive-thinking blocks), runs the requested read-only tool, and
-  returns the result — `get_logs(service)` (any unit, via the Pi's
-  **`GET /api/logs/<unit>`** endpoint), `get_healthz`, `get_telemetry`.
-- **Seed snapshot**: each conversation starts with `/healthz`, the Connection
-  Doctor probes, and the logs of any already-failed service.
-- **Brain**: with a Claude API key (Settings) the cloud model answers and keeps
-  working even when the Pi is unreachable; on any cloud failure — or with no key
-  — it falls back to the Pi's own on-board LLM (`POST /api/query`).
-- **Client**: `AssistantClient` calls `POST https://api.anthropic.com/v1/messages`
-  directly over OkHttp (the official Anthropic *Java* SDK targets the server JVM
-  and is a poor fit on Android). Default model `claude-opus-4-8`, adaptive
-  thinking, no sampling params, `stop_reason: "refusal"` handled. The key is
-  stored **encrypted** in the Android Keystore (`SecureStore`), not plaintext.
+Probes the expected DRIFTER interfaces from the phone and reports which paths are reachable. A failed probe is evidence about connectivity, not proof of a specific hardware or software fault.
 
-### Pi-side additions
+### Telemetry UI
 
-The app drives the existing dashboard contract plus one additive, gated,
-tested endpoint: **`GET /api/logs/<unit>`** (read-only `journalctl` tail; same
-`10.42.0.0/24` ACL; allowlisted to monitored units; literal arg vector — never a
-shell). See `src/web_dashboard_handlers.py` and `tests/test_web_dashboard_handlers.py`.
+Consumes the node's live telemetry WebSocket and renders driver-facing values and trends. The visual thresholds are operational UI aids; they should be reconciled with the active vehicle profile and deterministic rule engine rather than treated as manufacturer diagnostic specifications.
 
-### Stack
+### Service health and logs
 
-- **Kotlin + Jetpack Compose (Material 3)**, single-Activity, bottom-nav,
-  dark-first instrument theme.
-- **OkHttp** (HTTP + WebSocket + Anthropic API), **kotlinx.serialization**,
-  **DataStore** + a direct **Android Keystore** AES-256-GCM helper for the
-  encrypted key (no maintenance-mode `security-crypto`), **WorkManager**
-  (background watch). No Hilt — a tiny hand-rolled `AppContainer`.
-- Talks plain **HTTP** to the dashboard (all `/api` is server-gated to
-  `127.0.0.1` + `10.42.0.0/24`, so the phone must be on the `MZ1312_DRIFTER`
-  hotspot). `/healthz` is not gated and works from any reachable network.
+Reads `/healthz` and the bounded log API exposed by the Pi. Hardware-pending services can be distinguished from actual failures where the node reports that state.
+
+Administrative actions are subject to the Pi-side access controls and operating-mode gates. The Android application should surface server refusals rather than attempting to bypass them.
+
+### Background health checks
+
+A WorkManager job can periodically check node health and notify on meaningful state transitions. Android scheduling is best-effort; the operating system may defer background work based on power and app state.
+
+### Optional AI-assisted troubleshooting
+
+The application can give an AI assistant a bounded set of **read-only evidence tools**, such as health, telemetry and allowed log retrieval. The assistant may request additional evidence through those tools before responding.
+
+This is a troubleshooting aid, not an authority. Model output can be wrong, incomplete or based on stale data. Vehicle safety and repair decisions should be verified against the actual vehicle, service information and deterministic evidence.
+
+If a cloud AI provider is configured, its API key is stored using Android Keystore-backed application storage rather than committed to this repository. If the cloud path is unavailable, supported builds can fall back to the Pi-side local assistant path where configured.
+
+Provider model identifiers are configuration details and may change independently of this repository; do not treat an old README model name as a permanent compatibility guarantee.
+
+## Security and trust boundaries
+
+- real API keys must never be committed;
+- the Google Maps key, when used, is injected at build time;
+- cloud-AI credentials are entered by the user and stored through Android Keystore-backed storage;
+- sensitive node operations remain gated on the Pi/server side;
+- read-only diagnostics should remain read-only even if the assistant requests a different action;
+- network reachability is not authentication by itself.
+
+The repository uses examples such as `AIza...` only as placeholders. Supply real keys through local Gradle properties or CI secrets and restrict them to the intended API/application/signing identity.
+
+Example local configuration:
+
+```properties
+MAPS_API_KEY=your-restricted-android-maps-key
+```
+
+Do not paste live keys into documentation, source or command history that will be committed.
+
+## Stack
+
+- Kotlin + Jetpack Compose / Material 3;
+- OkHttp for HTTP/WebSocket integration;
+- kotlinx.serialization;
+- DataStore;
+- Android Keystore-backed encrypted application secret storage;
+- WorkManager;
+- hand-rolled application container rather than a mandatory DI framework.
 
 ## Build
 
-CI builds a debug APK on every push (`.github/workflows/android-build.yml`) and
-uploads it as the **`drifter-diagnostics-debug-apk`** artifact on the run — grab
-it from the Actions tab, no Android Studio needed.
-
-To build locally (requires the **Android SDK**, API 35):
+From the `android` directory:
 
 ```bash
-cd android
-./gradlew assembleDebug          # APK at app/build/outputs/apk/debug/
-./gradlew installDebug           # install to a connected phone
+./gradlew assembleDebug testDebugUnitTest
 ```
 
-Gradle wrapper 8.9 is committed. Toolchain: AGP 8.7, Kotlin 2.1, compileSdk 35,
-minSdk 26 (Android 8.0+). CI also runs `testDebugUnitTest` as a gate.
+The debug APK is produced under the normal Gradle output path in `app/build/outputs/apk/debug/`.
 
-### Google Maps key (for the Map tab)
+The repository CI also builds/tests the Android project. Treat a green compile/unit-test run as software evidence, not proof that every phone/Pi/vehicle/network combination has been field validated.
 
-The key is injected from a Gradle property into the manifest — **never
-committed**. Without it the app still builds and runs; only the Map tab can't
-load tiles (it shows a banner saying so). To enable maps, supply your key one of:
+## Typical local use
 
-```properties
-# ~/.gradle/gradle.properties  (recommended for local builds)
-MAPS_API_KEY=AIza...your-key...
-```
+1. Connect the phone to the DRIFTER network used by the test node.
+2. Open the app and confirm the node address in Settings.
+3. Check the link/health state.
+4. Use Connection Doctor if the normal dashboard path is unavailable.
+5. Inspect health, logs and telemetry before taking any administrative action.
+6. Configure the optional AI assistant only if you want that external/local model path enabled.
 
-```bash
-./gradlew assembleDebug -PMAPS_API_KEY=AIza...   # one-off
-# or, e.g. in CI:  export ORG_GRADLE_PROJECT_MAPS_API_KEY=AIza...
-```
+See [`FIELD_TEST.md`](FIELD_TEST.md) for the repository's field-test workflow.
 
-**CI builds** (the `drifter-diagnostics-debug-apk` artifact) read the key from a
-GitHub Actions secret — add it once under **Settings → Secrets and variables →
-Actions → `MAPS_API_KEY`** and every CI APK from then on has maps baked in. The
-key never lands in source: `android-build.yml` passes it through as
-`ORG_GRADLE_PROJECT_MAPS_API_KEY`, and an unset secret just yields the "no key"
-banner.
+## Evidence boundary
 
-Mint it in Google Cloud (Maps SDK for Android) and **restrict it** to the
-`com.mz1312.drifter` package + your signing cert's SHA-1 so a leaked copy is
-useless.
+This application demonstrates **native Android + edge-node integration**, not certified automotive diagnostics. It cannot guarantee that a Pi is healthy simply because a port responds, that a vehicle fault is correctly diagnosed by an AI model, or that a background Android task will run at an exact interval.
 
-## Using it
+The Pi's deterministic diagnostics, actual OBD data and physical vehicle remain the sources that need verification.
 
-> Going to the car? **[`FIELD_TEST.md`](FIELD_TEST.md)** is the copy-paste
-> deploy + smoke-test runbook (get the APK, connect, what "good" looks like,
-> and the connection-trouble path).
+## Development provenance
 
-1. Tether the phone to the **MZ1312_DRIFTER** Wi-Fi.
-2. Launch the app — it defaults to `10.42.0.1:8080`. Or open **Settings** and tap
-   **Detect on this Wi-Fi** to fill the host from the hotspot gateway.
-3. The **app-bar pip** shows the link state on every tab; **Overview** has the
-   detail. If it's unreachable, tap **Ask the assistant what's wrong** or **Run
-   Connection Doctor**.
-4. **Settings → AI assistant brain**: paste a Claude API key (stored encrypted)
-   for the cloud brain — recommended, it works even when the Pi is down. Without
-   a key the assistant uses the Pi's on-board LLM (reachable only while the Pi
-   is).
-5. **Settings → Background alerts**: toggle on to have the node watched in the
-   background and be notified when it degrades or drops.
+The DRIFTER Android companion is part of an authored MAZLABZ project developed with AI coding agents as part of the normal engineering workflow. AI assistance supports implementation, research, refactoring and testing; architecture, integration, access boundaries, field testing and acceptance remain the project owner's responsibility.
+
+## Portfolio value
+
+The app demonstrates the ability to build a **native mobile operator interface around a real edge system**: Android networking, WebSockets, background work, secure local secret handling, service diagnostics and live telemetry UI all connected to a Raspberry Pi deployment.
