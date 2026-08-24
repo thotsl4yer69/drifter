@@ -554,11 +554,14 @@ def main():
             # filter to devices that accept our (SAMPLE_RATE, mono, int16)
             # so we land on `sysdefault`/`plughw` which auto-resample.
             try:
-                if not pa.is_format_supported(
-                    float(SAMPLE_RATE), input_device=idx,
-                    input_channels=CHANNELS, input_format=pyaudio.paInt16,
-                ):
-                    continue
+                # Trial-open instead of is_format_supported(): PortAudio's
+                # capability check misreports ALSA plug layers (e.g. a
+                # driftermic alias resampling 48k-native USB mics down to
+                # SAMPLE_RATE), rejecting devices that open fine.
+                _t = pa.open(format=pyaudio.paInt16, channels=int(CHANNELS),
+                             rate=int(float(SAMPLE_RATE)), input=True,
+                             input_device_index=idx, frames_per_buffer=1024)
+                _t.close()
             except Exception:
                 continue
             candidates.append((idx, info.get('name', f'device {idx}')))

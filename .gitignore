@@ -63,3 +63,4 @@ android/**/build/
 # OS noise
 .DS_Store
 Thumbs.db
+*.bak-*

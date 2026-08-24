@@ -2,12 +2,16 @@
 #
 # Paste this block into thotsl4yer69/fleet/inventory.yaml under the
 # `nodes:` mapping (or wherever the contract puts per-node entries).
-# Replace <pi-ip> with whatever `arp -a` reveals on your LAN.
 # Once `mesh deploy drifter` returns 0 and `mesh status drifter` is ok,
 # bump status: yellow → green.
+#
+# Rewritten from verified ground truth 2026-08-24 (live audits: network,
+# LLM, voice, CAN, security). NO SECRET VALUES ARE STORED IN THIS FILE.
 
 drifter:
-  ssh_host:    kali@<pi-ip>                  # last known: 10.246.228.156
+  ssh_host:    kali@192.168.1.112           # home WiFi (DG2144-B817) DHCP lease, client mode
+                                            # bench fallback: join MZ1312_DRIFTER WPA(TKIP), then 10.42.0.1
+                                            # future stable access: Tailscale host 'drifter' (install done, join pending auth)
   ssh_user:    kali
   repo:        git@github.com:thotsl4yer69/drifter.git
   branch:      main
@@ -16,21 +20,23 @@ drifter:
   # ── DEPLOY_CONTRACT artefacts ──────────────────────────────────────
   deploy:      scripts/oneshot.sh            # stage gates 10/20/30/40 → /healthz
   diagnose:    drifter diagnose --json       # /usr/local/bin/drifter installed by oneshot.sh
-  healthz:     http://10.42.0.1:8080/healthz # 200 = ok, 503 = degraded; 2s server-side cache
+  healthz:     http://192.168.1.112:8080/healthz # 200 = ok, 503 = degraded; 2s server-side cache (bench/AP path: http://10.42.0.1:8080/healthz)
 
   # ── Operational metadata ───────────────────────────────────────────
   vehicle:     "2004 Jaguar X-Type 2.5 V6 (AJ-V6)"
-  hardware:    "Raspberry Pi 4 / Kali ARM64"
-  hotspot:     MZ1312_DRIFTER                # WPA2 PSK: per-node (nmcli --show-secrets connection show MZ1312_DRIFTER)
+  hardware:    "Raspberry Pi 5 Model B Rev 1.1, 16GB RAM, Kali GNU/Linux Rolling aarch64, 128GB SD (mmcblk0, NO NVMe)"
+  hotspot:     MZ1312_DRIFTER                # rescue-only AP (autoconnect falls back to it after 90s);
+                                            # PSK intentionally NOT recorded here — rotation still pending,
+                                            # PSK remains embedded in install.sh
   hotspot_ip:  10.42.0.1/24
   ports:
-    dashboard: 8080
+    dashboard: 8080                          # 0.0.0.0 bind (verified via ss, 2026-08-24)
     ws_telem:  8081
     ws_audio:  8082
     realdash:  35000                         # TCP, not UDP
-    mqtt:      1883
+    mqtt:      1883                          # LOOPBACK-BOUND (127.0.0.1) — broker not exposed to LAN
 
-  # ── Service inventory (15) ─────────────────────────────────────────
+  # ── Service inventory (38) ─ canonical list = src/config.py SERVICES ─
   services:
     - drifter-canbridge
     - drifter-alerts
@@ -38,6 +44,7 @@ drifter:
     - drifter-anomaly
     - drifter-analyst
     - drifter-voice
+    - drifter-vivi
     - drifter-hotspot
     - drifter-homesync
     - drifter-watchdog
@@ -45,12 +52,63 @@ drifter:
     - drifter-rf
     - drifter-wardrive
     - drifter-dashboard
-    - drifter-fbmirror
     - drifter-voicein
+    - drifter-flipper
+    - drifter-opsec
+    - drifter-bleconv
+    - drifter-gps
+    - drifter-rfaudio
+    - drifter-batcher
+    - drifter-trip
+    - drifter-thresholds
+    - drifter-reporter
+    - drifter-weather
+    - drifter-location
+    - drifter-kismet
+    - drifter-kismet-bridge
+    - drifter-wifi-audit
+    - drifter-marauder
+    - drifter-fly-catcher
+    - drifter-feeds
+    - drifter-can-discovery
+    - drifter-hid
+    - drifter-lcd
+    - drifter-autoconnect
+    - drifter-ghost
+    - drifter-ghost-voice
 
   # ── Status: yellow until end-to-end mesh deploy round-trips ────────
   status: yellow
   notes: |
+    Remaining for GREEN:
+      - mesh deploy round-trip (mesh deploy drifter → 0, mesh status ok) not yet done
+      - Tailscale join pending auth (binary 1.102.3 installed, logged out; no tailnet IP yet)
+      - voice mic physical fitment unconfirmed (zero capture devices: arecord lists none;
+        drifter-voicein active but deaf — "No microphone detected" every 30s)
+
+    Networking (verified 2026-08-24): client-mode ENABLED — wlan0 autoconnects to
+    home WiFi DG2144-B817 @ 192.168.1.112/24 (drifter-autoconnect enabled+active;
+    drifter-hotspot disabled+inactive). MZ1312_DRIFTER AP is RESCUE-ONLY:
+    AUTOCONNECT_AP_FALLBACK_SEC=90, i.e. the AP takes over only after ~90s with no
+    known SSID visible. Retained MQTT drifter/network/status confirms
+    connected / internet=true / ap_fallback=false. No host firewall (nft ruleset
+    empty) — wildcard-bound ports above are LAN-reachable.
+
+    LLM cascade (patched 2026-08-24): ollama rung points at the home server
+    192.168.1.169:11434, model qwen2.5:1.5b, via llm_client_v2.py env patch
+    (OLLAMA_HOST/OLLAMA_PORT now read from config/env; hardcoded endpoints removed).
+    Backups: llm_client_v2.py.bak-20260824 in both /opt/drifter/ and
+    /home/kali/drifter/src/. drifter-llm-keepwarm restarted clean (was FAILED);
+    NOTE: its timer is disabled and unit is Type=oneshot/static — nothing re-fires
+    the warm ping periodically. Warm inference ≈0.9s vs 13.2s cold-load before.
+
+    SECURITY — hotspot PSK rotation STILL PENDING: the PSK remains embedded in
+    install.sh (lines ~583/704) and sshd still accepts password logins
+    (passwordauthentication yes). Do NOT put any new secret values in this file;
+    the previously inlined hotspot PSK comment has been removed from inventory.
+    Sole authorized SSH key: ed25519 mazla-drifter-20260824; apt backlog ~1630
+    upgradable packages on Kali rolling.
+
     Contract layer is on main (merged).
     Spec-vs-code discrepancies documented in CLAUDE.md:
       - dashboard is http.server (not FastAPI) — /healthz added inline
