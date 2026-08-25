@@ -6,6 +6,8 @@ Wants=NetworkManager.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# RESCUE-ONLY: intentionally disabled by deploys/mode-switches;
+# drifter-autoconnect owns `nmcli con up/down` for this profile.
 ExecStart=/usr/bin/nmcli con up "MZ1312_DRIFTER"
 ExecStop=/usr/bin/nmcli con down "MZ1312_DRIFTER"
 

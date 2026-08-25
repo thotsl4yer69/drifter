@@ -39,7 +39,11 @@ log = logging.getLogger(__name__)
 # (stops the LLM/STT/ML services — the main RAM + heat sources) so the
 # vehicle-diagnostics + safety core keeps running. One-way and debounced:
 # it never auto-promotes back (the operator switches up when ready), so it
-# can't flap. TODO(phase3): move these knobs into config.py.
+# can't flap. NOTE: this demote can no longer resurrect the rescue AP —
+# drifter-hotspot is connector-owned (config.CONNECTOR_OWNED_SERVICES), so
+# every mode.plan() puts it in `disable`, and restart_service only fires on
+# 'failed' units ('inactive' is healthy). The AP is raised solely by
+# drifter-autoconnect's fallback logic. TODO(phase3): move knobs to config.py.
 WATCHDOG_AUTO_DIAG = os.environ.get("WATCHDOG_AUTO_DIAG", "1") not in ("0", "false", "no")
 WATCHDOG_MEM_CRITICAL_PCT = float(os.environ.get("WATCHDOG_MEM_CRITICAL_PCT", "92"))
 WATCHDOG_TEMP_CRITICAL_C = float(os.environ.get("WATCHDOG_TEMP_CRITICAL_C", "82"))
