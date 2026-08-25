@@ -71,6 +71,17 @@ mqtt_client = None
 gpio_available = False
 oww_available = False
 
+# ── TX duck (someone else is using the shared speaker) ──
+# Set from the retained drifter/voice/duck broadcast published by vivi_v2 /
+# voice_alerts around TTS playback, and from rfaudio_status transitions.
+# Both flags only count while fresh (_DUCK_MAX_AGE_S) so a publisher that
+# died without sending its clear (no LWT) can't mute us forever.
+_speaker_duck = False
+_speaker_duck_ts = 0.0
+_rfaudio_duck = False
+_rfaudio_duck_ts = 0.0
+_DUCK_MAX_AGE_S = 90
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  Helpers
@@ -218,6 +229,17 @@ def _pub_voice_status(state: str):
             pass
 
 
+def _is_ducked():
+    """True while another service holds the shared speaker — Vivi/alert TTS
+    or rfaudio monitor audio. Stale ducks expire so a crashed publisher
+    can't mute us forever (the vivi2 LWT clears the normal crash case; this
+    covers publishers without one)."""
+    now = time.time()
+    if _speaker_duck and (now - _speaker_duck_ts) < _DUCK_MAX_AGE_S:
+        return True
+    return _rfaudio_duck and (now - _rfaudio_duck_ts) < _DUCK_MAX_AGE_S
+
+
 def route_transcript(text: str):
     """Classify and route a voice transcript — map-layer toggle, page
     nav, or LLM mechanic query (in that priority order)."""
@@ -265,6 +287,11 @@ def record_and_transcribe(stream, recognizer, silence_threshold, source="wake_wo
 
     _pub_voice_status('listening')
     beep()
+    # Flush ~500ms (2 chunks) so the ack beep's echo off the speaker chain
+    # is discarded before the recognizer resets — otherwise it lands in the
+    # utterance as a leading phantom syllable.
+    for _ in range(2):
+        stream.read(CHUNK_SIZE, exception_on_overflow=False)
 
     recognizer.AcceptWaveform(b'\x00' * 2)  # reset state
     rec = KaldiRecognizer(recognizer.model, SAMPLE_RATE)
@@ -278,6 +305,10 @@ def record_and_transcribe(stream, recognizer, silence_threshold, source="wake_wo
         if not running:
             break
         data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+        if _is_ducked():
+            # A proactive alert started talking mid-utterance — zero-fill so
+            # our own TX never reaches RMS gating or KaldiRecognizer.
+            data = b'\x00' * len(data)
         energy = rms_energy(data)
 
         if energy >= silence_threshold:
@@ -440,6 +471,12 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
         # signals from drifter-vivi (sent automatically after each
         # response when conversation mode is on).
         client.subscribe(TOPICS.get('voice_listen_now', 'drifter/voice/listen_now'))
+        # TX duck: the retained value arrives instantly on (re)connect, so a
+        # voicein restart mid-playback is muted from the first chunk. Also
+        # follow rfaudio transitions so UHF/monitor audio through the shared
+        # speaker can't trigger the wake word either.
+        client.subscribe(TOPICS.get('voice_duck', 'drifter/voice/duck'))
+        client.subscribe(TOPICS.get('rfaudio_status', 'drifter/rfaudio/status'))
     else:
         log.warning(f"MQTT connect failed (rc={rc})")
 
@@ -451,11 +488,28 @@ _follow_up_pending = False
 
 
 def on_voice_message(_client, _userdata, msg):
-    """MQTT message handler — only listen_now matters here."""
-    global _follow_up_pending
+    """MQTT message handler — listen_now, TX-duck and rfaudio state."""
+    global _follow_up_pending, _speaker_duck, _speaker_duck_ts
+    global _rfaudio_duck, _rfaudio_duck_ts
     if msg.topic == TOPICS.get('voice_listen_now', 'drifter/voice/listen_now'):
         log.info("conversation mode: follow-up turn requested")
         _follow_up_pending = True
+    elif msg.topic == TOPICS.get('voice_duck', 'drifter/voice/duck'):
+        try:
+            payload = json.loads(msg.payload.decode('utf-8', errors='replace'))
+            _speaker_duck = bool(payload.get('duck', False))
+            _speaker_duck_ts = float(payload.get('ts') or time.time())
+            if _speaker_duck:
+                log.info("TX duck ON — muting capture during playback")
+        except (ValueError, TypeError, AttributeError) as e:
+            log.debug(f"bad duck payload: {e}")
+    elif msg.topic == TOPICS.get('rfaudio_status', 'drifter/rfaudio/status'):
+        try:
+            payload = json.loads(msg.payload.decode('utf-8', errors='replace'))
+            _rfaudio_duck = str(payload.get('state', '')).lower() in ('playing', 'scanning')
+            _rfaudio_duck_ts = float(payload.get('ts') or time.time())
+        except (ValueError, TypeError, AttributeError) as e:
+            log.debug(f"bad rfaudio_status payload: {e}")
 
 
 def setup_mqtt():
@@ -626,6 +680,13 @@ def main():
     try:
         while running:
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+            if _is_ducked():
+                # Vivi / voice alerts / rfaudio are using the shared speaker —
+                # feed silence to openWakeWord instead of our own TX. Zero-fill
+                # (rather than skipping the chunk) keeps oww's continuous-stream
+                # assumption intact and silences wake-word evaluation; PTT is
+                # suppressed downstream in record_and_transcribe the same way.
+                data = b'\x00' * len(data)
             now = time.time()
             if now - last_heartbeat >= 5.0:
                 try:
