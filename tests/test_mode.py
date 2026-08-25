@@ -33,8 +33,18 @@ def test_plan_foot_excludes_drive_only():
 
 def test_plan_both_includes_all():
     p = mode.plan('both')
-    assert set(p['enable']) == set(config.SERVICES)
-    assert p['disable'] == []
+    assert set(p['enable']) == (set(config.SERVICES)
+                                - set(config.CONNECTOR_OWNED_SERVICES))
+    assert p['disable'] == ['drifter-hotspot']
+
+
+def test_hotspot_is_disabled_in_every_mode_plan():
+    """Rescue AP is connector-owned: no mode may enable it, and every mode
+    switch must actively disable it (drifter-autoconnect owns raising it)."""
+    for m in ('diag', 'drive', 'foot', 'both'):
+        p = mode.plan(m)
+        assert 'drifter-hotspot' not in p['enable'], f"{m} must not enable drifter-hotspot"
+        assert 'drifter-hotspot' in p['disable'], f"{m} must disable drifter-hotspot"
 
 
 def test_plan_shared_services_in_every_mode():
