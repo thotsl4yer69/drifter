@@ -154,6 +154,13 @@ SERVICES=(
 )
 systemctl daemon-reload
 for svc in "${SERVICES[@]}"; do
+    if [ "$svc" = "drifter-hotspot" ]; then
+        # MZ1312_DRIFTER is RESCUE-ONLY — drifter-autoconnect owns raising it.
+        systemctl stop "$svc" >/dev/null 2>&1 || true
+        systemctl disable "$svc" >/dev/null 2>&1 || true
+        ok "$svc (installed, disabled — rescue AP owned by drifter-autoconnect)"
+        continue
+    fi
     if ! systemctl enable "$svc" >/dev/null 2>&1; then
         stage_fail 40 "systemctl enable $svc failed"
     fi

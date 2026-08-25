@@ -627,7 +627,7 @@ else
     nmcli con add type wifi \
         ifname wlan0 \
         con-name "MZ1312_DRIFTER" \
-        autoconnect yes \
+        autoconnect no \
         ssid "MZ1312_DRIFTER" \
         -- \
         802-11-wireless.mode ap \
@@ -640,6 +640,9 @@ else
     ok "Hotspot: MZ1312_DRIFTER / 10.42.0.1 (PSK set — recover via nmcli --show-secrets)"
     HOTSPOT_PSK_SHOWN="Password: ${HOTSPOT_PSK}"
 fi
+# RESCUE-ONLY: never let NM auto-raise the AP behind drifter-autoconnect's back.
+# Idempotent fix-up for profiles created by older installs with autoconnect yes.
+nmcli con mod "MZ1312_DRIFTER" connection.autoconnect no 2>/dev/null || true
 
 # ── 10. systemd Services ──
 step 10 "Installing systemd services"
@@ -730,6 +733,12 @@ SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect dri
 systemctl enable drifter-broker.target 2>/dev/null || true
 
 for svc in $SERVICES; do
+    if [ "$svc" = "drifter-hotspot" ]; then
+        # MZ1312_DRIFTER is RESCUE-ONLY — drifter-autoconnect owns raising it.
+        systemctl disable --now "$svc" 2>/dev/null || true
+        ok "Disabled: $svc (rescue AP owned by drifter-autoconnect)"
+        continue
+    fi
     systemctl enable "$svc" 2>/dev/null
     ok "Enabled: $svc"
 done
@@ -775,7 +784,7 @@ echo ""
 echo -e "  ${CYAN}Reboot now:${NC} sudo reboot"
 echo ""
 echo -e "  After reboot:"
-echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC}"
+echo -e "  1. Connect phone to Wi-Fi: ${CYAN}MZ1312_DRIFTER${NC} (appears ~90s after boot if no known Wi-Fi found)"
 echo -e "     ${HOTSPOT_PSK_SHOWN}"
 echo -e "  2. Open RealDash → TCP CAN → ${CYAN}10.42.0.1:35000${NC}"
 echo -e "  3. Plug phone into Pioneer via USB for Android Auto"
