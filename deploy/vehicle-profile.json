@@ -1,0 +1,37 @@
+{
+  "profile": {
+    "source": "local",
+    "make": "Jaguar",
+    "model": "X-Type",
+    "year": 2004,
+    "engine": "2.5 V6",
+    "engine_code": "AJ-V6",
+    "displacement_cc": 2495,
+    "fuel_type": "petrol",
+    "cylinder_count": 6,
+    "bank_count": 2,
+    "redline_rpm": 6500,
+    "drivetrain": "AWD",
+    "transmission": "Jatco JF506E 5-speed automatic",
+    "tank_litres": 60,
+    "avg_consumption_l_per_100km": 12,
+    "tire_size": "205/55R16",
+    "tire_pressure_front": 30,
+    "tire_pressure_rear": 30,
+    "known_issues": [
+      "PCV breather hose splits on its hidden underside - top cause of P0171/P0174 both-bank lean codes; revised hose exists",
+      "Brake booster vacuum line cracks at the mid-run check-valve bulge (cheap hose fix, lean codes)",
+      "IMT valve internal O-rings harden and leak - lean codes and rough idle",
+      "MAF contamination under-reports airflow so trims worsen with load - clean with electronics cleaner before replacing",
+      "Plastic thermostat housing and gasket weep at the 3-bolt flange where the lower hose bends upward; water pumps fade near 100k miles",
+      "Lower radiator hose wire clip can pop off and dump all coolant in minutes (TSB jubilee-clip mod, poor access)",
+      "Jatco JF506E automatic: clutch piston fractures inside the drum (~1750 GBP specialist rebuild); ATF level needs a temperature-governed procedure, never cold-and-guess",
+      "AWD transfer case/PTU has no drain plug or accessible filler and fails without periodic oil service",
+      "Outer CV reluctor rings corrode and break, killing ABS wheel-speed signals (~330 GBP per corner at dealer rates)",
+      "Crank damper pulley assembly can separate around its rubber bond - front rumble/wobble means replace it",
+      "Sill and A-pillar corrosion on early builds: keep drains clear and cavity-wax inject before perforation starts",
+      "Spark plugs due around 70k miles and require upper intake removal - renew manifold O-rings/gaskets at the same time"
+    ]
+  },
+  "ts": 1787659200
+}
