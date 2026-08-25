@@ -171,3 +171,36 @@ def test_disabled_never_demotes(monkeypatch):
     for _ in range(5):
         assert watchdog._maybe_demote_to_diag(c, {'memory_percent': 99, 'cpu_temp': 95}) is None
     assert switched == []
+
+
+def test_auto_demote_disables_hotspot_never_enables(monkeypatch):
+    """Resurrection-path regression: the watchdog's auto-demote goes through
+    the REAL mode.plan()/switch() layer (recorded at the systemctl boundary,
+    not by mocking switch) and must DISABLE the rescue AP — never enable it.
+    drifter-hotspot is connector-owned; mode switches actively kill it."""
+    _reset_pressure(monkeypatch)
+    import mode
+    monkeypatch.setattr(mode, 'read_mode', lambda: 'drive')
+    monkeypatch.setattr(mode, 'write_mode', lambda m: None)  # no real state file
+
+    calls = []
+
+    def fake_systemctl(action, units):
+        calls.append((action, list(units)))
+        return (0, '')
+
+    monkeypatch.setattr(mode, '_systemctl', fake_systemctl)
+
+    c = _RecordingClient()
+    hot = {'memory_percent': 99, 'cpu_temp': 90}
+    ev = None
+    for _ in range(watchdog.WATCHDOG_PRESSURE_CHECKS):
+        ev = watchdog._maybe_demote_to_diag(c, hot)
+    assert ev and ev['action'] == 'auto_demote_to_diag'
+
+    disable_units = [u for action, u in calls if action == 'disable']
+    enable_units = [u for action, u in calls if action == 'enable']
+    assert any('drifter-hotspot' in units for units in disable_units), \
+        f"demote must disable drifter-hotspot; systemctl calls: {calls}"
+    assert not any('drifter-hotspot' in units for units in enable_units), \
+        f"demote must never enable drifter-hotspot; systemctl calls: {calls}"

@@ -7,7 +7,9 @@ BOTH   — every service active (lab / bench)
 Mode is persisted in /opt/drifter/mode.state so that after a reboot the same
 persona comes back up. Switching enables+starts services in the target mode
 and disables+stops services that no longer belong, so a reboot can't re-enable
-silenced services behind your back.
+silenced services behind your back. Connector-owned units (the rescue AP,
+config.CONNECTOR_OWNED_SERVICES) are disabled by EVERY mode switch — they are
+raised/owned by drifter-autoconnect's fallback logic instead.
 
 Requires root (systemctl enable/disable). Run via `sudo drifter mode …`.
 """
@@ -44,7 +46,11 @@ def _systemctl(action: str, units: list[str]) -> tuple[int, str]:
 
 
 def plan(target: str) -> dict:
-    """Compute which services to enable+start vs disable+stop for a mode."""
+    """Compute which services to enable+start vs disable+stop for a mode.
+
+    Connector-owned units (config.CONNECTOR_OWNED_SERVICES — the rescue AP)
+    are members of NO mode enable-set, so they land in `disable` for every
+    target: drifter-autoconnect owns raising them, never mode switches."""
     if target not in MODES:
         raise ValueError(f"unknown mode {target!r}; pick from {sorted(MODES)}")
     on = sorted(MODES[target])
@@ -75,6 +81,8 @@ def status() -> dict:
             capture_output=True, text=True, timeout=2,
         )
         active[svc] = r.stdout.strip() == 'active'
+    # Connector-owned units are in no MODES set, so a correctly-disabled
+    # rescue AP reads as expected, not as drift.
     return {
         'mode': current,
         'expected': sorted(MODES[current]) if current in MODES else [],

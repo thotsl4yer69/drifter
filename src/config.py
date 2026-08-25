@@ -791,8 +791,9 @@ SERVICES = [
 # Same hardware, two operator personas:
 #   DRIVE — in the vehicle, CAN connected, telemetry meaningful.
 #   FOOT  — battery-pack mobile, recon/opsec console.
-# Services classified into three buckets; each list is mutually exclusive,
-# and the union must equal SERVICES (validated below).
+# Services classified into four buckets (drive-only / foot-only / shared /
+# connector-owned); each list is mutually exclusive, and the union must
+# equal SERVICES (validated below).
 DRIVE_ONLY_SERVICES = [
     "drifter-canbridge",   # CAN bus needs vehicle ECUs present
     "drifter-obdbridge",   # ELM327/K-line transport (idles unless auto-selected)
@@ -825,7 +826,6 @@ FOOT_ONLY_SERVICES = [
 ]
 SHARED_SERVICES = [
     "drifter-dashboard",   # operator HUD (always-on so /healthz stays reachable)
-    "drifter-hotspot",     # Wi-Fi AP — phone tethers in either mode
     "drifter-homesync",    # rsync to home node when reachable
     "drifter-watchdog",    # service health monitor
     "drifter-logger",      # telemetry log writer
@@ -863,13 +863,18 @@ DIAG_SERVICES = [
     "drifter-lcd",         # in-car SPI LCD triage console (the dash screen)
     "drifter-logger",      # telemetry log writer
     "drifter-dashboard",   # operator HUD + /healthz
-    "drifter-hotspot",     # Wi-Fi AP
     "drifter-autoconnect", # Wi-Fi uplink / AP fallback
     "drifter-watchdog",    # service health monitor
     "drifter-homesync",    # background rsync to home node
     "drifter-weather",     # OpenWeatherMap poller (network-only, light)
     "drifter-location",    # Elevation + Places (network-only, light)
     "drifter-vehicleid",   # VIN → active profile (lightweight; drives per-car thresholds)
+]
+# AP lifecycle is owned by drifter-autoconnect's fallback logic (RESCUE-ONLY,
+# docs/fleet-inventory-drifter.yaml). Installed+monitored but NEVER enabled by
+# mode switches or deploys — see CONNECTOR_OWNED_SERVICES.
+CONNECTOR_OWNED_SERVICES = [
+    "drifter-hotspot",
 ]
 
 MODES = {
@@ -880,10 +885,15 @@ MODES = {
     "diag":  set(DIAG_SERVICES),
     "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
     "foot":  set(FOOT_ONLY_SERVICES)  | set(SHARED_SERVICES),
-    "both":  set(SERVICES),
+    # Connector-owned units are excluded from EVERY mode's enable-set —
+    # mode switches actively disable them (drifter-autoconnect raises the
+    # rescue AP instead). Membership here is the single source of truth for
+    # plan()/status()/dashboards.
+    "both":  set(SERVICES) - set(CONNECTOR_OWNED_SERVICES),
 }
 # Sanity: every service must land in exactly one bucket.
-_classified = set(DRIVE_ONLY_SERVICES) | set(FOOT_ONLY_SERVICES) | set(SHARED_SERVICES)
+_classified = (set(DRIVE_ONLY_SERVICES) | set(FOOT_ONLY_SERVICES)
+               | set(SHARED_SERVICES) | set(CONNECTOR_OWNED_SERVICES))
 assert _classified == set(SERVICES), (
     f"MODES classification drift: missing={set(SERVICES) - _classified}, "
     f"extra={_classified - set(SERVICES)}"
@@ -1265,6 +1275,16 @@ AUTOCONNECT_AP_FALLBACK_SEC = int(os.getenv("AUTOCONNECT_AP_FALLBACK_SEC", "90")
 # The NetworkManager connection name of our own hotspot (install.sh creates it).
 AP_FALLBACK_CONNECTION = os.getenv("AP_FALLBACK_CONNECTION", "MZ1312_DRIFTER")
 AUTOCONNECT_WIFI_IFACE = os.getenv("AUTOCONNECT_WIFI_IFACE", "wlan0")
+# Post-fallback AP-probe hysteresis. Single radio: probing for a better
+# network tears the rescue AP down, so probes run on a slow cadence with
+# doubling backoff. RESCAN: base seconds between "is a known SSID visible
+# now?" probes while the AP is up. PROBE_SETTLE: pause after tearing the AP
+# down before the fresh scan (the radio needs a beat to leave AP mode).
+# BACKOFF_MAX: cap on the doubling probe interval so a wedged RF environment
+# still gets re-probed (~every 15 min at the default cap).
+AUTOCONNECT_AP_RESCAN_SEC = int(os.getenv("AUTOCONNECT_AP_RESCAN_SEC", "300"))
+AUTOCONNECT_AP_PROBE_SETTLE_SEC = int(os.getenv("AUTOCONNECT_AP_PROBE_SETTLE_SEC", "10"))
+AUTOCONNECT_AP_BACKOFF_MAX_SEC = int(os.getenv("AUTOCONNECT_AP_BACKOFF_MAX_SEC", "900"))
 # Internet reachability probe (used by auto_connect + the LCD network screen).
 PING_HOST = os.getenv("PING_HOST", "8.8.8.8")
 PING_TIMEOUT_SEC = int(os.getenv("PING_TIMEOUT_SEC", "3"))

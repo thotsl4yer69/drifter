@@ -35,7 +35,10 @@ import time
 
 from config import (
     AP_FALLBACK_CONNECTION,
+    AUTOCONNECT_AP_BACKOFF_MAX_SEC,
     AUTOCONNECT_AP_FALLBACK_SEC,
+    AUTOCONNECT_AP_PROBE_SETTLE_SEC,
+    AUTOCONNECT_AP_RESCAN_SEC,
     AUTOCONNECT_KNOWN_SSIDS,
     AUTOCONNECT_RETRY_SEC,
     AUTOCONNECT_SCAN_TIMEOUT,
@@ -99,6 +102,18 @@ def pick_target_ssid(visible: set[str], known: list[str]) -> str | None:
     return None
 
 
+def parse_active_connections(nmcli_out: str, iface: str) -> str | None:
+    """From `nmcli -t -f NAME,DEVICE connection show --active`, the NAME of
+    the connection currently owning `iface` — our own AP profile name when
+    the radio is in AP mode. Rows for other devices (lo, eth0, tailscale0…)
+    are ignored; None when `iface` has no active connection."""
+    for line in nmcli_out.splitlines():
+        parts = _split_terse(line)
+        if len(parts) >= 2 and parts[1] == iface and parts[0]:
+            return parts[0]
+    return None
+
+
 # ── nmcli wrappers ────────────────────────────────────────────────────
 
 def _run(cmd: list[str], timeout: float = 20.0) -> subprocess.CompletedProcess:
@@ -129,6 +144,33 @@ def active_client_ssid() -> str | None:
         return parse_active_ssid(r.stdout)
     except Exception:
         return None
+
+
+def active_wifi_connection(iface: str = AUTOCONNECT_WIFI_IFACE) -> str | None:
+    """Authoritative AP-mode check: which NM connection owns the Wi-Fi
+    interface RIGHT NOW.
+
+    `ACTIVE,SSID dev wifi` is ambiguous — in AP mode NetworkManager can
+    report our own MZ1312_DRIFTER beacon with ACTIVE=yes, which is what used
+    to wedge this service into a permanent fake 'connected' state. The
+    NAME,DEVICE --active view names the profile itself instead: while the
+    radio is in AP mode it reads exactly `MZ1312_DRIFTER:wlan0`. It also
+    survives process restarts (no in-process state involved). Never raises;
+    an NM hiccup/mid-restart reads as None and falls through to the scan
+    path, never to 'connected'."""
+    if not shutil.which('nmcli'):
+        return None
+    try:
+        r = _run(['nmcli', '-t', '-f', 'NAME,DEVICE',
+                  'connection', 'show', '--active'], timeout=8)
+        return parse_active_connections(r.stdout, iface)
+    except Exception:
+        return None
+
+
+def next_probe_backoff(current: int) -> int:
+    """Doubling backoff for AP-probe cadence, capped at BACKOFF_MAX."""
+    return min(current * 2, AUTOCONNECT_AP_BACKOFF_MAX_SEC)
 
 
 def connection_profile_exists(name: str) -> bool:
@@ -278,13 +320,88 @@ def main() -> None:
         log.warning(f"MQTT unavailable ({e}) — status not published, continuing")
         client = None
 
+    _service_loop(known, client, lambda: running)
+
+    log.info("Wi-Fi auto-connector shutting down...")
+    if client:
+        client.loop_stop()
+        client.disconnect()
+    log.info("Wi-Fi auto-connector stopped")
+
+
+def _service_loop(known: list[str], client, keep_running) -> None:
+    """The connector's decision loop. Single radio — exactly one of these is
+    true at any moment: joined as a client / own rescue AP up / searching.
+
+    AP-mode handling is authoritative + hysteretic:
+      * `nmcli ... connection show --active` (NAME,DEVICE) decides whether
+        OUR AP owns wlan0 — never the ambiguous ACTIVE,SSID heuristic and
+        never in-process memory (survives Restart=on-failure restarts).
+      * While the AP is up we only act on a probe cadence: tear the AP down,
+        settle, do ONE trusted fresh scan, join if a known SSID appeared,
+        otherwise rebuild immediately and back off (doubling, capped).
+      * Between probe windows we never scan — `dev wifi list` only returns
+        the stale pre-AP cache while the radio is in AP mode.
+    """
     start = time.time()
     ap_active = False
+    last_probe = 0.0   # epoch of the last AP teardown+rescan probe
+    probe_interval = AUTOCONNECT_AP_RESCAN_SEC
 
-    while running:
+    while keep_running():
+        # ── Authoritative AP check FIRST. Our own beacon must never be
+        # mistaken for a client connection (the stuck-'connected' bug). ──
+        conn = active_wifi_connection()
+        if conn == AP_FALLBACK_CONNECTION:
+            ap_active = True
+            publish_status(client, 'ap_fallback', AP_FALLBACK_CONNECTION,
+                           current_ip(), False, True)
+            log.info(f"own AP {AP_FALLBACK_CONNECTION} up on "
+                     f"{AUTOCONNECT_WIFI_IFACE} (probe every {probe_interval}s)")
+
+            if time.time() - last_probe >= probe_interval:
+                log.info(f"probing for known Wi-Fi — bringing "
+                         f"{AP_FALLBACK_CONNECTION} down briefly")
+                try:
+                    _run(['nmcli', 'connection', 'down', AP_FALLBACK_CONNECTION],
+                         timeout=30)
+                except Exception as e:
+                    log.warning(f"AP teardown failed: {e}")
+                # Radio needs a beat to actually leave AP mode before a scan
+                # reflects real air instead of NM's cached list.
+                _sleep(AUTOCONNECT_AP_PROBE_SETTLE_SEC, keep_running)
+                disable_power_save()
+                visible = scan_wifi()
+                target = pick_target_ssid(visible, known)
+                if target:
+                    publish_status(client, 'connecting', target, None, False, False)
+                    log.info(f"target '{target}' visible — joining")
+                    if connect_ssid(target):
+                        ip = current_ip()
+                        net = internet_ok()
+                        publish_status(client, 'connected', target, ip, net, False)
+                        start = time.time()
+                        ap_active = False
+                        last_probe = time.time()
+                        probe_interval = AUTOCONNECT_AP_RESCAN_SEC
+                        _sleep(AUTOCONNECT_RETRY_SEC, keep_running)
+                        continue
+                # No target (or the join failed): rebuild the rescue AP NOW —
+                # never make the operator wait out the 90s grace again — and
+                # back off before probing again.
+                bring_up_ap()
+                ap_active = True
+                last_probe = time.time()
+                probe_interval = next_probe_backoff(probe_interval)
+                publish_status(client, 'ap_fallback', AP_FALLBACK_CONNECTION,
+                               current_ip(), False, True)
+
+            _sleep(AUTOCONNECT_RETRY_SEC, keep_running)
+            continue
+
         joined = active_client_ssid()
-        if joined and (not known or joined in known or not ap_active):
-            # Connected as a client to something (phone hotspot or saved net).
+        if joined and (not known or joined in known):
+            # Connected as a client to something we actually meant to join.
             # NM re-enables power save on association — keep it off each pass.
             disable_power_save()
             ip = current_ip()
@@ -293,10 +410,11 @@ def main() -> None:
             log.info(f"connected: {joined} ip={ip} internet={net}")
             start = time.time()  # reset the fallback clock while connected
             ap_active = False
-            _sleep(AUTOCONNECT_RETRY_SEC, lambda: running)
+            _sleep(AUTOCONNECT_RETRY_SEC, keep_running)
             continue
 
-        # Not connected to a known client network — try to join one.
+        # Not connected to a known client network — try to join one. (This
+        # scan only runs when NOT in AP mode; see the early-continue above.)
         visible = scan_wifi()
         target = pick_target_ssid(visible, known)
         if target:
@@ -308,7 +426,7 @@ def main() -> None:
                 publish_status(client, 'connected', target, ip, net, False)
                 start = time.time()
                 ap_active = False
-                _sleep(AUTOCONNECT_RETRY_SEC, lambda: running)
+                _sleep(AUTOCONNECT_RETRY_SEC, keep_running)
                 continue
         else:
             publish_status(client, 'searching', None, current_ip(), False, ap_active)
@@ -321,16 +439,12 @@ def main() -> None:
             log.warning(f"no hotspot for {int(elapsed)}s — bringing up AP fallback")
             if bring_up_ap():
                 ap_active = True
+                last_probe = time.time()
+                probe_interval = AUTOCONNECT_AP_RESCAN_SEC
                 publish_status(client, 'ap_fallback', AP_FALLBACK_CONNECTION,
                                current_ip(), False, True)
 
-        _sleep(AUTOCONNECT_RETRY_SEC, lambda: running)
-
-    log.info("Wi-Fi auto-connector shutting down...")
-    if client:
-        client.loop_stop()
-        client.disconnect()
-    log.info("Wi-Fi auto-connector stopped")
+        _sleep(AUTOCONNECT_RETRY_SEC, keep_running)
 
 
 def _sleep(seconds: float, keep_running) -> None:

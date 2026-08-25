@@ -29,3 +29,19 @@ def test_make_mqtt_client_uses_v2_callback_api():
 def test_make_mqtt_client_accepts_kwargs():
     client = config.make_mqtt_client("test-client", clean_session=True)
     assert isinstance(client, _mqtt.Client)
+
+
+# ── Connector-owned services (RESCUE-ONLY AP contract) ────────────────
+
+def test_hotspot_is_connector_owned_not_mode_enabled():
+    """drifter-hotspot stays monitored (SERVICES) but lives in its own bucket:
+    never a member of any MODES enable-set, so every mode switch actively
+    disables it. Buckets must still partition SERVICES exactly."""
+    assert 'drifter-hotspot' in config.SERVICES
+    assert config.CONNECTOR_OWNED_SERVICES == ['drifter-hotspot']
+    for name, members in config.MODES.items():
+        assert 'drifter-hotspot' not in members, \
+            f"drifter-hotspot must not be enabled by mode {name}"
+    classified = (set(config.DRIVE_ONLY_SERVICES) | set(config.FOOT_ONLY_SERVICES)
+                  | set(config.SHARED_SERVICES) | set(config.CONNECTOR_OWNED_SERVICES))
+    assert classified == set(config.SERVICES)

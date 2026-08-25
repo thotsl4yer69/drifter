@@ -63,3 +63,39 @@ def test_every_deploy_service_has_a_unit_file():
     units = _unit_files()
     for name in _oneshot_services() | _install_services():
         assert name in units, f"{name} has no services/{name}.service"
+
+
+# ── Rescue-AP resurrection guards ──────────────────────────────────────
+#
+# drifter-hotspot stays in both SERVICES lists (the sync tests above depend
+# on it: the unit must be installed + monitored), but the enable loops must
+# special-case it: stop+disable instead of enable+restart. Without these
+# guards every deploy resurrected the deliberately-disabled rescue AP behind
+# drifter-autoconnect's back (docs/fleet-inventory-drifter.yaml: RESCUE-ONLY).
+
+def test_oneshot_guard_disables_hotspot_before_restart_loop():
+    text = (REPO / 'scripts' / 'oneshot.sh').read_text()
+    m = re.search(r'for svc in "\$\{SERVICES\[@\]\}"; do(.*?)\ndone', text, re.DOTALL)
+    assert m, "stage-40 enable loop not found in oneshot.sh"
+    guard = m.group(1).split('fi')[0]
+    assert '[ "$svc" = "drifter-hotspot" ]' in guard, \
+        "oneshot.sh stage-40 loop lost its drifter-hotspot guard"
+    assert 'systemctl disable "$svc"' in guard, \
+        "oneshot.sh hotspot guard must disable the unit"
+    assert 'continue' in guard, \
+        "oneshot.sh hotspot guard must skip the enable/restart path"
+
+
+def test_install_disables_hotspot_and_nm_autoconnect_off():
+    text = (REPO / 'install.sh').read_text()
+    m = re.search(r'for svc in \$SERVICES; do(.*?)\ndone', text, re.DOTALL)
+    assert m, "install.sh enable loop not found"
+    guard = m.group(1).split('fi')[0]
+    assert '[ "$svc" = "drifter-hotspot" ]' in guard, \
+        "install.sh enable loop lost its drifter-hotspot guard"
+    assert 'systemctl disable --now "$svc"' in guard, \
+        "install.sh hotspot guard must disable the unit"
+    # Hidden resurrection path 6: NM itself auto-raising the AP whenever
+    # wlan0 idles. The profile must never autoconnect.
+    assert 'connection.autoconnect no' in text, \
+        "install.sh must pin connection.autoconnect no for MZ1312_DRIFTER"
