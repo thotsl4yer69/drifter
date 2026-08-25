@@ -207,3 +207,45 @@ before testing the other.
 
 See [`FIRST_DRIVE.md`](../FIRST_DRIVE.md) for the full hardware-validated
 walkthrough.
+
+## Upgrading Vivi's model via the device `.env` (no repo change)
+
+The LLM model tag is read from the environment at service start:
+every unit imports `EnvironmentFile=-/opt/drifter/.env`, and
+`src/config.py` resolves `OLLAMA_MODEL` (default `qwen2.5:1.5b`) with
+`os.getenv`. So a bigger brain is a **device-side override**, not a code
+change — repo defaults stay on 1.5b as the offline floor.
+
+0. **Pull first, flip second.** On the inference host, pull the tag before
+   any device points at it — an unpulled tag 404s *every* LLM call
+   fleet-wide:
+
+   ```bash
+   ollama pull qwen2.5:7b     # candidate; qwen2.5:3b is the fallback pick
+   ```
+
+1. **Benchmark, then choose.** `ollama run qwen2.5:7b --verbose '<a typical
+   telemetry-grounded prompt>'` — adopt 7b if eval rate is ≥ ~6 t/s and
+   grounded (<1k-token) prompts evaluate in < ~5 s; otherwise use
+   `qwen2.5:3b`.
+2. **Set `OLLAMA_KEEP_ALIVE=30m` on the server's Ollama service.** The
+   device client (`src/llm_client_v2.py`) sends no `keep_alive`, so without
+   this every turn pays a cold model load.
+3. **Flip the override and restart the consumers** (`EnvironmentFile` is
+   read at unit start):
+
+   ```bash
+   ssh kali@<pi-ip>
+   echo 'OLLAMA_MODEL=qwen2.5:7b' >> /opt/drifter/.env    # or edit in place
+   sudo systemctl restart drifter-vivi drifter-analyst drifter-reporter drifter-aidiag
+   ```
+
+4. **Verify:** `journalctl -u drifter-vivi | grep LLMV2` shows turns served
+   by `ollama/qwen2.5:7b`, then run one spoken end-to-end question.
+
+Rollback: remove/comment the `.env` line and restart those four units.
+`drifter-llm-keepwarm` still warms local 1.5b — that's the offline tier now,
+not prod traffic; leave it enabled. Do **not** bump the repo defaults as part
+of this rollout — `tests/test_llm_model_strategy.py` enforces lock-step
+between `config.py`, `vivi.yaml` and `install.sh`; a coordinated two-rung
+cascade change belongs to a separate PR.
