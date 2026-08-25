@@ -79,6 +79,24 @@ def _pub_voice_status(state: str):
             pass
 
 
+def _publish_duck(on):
+    """Broadcast TX-duck state on the retained voice_duck topic so
+    drifter-voicein mutes capture while this alert plays locally — a safety
+    alert through the shared speaker otherwise self-triggers the wake word.
+    Same payload shape vivi_v2 uses; `src` distinguishes publishers."""
+    if not _mqtt_client:
+        return
+    topic = TOPICS.get('voice_duck')
+    if not topic:
+        return
+    try:
+        _mqtt_client.publish(topic, json.dumps({
+            'duck': bool(on), 'src': 'voice_alerts', 'ts': time.time(),
+        }), retain=True, qos=1)
+    except Exception as e:
+        log.debug("duck publish failed: %s", e)
+
+
 def check_piper():
     """Check if piper TTS is available."""
     global piper_available
@@ -198,8 +216,16 @@ def speak(text):
         try:
             if _generate_wav(text, wav_path):
                 _pub_voice_status('speaking')
-                if _play_local(wav_path):
-                    spoke = True
+                # Duck the mic across local playback only — the MQTT wav
+                # bridge publish isn't audible on-Pi, so it stays outside
+                # the window. speak() is serialised by _speak_lock, so a
+                # simple bracket (no refcount) is enough here.
+                _publish_duck(True)
+                try:
+                    if _play_local(wav_path):
+                        spoke = True
+                finally:
+                    _publish_duck(False)
                 if _publish_wav(text, wav_path):
                     spoke = True
 
