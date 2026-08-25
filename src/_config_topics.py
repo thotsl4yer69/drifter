@@ -69,6 +69,7 @@ TOPICS = {
     # Voice Input
     'voice_transcript': 'drifter/voice/transcript',
     'voice_command': 'drifter/voice/command',
+    'voice_duck': 'drifter/voice/duck',
     'voice_status': 'drifter/voice/status',
     'hud_navigate': 'drifter/hud/navigate',
     # Vivi voice assistant

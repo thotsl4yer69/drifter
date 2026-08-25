@@ -62,6 +62,11 @@ _MIN_SENTENCE_CHARS = 12
 # stale alert keeps biasing every reply for the rest of the drive.
 _SAFETY_ALERT_TTL_S = 300
 
+# After local playback ends, keep the mic ducked this long so speaker
+# ring-down / ALSA tail between two queued sentences can't re-trigger the
+# wake word (TX-duck, see _release_duck).
+_DUCK_TAIL_S = 0.35
+
 # ── Default personality (overridden by /opt/drifter/vivi_personality.txt) ──
 DEFAULT_PERSONALITY = f"""You are Vivi — the v2 brain of DRIFTER, riding in a {vehicle_profile.prompt_identity()}. \
 You know this car cold — {vehicle_profile.known_issues_text()}. You also handle Spotify, navigation, trip stats, \
@@ -87,6 +92,11 @@ _RED_ALERT_DIRECTIVE = (
 
 # ── Shared state (guarded by _state_lock for cross-thread access) ──
 _state_lock = threading.Lock()
+# TX-duck refcount: how many speak() windows are open right now. Guarded by
+# _playback_lock so concurrent sentence-level TTS threads can't race the
+# 0→1 / 1→0 transitions that publish the retained duck broadcast.
+_playback_lock = threading.Lock()
+_active_speakers = 0
 _session_id = uuid.uuid4().hex[:12]
 _telemetry: dict = {}
 _safety_alert: dict = {}
@@ -314,6 +324,58 @@ def _publish_status(status: str) -> None:
     })
 
 
+def _duck_lwt_payload() -> dict:
+    """Last-Will payload for the duck topic — clears the retained broadcast
+    if vivi2 dies mid-sentence, so drifter-voicein can't stay muted forever."""
+    return {'duck': False, 'src': 'vivi2-lwt', 'ts': time.time()}
+
+
+def _publish_duck(on: bool) -> None:
+    """Broadcast TX-duck state on the retained voice_duck topic.
+
+    Retained + qos=1 so a (re)starting voicein picks up current state
+    instantly; the Last-Will registered in main() covers a crash while
+    ducked."""
+    client = _mqtt_client
+    topic = TOPICS.get('voice_duck')
+    if not (client and topic):
+        return
+    try:
+        client.publish(topic, json.dumps({
+            'duck': bool(on), 'src': 'vivi2', 'ts': time.time(),
+        }), retain=True, qos=1)
+    except Exception as e:
+        log.debug(f"publish duck failed: {e}")
+
+
+def _acquire_duck() -> None:
+    """Open one playback window. The 0→1 transition publishes duck=true."""
+    global _active_speakers
+    with _playback_lock:
+        _active_speakers += 1
+        first = _active_speakers == 1
+    if first:
+        _publish_duck(True)
+
+
+def _release_duck() -> None:
+    """Close one playback window. The 1→0 transition waits out _DUCK_TAIL_S,
+    then re-checks under the lock that no second sentence re-opened the
+    window mid-tail before publishing duck=false — that recheck kills the
+    inter-sentence race where sentence N's clear would unmute during
+    sentence N+1."""
+    global _active_speakers
+    with _playback_lock:
+        _active_speakers = max(0, _active_speakers - 1)
+        if _active_speakers > 0:
+            return
+    time.sleep(_DUCK_TAIL_S)
+    with _playback_lock:
+        if _active_speakers > 0:
+            return
+    _publish_duck(False)
+
+
 def _publish_stream_chunk(chunk: str) -> None:
     _safe_publish('vivi2_stream', {
         'delta': chunk,
@@ -514,15 +576,22 @@ def speak(text: str) -> None:
         log.warning(f"TTS error: {e}")
         return
 
-    # Best-effort local playback.
-    if _aplay_ready() and wav_path.exists():
-        try:
-            subprocess.run(
-                ['aplay', '-q', str(wav_path)],
-                capture_output=True, timeout=30, check=False,
-            )
-        except subprocess.SubprocessError as e:
-            log.debug(f"aplay failed: {e}")
+    # Duck the mic across local playback so our own TTS can't re-trigger the
+    # wake word. The wav_b64 MQTT bridge publish below stays OUTSIDE this
+    # window — it isn't audible on-Pi. try/finally so a timeout or aplay
+    # error can never leak a stuck duck.
+    _acquire_duck()
+    try:
+        if _aplay_ready() and wav_path.exists():
+            try:
+                subprocess.run(
+                    ['aplay', '-q', str(wav_path)],
+                    capture_output=True, timeout=30, check=False,
+                )
+            except subprocess.SubprocessError as e:
+                log.debug(f"aplay failed: {e}")
+    finally:
+        _release_duck()
 
     if wav_path.exists() and _mqtt_client:
         try:
@@ -830,6 +899,13 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     _mqtt_client = mqtt.Client(client_id="drifter-vivi2")
+    # Last-Will: if vivi2 dies while the duck is raised (mid-sentence), the
+    # broker publishes this retained clear so voicein unmutes instead of
+    # staying silent until its staleness timer expires.
+    _mqtt_client.will_set(
+        TOPICS['voice_duck'], json.dumps(_duck_lwt_payload()),
+        retain=True, qos=1,
+    )
     _mqtt_client.on_message = on_message
     # paho will auto-reconnect when loop_start() is in use, but bound the
     # backoff so we don't hammer the broker after a long outage.
@@ -853,6 +929,9 @@ def main() -> None:
     _subscribe_topics(_mqtt_client)
     _mqtt_client.loop_start()
 
+    # Clear any stale retained duck left over from a previous run (crash
+    # mid-sentence) so the mic isn't muted until our first real utterance.
+    _publish_duck(False)
     _publish_status("starting")
     time.sleep(1)
     speak(f"Vivi v2 online. {vehicle_profile.display_name()}, ready when you are.")
