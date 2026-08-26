@@ -16,6 +16,7 @@ import time
 import psutil
 
 from config import (
+    CONNECTOR_OWNED_SERVICES,
     DRIFTER_DIR,
     MQTT_HOST,
     MQTT_PORT,
@@ -41,9 +42,10 @@ log = logging.getLogger(__name__)
 # it never auto-promotes back (the operator switches up when ready), so it
 # can't flap. NOTE: this demote can no longer resurrect the rescue AP —
 # drifter-hotspot is connector-owned (config.CONNECTOR_OWNED_SERVICES), so
-# every mode.plan() puts it in `disable`, and restart_service only fires on
-# 'failed' units ('inactive' is healthy). The AP is raised solely by
-# drifter-autoconnect's fallback logic. TODO(phase3): move knobs to config.py.
+# every mode.plan() puts it in `disable`, and check_health never restarts
+# connector-owned units (see the CONNECTOR_OWNED_SERVICES skip in the
+# service loop). The AP is raised solely by drifter-autoconnect's fallback
+# logic. TODO(phase3): move knobs to config.py.
 WATCHDOG_AUTO_DIAG = os.environ.get("WATCHDOG_AUTO_DIAG", "1") not in ("0", "false", "no")
 WATCHDOG_MEM_CRITICAL_PCT = float(os.environ.get("WATCHDOG_MEM_CRITICAL_PCT", "92"))
 WATCHDOG_TEMP_CRITICAL_C = float(os.environ.get("WATCHDOG_TEMP_CRITICAL_C", "82"))
@@ -195,6 +197,17 @@ def check_health(mqtt_client):
     for svc in SERVICES:
         status = get_service_status(svc)
         health['services'][svc] = status
+
+        if svc in CONNECTOR_OWNED_SERVICES:
+            # Connector-owned units (drifter-hotspot) are raised and lowered
+            # by drifter-autoconnect alone. Their 'failed' state is expected
+            # during teardown/rebuild probe cycles and must never be
+            # restarted from here — that would resurrect the rescue AP
+            # against design and fight the connector's hysteresis.
+            if status == 'failed':
+                log.debug(f"{svc} is {status} — connector-owned, left to "
+                          f"drifter-autoconnect")
+            continue
 
         if status == 'failed':
             issues.append(f"{svc} is FAILED")

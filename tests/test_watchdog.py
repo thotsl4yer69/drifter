@@ -87,6 +87,53 @@ def test_active_service_does_not_trigger_issue(monkeypatch,
     assert health['overall'] == 'healthy'
 
 
+# ── Connector-owned services are exempt from health-restarts ───────────
+
+def test_connector_owned_failed_hotspot_never_restarted(monkeypatch,
+                                                        reset_watchdog_state):
+    """R2/R3 pin: drifter-hotspot belongs to drifter-autoconnect alone. A
+    'failed' hotspot unit is expected during the connector's teardown/
+    rebuild probe cycles — restarting it from here would resurrect the
+    rescue AP against design."""
+    monkeypatch.setattr(watchdog, 'WATCHDOG_START_TIME', time.time())
+    monkeypatch.setattr(watchdog, 'SERVICES', ['drifter-hotspot', 'drifter-gps'])
+    _patch_services(monkeypatch, {'drifter-hotspot': 'failed'})
+    watchdog.last_mqtt_data['drifter/engine/rpm'] = time.time()
+    watchdog.last_mqtt_data['drifter/snapshot'] = time.time()
+    restarted = []
+    monkeypatch.setattr(watchdog, 'restart_service',
+                        lambda name: restarted.append(name) or True)
+    mq = FakeMQTT()
+
+    health = watchdog.check_health(mq)
+
+    assert health['services']['drifter-hotspot'] == 'failed'
+    assert restarted == [], f"watchdog restarted connector-owned units: {restarted}"
+    assert not any('drifter-hotspot' in i for i in health.get('issues', []))
+    assert health['overall'] == 'healthy'
+
+
+def test_non_owned_failed_service_still_restarted(monkeypatch,
+                                                  reset_watchdog_state):
+    """The connector-owned exemption must not over-block: ordinary failed
+    services still get their restart attempt + issue flag."""
+    monkeypatch.setattr(watchdog, 'WATCHDOG_START_TIME', time.time())
+    monkeypatch.setattr(watchdog, 'SERVICES', ['drifter-gps'])
+    _patch_services(monkeypatch, {'drifter-gps': 'failed'})
+    watchdog.last_mqtt_data['drifter/engine/rpm'] = time.time()
+    watchdog.last_mqtt_data['drifter/snapshot'] = time.time()
+    restarted = []
+    monkeypatch.setattr(watchdog, 'restart_service',
+                        lambda name: restarted.append(name) or True)
+    mq = FakeMQTT()
+
+    health = watchdog.check_health(mq)
+
+    assert restarted == ['drifter-gps']
+    assert any('drifter-gps' in i for i in health.get('issues', []))
+    assert health['overall'] == 'degraded'
+
+
 # ── Auto-demote to diag under sustained pressure ────────────────────
 class _RecordingClient:
     def __init__(self):
