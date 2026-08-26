@@ -62,6 +62,10 @@ log = logging.getLogger(__name__)
 
 SCAN_DWELL_SEC = 8.0
 HW_RESCAN_INTERVAL = 30.0
+# Retained status carries the freshness ts duck consumers (voice_input
+# TX-duck) expire on, so long sessions must keep republishing or they get
+# self-unmuted mid-playback by any staleness TTL.
+STATUS_HEARTBEAT_SEC = 10.0
 
 
 class AudioStream:
@@ -179,6 +183,8 @@ class AudioStream:
 
 _stream = AudioStream()
 _state = 'idle'  # 'idle' | 'playing' | 'scanning'
+_last_status_pub = 0.0          # ts of last status publish — paces heartbeat
+_scan_progress = (None, None)   # latest (index, total) mid-scan, for heartbeats
 
 _RFAUDIO_MODES = {'nfm', 'wfm', 'fm', 'am', 'usb', 'lsb', 'raw'}
 _scan_thread: threading.Thread | None = None
@@ -186,6 +192,7 @@ _scan_stop = threading.Event()
 
 
 def _publish_status(client, scan_index=None, scan_total=None) -> None:
+    global _last_status_pub, _scan_progress
     payload = {
         'state': _state,
         'freq_mhz': _stream.freq_mhz,
@@ -197,7 +204,18 @@ def _publish_status(client, scan_index=None, scan_total=None) -> None:
     if scan_index is not None and scan_total is not None:
         payload['scan_index'] = scan_index
         payload['scan_total'] = scan_total
+        _scan_progress = (scan_index, scan_total)
     client.publish(TOPICS['rfaudio_status'], json.dumps(payload), retain=True, qos=1)
+    _last_status_pub = time.time()
+
+
+def _heartbeat_due(now: float) -> bool:
+    """True while a playing/scanning session owes the broker a status
+    republish — keeps the retained ts fresh under consumer staleness TTLs."""
+    return (
+        _state in ('playing', 'scanning')
+        and (now - _last_status_pub) >= STATUS_HEARTBEAT_SEC
+    )
 
 
 def _pause_rtl_433(client) -> None:
@@ -390,6 +408,7 @@ def on_message(client, userdata, msg) -> None:
 
 
 def main() -> int:
+    global _state
     running = True
 
     def _on_signal(_sig, _frame):
@@ -428,10 +447,16 @@ def main() -> int:
             last_hw_tick = now
             publish_hw_state(client, 'rtl_sdr', probe_rtl_sdr())
             publish_hw_state(client, 'speaker', probe_speaker())
+        # Status heartbeat: keep the retained playing/scanning message's ts
+        # fresh so staleness-TTL consumers (voice_input TX-duck) don't
+        # self-unmute mid-session. Idle transitions publish immediately at
+        # the state change itself; only long-running states need this.
+        if _heartbeat_due(now):
+            idx, total = _scan_progress if _state == 'scanning' else (None, None)
+            _publish_status(client, scan_index=idx, scan_total=total)
         # Bail-out: if the operator started playback but rtl_fm exited
         # (e.g. SDR was unplugged), reflect that in status without
         # waiting for them to explicitly stop.
-        global _state
         if _state == 'playing' and not _stream.is_running():
             rtl_err, aplay_err = _stream.drain_stderr()
             log.warning("stream died unexpectedly — returning to idle. "
@@ -444,6 +469,13 @@ def main() -> int:
     log.info("rfaudio shutting down")
     _stop_scan()
     _stream.stop()
+    if _state != 'idle':
+        # Exiting mid-session: clear the retained playing/scanning status
+        # now so consumers unmute immediately instead of waiting out their
+        # staleness TTL. (Must precede loop_stop or the publish never
+        # reaches the broker.)
+        _state = 'idle'
+        _publish_status(client)
     _resume_rtl_433(client)
     client.loop_stop()
     client.disconnect()

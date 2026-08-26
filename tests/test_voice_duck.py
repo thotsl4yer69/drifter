@@ -1,11 +1,13 @@
 """TX-duck tests — Vivi/alert TTS must mute drifter-voicein capture.
 
-Covers the three failure modes the design called out:
+Covers the four failure modes the design called out:
 - refcount/tail logic in vivi_v2 (_acquire_duck/_release_duck), including
   the inter-sentence race where sentence N's clear would unmute during
   sentence N+1;
 - stale-duck expiry on the voice_input side so a dead publisher can't mute
   the mic forever;
+- multiple simultaneous duck publishers (vivi_v2 + voice_alerts share the
+  topic) — one source's clear must not unmute while another still speaks;
 - the Last-Will payload shape that clears a crash mid-playback.
 """
 import json
@@ -150,11 +152,11 @@ class TestLwtPayload:
 
 @pytest.fixture(autouse=True)
 def _reset_voicein_duck_state():
-    for attr in ('_speaker_duck', '_rfaudio_duck'):
-        setattr(voice_input, attr, False)
-    voice_input._speaker_duck_ts = 0.0
+    voice_input._speaker_ducks.clear()
+    voice_input._rfaudio_duck = False
     voice_input._rfaudio_duck_ts = 0.0
     yield
+    voice_input._speaker_ducks.clear()
 
 
 def _msg(topic, payload):
@@ -163,13 +165,11 @@ def _msg(topic, payload):
 
 class TestDuckStaleness:
     def test_fresh_speaker_duck_is_ducked(self):
-        voice_input._speaker_duck = True
-        voice_input._speaker_duck_ts = time.time()
+        voice_input._speaker_ducks['vivi2'] = time.time()
         assert voice_input._is_ducked() is True
 
     def test_stale_speaker_duck_expires(self):
-        voice_input._speaker_duck = True
-        voice_input._speaker_duck_ts = time.time() - (voice_input._DUCK_MAX_AGE_S + 1)
+        voice_input._speaker_ducks['vivi2'] = time.time() - (voice_input._DUCK_MAX_AGE_S + 1)
         assert voice_input._is_ducked() is False
 
     def test_rfaudio_playback_is_ducked_while_fresh(self):
@@ -219,8 +219,56 @@ class TestDuckMessaging:
         voice_input.on_voice_message(None, None, _msg(
             voice_input.TOPICS['voice_duck'], b'not-json{',
         ))
-        assert voice_input._speaker_duck is False
+        assert voice_input._speaker_ducks == {}
         assert voice_input._is_ducked() is False
+
+
+class TestMultiPublisherDuck:
+    """The duck topic is shared: vivi_v2 and voice_alerts each broadcast
+    around their own TTS. A clear from one publisher must not unmute the
+    mic while another is still speaking."""
+
+    def _duck(self, on, src):
+        voice_input.on_voice_message(None, None, _msg(
+            voice_input.TOPICS['voice_duck'],
+            json.dumps({'duck': bool(on), 'src': src, 'ts': time.time()}).encode(),
+        ))
+
+    def test_interleaved_publishers_clear_only_when_all_released(self):
+        # vivi starts talking…
+        self._duck(True, 'vivi2')
+        assert voice_input._is_ducked() is True
+        # …a proactive alert cuts in on top of it.
+        self._duck(True, 'voice_alerts')
+        assert voice_input._is_ducked() is True
+        # vivi finishes — its retained clear must NOT unmute mid-alert.
+        self._duck(False, 'vivi2')
+        assert voice_input._is_ducked() is True
+        # Only when the alert releases too does capture resume.
+        self._duck(False, 'voice_alerts')
+        assert voice_input._is_ducked() is False
+
+    def test_second_publisher_refreshes_duck_past_first_expiry(self):
+        old = time.time() - (voice_input._DUCK_MAX_AGE_S + 1)
+        voice_input._speaker_ducks['vivi2'] = old  # vivi's entry already stale
+        self._duck(True, 'voice_alerts')
+        assert voice_input._is_ducked() is True
+
+    def test_lwt_clear_folds_onto_its_publisher(self):
+        # Crash mid-playback: the Last-Will publishes duck=false tagged
+        # 'vivi2-lwt' — must clear the 'vivi2' entry immediately rather
+        # than waiting out the TTL.
+        self._duck(True, 'vivi2')
+        assert voice_input._is_ducked() is True
+        self._duck(False, 'vivi2-lwt')
+        assert 'vivi2' not in voice_input._speaker_ducks
+        assert voice_input._is_ducked() is False
+
+    def test_missing_src_still_tracked_under_fallback_key(self):
+        self._duck(True, '')
+        assert voice_input._is_ducked() is True
+        self._duck(False, '')
+        assert voice_input._speaker_ducks == {}
 
 
 class TestDuckSubscription:

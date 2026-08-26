@@ -74,10 +74,13 @@ oww_available = False
 # ── TX duck (someone else is using the shared speaker) ──
 # Set from the retained drifter/voice/duck broadcast published by vivi_v2 /
 # voice_alerts around TTS playback, and from rfaudio_status transitions.
-# Both flags only count while fresh (_DUCK_MAX_AGE_S) so a publisher that
-# died without sending its clear (no LWT) can't mute us forever.
-_speaker_duck = False
-_speaker_duck_ts = 0.0
+# Several services publish to that one duck topic, so a single boolean fed
+# from the last-received payload can't represent them all — vivi2's clear
+# would unmute mid-sentence while voice_alerts still holds the speaker.
+# Track last-active ts per publishing src instead; each source goes stale
+# only via its own clear or _DUCK_MAX_AGE_S, so a publisher that died
+# without sending its clear (no LWT) still can't mute us forever.
+_speaker_ducks = {}        # src -> ts of last active duck broadcast
 _rfaudio_duck = False
 _rfaudio_duck_ts = 0.0
 _DUCK_MAX_AGE_S = 90
@@ -230,12 +233,15 @@ def _pub_voice_status(state: str):
 
 
 def _is_ducked():
-    """True while another service holds the shared speaker — Vivi/alert TTS
-    or rfaudio monitor audio. Stale ducks expire so a crashed publisher
-    can't mute us forever (the vivi2 LWT clears the normal crash case; this
-    covers publishers without one)."""
+    """True while any other service holds the shared speaker — Vivi/alert
+    TTS or rfaudio monitor audio. Sources are tracked individually and
+    stale entries expire so a crashed publisher can't mute us forever (the
+    vivi2 LWT clears the normal crash case; this covers publishers without
+    one)."""
     now = time.time()
-    if _speaker_duck and (now - _speaker_duck_ts) < _DUCK_MAX_AGE_S:
+    # Snapshot the values: the MQTT callback thread mutates the dict while
+    # this runs on the capture loop.
+    if any((now - ts) < _DUCK_MAX_AGE_S for ts in list(_speaker_ducks.values())):
         return True
     return _rfaudio_duck and (now - _rfaudio_duck_ts) < _DUCK_MAX_AGE_S
 
@@ -489,7 +495,7 @@ _follow_up_pending = False
 
 def on_voice_message(_client, _userdata, msg):
     """MQTT message handler — listen_now, TX-duck and rfaudio state."""
-    global _follow_up_pending, _speaker_duck, _speaker_duck_ts
+    global _follow_up_pending
     global _rfaudio_duck, _rfaudio_duck_ts
     if msg.topic == TOPICS.get('voice_listen_now', 'drifter/voice/listen_now'):
         log.info("conversation mode: follow-up turn requested")
@@ -497,10 +503,17 @@ def on_voice_message(_client, _userdata, msg):
     elif msg.topic == TOPICS.get('voice_duck', 'drifter/voice/duck'):
         try:
             payload = json.loads(msg.payload.decode('utf-8', errors='replace'))
-            _speaker_duck = bool(payload.get('duck', False))
-            _speaker_duck_ts = float(payload.get('ts') or time.time())
-            if _speaker_duck:
-                log.info("TX duck ON — muting capture during playback")
+            raw_src = str(payload.get('src') or 'unknown')
+            # LWT clears arrive tagged '<src>-lwt' — fold them back onto
+            # their publisher so a crash mid-playback unmutes immediately
+            # instead of waiting out the freshness TTL.
+            src = raw_src[:-4] if raw_src.endswith('-lwt') else raw_src
+            ts = float(payload.get('ts') or time.time())
+            if bool(payload.get('duck', False)):
+                _speaker_ducks[src] = ts
+                log.info(f"TX duck ON via {raw_src} — muting capture during playback")
+            else:
+                _speaker_ducks.pop(src, None)
         except (ValueError, TypeError, AttributeError) as e:
             log.debug(f"bad duck payload: {e}")
     elif msg.topic == TOPICS.get('rfaudio_status', 'drifter/rfaudio/status'):
