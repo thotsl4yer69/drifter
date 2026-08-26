@@ -400,9 +400,17 @@ def _service_loop(known: list[str], client, keep_running) -> None:
             continue
 
         joined = active_client_ssid()
-        if joined and (not known or joined in known):
-            # Connected as a client to something we actually meant to join.
-            # NM re-enables power save on association — keep it off each pass.
+        # ANY active client connection counts as connected — not just known
+        # SSIDs. An operator who hand-joined CoffeeShop intends to stay
+        # there; tearing that down to hunt for known SSIDs would fight their
+        # intent (and drop them offline). internet=True/False still follows
+        # the PING_HOST probe below. Our own rescue AP is never accepted
+        # through this ambiguous SSID heuristic — only the authoritative
+        # NAME,DEVICE check above may classify ap_fallback; this comparison
+        # is a second guard so our beacon can't latch a fake 'connected'.
+        if joined and joined != AP_FALLBACK_CONNECTION:
+            # Connected as a client. NM re-enables power save on
+            # association — keep it off each pass.
             disable_power_save()
             ip = current_ip()
             net = internet_ok()

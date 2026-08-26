@@ -212,6 +212,38 @@ def test_real_client_join_still_connected(monkeypatch):
     assert not [c for c in h.nmcli() if c[1:3] == ['connection', 'up']]
 
 
+def test_manual_unknown_network_join_is_respected(monkeypatch):
+    """Operator hand-joins CoffeeShop — not in `known`. The connector must
+    treat it as connected: no teardown hunting known SSIDs, no fallback AP,
+    no re-join attempts. (The old `joined in known` gate destroyed manual
+    joins by tearing them down to chase configured networks.)"""
+    h = _loop(monkeypatch, known=['DG2144-B817', 'Drifter-Phone'],
+              conn=None, active_ssid='CoffeeShop')
+    h.run(3)
+    assert h.states() == ['connected'] * 3
+    assert all(p['ssid'] == 'CoffeeShop' for p in h.published)
+    assert all(p['ap_fallback'] is False for p in h.published)
+    downs = [c for c in h.nmcli() if c[1:3] == ['connection', 'down']]
+    ups = [c for c in h.nmcli() if c[1:3] == ['connection', 'up']]
+    assert downs == [] and ups == []
+    assert h.connects == []          # never re-joins over the operator
+    # A connected pass must not even scan for better networks.
+    assert [c for c in h.nmcli() if c[-2:] == ['wifi', 'list']] == []
+
+
+def test_manual_join_without_internet_stays_connected_flag_honest(monkeypatch):
+    """connected reflects operator intent; internet=True/False keeps
+    following the PING_HOST probe regardless of known-list membership."""
+    h = _loop(monkeypatch, known=['DG2144-B817'], conn=None,
+              active_ssid='CoffeeShop')
+    monkeypatch.setattr(auto_connect, 'internet_ok', lambda: False)
+    h.run(1)
+    p = h.published[0]
+    assert p['state'] == 'connected'
+    assert p['ssid'] == 'CoffeeShop'
+    assert p['internet'] is False
+
+
 def test_parse_active_connections_maps_iface_to_profile():
     rows = ('lo:lo\n'
             'Wired connection 1:eth0\n'
