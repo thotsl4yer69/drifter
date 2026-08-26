@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,9 +16,13 @@ def _reset_module_state():
     Reset between tests so leakage doesn't bleed across cases."""
     rfaudio._stream.stop()
     rfaudio._state = 'idle'
+    rfaudio._last_status_pub = 0.0
+    rfaudio._scan_progress = (None, None)
     yield
     rfaudio._stream.stop()
     rfaudio._state = 'idle'
+    rfaudio._last_status_pub = 0.0
+    rfaudio._scan_progress = (None, None)
 
 
 def _fake_proc(returncode=None):
@@ -321,3 +326,69 @@ def test_on_message_rejects_non_object_payload():
     msg.payload = b'"hello"'
     rfaudio.on_message(client, None, msg)
     assert rfaudio._state == 'idle'
+
+
+# ── Status heartbeat (R4) ──
+# The retained status message's ts is what staleness-TTL consumers
+# (voice_input TX-duck) expire on. A session that publishes once on entry
+# and then stays silent gets self-unmuted mid-playback; the heartbeat must
+# keep it fresh, and every exit path must publish idle immediately.
+
+class TestStatusHeartbeat:
+    def test_publish_status_records_pacing_timestamp(self):
+        client = MagicMock()
+        before = time.time() - 1
+        rfaudio._publish_status(client)
+        assert rfaudio._last_status_pub >= before
+
+    def test_heartbeat_due_when_playing_and_stale(self):
+        rfaudio._state = 'playing'
+        rfaudio._last_status_pub = time.time() - (rfaudio.STATUS_HEARTBEAT_SEC + 1)
+        assert rfaudio._heartbeat_due(time.time()) is True
+
+    def test_no_heartbeat_while_fresh(self):
+        rfaudio._state = 'playing'
+        rfaudio._last_status_pub = time.time()
+        assert rfaudio._heartbeat_due(time.time()) is False
+
+    def test_no_heartbeat_when_idle_even_if_stale(self):
+        """Idle never needs a heartbeat — transitions publish immediately."""
+        rfaudio._state = 'idle'
+        rfaudio._last_status_pub = time.time() - 9999
+        assert rfaudio._heartbeat_due(time.time()) is False
+
+    def test_scanning_heartbeat_replays_scan_progress(self):
+        """Mid-scan heartbeats keep the additive scan_index/scan_total
+        fields so the dashboard doesn't flicker between bands."""
+        client = MagicMock()
+        rfaudio._publish_status(client, scan_index=2, scan_total=5)
+        rfaudio._last_status_pub -= rfaudio.STATUS_HEARTBEAT_SEC + 1
+        rfaudio._state = 'scanning'
+        assert rfaudio._heartbeat_due(time.time())
+        # Exactly what the main loop does on a heartbeat tick:
+        idx, total = rfaudio._scan_progress
+        rfaudio._publish_status(client, scan_index=idx, scan_total=total)
+        payload = json.loads(client.publish.call_args[0][1])
+        assert payload['scan_index'] == 2
+        assert payload['scan_total'] == 5
+        assert payload['state'] == 'scanning'
+
+    def test_stop_command_publishes_idle_immediately(self):
+        """The stop path must clear the retained playing status at once —
+        no waiting for the heartbeat tick."""
+        client = MagicMock()
+        publish_calls = []
+        client.publish.side_effect = lambda topic, payload, **kw: publish_calls.append((topic, payload))
+        rfaudio._stream._rtl = _fake_proc()
+        rfaudio._stream._aplay = _fake_proc()
+        rfaudio._stream.freq_mhz = 476.525
+        rfaudio._stream.mode = 'nfm'
+        rfaudio._state = 'playing'
+
+        rfaudio._handle_command(client, {'action': 'stop'})
+
+        status_payloads = [
+            json.loads(p) for t, p in publish_calls if t == 'drifter/rfaudio/status'
+        ]
+        assert status_payloads, 'stop must publish a status transition'
+        assert status_payloads[-1]['state'] == 'idle'
