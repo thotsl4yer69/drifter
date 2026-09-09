@@ -72,6 +72,7 @@ export function CmGatedAction() {
   const [backend, setBackend] = React.useState('flipper');
   const [busy, setBusy] = React.useState('');
   const [notice, setNotice] = React.useState('ready');
+  const [expanded, setExpanded] = React.useState(false);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -97,6 +98,13 @@ export function CmGatedAction() {
     const iv = setInterval(refresh, 5000);
     return () => clearInterval(iv);
   }, [refresh]);
+
+  React.useEffect(() => {
+    if (!expanded) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
 
   const run = async (key, fn) => {
     if (busy) return null;
@@ -172,14 +180,34 @@ export function CmGatedAction() {
   const flipperActive = !!toolMap['drifter-flipper']?.live_meta?.unit_active;
   const armed = hidStatus?.armed || null;
   const noticeBad = /failed|offline|error|refus|403|409|500|503/i.test(notice);
+  const panelStyle = expanded ? {
+    position: 'fixed',
+    inset: 12,
+    zIndex: 250,
+    padding: '16px 18px',
+    overflow: 'auto',
+    minHeight: 0,
+    maxHeight: 'calc(100vh - 24px)',
+    background: 'var(--bg-1)',
+    boxShadow: '0 24px 80px rgba(0,0,0,0.72)',
+    border: '1px solid var(--stroke-acc)',
+  } : {
+    padding: '12px 14px', overflow: 'auto', minHeight: 0,
+  };
 
   return (
-    <div className="dr-tile" style={{ padding: '12px 14px', overflow: 'auto', minHeight: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline', marginBottom: 8 }}>
+    <div className="dr-tile" style={panelStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 8 }}>
         <span className="dr-label">foot control · touch console</span>
-        <span className="mono" style={{ fontSize: 8, color: footReady ? 'var(--teal)' : 'var(--acc)' }}>
-          MODE · {String(mode).toUpperCase()}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span className="mono" style={{ fontSize: 8, color: footReady ? 'var(--teal)' : 'var(--acc)' }}>
+            MODE · {String(mode).toUpperCase()}
+          </span>
+          <button type="button" className="dr-ghost" onClick={() => setExpanded((v) => !v)}
+            style={{ minHeight: 34, minWidth: 76, touchAction: 'manipulation', cursor: 'pointer' }}>
+            {expanded ? 'close' : 'expand'}
+          </button>
+        </div>
       </div>
 
       <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>OPERATING MODE</div>
@@ -198,7 +226,7 @@ export function CmGatedAction() {
       ) : null}
 
       <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>ARSENAL SERVICES</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 5, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: expanded ? 'repeat(4,minmax(0,1fr))' : 'repeat(2,minmax(0,1fr))', gap: 5, marginBottom: 10 }}>
         {FOOT_UNITS.map(([unit, label]) => {
           const t = toolMap[unit];
           const active = !!t?.live_meta?.unit_active;
