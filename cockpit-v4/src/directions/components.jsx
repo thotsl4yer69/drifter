@@ -32,8 +32,11 @@ async function apiJson(path, body) {
     body: JSON.stringify(body),
   };
   const res = await fetch(path, opts);
+  const text = await res.text();
   let payload = null;
-  try { payload = await res.json(); } catch (_) { payload = { error: await res.text().catch(() => '') }; }
+  if (text) {
+    try { payload = JSON.parse(text); } catch (_) { payload = { message: text }; }
+  }
   if (!res.ok) {
     const detail = payload?.error || payload?.message || `${res.status} ${res.statusText}`;
     throw new Error(detail);
@@ -57,7 +60,7 @@ function touchBtn(txt, onClick, opts = {}) {
 }
 
 // ── Real FOOT control surface ───────────────────────────────────
-// Replaces the old local-only "deauth burst" mock. The Pi backend remains
+// Replaces the old local-only mock action tile. The Pi backend remains
 // authoritative: mode switching is validated by config.MODES; service control
 // is restricted to the arsenal unit allowlist; Flipper commands are allowlisted;
 // HID still requires ARM → service-published arm id → CONFIRM.
@@ -77,16 +80,17 @@ export function CmGatedAction() {
         apiJson('/api/hid/payloads'),
         apiJson('/api/hid/status'),
       ]);
+      const list = Array.isArray(p) ? p : [];
       setArsenal(a);
-      setPayloads(Array.isArray(p) ? p : []);
+      setPayloads(list);
       setHidStatus(h);
-      if (!payloadId && Array.isArray(p) && p.length) setPayloadId(p[0].id);
+      setPayloadId((prev) => list.some((x) => x.id === prev) ? prev : (list[0]?.id || ''));
       if (h?.flipper?.connected) setBackend('flipper');
       setNotice('live state refreshed');
     } catch (e) {
       setNotice(`refresh failed · ${e.message}`);
     }
-  }, [payloadId]);
+  }, []);
 
   React.useEffect(() => {
     refresh();
@@ -95,7 +99,7 @@ export function CmGatedAction() {
   }, [refresh]);
 
   const run = async (key, fn) => {
-    if (busy) return;
+    if (busy) return null;
     setBusy(key);
     setNotice(`${key}…`);
     try {
@@ -111,10 +115,17 @@ export function CmGatedAction() {
     }
   };
 
-  const switchFoot = () => run('switch foot', async () => {
-    DrifterSim.setMode('foot');
-    await new Promise((r) => setTimeout(r, 900));
-    return apiJson('/api/mode');
+  const switchMode = (name) => run(`mode ${name}`, async () => {
+    // POST directly and only update the local view after the Pi accepted it.
+    // DrifterSim.setMode() is intentionally not used here because it performs
+    // an optimistic local flip before its network request completes.
+    const out = await apiJson(`/api/mode/${name}`, {});
+    const local = DrifterSim.getState?.();
+    if (local) {
+      local.mode = name;
+      local.autoDemoted = false;
+    }
+    return out || { ok: true };
   });
 
   const serviceAction = (unit, action) => run(`${action} ${unit.replace('drifter-', '')}`,
@@ -157,28 +168,41 @@ export function CmGatedAction() {
 
   const toolMap = Object.fromEntries((arsenal?.tools || []).filter((x) => x.unit).map((x) => [x.unit, x]));
   const mode = arsenal?.mode || DrifterSim.getState()?.mode || 'unknown';
+  const footReady = mode === 'foot' || mode === 'both';
+  const flipperActive = !!toolMap['drifter-flipper']?.live_meta?.unit_active;
   const armed = hidStatus?.armed || null;
+  const noticeBad = /failed|offline|error|refus|403|409|500|503/i.test(notice);
 
   return (
     <div className="dr-tile" style={{ padding: '12px 14px', overflow: 'auto', minHeight: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline', marginBottom: 8 }}>
         <span className="dr-label">foot control · touch console</span>
-        <span className="mono" style={{ fontSize: 8, color: mode === 'foot' || mode === 'both' ? 'var(--teal)' : 'var(--acc)' }}>
+        <span className="mono" style={{ fontSize: 8, color: footReady ? 'var(--teal)' : 'var(--acc)' }}>
           MODE · {String(mode).toUpperCase()}
         </span>
       </div>
 
+      <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>OPERATING MODE</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 10 }}>
-        {touchBtn('ENTER FOOT', switchFoot, { wide: true, disabled: !!busy || mode === 'foot' })}
-        {touchBtn('FULL OPSEC', () => { window.location.href = `http://${window.location.hostname}:8090/`; }, { wide: true })}
+        {touchBtn('DIAG', () => switchMode('diag'), { disabled: !!busy || mode === 'diag' })}
+        {touchBtn('DRIVE', () => switchMode('drive'), { disabled: !!busy || mode === 'drive' })}
+        {touchBtn('FOOT', () => switchMode('foot'), { hot: true, disabled: !!busy || mode === 'foot' })}
+        {touchBtn('FULL OPSEC', () => { window.location.href = `http://${window.location.hostname}:8090/`; }, { wide: true, disabled: !!busy || !footReady })}
         {touchBtn('REFRESH', refresh, { disabled: !!busy })}
       </div>
+
+      {!footReady ? (
+        <div className="mono" style={{ fontSize: 8, color: 'var(--acc)', border: '1px solid var(--stroke-acc)', borderRadius: 5, padding: '6px 8px', marginBottom: 9 }}>
+          FOOT arsenal locked · switch to FOOT before starting services, Flipper actions or HID.
+        </div>
+      ) : null}
 
       <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>ARSENAL SERVICES</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 5, marginBottom: 10 }}>
         {FOOT_UNITS.map(([unit, label]) => {
           const t = toolMap[unit];
           const active = !!t?.live_meta?.unit_active;
+          const serviceLocked = !!busy || !footReady;
           return (
             <div key={unit} style={{ border: '1px solid var(--stroke)', borderRadius: 6, padding: '6px 7px', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
@@ -186,10 +210,10 @@ export function CmGatedAction() {
                 <span className="mono" style={{ fontSize: 8, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{label}</span>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
-                <button type="button" className="dr-ghost" disabled={!!busy} onClick={() => serviceAction(unit, active ? 'restart' : 'start')}
-                  style={{ flex: 1, minHeight: 34, cursor: busy ? 'not-allowed' : 'pointer', touchAction: 'manipulation' }}>{active ? 'restart' : 'start'}</button>
-                <button type="button" className="dr-ghost" disabled={!!busy || !active} onClick={() => serviceAction(unit, 'stop')}
-                  style={{ minHeight: 34, cursor: busy || !active ? 'not-allowed' : 'pointer', touchAction: 'manipulation' }}>stop</button>
+                <button type="button" className="dr-ghost" disabled={serviceLocked} onClick={() => serviceAction(unit, active ? 'restart' : 'start')}
+                  style={{ flex: 1, minHeight: 34, cursor: serviceLocked ? 'not-allowed' : 'pointer', touchAction: 'manipulation', opacity: serviceLocked ? 0.5 : 1 }}>{active ? 'restart' : 'start'}</button>
+                <button type="button" className="dr-ghost" disabled={serviceLocked || !active} onClick={() => serviceAction(unit, 'stop')}
+                  style={{ minHeight: 34, cursor: serviceLocked || !active ? 'not-allowed' : 'pointer', touchAction: 'manipulation', opacity: serviceLocked || !active ? 0.5 : 1 }}>stop</button>
               </div>
             </div>
           );
@@ -198,32 +222,37 @@ export function CmGatedAction() {
 
       <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>FLIPPER BRIDGE · ALLOWLISTED QUICK ACTIONS</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
-        {FLIPPER_QUICK_ACTIONS.map(([cmd, label]) => touchBtn(label, () => flipperAction(cmd), { disabled: !!busy }))}
+        {FLIPPER_QUICK_ACTIONS.map(([cmd, label]) => touchBtn(label, () => flipperAction(cmd), {
+          disabled: !!busy || !footReady || !flipperActive,
+        }))}
       </div>
+      {footReady && !flipperActive ? (
+        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: -5, marginBottom: 9 }}>Flipper actions unlock when drifter-flipper is active and hardware is detected.</div>
+      ) : null}
 
       <div className="mono" style={{ fontSize: 8, color: 'var(--fg-dim)', marginBottom: 5, letterSpacing: '0.08em' }}>RUBBER DUCKY · EXISTING ARM → CONFIRM GATE</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginBottom: 6 }}>
-        <select value={payloadId} onChange={(e) => setPayloadId(e.target.value)}
-          style={{ minHeight: 42, minWidth: 0, borderRadius: 6, border: '1px solid var(--stroke-2)', background: 'var(--inset-bg)', color: 'var(--fg)', padding: '0 8px' }}>
+        <select value={payloadId} onChange={(e) => setPayloadId(e.target.value)} disabled={!footReady || !!busy}
+          style={{ minHeight: 42, minWidth: 0, borderRadius: 6, border: '1px solid var(--stroke-2)', background: 'var(--inset-bg)', color: 'var(--fg)', padding: '0 8px', opacity: !footReady || busy ? 0.55 : 1 }}>
           {payloads.length === 0 ? <option value="">no stored payloads</option> : null}
           {payloads.map((p) => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
         </select>
-        <select value={backend} onChange={(e) => setBackend(e.target.value)}
-          style={{ minHeight: 42, borderRadius: 6, border: '1px solid var(--stroke-2)', background: 'var(--inset-bg)', color: 'var(--fg)', padding: '0 8px' }}>
+        <select value={backend} onChange={(e) => setBackend(e.target.value)} disabled={!footReady || !!busy}
+          style={{ minHeight: 42, borderRadius: 6, border: '1px solid var(--stroke-2)', background: 'var(--inset-bg)', color: 'var(--fg)', padding: '0 8px', opacity: !footReady || busy ? 0.55 : 1 }}>
           <option value="flipper">Flipper</option>
           <option value="native">Native HID</option>
         </select>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {!armed ? touchBtn('ARM PAYLOAD', hidArm, { wide: true, disabled: !!busy || !payloadId }) : null}
-        {armed ? touchBtn(`CONFIRM ${armed.id}`, hidConfirm, { wide: true, hot: true, disabled: !!busy }) : null}
+        {!armed ? touchBtn('ARM PAYLOAD', hidArm, { wide: true, disabled: !!busy || !footReady || !payloadId }) : null}
+        {armed ? touchBtn(`CONFIRM ${armed.id}`, hidConfirm, { wide: true, hot: true, disabled: !!busy || !footReady }) : null}
         {armed ? touchBtn('CANCEL', hidCancel, { disabled: !!busy }) : null}
       </div>
       <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 6 }}>
         backend readiness · flipper {hidStatus?.flipper?.connected ? 'connected' : 'not confirmed'} · native {hidStatus?.native?.bound ? 'bound' : 'not bound'}
       </div>
 
-      <div className="mono" style={{ fontSize: 8, color: notice.includes('failed') || notice.includes('offline') ? 'var(--red)' : 'var(--fg-mute)', marginTop: 10, borderTop: '1px dotted var(--edge)', paddingTop: 7 }}>
+      <div className="mono" style={{ fontSize: 8, color: noticeBad ? 'var(--red)' : 'var(--fg-mute)', marginTop: 10, borderTop: '1px dotted var(--edge)', paddingTop: 7 }}>
         {busy ? '◌ ' : '● '}{notice} · controls are local-network + backend allowlist gated
       </div>
     </div>
