@@ -3,6 +3,7 @@
 // ════════════════════════════════════════════════════════════════
 import React from 'react';
 import { useSim, SpectrumStrip, HonestState, drFmt } from '../shared/widgets.jsx';
+import { CmGatedAction } from './components.jsx';
 
 function PmHead({ sim, mode }) {
   return (
@@ -79,47 +80,16 @@ export function DirPhoneRf({ t, onNav }) {
   );
 }
 
-// ── PHONE · ARSENAL (offensive, gated) ──────────────────────────
+// ── PHONE · ARSENAL — same live controls as the full cockpit ─────
 export function DirPhoneFoot({ t, onNav }) {
   const simRaw = useSim();
-  const sim = { ...simRaw, mode: 'foot' };
-  const [armed, setArmed] = React.useState(false);
+  const sim = { ...simRaw, mode: simRaw.mode || 'foot' };
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column', padding: '12px 12px 0', gap: 9 }} data-screen-label="A′ · POCKET ARSENAL">
-      <PmHead sim={sim} mode="arms · gated" />
-
-      <PmTile label="marauder · deauth" meta="offensive · gated">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="mono" style={{ fontSize: 8.5, color: 'var(--fg-mute)', flex: 1 }}>allowlist 2 APs · ch 6 · 30 s</span>
-          {armed ? (
-            <React.Fragment>
-              <button type="button" className="mono" onClick={() => setArmed(false)} style={{ fontSize: 9, color: 'var(--bg-0)', background: 'var(--red)', border: 0, borderRadius: 5, padding: '8px 12px', cursor: 'pointer', letterSpacing: '0.08em' }}>CONFIRM 118s</button>
-              <button type="button" className="mono" onClick={() => setArmed(false)} style={{ fontSize: 9, color: 'var(--fg-dim)', border: '1px solid var(--stroke-2)', background: 'transparent', borderRadius: 5, padding: '8px 10px', cursor: 'pointer' }}>✕</button>
-            </React.Fragment>
-          ) : (
-            <button type="button" className="mono" onClick={() => setArmed(true)} style={{ fontSize: 9, color: 'var(--acc)', border: '1px solid var(--stroke-acc)', background: 'transparent', borderRadius: 5, padding: '8px 16px', cursor: 'pointer', letterSpacing: '0.1em' }}>ARM</button>
-          )}
-        </div>
-        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 6 }}>two-leg confirm-token · 120s expiry · no optimistic flip</div>
-      </PmTile>
-
-      <PmTile label="wi-fi audit" meta="allowlist-gated">
-        <div className="mono" style={{ fontSize: 9, color: 'var(--fg-mute)' }}>{sim.recon.auditAllowlist.length ? sim.recon.auditAllowlist.join(' · ') : 'allowlist empty — disabled'}</div>
-        <div className="mono" style={{ fontSize: 7.5, color: 'var(--fg-deep)', marginTop: 4 }}>passive handshake/pmkid capture · no deauth-to-force</div>
-      </PmTile>
-
-      <PmTile label="hid · badusb" meta="arm → confirm → run">
-        <HonestState kind="no-hw" label="native gadget unconfigured" hint="dr_mode=host — nothing can be typed" compact />
-      </PmTile>
-
-      <PmTile label="sentry" meta="no optimistic flip">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>○ DISARMED</span>
-          <span className="dr-ghost" style={{ marginLeft: 'auto', padding: '8px 14px' }}>arm sentry</span>
-        </div>
-      </PmTile>
-
-      <div style={{ flex: 1 }}></div>
+      <PmHead sim={sim} mode="arms · live" />
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid' }}>
+        <CmGatedAction />
+      </div>
       <PmDock active="arms" onPick={onNav} />
     </div>
   );
