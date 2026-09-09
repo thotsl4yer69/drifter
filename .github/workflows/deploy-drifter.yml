@@ -41,6 +41,19 @@ jobs:
       - name: pytest
         run: pytest -q
 
+      - name: set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cockpit-v4/package-lock.json
+
+      - name: build cockpit
+        working-directory: cockpit-v4
+        run: |
+          npm ci
+          npm run build
+
   build-image:
     name: build container image
     runs-on: ubuntu-latest
