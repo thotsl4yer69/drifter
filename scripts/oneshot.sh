@@ -10,18 +10,18 @@
 #   stage 20 — diagnose         (drifter diagnose pre-flight)
 #   stage 30 — smoke            (post-deploy verification)
 #   stage 40 — enable services  (systemctl enable + start)
-#   final    — curl /healthz    (contract health probe)
+#   final    — dashboard health + cockpit control contract
 #
 # Each stage emits "STAGE <n> START / OK / FAIL" lines so the
 # fleet `mesh deploy drifter` orchestrator can grep progress.
 #
 # Exit codes:
-#   0   — all stages green, /healthz returned 200
+#   0   — all stages green, dashboard/control contract returned 200
 #   10  — stage 10 (apt/venv) failed
 #   20  — stage 20 (diagnose) failed (only fatal in --strict mode)
 #   30  — stage 30 (smoke) failed
 #   40  — stage 40 (enable) failed
-#   50  — /healthz returned non-200
+#   50  — dashboard/control contract failed
 #
 # Usage:
 #   sudo ./scripts/oneshot.sh              # full deploy
@@ -35,6 +35,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DRIFTER_DIR="/opt/drifter"
 DASHBOARD_HOST="127.0.0.1"
 DASHBOARD_PORT="8080"
+DASHBOARD_BASE="http://${DASHBOARD_HOST}:${DASHBOARD_PORT}"
 
 SKIP_APT=0
 STRICT=0
@@ -205,14 +206,14 @@ fi
 stage_ok 45
 
 # ════════════════════════════════════════════════════════════════
-# Final — curl /healthz
+# Final — dashboard + touchscreen control contract
 # ════════════════════════════════════════════════════════════════
-stage_start FINAL "curl http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/healthz"
+stage_start FINAL "dashboard + touchscreen control contract"
 # Dashboard takes a moment to bind 8080 after restart. Poll for ~30s.
 HEALTHZ_OK=0
 HEALTHZ_BODY=""
 for i in $(seq 1 30); do
-    if curl_out="$(curl -fsS -m 2 "http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/healthz" 2>/dev/null)"; then
+    if curl_out="$(curl -fsS -m 2 "${DASHBOARD_BASE}/healthz" 2>/dev/null)"; then
         HEALTHZ_BODY="$curl_out"
         HEALTHZ_OK=1
         break
@@ -223,6 +224,25 @@ if [ "$HEALTHZ_OK" -ne 1 ]; then
     stage_fail 50 "/healthz did not return 200 within 30s"
 fi
 echo "$HEALTHZ_BODY"
+ok "/healthz"
+
+# Root must serve the V4 front door. File existence was checked at Stage 10;
+# this network check catches handler/static-serving regressions after restart.
+if ! curl -fsS -m 3 "${DASHBOARD_BASE}/" >/dev/null; then
+    stage_fail 50 "cockpit root / did not return 200"
+fi
+ok "cockpit root /"
+
+# These are the read-side dependencies for the real touch controller. They are
+# deliberately side-effect free, so the deploy can verify the whole control
+# seam without switching modes, starting a tool, transmitting RF, or running HID.
+for endpoint in /api/mode /api/arsenal /api/hid/status /api/flipper/status; do
+    if ! curl -fsS -m 3 "${DASHBOARD_BASE}${endpoint}" >/dev/null; then
+        stage_fail 50 "touch control dependency ${endpoint} failed"
+    fi
+    ok "$endpoint"
+done
+
 stage_ok FINAL
 
 printf "${GREEN}DEPLOY: ok${NC}\n"
