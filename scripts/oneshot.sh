@@ -25,7 +25,7 @@
 #
 # Usage:
 #   sudo ./scripts/oneshot.sh              # full deploy
-#   sudo ./scripts/oneshot.sh --skip-apt   # skip stage 10 (re-run)
+#   sudo ./scripts/oneshot.sh --skip-apt   # deploy current code, skip apt upgrade
 #   sudo ./scripts/oneshot.sh --strict     # fail on any diagnose warning
 # ============================================================
 
@@ -76,25 +76,44 @@ fi
 cd "$REPO_DIR"
 
 # ════════════════════════════════════════════════════════════════
-# STAGE 10 — apt + venv
+# STAGE 10 — install/deploy + venv + cockpit
 # ════════════════════════════════════════════════════════════════
-stage_start 10 "apt + venv (delegated to install.sh)"
+stage_start 10 "deploy code + venv + cockpit"
+# IMPORTANT: --skip-apt must skip only the expensive system upgrade, NOT the
+# deployment itself. The old oneshot returned early here and therefore left
+# /opt/drifter running stale source after a git pull.
+INSTALL_ARGS=()
 if [ "$SKIP_APT" -eq 1 ]; then
-    note "--skip-apt: trusting existing /opt/drifter install"
-else
-    if ! bash "$REPO_DIR/install.sh"; then
-        stage_fail 10 "install.sh exited non-zero"
-    fi
+    INSTALL_ARGS+=(--skip-apt)
+    note "--skip-apt: deploying current repo without apt update/upgrade"
 fi
-# Sanity-check the install.sh outputs the rest of the contract relies on.
+if ! bash "$REPO_DIR/install.sh" "${INSTALL_ARGS[@]}"; then
+    stage_fail 10 "install.sh exited non-zero"
+fi
+
+# The dashboard prefers /opt/drifter/ui/v4/index.html, but install.sh retains
+# the legacy single-file cockpit as a fallback. Build/deploy Vite explicitly so
+# a normal oneshot always upgrades the touchscreen UI too.
+if [ -x "$REPO_DIR/scripts/deploy-cockpit-v4.sh" ]; then
+    if ! bash "$REPO_DIR/scripts/deploy-cockpit-v4.sh"; then
+        stage_fail 10 "cockpit-v4 build/deploy failed"
+    fi
+    ok "cockpit-v4 deployed"
+else
+    stage_fail 10 "scripts/deploy-cockpit-v4.sh missing"
+fi
+
+# Sanity-check the outputs the rest of the contract relies on.
 [ -x "$DRIFTER_DIR/venv/bin/python3" ] || stage_fail 10 "venv missing at $DRIFTER_DIR/venv"
 [ -d "$DRIFTER_DIR" ]                  || stage_fail 10 "$DRIFTER_DIR missing"
+[ -f "$DRIFTER_DIR/ui/v4/index.html" ] || stage_fail 10 "cockpit v4 missing at $DRIFTER_DIR/ui/v4/index.html"
 ok "venv at $DRIFTER_DIR/venv"
+ok "cockpit at $DRIFTER_DIR/ui/v4/index.html"
 stage_ok 10
 
 # Belt-and-braces: install.sh already deploys diagnose.py and the
 # /usr/local/bin/drifter wrapper, but we re-install here in case
-# someone bypassed install.sh with --skip-apt + a stale install dir.
+# someone has a partial/stale install dir.
 if [ ! -f "$DRIFTER_DIR/diagnose.py" ] || [ ! -x /usr/local/bin/drifter ]; then
     install -m 0755 "$REPO_DIR/src/diagnose.py"  "$DRIFTER_DIR/diagnose.py"
     install -m 0755 "$REPO_DIR/bin/drifter"      /usr/local/bin/drifter
