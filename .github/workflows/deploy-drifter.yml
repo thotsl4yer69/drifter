@@ -24,6 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: shell syntax
+        run: bash -n scripts/oneshot.sh scripts/deploy-cockpit-v4.sh scripts/post-deploy-check.sh install.sh
+
       - name: set up python
         uses: actions/setup-python@v5
         with:
