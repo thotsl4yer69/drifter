@@ -94,7 +94,7 @@ fi
 # The dashboard prefers /opt/drifter/ui/v4/index.html, but install.sh retains
 # the legacy single-file cockpit as a fallback. Build/deploy Vite explicitly so
 # a normal oneshot always upgrades the touchscreen UI too.
-if [ -x "$REPO_DIR/scripts/deploy-cockpit-v4.sh" ]; then
+if [ -f "$REPO_DIR/scripts/deploy-cockpit-v4.sh" ]; then
     if ! bash "$REPO_DIR/scripts/deploy-cockpit-v4.sh"; then
         stage_fail 10 "cockpit-v4 build/deploy failed"
     fi
