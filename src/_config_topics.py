@@ -184,6 +184,7 @@ TOPICS = {
     'nav_route': 'drifter/nav/route',
     'nav_status': 'drifter/nav/status',
     'obd_pid': 'drifter/obd/pid',
+    'obd_vin': 'drifter/obd/vin',
     'obd_status': 'drifter/obd/status',
     'presence_event': 'drifter/presence/event',
     'presence_status': 'drifter/presence/status',

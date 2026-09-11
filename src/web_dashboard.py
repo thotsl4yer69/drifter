@@ -53,7 +53,7 @@ from http.server import ThreadingHTTPServer
 os.environ.setdefault("DRIFTER_CORPUS_NO_EMBED", "1")
 
 import web_dashboard_state as state
-from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
+from config import MQTT_HOST, MQTT_PORT, make_mqtt_client, subscribe_on_connect
 from web_dashboard_audio import generate_audio_wav
 from web_dashboard_handlers import DashboardHandler
 
@@ -329,8 +329,7 @@ def _connect_mqtt(client_id: str, on_message, topics: list[str]):
             time.sleep(3)
     else:
         return None
-    for t in topics:
-        client.subscribe(t)
+    subscribe_on_connect(client, topics)
     client.loop_start()
     return client
 

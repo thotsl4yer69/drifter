@@ -112,7 +112,7 @@ _DEFS: list[Pid] = [
     Pid(0x10, 'maf',        'maf',        lambda d: round(((d[0] * 256) + d[1]) / 100.0, 2),  'g/s',  5,   2, ICE),
     Pid(0x11, 'throttle',   'throttle',   lambda d: round(d[0] / 2.55, 1),                    '%',    10,  1, ALL),
     Pid(0x14, 'o2_b1s1',    'o2_b1s1',    lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
-    Pid(0x15, 'o2_b2s1',    'o2_b2s1',    lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
+    Pid(0x18, 'o2_b2s1',    'o2_b2s1',    lambda d: round(d[0] / 200.0, 2),                   'V',    5,   1, ICE),
     Pid(0x1F, 'run_time',   'run_time',   lambda d: (d[0] * 256) + d[1],                      's',    1,   2, ALL),
     Pid(0x2F, 'fuel_lvl',   'fuel_lvl',   lambda d: round((d[0] * 100) / 255.0, 1),           '%',    0.5, 1, ICE),
     Pid(0x33, 'baro',       'baro',       lambda d: d[0],                                     'kPa',  0.1, 1, ALL),

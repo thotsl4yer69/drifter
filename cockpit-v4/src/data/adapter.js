@@ -16,9 +16,10 @@
 //  · AUD currency, vivi2/query, never auto-LLM (UI-side).
 // ════════════════════════════════════════════════════════════════
 import { createSim, freshState } from './sim.js';
+import { applyVehicleTopic, expireVehicleData } from './vehicle-data.js';
 
 const params = new URLSearchParams(location.search);
-const SIM = params.has('sim');
+const SIM = params.get('sim') === '1';
 
 // ── helpers ─────────────────────────────────────────────────────
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : null));
@@ -29,15 +30,6 @@ function pushHist(state, k, v) {
   h.push(v);
   if (h.length > HIST) h.shift();
 }
-function gearFor(speed) {
-  if (speed == null) return 'N';
-  if (speed < 1) return 'N';
-  if (speed < 18) return '1';
-  if (speed < 38) return '2';
-  if (speed < 62) return '3';
-  if (speed < 88) return '4';
-  return '5';
-}
 const sevForLevel = (lv) => (lv >= 3 ? 'crit' : lv >= 2 ? 'warn' : 'info');
 
 // Honest "nothing yet" baseline for the live node (vs sim's populated one).
@@ -46,10 +38,15 @@ function liveBaseline() {
   s.link = 'lost';
   s.hw = { ecu: 'pending', gps: 'none', bt: 'down', weatherKey: false, sdr: 'unknown' };
   s.power = { undervoltNow: false, undervoltSinceBoot: false, throttled: false };
-  s.speed = 0; s.rpm = 0; s.gear = 'N'; s.coolant = 0; s.voltage = 0; s.throttle = 0;
-  s.trip = { km: 0, fuel: 0, cost: 0, l100: 0, durS: 0 };
+  s.mode = 'diag';
+  s.speed = null; s.rpm = null; s.gear = '—'; s.coolant = null; s.voltage = null; s.throttle = null;
+  s.odo = null; s.heading = null; s.vehicleSampleTs = {};
+  s.rf.peakMhz = null; s.rf.peakDb = null;
+  s.recon.marauderHw = false; s.system.radio = 'unknown';
+  s.trip = { km: 0, fuel: 0, cost: 0, l100: null, durS: 0 };
   s.alerts = [];
   s.dtcs = [];
+  s.dtcAvailable = false; s.dtcSampleTs = 0;
   s.tpms = [
     { pos: 'FL', kpa: null, c: null }, { pos: 'FR', kpa: null, c: null },
     { pos: 'RL', kpa: null, c: null }, { pos: 'RR', kpa: null, c: null },
@@ -93,33 +90,19 @@ function createRealAdapter() {
   function applyTopic(topic, data) {
     try {
       const d = data;
+      if (applyVehicleTopic(state, topic, d)) { schedule(); return; }
       switch (true) {
-        case topic === 'drifter/snapshot': {
-          if (d && typeof d === 'object') {
-            const set = (k, v) => { const n = num(v); if (n != null) state[k] = n; };
-            set('rpm', d.rpm); set('coolant', d.coolant); set('voltage', d.voltage);
-            const sp = num(d.speed); if (sp != null) { state.speed = sp; state.gear = gearFor(sp); }
-            const th = num(d.throttle); if (th != null) state.throttle = th > 1 ? th / 100 : th;
-            state.hw.ecu = 'ok';
-            pushHist(state, 'rpm', state.rpm); pushHist(state, 'coolant', state.coolant);
-            pushHist(state, 'voltage', state.voltage); pushHist(state, 'speed', state.speed);
+        case topic === 'drifter/obd/status': {
+          state.obd = d;
+          // Link status alone cannot make ECU readings live.
+          if (['offline', 'ecu_pending'].includes(d?.state)) {
+            state.vehicleSampleTs = {}; expireVehicleData(state);
           }
-          break;
-        }
-        case topic === 'drifter/engine/rpm': { const v = num(d?.value ?? d); if (v != null) { state.rpm = v; state.hw.ecu = 'ok'; pushHist(state, 'rpm', v); } break; }
-        case topic === 'drifter/engine/coolant': { const v = num(d?.value ?? d); if (v != null) { state.coolant = v; state.hw.ecu = 'ok'; pushHist(state, 'coolant', v); } break; }
-        case topic === 'drifter/engine/throttle': { const v = num(d?.value ?? d); if (v != null) state.throttle = v > 1 ? v / 100 : v; break; }
-        case topic === 'drifter/power/voltage': { const v = num(d?.value ?? d); if (v != null) { state.voltage = v; pushHist(state, 'voltage', v); } break; }
-        case topic === 'drifter/vehicle/speed': { const v = num(d?.value ?? d); if (v != null) { state.speed = v; state.gear = gearFor(v); pushHist(state, 'speed', v); } break; }
-        case topic === 'drifter/system/status': {
-          const st = d?.state;
-          if (st === 'online') state.hw.ecu = 'ok';
-          else if (st === 'hw_pending') state.hw.ecu = 'pending';
           break;
         }
         case topic === 'drifter/alert/level': { const lv = num(d?.level ?? d); if (lv != null) state.alertLevel = lv; break; }
         case topic === 'drifter/alert/active': {
-          const arr = Array.isArray(d) ? d : Array.isArray(d?.active) ? d.active : null;
+          const arr = Array.isArray(d) ? d : Array.isArray(d?.alerts) ? d.alerts : Array.isArray(d?.active) ? d.active : null;
           if (arr) {
             state.alerts = arr.map((a, i) => ({
               id: a.id ?? a.code ?? a.rule ?? i,
@@ -132,6 +115,9 @@ function createRealAdapter() {
           break;
         }
         case topic === 'drifter/diag/dtc': {
+          if (!d || !Number.isFinite(d.ts) || Date.now() / 1000 - d.ts > 90 || d.ts > Date.now() / 1000 + 5) break;
+          state.dtcSampleTs = d.ts;
+          state.dtcAvailable = d.stored_available === true && d.pending_available === true;
           const stored = (d?.stored || []).map((c) => ({ code: typeof c === 'string' ? c : c.code, desc: c.desc || '', state: 'stored' }));
           const pending = (d?.pending || []).map((c) => ({ code: typeof c === 'string' ? c : c.code, desc: c.desc || '', state: 'pending' }));
           state.dtcs = [...stored, ...pending];
@@ -143,7 +129,7 @@ function createRealAdapter() {
               km: num(d.distance_km ?? d.km) ?? state.trip.km,
               fuel: num(d.fuel_l ?? d.fuel) ?? state.trip.fuel,
               cost: num(d.cost ?? d.cost_aud) ?? state.trip.cost, // AUD (brief §6.10)
-              l100: num(d.l100 ?? d.cur_l_per_100km ?? d.avg_l_per_100km) ?? 0,
+              l100: num(d.l100 ?? d.cur_l_per_100km),
               durS: num(d.duration_s ?? d.durS) ?? state.trip.durS,
             };
             if (d.odo != null) state.odo = num(d.odo);
@@ -280,8 +266,11 @@ function createRealAdapter() {
 
   // ── WebSocket with resilient reconnect ─────────────────────────
   let ws = null, retry = 0, retryTimer = null;
-  const wsURL = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8081`;
+  // The Pi's 8081 listener is plain WS. HTTPS pages use the same-origin
+  // snapshot fallback below; attempting WSS on that port can never connect.
+  const wsURL = () => `ws://${location.hostname}:8081`;
   function connect() {
+    if (location.protocol === 'https:') return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) { scheduleReconnect(); return; }
     try { ws = new WebSocket(wsURL()); } catch (e) { scheduleReconnect(); return; }
     ws.onopen = () => { retry = 0; if (state.link !== 'live') { state.link = 'live'; schedule(); } coldStart(); };
@@ -304,23 +293,45 @@ function createRealAdapter() {
   }
 
   // ── REST: cold-start snapshot + consolidated low-rate poll ─────
+  let reconciling = false, lastReconcile = 0;
   async function coldStart() {
+    if (reconciling) return;
+    reconciling = true;
+    lastReconcile = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const r = await fetch('/api/state', { headers: { accept: 'application/json' } });
+      const r = await fetch('/api/state', { headers: { accept: 'application/json' }, signal: controller.signal });
       if (!r.ok) return;
       const snap = await r.json();
       // latest_state keys are `topic` with drifter/ stripped and / → _
       for (const [k, v] of Object.entries(snap || {})) {
+        if (k.startsWith('_')) continue;
         if (k === 'snapshot') applyTopic('drifter/snapshot', v);
-        else applyTopic('drifter/' + k.replace(/_/g, '/'), v);
+        else {
+          const exact = { alert_active: 'alert/active', obd_status: 'obd/status', diag_dtc: 'diag/dtc', vehicle_fuel_lvl: 'vehicle/fuel_lvl', gps_fix: 'gps/fix', trip_stats: 'trip/stats', rf_status: 'rf/status', engine_run_time: 'engine/run_time' };
+          applyTopic('drifter/' + (exact[k] || k.replace(/_/g, '/')), v);
+        }
       }
+      const health = await fetch('/healthz', { signal: controller.signal }).then(r => r.json());
+      if (health.mode) state.mode = health.mode;
+      state.system.broker.ok = !!health.mqtt_connected;
+      state.link = health.mqtt_connected ? 'live' : 'lost';
       schedule();
-    } catch (e) { /* offline cold-start is fine; WS will fill in */ }
+    } catch (e) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) { state.link = 'lost'; schedule(); }
+    } finally { clearTimeout(timeout); reconciling = false; }
   }
-  // single consolidated 30s reconcile (brief §2.3 — one tick, not many pollers)
-  setInterval(() => { if (state.link === 'live') coldStart(); }, 30000);
+  setInterval(() => { expireVehicleData(state); schedule(); }, 1000);
+  // Keep HTTPS and blocked/lost WS usable through the existing REST API.
+  // Original sample times survive polling, so this cannot revive stale gauges.
+  setInterval(() => {
+    const interval = ws?.readyState === WebSocket.OPEN ? 30000 : 2000;
+    if (Date.now() - lastReconcile >= interval) coldStart();
+  }, 1000);
 
   connect();
+  coldStart();
 
   // ── command surface ────────────────────────────────────────────
   async function post(path, body) {

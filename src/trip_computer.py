@@ -3,7 +3,7 @@
 MZ1312 DRIFTER — Trip Computer
 Subscribes to telemetry and computes per-trip distance, average and
 instantaneous fuel economy (from MAF when available, AFR=14.7 stoich),
-running cost in GBP, and trip duration. Publishes stats every second and
+running cost in the configured currency, and trip duration. Publishes stats every second and
 a richer summary on session end.
 UNCAGED TECHNOLOGY — EST 1991
 """
@@ -13,8 +13,6 @@ import logging
 import signal
 import time
 
-import paho.mqtt.client as mqtt
-
 import vehicle_profile
 from config import (
     DRIFTER_DIR,
@@ -23,9 +21,12 @@ from config import (
     MQTT_PORT,
     TOPICS,
     TRIP_AVG_CONSUMPTION_L_PER_100KM,
+    TRIP_FUEL_CURRENCY,
     TRIP_FUEL_PRICE_GBP_PER_L,
     TRIP_FUEL_TANK_LITRES,
     TRIP_SESSION_GAP_MIN,
+    make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -191,6 +192,8 @@ class TripState:
             'avg_l_per_100km': avg_l_per_100 if avg_l_per_100 is not None else self.avg_l_per_100km,
             'cur_l_per_100km': cur_l_per_100,
             'cost_gbp': cost_gbp,
+            'cost': cost_gbp,  # currency-neutral field; old name kept for consumers
+            'currency': TRIP_FUEL_CURRENCY,
             'fuel_price_per_l': self.fuel_price,
             'speed_kph': round(self.last_speed_kph, 1),
             'elevation_m': self.elevation_m,
@@ -231,7 +234,7 @@ def main() -> None:
     # the active vehicle profile, with config/trip.yaml as an operator override.
     _apply_profile()
     state = TripState(
-        fuel_price=float(cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L)),
+        fuel_price=float(cfg.get('fuel_price_per_l', cfg.get('fuel_price_gbp_per_l', TRIP_FUEL_PRICE_GBP_PER_L))),
         tank_l=float(cfg.get('tank_litres',
                              vehicle_profile.spec('tank_litres', TRIP_FUEL_TANK_LITRES))),
         avg_l_per_100=float(cfg.get('avg_consumption_l_per_100km',
@@ -249,7 +252,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-trip")
+    client = make_mqtt_client("drifter-trip")
 
     def on_message(_c, _u, msg) -> None:
         try:
@@ -258,6 +261,15 @@ def main() -> None:
             return
         topic = msg.topic
         if topic == TOPICS['snapshot'] and isinstance(data, dict):
+            times = data.get('sample_ts', {})
+            now = time.time()
+            if not isinstance(times, dict):
+                return
+            data = dict(data)
+            for key in ('maf', 'speed', 'rpm', 'map', 'iat'):
+                ts = times.get(key, data.get('ts', now))
+                if not isinstance(ts, (int, float)) or not 0 <= now - ts <= MAF_STALE_SEC:
+                    data[key] = None
             maf = data.get('maf')
             # MAF-less car (reports MAP but not MAF): estimate air mass by speed
             # density so fuel/economy still track. A car that reports real MAF
@@ -315,7 +327,7 @@ def main() -> None:
     if not running:
         return
 
-    client.subscribe([
+    subscribe_on_connect(client, [
         (TOPICS['snapshot'], 0),
         (TOPICS['drive_session'], 0),
         (TOPICS['weather_current'], 0),
@@ -323,7 +335,7 @@ def main() -> None:
         (TOPICS['vehicle_profile'], 0),
     ])
     client.loop_start()
-    log.info(f"Trip Computer LIVE — fuel £{state.fuel_price}/L, tank {state.tank_l}L")
+    log.info(f"Trip Computer LIVE — fuel {TRIP_FUEL_CURRENCY} {state.fuel_price}/L, tank {state.tank_l}L")
 
     while running:
         snap = state.to_dict()

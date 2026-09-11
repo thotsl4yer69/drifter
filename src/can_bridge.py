@@ -28,6 +28,7 @@ from config import (
     make_mqtt_client,
 )
 from obd_pids import (
+    PID_TABLE,
     SUPPORT_PROBE_PIDS,
     applies_to,
     can_pids,
@@ -200,6 +201,13 @@ def decode_obd_response(msg):
     if len(data) < 4:
         return None
 
+    # Only accept complete ISO-TP single frames; reject stale padding as data.
+    if any(getattr(msg, flag, False) is True for flag in ("is_extended_id", "is_remote_frame", "is_error_frame")):
+        return None
+    length = data[0]
+    if not 3 <= length <= 7 or len(data) < length + 1:
+        return None
+
     # Check it's a Mode 01 response (0x41)
     if data[1] != 0x41:
         return None
@@ -209,6 +217,8 @@ def decode_obd_response(msg):
         return None
 
     pid_def = PIDS[pid]
+    if length < 2 + PID_TABLE[pid].nbytes:
+        return None
     try:
         # Decoders take the data bytes (A, B, …) as a sequence, so a raw CAN
         # frame slice and an ELM327 hex line decode identically. The response
@@ -239,14 +249,18 @@ def query_supported_pids(bus, timeout=1.0):
             except can.CanError:
                 break
             if resp is None:
-                break
+                continue
             if (resp.arbitration_id < OBD_RESPONSE_BASE
                     or resp.arbitration_id > OBD_RESPONSE_END):
                 continue
             d = resp.data
-            if len(d) >= 7 and d[1] == 0x41 and d[2] == probe:
+            if (len(d) >= 7 and d[0] == 6 and d[1] == 0x41 and d[2] == probe
+                    and not any(getattr(resp, flag, False) is True for flag in
+                                ('is_extended_id', 'is_remote_frame', 'is_error_frame'))):
                 bitmaps[probe] = (d[3] << 24) | (d[4] << 16) | (d[5] << 8) | d[6]
                 break
+        if probe not in bitmaps or not bitmaps[probe] & 1:
+            break
     if not bitmaps:
         return None
     return supported_from_bitmaps(bitmaps)
@@ -261,7 +275,7 @@ def _resolve_poll_pids(bus):
     set: a pure EV drops the combustion-only PIDs, every ICE car keeps the full
     known table (identical to the pre-discovery behaviour)."""
     supported = query_supported_pids(bus)
-    if supported:
+    if supported is not None:
         pids = [p for p in PIDS if p in supported]
         log.info(f"PID discovery: ECU reports {len(pids)}/{len(PIDS)} "
                  f"known PIDs supported")
@@ -287,6 +301,19 @@ def _build_schedule(pids):
     return schedule
 
 
+def poll_pid(bus, pid, timeout=0.2):
+    """Ignore unrelated traffic until the requested PID arrives or times out."""
+    if not send_obd_request(bus, pid):
+        return None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = bus.recv(timeout=min(0.05, max(0, deadline - time.monotonic())))
+        result = decode_obd_response(response) if response else None
+        if result and result[0] == pid:
+            return result
+    return None
+
+
 def decode_dtc(byte1, byte2):
     """Decode a 2-byte DTC into standard format (e.g., P0301)."""
     if byte1 == 0 and byte2 == 0:
@@ -308,19 +335,9 @@ def request_dtcs(bus, mode=0x03):
     code rather than just whatever fit in the first frame."""
     payload = iso_tp.request(bus, [mode], timeout=0.5)
     if not payload:
-        return []
-    response_mode = mode + 0x40  # 0x43 for stored, 0x47 for pending
-    if payload[0] != response_mode:
-        return []
-    # Reassembled payload = [response_mode, count, DTC1_hi, DTC1_lo, ...] — the
-    # DTC pairs start after the mode echo + count byte.
-    body = payload[2:]
-    dtcs = []
-    for i in range(0, len(body) - 1, 2):
-        dtc = decode_dtc(body[i], body[i + 1])
-        if dtc:
-            dtcs.append(dtc)
-    return dtcs
+        return None
+    from elm_protocol import dtc_codes
+    return dtc_codes(payload.hex(), mode, can_protocol=True)
 
 
 def _publish_status(mqtt_client, state, **extra):
@@ -408,185 +425,134 @@ def _acquire_bus(mqtt_client, running_fn):
 
 
 def main():
-    global latest_values, _consecutive_failures
+    global _consecutive_failures
+    from obd_bridge import fresh_snapshot
 
     running = True
 
-    def _handle_signal(sig, frame):
+    def stop(_sig, _frame):
         nonlocal running
         running = False
 
-    def _running():
-        return running
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    # ── Connect to MQTT FIRST ──
-    # We connect to the broker before touching CAN so we can always publish a
-    # status (including 'hw_pending') even when no CAN adapter is present.
-    mqtt_client = make_mqtt_client("drifter-canbridge")
-    mqtt_connected = False
-    while not mqtt_connected and running:
-        try:
-            mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
-            mqtt_client.loop_start()
-            mqtt_connected = True
-            log.info("Connected to MQTT broker")
-        except Exception as e:
-            log.warning(f"MQTT connect failed: {e}. Retrying in 3s...")
-            time.sleep(3)
-
-    if not running:
-        log.info("Shutting down before MQTT connected")
-        return
-
-    # ── Transport arbitration ──
-    # canbridge and obdbridge publish the same topics and are mutually
-    # exclusive. If the ELM327 (K-line/serial) transport is auto-selected, idle
-    # here instead of double-publishing — re-checking so a hot-plugged CAN
-    # adapter promotes us without a restart.
-    if not _await_can_transport(mqtt_client, _running):
-        log.info("Shutting down — stopped while deferring to obdbridge")
-        _publish_status(mqtt_client, "offline")
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
-        return
-
-    # ── Acquire CAN interface (degrades, never exits) ──
-    log.info("Searching for CAN interface...")
-    bus, iface = _acquire_bus(mqtt_client, _running)
-    if bus is None:
-        # Only reached when asked to stop while still waiting — clean exit.
-        log.info("Shutting down — stopped while waiting for CAN interface")
-        _publish_status(mqtt_client, "offline")
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
-        return
-
-    # ── Polling Loop ──
-    # Discover which PIDs this ECU actually supports and poll only those (per
-    # car — works on anything, not just the X-Type). Falls back to the
-    # powertrain-default set on a silent bus.
-    schedule = _build_schedule(_resolve_poll_pids(bus))
-
-    log.info(f"Polling {len(schedule)} supported PIDs")
-    log.info("DRIFTER CAN Bridge is LIVE")
-
-    last_snapshot = 0.0
-    last_dtc_check = 0.0
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    client = make_mqtt_client('drifter-canbridge')
+    client.will_set(TOPICS['system_status'], json.dumps({'state': 'offline'}), retain=True)
     while running:
         try:
-            now = time.monotonic()
-
-            # ── Interface health check ──
-            if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                log.error(
-                    f"CAN interface lost — {_consecutive_failures} consecutive failures. "
-                    f"Attempting in-process reconnection (degrade, never exit)..."
-                )
-                _publish_status(mqtt_client, "can_reconnecting",
-                                can_interface=iface,
-                                failures=_consecutive_failures)
-
-                # Tear down old bus
-                try:
-                    bus.shutdown()
-                except Exception:
-                    pass
-
-                # Re-acquire the interface. _acquire_bus keeps retrying and
-                # publishing 'hw_pending' indefinitely — it returns (None,None)
-                # ONLY when we were signalled to stop. We never exit the
-                # process just because CAN dropped out.
-                _consecutive_failures = 0
-                bus, iface = _acquire_bus(mqtt_client, _running)
-                if bus is None:
-                    break  # asked to stop while waiting
-                log.info(f"CAN interface reconnected on {iface}")
-                # Re-discover supported PIDs on the fresh bus — a different
-                # adapter/vehicle may have been plugged in during the outage.
-                schedule = _build_schedule(_resolve_poll_pids(bus))
-                last_dtc_check = 0.0  # re-probe DTCs on the fresh bus
-                continue
-
-            # Find the next PIDs that are due (up to 4 per loop to prevent blocking)
-            polled_count = 0
-            for entry in schedule:
-                if now - entry['last_poll'] >= entry['interval']:
-                    send_obd_request(bus, entry['pid'])
-                    entry['last_poll'] = now
-
-                    # Wait for response (timeout 50ms)
-                    response = bus.recv(timeout=0.05)
-                    if response:
-                        result = decode_obd_response(response)
-                        if result:
-                            pid, value = result
-                            info = PIDS[pid]
-                            latest_values[info['name']] = value
-
-                            # Publish individual value
-                            mqtt_client.publish(info['topic'], json.dumps({
-                                'value': value,
-                                'unit': info['unit'],
-                                'ts': time.time()
-                            }))
-
-                    polled_count += 1
-                    if polled_count >= 4:
-                        break  # Limit to 4 PIDs per iteration
-
-            # Publish combined snapshot every second
-            if latest_values and now - last_snapshot >= 1.0:
-                mqtt_client.publish(TOPICS['snapshot'], json.dumps({
-                    **latest_values,
-                    'ts': time.time()
-                }))
-                last_snapshot = now
-
-            # Check DTCs periodically
-            if now - last_dtc_check >= DTC_CHECK_INTERVAL:
-                stored = request_dtcs(bus, mode=0x03)
-                pending = request_dtcs(bus, mode=0x07)
-
-                if stored != active_dtcs or pending != pending_dtcs:
-                    active_dtcs.clear()
-                    active_dtcs.extend(stored)
-                    pending_dtcs.clear()
-                    pending_dtcs.extend(pending)
-
-                    mqtt_client.publish(TOPICS['dtc'], json.dumps({
-                        'stored': stored,
-                        'pending': pending,
-                        'count': len(stored) + len(pending),
-                        'ts': time.time()
-                    }), retain=True)
-
-                    if stored:
-                        log.warning(f"Stored DTCs: {', '.join(stored)}")
-                    if pending:
-                        log.info(f"Pending DTCs: {', '.join(pending)}")
-
-                last_dtc_check = now
-
-            # Small sleep to prevent CPU spin
-            time.sleep(0.005)
-
-        except can.CanError as e:
-            log.error(f"CAN bus error: {e}")
+            client.connect(MQTT_HOST, MQTT_PORT, 60)
+            break
+        except OSError:
             time.sleep(1)
-
-    # ── Cleanup ──
-    log.info("Shutting down CAN Bridge...")
-    _publish_status(mqtt_client, "offline")
-    mqtt_client.loop_stop()
-    mqtt_client.disconnect()
+    if not running:
+        return
+    client.loop_start()
+    bus = lease = None
+    values, sample_ts = {}, {}
+    last_snapshot = last_dtc = last_status = 0.0
     try:
+        while running:
+            try:
+                if obd_transport.select_transport() != obd_transport.CAN:
+                    if bus is not None:
+                        bus.shutdown()
+                        bus = None
+                    if lease is not None:
+                        lease.close()
+                        lease = None
+                    values.clear()
+                    sample_ts.clear()
+                    if not _await_can_transport(client, lambda: running):
+                        break
+                    continue
+                if lease is None:
+                    lease = obd_transport.acquire_telemetry_lease()
+                    if lease is None:
+                        time.sleep(0.25)
+                        continue
+                if bus is None:
+                    iface = find_can_interface()
+                    if iface is None:
+                        _publish_status(client, 'hw_pending', reason='no_can_interface')
+                        for _ in range(20):
+                            if not running:
+                                break
+                            time.sleep(0.25)
+                        continue
+                    bus = can.Bus(interface='socketcan', channel=iface, bitrate=CAN_BITRATE)
+                    schedule = _build_schedule(_resolve_poll_pids(bus))
+                    vin_pending = True
+                    values.clear()
+                    sample_ts.clear()
+                    _consecutive_failures = 0
+                    last_snapshot = last_dtc = 0.0
+                if not client.is_connected():
+                    raise OSError('MQTT broker disconnected')
+                now = time.monotonic()
+                received = False
+                for entry in sorted(schedule, key=lambda e: (now - e['last_poll']) / e['interval'], reverse=True):
+                    if now - entry['last_poll'] < entry['interval']:
+                        continue
+                    entry['last_poll'] = now
+                    result = poll_pid(bus, entry['pid'])
+                    if result and result[0] == entry['pid']:
+                        pid, value = result
+                        info = PIDS[pid]
+                        ts = time.time()
+                        values[info['name']] = value
+                        sample_ts[info['name']] = ts
+                        client.publish(info['topic'], json.dumps({
+                            'value': value, 'unit': info['unit'], 'ts': ts, 'source': 'can_bridge',
+                        }))
+                        received = True
+                    break  # one transaction per loop; bounded arbitration latency
+                if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    raise OSError('CAN interface send failures')
+                if received and now - last_snapshot >= 1:
+                    snapshot = fresh_snapshot(values, sample_ts, time.time())
+                    snapshot['source'] = 'can_bridge'
+                    client.publish(TOPICS['snapshot'], json.dumps(snapshot))
+                    last_snapshot = now
+                if now - last_status >= 5:
+                    fresh = sample_ts and time.time() - max(sample_ts.values()) <= 15
+                    _publish_status(client, 'online' if fresh else 'hw_pending',
+                                    reason='' if fresh else 'no_ecu_response', can_interface=iface)
+                    last_status = now
+                if received and now - last_dtc >= DTC_CHECK_INTERVAL:
+                    stored, pending = request_dtcs(bus, 3), request_dtcs(bus, 7)
+                    client.publish(TOPICS['dtc'], json.dumps({
+                        'stored': stored, 'pending': pending,
+                        'stored_available': stored is not None,
+                        'pending_available': pending is not None,
+                        'count': len(stored or []) + len(pending or []), 'ts': time.time(),
+                        'source': 'can_bridge',
+                    }), retain=True)
+                    last_dtc = now
+                if received and vin_pending:
+                    payload = iso_tp.request(bus, [0x09, 0x02], timeout=3)
+                    vin = None
+                    if payload and list(payload[:2]) == [0x49, 0x02]:
+                        from elm_protocol import vin_from_reply
+                        vin = vin_from_reply(bytes(payload).hex())
+                    client.publish(TOPICS['obd_vin'], json.dumps({'vin': vin, 'ts': time.time(), 'source': 'can_bridge'}), retain=True)
+                    vin_pending = False
+                time.sleep(0.005)
+            except (can.CanError, OSError) as exc:
+                _publish_status(client, 'can_reconnecting', reason=str(exc))
+                if bus is not None:
+                    bus.shutdown()
+                    bus = None
+                values.clear()
+                sample_ts.clear()
+                time.sleep(1)
+    finally:
         if bus is not None:
             bus.shutdown()
-    except Exception:
-        pass
+        if lease is not None:
+            lease.close()
+        _publish_status(client, 'offline')
+        client.loop_stop()
+        client.disconnect()
 
 
 if __name__ == '__main__':

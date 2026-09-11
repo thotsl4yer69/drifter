@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import signal
+import threading
 import time
 from collections import defaultdict, deque
 
@@ -23,6 +24,8 @@ from config import (
     TELEMETRY_PUBLISH_HZ,
     TELEMETRY_WINDOW_SECONDS,
     TOPICS,
+    make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -41,6 +44,8 @@ METRIC_KEYS = (
 # Reverse map: topic string -> metric key
 _TOPIC_TO_KEY: dict[str, str] = {TOPICS[k]: k for k in METRIC_KEYS if k in TOPICS}
 
+_buffers_lock = threading.RLock()
+
 # Rolling buffers per metric: (timestamp, value)
 _buffers: dict[str, deque] = defaultdict(lambda: deque(maxlen=TELEMETRY_KEEP_SAMPLES))
 
@@ -58,7 +63,11 @@ def _record(topic: str, payload: bytes) -> None:
         return
     ts = data.get('ts', time.time()) if isinstance(data, dict) else time.time()
     try:
-        _buffers[key].append((float(ts), float(value)))
+        ts, value = float(ts), float(value)
+        if not math.isfinite(ts) or not math.isfinite(value):
+            return
+        with _buffers_lock:
+            _buffers[key].append((ts, value))
     except (TypeError, ValueError):
         return
 
@@ -84,7 +93,9 @@ def build_window(now: float, window_seconds: float = TELEMETRY_WINDOW_SECONDS) -
     """Compute the current rolling-window summary for every metric."""
     cutoff = now - window_seconds
     out: dict[str, dict] = {}
-    for key, buf in _buffers.items():
+    with _buffers_lock:
+        buffers = {key: list(buf) for key, buf in _buffers.items()}
+    for key, buf in buffers.items():
         recent = [(t, v) for t, v in buf if t >= cutoff]
         stats = _window_stats(recent)
         if stats:
@@ -129,7 +140,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-batcher")
+    client = make_mqtt_client("drifter-batcher")
     client.on_message = on_message
 
     connected = False
@@ -144,8 +155,7 @@ def main() -> None:
     if not running:
         return
 
-    for topic in _TOPIC_TO_KEY:
-        client.subscribe(topic, 0)
+    subscribe_on_connect(client, [(topic, 0) for topic in _TOPIC_TO_KEY])
     client.loop_start()
     log.info(f"Subscribed to {len(_TOPIC_TO_KEY)} metric topics")
 

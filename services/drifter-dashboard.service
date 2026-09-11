@@ -14,6 +14,7 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/web_dashboard.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
 # Run corpus retrieval embed-free in the dashboard. corpus.corpus_search()
 # lazy-loads sentence-transformers/torch (~1 GB resident) which would blow the
 # MemoryMax=512M cap below and OOM-kill the HUD that serves /healthz. With this

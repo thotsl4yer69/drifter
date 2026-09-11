@@ -9,6 +9,7 @@ UNCAGED TECHNOLOGY — EST 1991
 import itertools
 import json
 import logging
+import math
 import signal
 import threading
 import time
@@ -42,6 +43,7 @@ from config import (
     WARMUP_COOLANT_THRESHOLD,
     WARMUP_TIME_MAX,
     make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -93,6 +95,7 @@ class VehicleState:
     voltage_ts: deque = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
     active_dtcs: list = field(default_factory=list)
     pending_dtcs: list = field(default_factory=list)
+    sample_times: dict = field(default_factory=dict)
     # TPMS: {pos: {pressure_psi, temp_c, ts}}
     tpms: dict = field(default_factory=dict)
     tpms_history: dict = field(default_factory=lambda: {
@@ -996,8 +999,10 @@ def on_message(client, userdata, msg):
         with _state_lock:
             # DTC messages have a different structure
             if topic.endswith('/dtc'):
-                state.active_dtcs = data.get('stored', [])
-                state.pending_dtcs = data.get('pending', [])
+                if isinstance(data.get('stored'), list):
+                    state.active_dtcs = data['stored']
+                if isinstance(data.get('pending'), list):
+                    state.pending_dtcs = data['pending']
                 return
 
             # TPMS tire data
@@ -1014,6 +1019,14 @@ def on_message(client, userdata, msg):
             if value is None:
                 return
             ts = data.get('ts', time.time())
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                return
+            if not isinstance(ts, (int, float)) or not math.isfinite(ts) or not 0 <= time.time() - ts <= 15:
+                return
+            for key in ('rpm', 'coolant', 'stft1', 'stft2', 'ltft1', 'ltft2', 'load', 'speed', 'throttle', 'voltage', 'iat', 'maf', 'hybrid_batt_life'):
+                if topic == TOPICS[key]:
+                    state.sample_times[key] = ts
+                    break
 
             if topic.endswith('/rpm'):
                 state.rpm.append(value)
@@ -1082,6 +1095,13 @@ def evaluate_rules(mqtt_client):
     # callback thread cannot mutate VehicleState mid-evaluation.
     triggered = {}  # rule_name -> (level, message)
     with _state_lock:
+        for key, ts in state.sample_times.items():
+            if now - ts > 15:
+                getattr(state, key).clear()
+                if key in ('coolant', 'voltage'):
+                    getattr(state, key + '_ts').clear()
+        if state.sample_times and all(now - ts > 15 for ts in state.sample_times.values()):
+            triggered['telemetry_unavailable'] = (LEVEL_AMBER, 'Vehicle telemetry unavailable — check OBD reader and ignition')
         for rule in ACTIVE_RULES:
             result = rule(state)
             if result:
@@ -1196,8 +1216,8 @@ def main():
 
     # Subscribe to telemetry domains used by diagnostic rules.
     # Uses wildcards matching the TOPICS hierarchy (drifter/{domain}/...).
-    for domain in ('engine', 'vehicle', 'power', 'diag', 'ev', 'rf/tpms'):
-        client.subscribe(f"drifter/{domain}/#")
+    subscribe_on_connect(client, [f"drifter/{domain}/#" for domain in
+                                  ('engine', 'vehicle', 'power', 'diag', 'ev', 'rf/tpms')])
     client.loop_start()
 
     # Reset the data readiness clock now that we are actually receiving data.

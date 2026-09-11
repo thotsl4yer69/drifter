@@ -10,6 +10,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
+import queue
 import signal
 import time
 
@@ -25,6 +26,8 @@ from config import (
     VEHICLE_PROFILE_FILE,
     VEHICLES_DIR,
     VIN_DETECT_RETRIES,
+    make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -233,7 +236,27 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-vehicleid")
+    client = make_mqtt_client("drifter-vehicleid")
+    received_vins = queue.Queue(maxsize=1)
+
+    def receive_vin(_client, _userdata, msg):
+        try:
+            data = json.loads(msg.payload)
+            candidate = data.get('vin') if isinstance(data, dict) else None
+            if not isinstance(candidate, str) or not _valid_vin(candidate):
+                return
+            if not 0 <= time.time() - float(data.get('ts', 0)) <= 120:
+                return
+            try:
+                received_vins.get_nowait()
+            except queue.Empty:
+                pass
+            received_vins.put_nowait(candidate)
+        except (ValueError, TypeError, queue.Full):
+            return
+
+    client.on_message = receive_vin
+    subscribe_on_connect(client, [TOPICS['obd_vin']])
 
     connected = False
     while not connected and running:
@@ -249,7 +272,8 @@ def main() -> None:
 
     client.loop_start()
 
-    vin = detect_vin_from_obd()
+    # The selected bridge alone owns vehicle I/O, including VIN requests.
+    vin = None
     profile = resolve_profile(vin)
     write_active_profile(profile)
     _publish(client, vin, profile)
@@ -257,9 +281,21 @@ def main() -> None:
              f"({profile.get('year')}) — source={profile.get('source')}")
 
     # Re-publish periodically so late subscribers see it
+    last_publish = time.monotonic()
     while running:
-        time.sleep(30)
-        _publish(client, vin, profile)
+        try:
+            candidate = received_vins.get(timeout=0.5)
+        except queue.Empty:
+            candidate = None
+        if candidate and candidate != vin:
+            vin = candidate
+            profile = resolve_profile(vin)
+            write_active_profile(profile)
+            _publish(client, vin, profile)
+            last_publish = time.monotonic()
+        if time.monotonic() - last_publish >= 30:
+            _publish(client, vin, profile)
+            last_publish = time.monotonic()
 
     client.loop_stop()
     client.disconnect()

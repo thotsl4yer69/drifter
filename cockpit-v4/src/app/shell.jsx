@@ -50,21 +50,21 @@ function ShDriveMain({ sim, short }) {
       <DemoteBanner sim={sim} />
       <div style={{ display: 'grid', gridTemplateColumns: '1.55fr 1fr 1fr 1fr', gap: 10, height: short ? 184 : 218, flex: 'none' }}>
         <LgSpeed sim={sim} big={!short} />
-        <LgGauge label="rpm · crank" meta="CAN · 50ms" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
-          num={drFmt.n1(sim.rpm / 1000)} unit="×1000"
+        <LgGauge label="rpm · crank" meta="OBD" noHw={sim.rpm == null} stale={sim.link === 'lost'}
+          num={drFmt.n1(sim.rpm == null ? null : sim.rpm / 1000)} unit="×1000"
           spark={sim.hist.rpm} sparkColor="var(--cyan)"
           top={<ShiftLights rpm={sim.rpm} />}
           alarm={sim.rpm > 6300}
           tape={<TapeGauge value={sim.rpm} min={0} max={7000} band={[6500, 7000]} ghosts={[3500]} color="var(--cyan)" ladder={[{ t: '0' }, { t: '3.5' }, { t: 'redline 6.5', hot: true }]} />} />
-        <LgGauge label="coolant · prim" meta="B1 · 1s" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
+        <LgGauge label="coolant · prim" meta="OBD" noHw={sim.coolant == null} stale={sim.link === 'lost'}
           num={drFmt.n1(sim.coolant)} unit="°C"
           spark={sim.hist.coolant} sparkColor="var(--acc)"
           alarm={sim.coolant > 104}
           tape={<TapeGauge value={sim.coolant} min={40} max={120} band={[108, 120]} ghosts={[104]} color="var(--acc)" ladder={[{ t: '40' }, { t: 'amber 104', hot: true }, { t: '120' }]} />} />
-        <LgGauge label="voltage · alt" meta="power · 1s" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
+        <LgGauge label="voltage · alt" meta="ECU voltage" noHw={sim.voltage == null} stale={sim.link === 'lost'}
           num={drFmt.n1(sim.voltage)} unit="V"
           spark={sim.hist.voltage} sparkColor="var(--teal)"
-          alarm={sim.voltage < 12}
+          alarm={sim.voltage != null && sim.voltage < 12}
           tape={<TapeGauge value={sim.voltage} min={11} max={15} ghosts={[12, 14.4]} color="var(--teal)" ladder={[{ t: '11.0' }, { t: '12.0 crit', hot: true }, { t: '14.4' }]} />} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 10, flex: 1, minHeight: 0 }}>

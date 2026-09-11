@@ -9,6 +9,8 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
+import math
+import os
 import secrets
 import signal
 import sqlite3
@@ -143,7 +145,12 @@ def _jwt_decode(token: str, secret: str) -> dict | None:
         payload = json.loads(unb64(p))
     except (ValueError, TypeError):
         return None
-    if payload.get('exp', 0) < time.time():
+    if not isinstance(payload, dict):
+        return None
+    expiry = payload.get('exp')
+    if (not isinstance(expiry, (int, float)) or isinstance(expiry, bool)
+            or not math.isfinite(expiry) or expiry <= time.time()
+            or not isinstance(payload.get('sub'), str) or not payload['sub']):
         return None
     return payload
 
@@ -236,8 +243,17 @@ def build_app(secret: str, mqtt_client: mqtt.Client):
     @app.route('/api/auth/login', methods=['POST'])
     def login():
         body = request.get_json(silent=True) or {}
-        # MVP: any username/password issues a token; replace with real auth
-        username = body.get('username', 'anon')
+        username = os.getenv('FLEET_ADMIN_USERNAME', '')
+        password = os.getenv('FLEET_ADMIN_PASSWORD', '')
+        if not username or not password:
+            return jsonify({'error': 'authentication_not_configured'}), 503
+        if not isinstance(body, dict):
+            return jsonify({'error': 'unauthorized'}), 401
+        supplied_user, supplied_password = body.get('username'), body.get('password')
+        if (not isinstance(supplied_user, str) or not isinstance(supplied_password, str)
+                or not secrets.compare_digest(supplied_user.encode(), username.encode())
+                or not secrets.compare_digest(supplied_password.encode(), password.encode())):
+            return jsonify({'error': 'unauthorized'}), 401
         token = _jwt_encode(
             {'sub': username, 'exp': time.time() + FLEET_JWT_TTL},
             secret,
@@ -287,6 +303,9 @@ def build_app(secret: str, mqtt_client: mqtt.Client):
 
     @sock.route('/ws/fleet')
     def fleet_ws(ws):
+        if not _auth():
+            ws.close(reason=1008, message='Authentication required')
+            return
         _ws_clients.add(ws)
         try:
             while True:

@@ -51,6 +51,10 @@ def _list_sessions() -> list[dict]:
 
 
 def _replay_session(client: mqtt.Client, path: Path, speed: float, stop_event: threading.Event) -> None:
+    from config import lab_mode_allowed
+    if not lab_mode_allowed():
+        client.publish(TOPICS['replay_status'], json.dumps({'status': 'error', 'reason': 'bench_only'}))
+        return
     if not path.exists():
         log.warning(f"session not found: {path}")
         client.publish(TOPICS['replay_status'], json.dumps({'status': 'error', 'reason': 'not_found'}))
@@ -68,7 +72,7 @@ def _replay_session(client: mqtt.Client, path: Path, speed: float, stop_event: t
     try:
         with _open(path) as fh:
             for line in fh:
-                if stop_event.is_set():
+                if stop_event.is_set() or not lab_mode_allowed():
                     log.info("replay STOPPED by user")
                     break
                 line = line.strip()
@@ -96,8 +100,11 @@ def _replay_session(client: mqtt.Client, path: Path, speed: float, stop_event: t
                         # clamp: time can cross `end` between the check and here,
                         # and sleep() raises ValueError on a negative argument.
                         time.sleep(max(0.0, min(0.2, end - time.time())))
-                if stop_event.is_set():
+                if stop_event.is_set() or not lab_mode_allowed():
                     break
+                # Recorded operator commands are never replayed as actions.
+                if topic.endswith('/command') or topic in {TOPICS.get('crash_sos'), TOPICS.get('comms_sms')}:
+                    continue
                 if isinstance(payload, (dict, list)):
                     payload = json.dumps(payload)
                 client.publish(topic, payload)

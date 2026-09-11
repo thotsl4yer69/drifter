@@ -226,7 +226,7 @@ def test_healthz_payload_caches(monkeypatch):
 
 
 def test_healthz_payload_telemetry_fresh(monkeypatch):
-    """Recent _last_update flips telemetry_fresh to True."""
+    """An unrelated MQTT heartbeat proves bus activity, not ECU telemetry."""
     import time as _time
     _reset_healthz_cache()
     monkeypatch.setattr(h, '_systemctl_active', lambda _u: True)
@@ -234,7 +234,9 @@ def test_healthz_payload_telemetry_fresh(monkeypatch):
     state.latest_state.clear()
     state.latest_state['_last_update'] = _time.time()
     payload, _ = h._healthz_payload()
-    assert payload['telemetry_fresh'] is True
+    assert payload['telemetry_fresh'] is False
+    assert payload['bus_fresh'] is True
+    assert payload['vehicle_ready'] is False
 
 
 def test_healthz_payload_mqtt_shim_works_without_is_connected(monkeypatch):

@@ -330,9 +330,9 @@ class TestRequestDtcsIsoTp:
         fcs = [m for m in bus.sent if bytes(m.data)[:1] == b'\x30']
         assert fcs and fcs[0].arbitration_id == 0x7E0
 
-    def test_no_response_returns_empty(self):
+    def test_no_response_is_unavailable_not_clear(self):
         bus = self._FakeBus([])
-        assert can_bridge.request_dtcs(bus, mode=0x03) == []
+        assert can_bridge.request_dtcs(bus, mode=0x03) is None
 
 
 # ── Mode-01 PID-support discovery (poll only what the ECU reports) ──

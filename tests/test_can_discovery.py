@@ -7,7 +7,29 @@ import subprocess
 import time
 from unittest.mock import MagicMock
 
+import pytest
+
 import can_discovery as cd
+
+
+@pytest.fixture(autouse=True)
+def isolated_bench(monkeypatch):
+    monkeypatch.setattr(cd, 'lab_mode_allowed', lambda: True)
+    monkeypatch.setattr(cd, 'acquire_telemetry_lease', MagicMock)
+
+
+def test_active_commands_refused_in_vehicle_mode(monkeypatch):
+    monkeypatch.setattr(cd, 'lab_mode_allowed', lambda: False)
+    runner = MagicMock()
+    assert cd.run_command('discover_ecus', {}, 'can0', runner)['error'] == 'bench_only'
+    runner.assert_not_called()
+
+
+def test_cannot_share_bus_with_live_telemetry(monkeypatch):
+    monkeypatch.setattr(cd, 'acquire_telemetry_lease', lambda: None)
+    runner = MagicMock()
+    assert cd.run_command('discover_ecus', {}, 'can0', runner)['error'] == 'telemetry_busy'
+    runner.assert_not_called()
 
 # ── _hex_int ──────────────────────────────────────────────────────────
 

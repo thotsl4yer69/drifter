@@ -8,6 +8,10 @@
 
 > **Maturity: Hardware-integrated prototype / active hardening.** DRIFTER is running as a real Raspberry Pi vehicle-node project, but it is not represented as production-ready or universally compatible. Validation depends on the vehicle, OBD transport and attached hardware. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
+The [2026-09-11 vehicle-test review](docs/VEHICLE_TEST_READINESS.md) fixes the
+ELM, freshness, diagnostics and deployment path and adds a repeatable integration
+bench. Follow [FIRST_DRIVE.md](FIRST_DRIVE.md) for target-Pi acceptance.
+
 ## What it is
 
 DRIFTER turns a Raspberry Pi into a local vehicle-intelligence node: ingest vehicle telemetry, apply deterministic diagnostic logic, log drive data, surface alerts, and provide interfaces for dashboards/voice and supporting edge services.

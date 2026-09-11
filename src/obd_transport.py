@@ -18,11 +18,13 @@ hardware-pending status instead of telemetry.
 
 Selection precedence:
   1. ``DRIFTER_TRANSPORT`` env override (``can`` / ``elm327``) — operator wins.
-  2. A live SocketCAN interface (can0/can1/slcan0) → ``can``.
-  3. A plugged raw-CAN serial adapter (VID:PID on ``config.CAN_USB_IDS``), before
+  2. An explicitly selected ELM link, or configured Bluetooth/Wi-Fi endpoint
+     in auto mode → ``elm327`` (the same .env is loaded by both services).
+  3. A live SocketCAN interface (can0/can1/slcan0) → ``can``.
+  4. A plugged raw-CAN serial adapter (VID:PID on ``config.CAN_USB_IDS``), before
      slcand has brought its interface up → ``can``.
-  4. An ELM327 serial device present at ``config.OBD_SERIAL_DEV`` → ``elm327``.
-  5. Default → ``can`` (canbridge then idles hw-pending until an adapter appears;
+  5. An ELM327 serial device present at ``config.OBD_SERIAL_DEV`` → ``elm327``.
+  6. Default → ``can`` (canbridge then idles hw-pending until an adapter appears;
      nothing double-publishes).
 
 Deliberately imports only stdlib + config — NOT python-can — because obd_bridge
@@ -101,6 +103,13 @@ def select_transport() -> str:
     forced = _env_override()
     if forced:
         return forced
+    # Both processes must make this decision from the same environment.
+    # A process-local override in obd_bridge_multi left raw CAN polling too.
+    link = (os.getenv('DRIFTER_ELM_LINK') or 'auto').strip().lower()
+    if link in {'serial', 'usb', 'tty', 'rfcomm', 'bluetooth', 'bt', 'wifi', 'tcp', 'network'}:
+        return ELM327
+    if link == 'auto' and (os.getenv('ELM_BT_MAC', '').strip() or os.getenv('ELM_WIFI_HOST', '').strip()):
+        return ELM327
     if _socketcan_iface_present():
         return CAN
     if _can_serial_adapter_present():
@@ -108,3 +117,31 @@ def select_transport() -> str:
     if _elm327_present():
         return ELM327
     return CAN
+
+
+def acquire_telemetry_lease():
+    """Exclusive cross-process lease; prevents overlap during hot-plug handover."""
+    import fcntl
+    from pathlib import Path
+
+    from config import DRIFTER_DIR
+
+    path = Path(DRIFTER_DIR) / 'telemetry.lock'
+    handle = path.open('a')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def prepare_can() -> int:
+    """The CAN service must not claim serial hardware during ELM operation."""
+    if select_transport() != CAN:
+        return 0
+    return subprocess.run(['/usr/local/bin/drifter-setup-can'], check=False).returncode
+
+
+if __name__ == '__main__':
+    raise SystemExit(prepare_can())

@@ -161,7 +161,7 @@ stage_start 40 "systemctl enable + start"
 # service_lists.py enforces oneshot == config.SERVICES so the final /healthz
 # gate can't come back 'degraded' just because a new service was never started.
 SERVICES=(
-    drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect
+    drifter-safety drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect
     drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge
     drifter-obdbridge drifter-dashboard drifter-flipper drifter-fly-catcher
     drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid

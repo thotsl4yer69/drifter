@@ -26,6 +26,7 @@ from config import (
     TOPICS,
     atomic_write_json,
     make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -248,7 +249,7 @@ def on_message(client, userdata, msg):
             })
 
         # Update drive session tracking
-        value = data.get('value')
+        value = data.get('value') if isinstance(data, dict) else None
         if value is not None:
             session.update(msg.topic, value, time.time())
 
@@ -331,7 +332,7 @@ def main():
         return
 
     # Subscribe to everything from DRIFTER
-    client.subscribe("drifter/#")
+    subscribe_on_connect(client, ["drifter/#"])
     client.loop_start()
 
     log.info(f"Logging to {LOG_DIR}")

@@ -83,15 +83,15 @@ export function LgTop({ sim, narrow }) {
 
 // ── Hero gauges ─────────────────────────────────────────────────
 export function LgSpeed({ sim, big = true }) {
-  const noGps = sim.hw.gps !== 'fix';
+  const noGps = sim.speed == null;
   const stale = sim.link === 'lost';
   return (
-    <LgTile label="speed · gps" meta="+ obd reconcile" live={!noGps && !stale}>
+    <LgTile label="speed · obd" meta="ECU reading" live={!noGps && !stale}>
       {noGps ? (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
           <HonestState kind={sim.hw.gps === 'acquiring' ? 'acquiring' : 'no-hw'}
-            label={sim.hw.gps === 'acquiring' ? 'gps acquiring' : 'gps · no device'}
-            hint={sim.hw.gps === 'acquiring' ? 'awaiting 3D fix — nothing shown until real' : 'plug in the usb gps dongle'} />
+            label="vehicle speed unavailable"
+            hint="waiting for an OBD speed response" />
         </div>
       ) : (
         <React.Fragment>
@@ -116,7 +116,7 @@ export function LgGauge({ label, meta, num, unit, spark, sparkColor, tape, top, 
     <LgTile label={label} meta={meta} live={!noHw && !stale}>
       {noHw ? (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-          <HonestState kind="no-hw" label="ecu not connected" hint="can0 idle — plug in obd-ii" />
+          <HonestState kind="no-hw" label="ECU reading unavailable" hint="check reader connection and ignition" />
         </div>
       ) : (
         <React.Fragment>
@@ -141,7 +141,7 @@ export function LgAlerts({ sim }) {
     active: live.length,
     crit: live.filter((a) => a.sev === 'crit').length,
     anomaly: live.filter((a) => a.code === 'ANOMALY').length,
-    dtcs: sim.dtcs.length,
+    dtcs: sim.dtcAvailable === false ? '—' : sim.dtcs.length,
   };
   const chip = (n, l, c) => (
     <span className="dr-pill" style={{ gap: 5, color: 'var(--fg-mute)' }}>
@@ -149,12 +149,12 @@ export function LgAlerts({ sim }) {
     </span>
   );
   return (
-    <LgTile label={"alerts & dtc bus"} meta="retain · 5min">
+    <LgTile label={"alerts & dtc bus"} meta="fault-code reads">
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
         {chip(counts.active, 'active', counts.active ? 'var(--acc)' : null)}
         {chip(counts.crit, 'critical', counts.crit ? 'var(--red)' : null)}
         {chip(counts.anomaly, 'anomaly', 'var(--cyan)')}
-        {chip(counts.dtcs, 'stored dtc')}
+        {chip(counts.dtcs, 'stored / pending')}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 5 }}>
         {live.length === 0 ? (
@@ -284,8 +284,9 @@ export function LgDrawerBody({ tab, sim }) {
   if (tab === 'dtcs') {
     return (
       <div style={{ paddingTop: 4 }}>
-        {sim.dtcs.length === 0 ? <div className="mono" style={{ fontSize: 9.5, color: 'var(--fg-dim)', padding: '8px 2px' }}>no stored codes</div> : sim.dtcs.map((d) => row(d.code, d.desc || '—', d.state))}
-        <span className="dr-ghost" style={{ marginTop: 10 }}>clear stored dtcs</span>
+        {sim.dtcAvailable === false && <div className="mono" style={{ fontSize: 9.5, color: 'var(--fg-dim)', padding: '8px 2px' }}>Current fault-code read unavailable</div>}
+        {sim.dtcs.length === 0 ? sim.dtcAvailable !== false && <div className="mono" style={{ fontSize: 9.5, color: 'var(--fg-dim)', padding: '8px 2px' }}>No stored or pending codes in last read</div> : sim.dtcs.map((d) => row(d.code, d.desc || '—', d.state))}
+        <span className="dr-ghost" style={{ marginTop: 10 }}>read-only diagnostics</span>
       </div>
     );
   }
@@ -306,11 +307,11 @@ export function LgDrawerBody({ tab, sim }) {
   const dash = '⊘ no source';
   return (
     <div style={{ paddingTop: 2 }}>
-      {row('coolant · primary', noEcu ? dash : drFmt.n1(sim.coolant) + ' °C', noEcu ? '' : '1s', !noEcu && sim.coolant > 100)}
-      {row('voltage · alternator', noEcu ? dash : drFmt.n1(sim.voltage) + ' V', noEcu ? '' : '1s')}
-      {row('rpm · crank', noEcu ? dash : drFmt.n0(sim.rpm), noEcu ? '' : '50ms')}
+      {row('coolant · primary', noEcu ? dash : drFmt.n1(sim.coolant) + ' °C', '', !noEcu && sim.coolant > 100)}
+      {row('voltage · alternator', noEcu ? dash : drFmt.n1(sim.voltage) + ' V', '')}
+      {row('rpm · crank', noEcu ? dash : drFmt.n0(sim.rpm), '')}
       {row('speed · gps', noGps ? '◌ awaiting fix' : drFmt.n0(sim.speed) + ' km/h', noGps ? '' : '1s')}
-      {row('throttle', noEcu ? dash : drFmt.n0(sim.throttle * 100) + ' %', noEcu ? '' : '50ms')}
+      {row('throttle', noEcu ? dash : drFmt.n0((sim.throttle == null ? null : sim.throttle * 100)) + ' %', '')}
       {row('gps accuracy', noGps ? '◌ awaiting fix' : drFmt.n1(sim.gps.acc) + ' m', noGps ? '' : '1s')}
       {row('heading', noGps ? '◌ awaiting fix' : drFmt.n0(sim.heading) + ' °', noGps ? '' : '1s')}
     </div>

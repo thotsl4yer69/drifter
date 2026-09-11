@@ -55,6 +55,9 @@ def _drive_profile(t: float) -> dict[str, float]:
 
 
 def _publish_tick(client: mqtt.Client, ranges: dict) -> None:
+    from config import lab_mode_allowed
+    if not lab_mode_allowed():
+        return
     profile = _drive_profile(time.time())
     for key, value in profile.items():
         topic = TOPICS.get(key)
