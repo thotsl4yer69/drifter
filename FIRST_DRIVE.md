@@ -1,67 +1,151 @@
-# FIRST DRIVE — operator runbook
+# First vehicle test — Jaguar X-Type
 
-Plain steps for the first real drive of the MZ1312 DRIFTER (2004 Jaguar X-Type 2.5).
-Written against the **actual hardware validated on the bench 2026-06-02**, not the
-original spec assumptions. For deeper detail see [`COCKPIT.md`](COCKPIT.md),
-[`docs/WIRING.md`](docs/WIRING.md), [`docs/FIELD_DEPLOY.md`](docs/FIELD_DEPLOY.md).
+Start with stationary, read-only diagnostics. See [the readiness review](docs/VEHICLE_TEST_READINESS.md)
+for software evidence and remaining hardware gates. The previous June hardware
+notes are historical; this update has not been deployed to the Pi or Jaguar.
 
-## What's confirmed working (bench)
+## 1. Deploy on the Pi
 
-| Device | Status | Notes |
-|---|---|---|
-| CAN adapter | ✅ bench-green | It's a **CANable/slcan** type (`0483:5740` → `slcan0` @ 500 kbps), *not* the gs_usb USB2CANFD the old docs assume. `drifter-canbridge` binds it and polls OBD-II correctly. **Untested against the car — see the decision point below.** |
-| RTL-SDR Blog V4 | ✅ green | Detected, DVB-T driver blacklisted, real RF received. TPMS/ADS-B prove out while driving. |
-| USB audio (C-Media combo) | ✅ green | Speaker **and** mic. Levels set + saved (speaker ~50%, mic gain sane). |
-| Location | ✅ via phone | **No GPS dongle.** Your phone's GPS provides the fix (steps below). |
-| Flipper Zero | ⬜ not yet tested | Optional; do later. Shares the same USB ID as the CANable — don't run both on one bench test. |
-| Vivi | text only | 3D avatar disabled (no GPU). Text chat in the cockpit works. |
+Use a clean checkout. Until the readiness PR is merged, use its branch below;
+after merge, replace that branch with `main`.
 
-## Before you turn the key (parked)
+```bash
+cd /home/kali/drifter
+git status --short
+git fetch origin
+git switch fix/vehicle-test-readiness
+git pull --ff-only
+git rev-parse HEAD
+sudo ./scripts/install-obd.sh
+sudo ./scripts/deploy-cockpit-v4.sh
+sudo drifter mode diag
+```
 
-1. **Power the Pi** from the car. Wait ~60 s for all services to come up.
-2. **Plug in** (use a powered USB hub if you run out of ports):
-   - **CANable → the car's OBD-II port** (under the dash, driver side).
-   - **RTL-SDR** (with antenna attached).
-   - **USB audio dongle** (with speaker + mic connected).
-3. **Phone:** connect to Wi-Fi **`MZ1312_DRIFTER`** (PSK: `sudo nmcli --show-secrets connection show MZ1312_DRIFTER`).
-4. Open **`https://10.42.0.1:8443`** in the phone browser → accept the self-signed cert warning **once**. (HTTPS is required so the browser will share GPS.)
-5. On the map, tap the **⌖ locate** button → **Allow** location. The map centres on you and the "AWAITING GPS FIX" card clears. (Uses the phone's GPS; only accepted if accurate to ≤100 m — coarse network location is rejected by design.)
+Keep the commit and printed backup path with the test notes. The updater needs
+an existing `/opt/drifter/venv`; a clean OS still needs the full installer.
+Existing connection settings and vehicle data are preserved. An installation
+failure after file replacement restores the previous runtime and services.
 
-## Turn the key — what to watch
+## 2. Configure one identified reader
 
-6. **Ignition to RUN** (engine running is ideal).
-7. **CAN / engine telemetry** — within ~30 s the top-bar **CAN** cell flips `OFF → UP` and the hero gauges (RPM, coolant, voltage, speed) go live.
+Use the reader's label/documentation and the Pi's Bluetooth/Wi-Fi device list.
+A Bluetooth name does not prove Classic RFCOMM support; BLE-only readers are
+not supported by this transport. Confirm the channel or TCP port rather than
+assuming a common default. Pair/join through the Pi's OS first.
 
-   > ⚠️ **DECISION POINT — if the gauges stay blank after 30 s with the engine running:**
-   > Open the **DRIFTER Diagnose** desktop icon (or run `drifter diagnose`), then check the bus:
-   > ```
-   > candump slcan0
-   > ```
-   > - See `7E8` frames (ECU responses)? ✅ It's working — gauges will populate.
-   > - Only `7DF` requests, **no `7E8` responses**? → This car uses **K-line OBD** (ISO 9141/KWP2000),
-   >   not CAN. The CANable **cannot** read OBD here. You'll need an **ELM327 (K-line)** adapter,
-   >   or to tap an internal CAN bus directly. This is the single biggest unknown for a 2004 X-Type.
+```bash
+sudoedit /opt/drifter/.env
+```
 
-8. **Audio** — warnings speak through the cabin speaker (preset ~50%; adjust to taste).
-9. **Tires (TPMS)** — auto-learn over the first 5–30 min of driving; corners fill in on the **Tires** tab.
-10. **Health** — open the **DRIFTER Health** icon → expect `ok` or `ok-hw-pending`.
+Keep unrelated settings. Replace angle-bracket placeholders before saving.
+For a paired Bluetooth Classic reader:
 
-## One-click desktop launchers
+```dotenv
+DRIFTER_TRANSPORT=elm327
+DRIFTER_ELM_LINK=bluetooth
+ELM_BT_MAC=<confirmed adapter MAC>
+ELM_BT_CHANNEL=<confirmed RFCOMM channel>
+OBD_POLL_HZ=5
+```
 
-**Cockpit** (HUD) · **Diagnose** · **Health** · **Logs** · **MQTT Monitor** · **OPSEC Console** · **Restart Services**.
+Or for a reachable Wi-Fi reader:
 
-## If something looks wrong
+```dotenv
+DRIFTER_TRANSPORT=elm327
+DRIFTER_ELM_LINK=wifi
+ELM_WIFI_HOST=<confirmed reader address>
+ELM_WIFI_PORT=<confirmed TCP port>
+OBD_POLL_HZ=5
+```
 
-- `drifter diagnose` — full hardware + service probe.
-- `drifter logs <service> -f` — e.g. `drifter logs canbridge -f`, `drifter logs rf -f`.
-- `drifter restart all` — restart every service.
-- `curl -fsS http://127.0.0.1:8080/healthz` — JSON health.
-- `mosquitto_sub -h localhost -t 'drifter/#' -v` — live telemetry firehose.
+Keep wired/USB console access during Wi-Fi-reader setup if joining its network
+would interrupt the hotspot or SSH. Leave `DRIFTER_LAB_MODE` unset and close
+other scan apps sharing the reader.
 
-## Not-yet / deferred
+```bash
+sudo systemctl restart drifter-canbridge drifter-obdbridge
+sudo systemctl is-active drifter-obdbridge drifter-safety drifter-alerts drifter-logger drifter-dashboard
+journalctl -u drifter-obdbridge -n 60 --no-pager
+```
 
-- **Flipper Zero** — not bench-tested. ⚠️ It and the CANable share USB ID `0483:5740`; unplug the
-  CANable before bench-testing the Flipper so the bridges don't grab the wrong device.
-- **Display panel / GPU** — `config.txt` has staged edits (`vc4-kms-v3d` enabled; Waveshare DSI
-  panel `dtoverlay` typo fixed) that take effect on the **next reboot**. Safe display-driver change;
-  backup at `/boot/firmware/config.txt.bak.drifter`.
+`hw_pending` before adapter/ECU connection is expected. `connecting` means
+qualification/search; only valid ECU metrics produce `online`. CAN should
+defer to the explicitly selected ELM.
+
+## 3. Stationary acceptance
+
+1. Connect the reader to the diagnostic socket. Put ignition in RUN, engine off,
+   and allow protocol search to finish.
+2. Open `http://10.42.0.1:8080/` on the tethered phone or
+   `http://127.0.0.1:8080/` on the Pi. Do not add `?sim=1`; that is demo data.
+   GPS is optional for OBD speed.
+3. Confirm speed 0, RPM 0, plausible coolant and the negotiated protocol.
+   Unsupported voltage must remain blank. Gear/odometer also remain blank
+   without a real producer.
+4. Capture one minute:
+
+   ```bash
+   sudo drifter vehicle-check --seconds 60
+   ```
+
+5. Start the engine and idle while parked. Compare RPM with the tachometer and
+   confirm speed stays zero. Capture two minutes:
+
+   ```bash
+   sudo drifter vehicle-check --seconds 120 --engine-running
+   ```
+
+The command prints PASS/FAIL, returns exit code 0/1 and saves JSON under
+`/opt/drifter/logs/vehicle-check-*.json`. It observes MQTT only; it never opens
+or writes to the ECU. RPM, speed and coolant must start within 15 seconds,
+continue without gaps over 15 seconds and remain fresh at the end. Exactly one
+measured source is required. Voltage and DTC availability are reported separately.
+
+Compare DTCs with an independent reader/application in a separate session.
+Unavailable is not a successful empty scan. Do not erase codes, code modules
+or actuate components during this test. If VIN reading is unsupported, confirm
+the active profile is the actual Jaguar independently.
+
+## 4. Recovery while parked
+
+- Disconnect the reader: gauges should disappear within 15 seconds, online
+  status must clear, and the Pi must remain running.
+- Reconnect: protocol negotiation and fresh values should return. Repeat a
+  60-second capture.
+- Test an ignition cycle and Pi restart. Confirm persisted link settings,
+  `diag` mode, logging and safety service, then repeat the capture.
+- Repeat stationary tests independently with the other wireless reader.
+  Only then test `DRIFTER_ELM_LINK=auto` if fallback is wanted.
+
+## 5. Short monitored drive
+
+Proceed after stationary/recovery gates pass. Start recording before moving;
+have a passenger observe the display and review the recording afterward.
+Use regular vehicle instruments as the reference. This project is not qualified
+as a replacement instrument cluster or certified driver-safety system.
+
+```bash
+sudo drifter vehicle-check --seconds 600 --engine-running
+```
+
+Record vehicle/profile, reader model, link/protocol, software commit and result.
+Inspect the continuity JSON and daily `/opt/drifter/logs/drive_*.jsonl`. Investigate
+failures before calling that combination tested. Fuel/cost are estimates; set
+the actual fuel price in the trip configuration.
+
+## Troubleshooting
+
+```bash
+drifter diagnose
+curl -fsS http://127.0.0.1:8080/healthz
+journalctl -u drifter-obdbridge -u drifter-canbridge -u drifter-safety -n 100 --no-pager
+mosquitto_sub -h localhost -t 'drifter/obd/status' -t 'drifter/snapshot' -t 'drifter/diag/dtc' -v
+```
+
+`ok-hw-pending` and `bus_fresh` do not prove a responding vehicle.
+`vehicle_ready` indicates recent data; the capture verifies continuity.
+Absent raw CAN replies do not establish the physical protocol. Use the ELM's
+negotiated protocol after an ECU response.
+
+The lean `diag` mode excludes heavy AI/recon services. RF, TPMS, GPS, voice,
+vision and additional Jaguar modules require separate qualification.

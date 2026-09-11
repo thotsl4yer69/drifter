@@ -7,6 +7,10 @@ set -eo pipefail
 PY=/opt/drifter/venv/bin/python3
 
 case "${1:-}" in
+    vehicle-check)
+        shift
+        exec "$PY" /opt/drifter/vehicle_check.py "$@"
+        ;;
     mode)
         shift
         exec "$PY" /opt/drifter/mode.py "$@"

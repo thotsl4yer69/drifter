@@ -20,6 +20,7 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/alert_engine.py
 Restart=on-failure
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
 
 # Vehicle-survival hardening 2026-05-20: driver-safety service —
 # bias global OOM killer away from us. See progress.txt for the

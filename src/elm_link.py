@@ -22,7 +22,9 @@ obd_bridge.py: write(), read(), reset_input_buffer(), close().
 """
 from __future__ import annotations
 
+import math
 import os
+import re
 import socket
 from dataclasses import dataclass
 
@@ -38,8 +40,22 @@ class LinkConfig:
     wifi_port: int = 35000
     timeout: float = 1.0
 
+    def __post_init__(self):
+        if self.mode not in {'auto', 'serial', 'usb', 'tty', 'rfcomm', 'bluetooth', 'bt', 'wifi', 'tcp', 'network'}:
+            raise ValueError(f'unsupported DRIFTER_ELM_LINK={self.mode!r}')
+        if not 1 <= self.bt_channel <= 30:
+            raise ValueError('ELM_BT_CHANNEL must be 1..30')
+        if not 1 <= self.wifi_port <= 65535:
+            raise ValueError('ELM_WIFI_PORT must be 1..65535')
+        if self.serial_baud <= 0:
+            raise ValueError('OBD_SERIAL_BAUD must be positive')
+        if not math.isfinite(self.timeout) or not 0.05 <= self.timeout <= 30:
+            raise ValueError('ELM_TIMEOUT must be between 0.05 and 30 seconds')
+        if self.bt_mac and not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', self.bt_mac):
+            raise ValueError('ELM_BT_MAC must contain six hexadecimal octets')
+
     @classmethod
-    def from_env(cls, *, serial_dev: str, serial_baud: int) -> "LinkConfig":
+    def from_env(cls, *, serial_dev: str, serial_baud: int) -> LinkConfig:
         return cls(
             mode=(os.getenv("DRIFTER_ELM_LINK", "auto") or "auto").strip().lower(),
             serial_dev=os.getenv("OBD_SERIAL_DEV", serial_dev),
@@ -64,20 +80,13 @@ class SocketStream:
         return len(data)
 
     def read(self, n: int = 128) -> bytes:
-        chunks = []
-        remaining = max(1, n)
         try:
-            while remaining > 0:
-                chunk = self.sock.recv(remaining)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-                if b">" in chunk:
-                    break
-        except socket.timeout:
-            pass
-        return b"".join(chunks)
+            chunk = self.sock.recv(max(1, n))
+        except TimeoutError:
+            return b''
+        if not chunk:
+            raise ConnectionError('ELM327 socket disconnected')
+        return chunk
 
     def reset_input_buffer(self) -> None:
         old_timeout = self.sock.gettimeout()
@@ -86,7 +95,7 @@ class SocketStream:
             while True:
                 try:
                     if not self.sock.recv(4096):
-                        break
+                        raise ConnectionError("ELM327 socket disconnected")
                 except (BlockingIOError, InterruptedError):
                     break
         finally:
@@ -102,14 +111,14 @@ class SocketStream:
 
 def _open_serial(cfg: LinkConfig):
     import serial
-    return serial.Serial(cfg.serial_dev, cfg.serial_baud, timeout=cfg.timeout)
+    return serial.Serial(cfg.serial_dev, cfg.serial_baud, timeout=min(cfg.timeout, 0.1), write_timeout=cfg.timeout, exclusive=True)
 
 
 def _open_wifi(cfg: LinkConfig):
     if not cfg.wifi_host:
         raise RuntimeError("ELM_WIFI_HOST is not configured")
     sock = socket.create_connection((cfg.wifi_host, cfg.wifi_port), timeout=cfg.timeout)
-    sock.settimeout(cfg.timeout)
+    sock.settimeout(min(cfg.timeout, 0.1))
     return SocketStream(sock, f"wifi://{cfg.wifi_host}:{cfg.wifi_port}")
 
 
@@ -120,7 +129,12 @@ def _open_bluetooth(cfg: LinkConfig):
         raise RuntimeError("Python/Linux build does not expose AF_BLUETOOTH")
     sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
     sock.settimeout(cfg.timeout)
-    sock.connect((cfg.bt_mac, cfg.bt_channel))
+    try:
+        sock.connect((cfg.bt_mac, cfg.bt_channel))
+    except Exception:
+        sock.close()
+        raise
+    sock.settimeout(min(cfg.timeout, 0.1))
     return SocketStream(sock, f"bluetooth://{cfg.bt_mac}:{cfg.bt_channel}")
 
 
@@ -149,27 +163,26 @@ def candidate_modes(cfg: LinkConfig) -> list[str]:
     return modes
 
 
-def open_elm_link(cfg: LinkConfig):
-    """Open the first configured ELM link and return (stream, description).
-
-    Raises RuntimeError only after every candidate has failed.  The caller owns
-    retry/backoff so vehicle-node services can degrade to hardware-pending.
-    """
+def open_elm_link(cfg: LinkConfig, initializer=None):
+    """Try each configured link through initialization, closing failures."""
     errors = []
+    openers = {'serial': _open_serial, 'bluetooth': _open_bluetooth, 'wifi': _open_wifi}
     for mode in candidate_modes(cfg):
+        stream = None
         try:
-            if mode == "serial":
-                stream = _open_serial(cfg)
-                return stream, f"serial://{cfg.serial_dev}@{cfg.serial_baud}"
-            if mode == "bluetooth":
-                stream = _open_bluetooth(cfg)
-                return stream, stream.label
-            if mode == "wifi":
-                stream = _open_wifi(cfg)
-                return stream, stream.label
+            stream = openers[mode](cfg)
+            label = getattr(stream, 'label', f'serial://{cfg.serial_dev}@{cfg.serial_baud}')
+            if initializer is not None:
+                initializer(stream)
+            return stream, label
         except Exception as exc:
-            errors.append(f"{mode}: {exc}")
-    raise RuntimeError("; ".join(errors) or "no ELM327 link candidates configured")
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+            errors.append(f'{mode}: {exc}')
+    raise RuntimeError('; '.join(errors) or 'no ELM327 link candidates configured')
 
 
 def configured_elm_available(cfg: LinkConfig) -> bool:

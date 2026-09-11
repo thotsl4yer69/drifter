@@ -1,21 +1,14 @@
-# MZ1312 DRIFTER — OBD Bridge (ELM327) Configuration
-# UNCAGED TECHNOLOGY — EST 1991
-#
-# Only used when the USB2CANFD bridge is not present. The ELM327 bridge
-# is a compatibility path for non-Jaguar vehicles after vehicle_id resolves
-# a different profile.
-
-serial_device: "/dev/ttyUSB0"
-serial_baud: 38400
-
-# Poll rate per PID (Hz). Most ELM327 clones can sustain ~5 Hz; cheap ones
-# need 2 Hz. The bridge will round-robin through every PID at this rate.
-poll_hz: 5
-
-# Skip the bridge entirely when the CAN interface is up — keeps both
-# can_bridge.py and obd_bridge.py from publishing the same metric topics.
-disable_when_can_active: true
-
-# Reconnect attempts on serial errors before giving up the loop
-reconnect_attempts: 5
-reconnect_backoff_s: 5
+# DRIFTER ELM327 configuration reference.
+# Runtime settings are read from /opt/drifter/.env (systemd EnvironmentFile).
+# This YAML is documentation only; it is not silently loaded by the bridge.
+# DRIFTER_ELM_LINK=auto|serial|bluetooth|wifi
+# OBD_SERIAL_DEV=/dev/drifter-obd
+# OBD_SERIAL_BAUD=38400
+# ELM_BT_MAC=<reader Bluetooth Classic address>
+# ELM_BT_CHANNEL=<reader RFCOMM channel, normally 1>
+# ELM_WIFI_HOST=<reader address from its instructions>
+# ELM_WIFI_PORT=<reader TCP port from its instructions>
+# OBD_POLL_HZ=5                 aggregate request ceiling, not per-PID Hz
+# ELM_TIMEOUT=1                connection/write timeout in seconds
+# DRIFTER_TRANSPORT=elm327     force ELM ownership on a K-line Jaguar
+# The bridge retries indefinitely with backoff; it never reboots the Pi.

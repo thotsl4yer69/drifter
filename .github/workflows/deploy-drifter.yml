@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: shell syntax
-        run: bash -n scripts/oneshot.sh scripts/deploy-cockpit-v4.sh scripts/post-deploy-check.sh install.sh
+        run: bash -n scripts/oneshot.sh scripts/install-obd.sh scripts/deploy-cockpit-v4.sh scripts/post-deploy-check.sh install.sh
 
       - name: set up python
         uses: actions/setup-python@v5
@@ -36,13 +36,19 @@ jobs:
       - name: install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,bench]"
 
       - name: ruff
         run: ruff check src tests
 
       - name: pytest
         run: pytest -q
+
+      - name: isolated installer rollback
+        run: sudo "$(command -v python)" -m pytest -q tests/test_install_obd.py
+
+      - name: ELM and MQTT integration bench
+        run: python scripts/bench-obd.py --output-dir "$RUNNER_TEMP/drifter-bench"
 
       - name: set up node
         uses: actions/setup-node@v4
@@ -55,6 +61,7 @@ jobs:
         working-directory: cockpit-v4
         run: |
           npm ci
+          npm test
           npm run build
 
   build-image:

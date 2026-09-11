@@ -58,8 +58,29 @@ def make_mqtt_client(client_id: str, **kwargs):
     # running on older installs (e.g. before install.sh is re-run).
     return _mqtt.Client(client_id=client_id, **kwargs)
 
+def subscribe_on_connect(client, topics):
+    """Restore subscriptions after every CONNACK, including broker restarts.
+
+    Configure before loop_start(). All caller callbacks use the v2 API.
+    """
+    subscriptions = list(topics)
+    previous = client.on_connect
+
+    def on_connect(c, userdata, flags, reason_code, properties=None):
+        if reason_code == 0:
+            for topic in subscriptions:
+                if isinstance(topic, tuple):
+                    c.subscribe(*topic)
+                else:
+                    c.subscribe(topic)
+        if previous is not None:
+            previous(c, userdata, flags, reason_code, properties)
+
+    client.on_connect = on_connect
+
+
 # ── Paths ──
-DRIFTER_DIR = Path("/opt/drifter")
+DRIFTER_DIR = Path(os.getenv("DRIFTER_DIR", "/opt/drifter"))
 LOG_DIR = DRIFTER_DIR / "logs"
 CALIBRATION_FILE = DRIFTER_DIR / "calibration.json"
 SETTINGS_FILE = DRIFTER_DIR / "settings.json"
@@ -317,8 +338,8 @@ def resolve_device(env_var: str, stable: str, default: str) -> str:
     return default
 
 # ── MQTT ──
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+MQTT_HOST = os.getenv("DRIFTER_MQTT_HOST", "localhost")
+MQTT_PORT = int(os.getenv("DRIFTER_MQTT_PORT", "1883"))
 
 # ── CAN Bus ──
 CAN_BITRATE = 500000
@@ -740,6 +761,7 @@ ANALYST_BASELINE_SESSIONS = 10
 SERVICES = [
     "drifter-canbridge",
     "drifter-obdbridge",    # ELM327/K-line transport (auto-selected vs canbridge)
+    "drifter-safety",      # deterministic Tier-1 rules
     "drifter-alerts",
     "drifter-logger",
     "drifter-anomaly",
@@ -796,6 +818,7 @@ SERVICES = [
 DRIVE_ONLY_SERVICES = [
     "drifter-canbridge",   # CAN bus needs vehicle ECUs present
     "drifter-obdbridge",   # ELM327/K-line transport (idles unless auto-selected)
+    "drifter-safety",      # deterministic Tier-1 rules
     "drifter-alerts",      # vehicle alerts
     "drifter-anomaly",     # telemetry anomaly detector
     "drifter-analyst",     # LLM session analyst over driving sessions
@@ -854,6 +877,7 @@ DIAG_SERVICES = [
     "drifter-batcher",     # rolling telemetry window
     "drifter-thresholds",  # adaptive baseline learner
     "drifter-anomaly",     # telemetry anomaly detector
+    "drifter-safety",      # deterministic Tier-1 rules
     "drifter-alerts",      # driver-safety alert engine
     "drifter-voice",       # cabin TTS for safety alerts (lightweight)
     "drifter-trip",        # trip distance + fuel computer
@@ -902,6 +926,20 @@ MODE_STATE_PATH = DRIFTER_DIR / "mode.state"
 # drive` (assistant/LLM/voice) or `foot` (recon) once it's stable. oneshot.sh
 # settles into the resolved mode after the /healthz gate.
 DEFAULT_MODE = "diag"
+
+
+def lab_mode_allowed() -> bool:
+    """Active CAN experiments and synthetic bus playback require a bench opt-in.
+
+    A service left running by hand must still refuse commands in vehicle modes.
+    Unknown/missing mode state never enables experiments.
+    """
+    if os.getenv('DRIFTER_LAB_MODE') != '1':
+        return False
+    try:
+        return MODE_STATE_PATH.read_text().strip() == 'foot'
+    except OSError:
+        return False
 
 # ── Marauder bridge feature flags ─────────────────────────────────────
 # Random-SSID beacon spam is refused outright by the bridge — random
@@ -995,7 +1033,7 @@ FATIGUE_NIGHT_HOURS = 1.5           # tighter at night
 FCW_TTC_CRIT = 1.2                  # time-to-collision critical (s)
 FCW_TTC_WARN = 2.5                  # time-to-collision warn (s)
 FIRING_ORDER = [1, 4, 2, 5, 3, 6]
-FLEET_API_HOST = "0.0.0.0"
+FLEET_API_HOST = os.getenv("FLEET_API_HOST", "127.0.0.1")
 FLEET_API_PORT = 8420
 FLEET_DB_PATH = DRIFTER_DIR / "data" / "fleet.db"
 FLEET_HEARTBEAT_TIMEOUT = 90       # seconds — node considered offline

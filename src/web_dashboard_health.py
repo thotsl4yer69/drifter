@@ -12,6 +12,7 @@ web_dashboard_handlers imports this module at the top.
 """
 from __future__ import annotations
 
+import math
 import subprocess
 import time
 from pathlib import Path
@@ -112,9 +113,24 @@ def _healthz_payload() -> tuple[dict, int]:
     mqtt_ok = state.mqtt_client is not None and getattr(
         state.mqtt_client, 'is_connected', lambda: False)()
 
-    # Telemetry freshness: any topic updated in the last 30s = bus alive.
+    # Broker traffic and ECU measurements are distinct readiness signals.
     last_seen = state.latest_state.get('_last_update', 0)
-    telemetry_fresh = (now - last_seen) < 30 if last_seen else False
+    bus_fresh = (now - last_seen) < 30 if last_seen else False
+    snapshot = state.latest_state.get('snapshot', {})
+    sample_times = snapshot.get('sample_ts', {}) if isinstance(snapshot, dict) else {}
+    if not isinstance(sample_times, dict):
+        sample_times = {}
+    ecu_ts = max((v for k, v in sample_times.items()
+                  if k in ('rpm', 'speed', 'coolant') and isinstance(v, (int, float))
+                  and math.isfinite(v) and isinstance(snapshot.get(k), (int, float))
+                  and not isinstance(snapshot[k], bool) and math.isfinite(snapshot[k])), default=0)
+    if not ecu_ts and isinstance(snapshot, dict) and 'sample_ts' not in snapshot and any(
+            isinstance(snapshot.get(k), (int, float)) and not isinstance(snapshot[k], bool)
+            and math.isfinite(snapshot[k]) for k in ('rpm', 'speed', 'coolant')):
+        ecu_ts = snapshot.get('ts', 0)
+    telemetry_fresh = bool(isinstance(ecu_ts, (int, float)) and 0 <= now - ecu_ts <= 15)
+    source = snapshot.get('source') if isinstance(snapshot, dict) else None
+    vehicle_ready = bool(mqtt_ok and telemetry_fresh and source in ('obd_bridge', 'can_bridge'))
 
     if failed:
         status_str = 'degraded'
@@ -138,6 +154,8 @@ def _healthz_payload() -> tuple[dict, int]:
         'services_hw_pending': degraded,
         'mqtt_connected':      mqtt_ok,
         'telemetry_fresh':     telemetry_fresh,
+        'bus_fresh':           bus_fresh,
+        'vehicle_ready':       vehicle_ready,
         'ws_clients':          len(state.ws_clients),
     }
     # Healthz contract: 200 = OS-side healthy, 503 = a NON-hardware service

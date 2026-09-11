@@ -165,7 +165,7 @@ sudo ./install.sh && sudo reboot
 v2.1 introduces six additional systemd units (`drifter-fleet`, `drifter-mesh`, `drifter-replay`, `drifter-discord`, `drifter-home`, `drifter-satellite`) — keep these in sync with the `SERVICES` list in `config.py` and the `SERVICES` block in `install.sh`. Configs live in `config/{fleet,mesh,replay,discord,home}.yaml`. Optional install scripts: `scripts/install-{fleet,mesh,discord}.sh`.
 
 ### v2.1 design conventions
-- Fleet API uses dependency-free JWT (HS256, see `_jwt_encode`/`_jwt_decode` in `fleet_server.py`) — the secret is auto-generated and stored at `/opt/drifter/.fleet_jwt_secret` (0600). Replace the placeholder login with real auth before exposing externally.
+- Fleet API uses dependency-free JWT (HS256, see `_jwt_encode`/`_jwt_decode` in `fleet_server.py`) — the secret is auto-generated and stored at `/opt/drifter/.fleet_jwt_secret` (0600). Login requires `FLEET_ADMIN_USERNAME` / `FLEET_ADMIN_PASSWORD`; default bind is loopback and WS also requires a Bearer header.
 - Mesh bridge tags forwarded messages with `__mesh_origin__` to prevent infinite loops. Strip the marker locally if a subscriber needs the raw payload.
 - Recorder captures `drifter/#` by default but the bus is wildcard-noisy — narrow `topic_filter` in `replay.yaml` for long captures.
 - Replay never publishes topics listed in `replay.block_topics` (default: `crash/sos`, `comms/sms`) so playback can't fire real notifications.

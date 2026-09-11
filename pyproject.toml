@@ -36,6 +36,7 @@ dependencies = [
     "psutil>=5.9",        # src/watchdog.py — system health metrics
     "requests>=2.31",     # src/llm_client*.py, comms_bridge, driver_assist
     "python-can>=4.0",    # src/can_bridge.py + tests/test_can_bridge.py
+    "pyserial>=3.5",      # serial ELM327 transport
     "aiohttp>=3.9",       # src/feeds.py — sys.exit(1) at import if missing
 ]
 
@@ -51,7 +52,11 @@ dev = [
     # imports it (test_flipper_bridge.py) needs pyserial installed even
     # when no real Flipper hardware is attached.
     "pyserial>=3.5",
+    "flask>=3.0",
+    "flask-sock>=0.7",
 ]
+bench = ["amqtt>=0.12,<0.13"]
+fleet = ["flask>=3.0", "flask-sock>=0.7"]
 audio = [
     "sounddevice>=0.4",
     "soundfile>=0.12",

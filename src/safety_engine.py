@@ -85,6 +85,8 @@ SAFETY_QOS = 1
 
 @dataclass
 class SafetyState:
+    sample_times: dict = field(default_factory=dict)
+    speed_ts: deque = field(default_factory=lambda: deque(maxlen=30))
     speed_hist: deque = field(default_factory=lambda: deque(maxlen=30))
     rpm_hist: deque = field(default_factory=lambda: deque(maxlen=30))
     coolant: float | None = None
@@ -187,14 +189,19 @@ def rule_overspeed(s: SafetyState):
     return None
 
 
-def _rate(hist: deque) -> float | None:
+def _rate(hist: deque, timestamps=None) -> float | None:
     if len(hist) < 2:
         return None
-    return hist[-1] - hist[-2]
+    dt = 1.0
+    if timestamps is not None and len(timestamps) >= 2:
+        dt = timestamps[-1] - timestamps[-2]
+        if not 0 < dt <= 15:
+            return None
+    return (hist[-1] - hist[-2]) / dt
 
 
 def rule_hard_brake(s: SafetyState):
-    delta = _rate(s.speed_hist)
+    delta = _rate(s.speed_hist, s.speed_ts)
     if delta is None:
         return None
     decel = -delta
@@ -209,7 +216,7 @@ def rule_hard_brake(s: SafetyState):
 
 
 def rule_hard_accel(s: SafetyState):
-    delta = _rate(s.speed_hist)
+    delta = _rate(s.speed_hist, s.speed_ts)
     if delta is None:
         return None
     if delta >= SAFETY_CFG['hard_accel_kph_per_s']:
@@ -313,6 +320,8 @@ ALL_RULES: list[Callable[[SafetyState], tuple | None]] = [
 # ── Ingestion ──
 
 def _safe_float(v) -> float | None:
+    if isinstance(v, bool):
+        return None
     if v is None:
         return None
     try:
@@ -330,18 +339,24 @@ def _on_snapshot(payload: dict) -> None:
     if not isinstance(payload, dict):
         return
     with _state_lock:
-        rpm = _safe_float(payload.get('rpm'))
-        if rpm is not None:
-            _state.rpm_hist.append(rpm)
-        speed = _safe_float(payload.get('speed'))
-        if speed is not None:
-            _state.speed_hist.append(speed)
-        voltage = _safe_float(payload.get('voltage'))
-        if voltage is not None:
-            _state.voltage = voltage
-        coolant = _safe_float(payload.get('coolant'))
-        if coolant is not None:
-            _state.coolant = coolant
+        now = time.time()
+        times = payload.get('sample_ts', {})
+        if not isinstance(times, dict):
+            return
+        for key in ('rpm', 'speed', 'voltage', 'coolant'):
+            value = _safe_float(payload.get(key))
+            ts = _safe_float(times.get(key, payload.get('ts', now)))
+            if value is None or ts is None or not -5 <= now - ts <= 15:
+                continue
+            if ts <= _state.sample_times.get(key, -1):
+                continue
+            _state.sample_times[key] = ts
+            if key in ('rpm', 'speed'):
+                getattr(_state, key + '_hist').append(value)
+                if key == 'speed':
+                    _state.speed_ts.append(ts)
+            else:
+                setattr(_state, key, value)
 
 
 def on_message(client, userdata, msg) -> None:
@@ -397,7 +412,7 @@ def on_message(client, userdata, msg) -> None:
             _state.fatigue_ts = now
 
 
-def on_connect(client, userdata, flags, rc) -> None:
+def on_connect(client, userdata, flags, rc, properties=None) -> None:
     """Subscribe on (re)connect so we recover from broker bounces."""
     if rc != 0:
         log.warning(f"MQTT connect failed rc={rc}")
@@ -416,7 +431,8 @@ def on_connect(client, userdata, flags, rc) -> None:
     log.info("MQTT connected — subscriptions active")
 
 
-def on_disconnect(client, userdata, rc) -> None:
+def on_disconnect(client, userdata, disconnect_flags, rc=None, properties=None) -> None:
+    rc = disconnect_flags if rc is None else rc
     with _state_lock:
         _state.mqtt_connected = False
     if rc != 0:
@@ -438,6 +454,15 @@ def evaluate(client: mqtt.Client) -> None:
     """Run all rules, pick highest level, publish with cooldown."""
     now = time.time()
     _expire_stale_events(now)
+    with _state_lock:
+        for key, ts in _state.sample_times.items():
+            if now - ts > 15:
+                if key in ('rpm', 'speed'):
+                    getattr(_state, key + '_hist').clear()
+                    if key == 'speed':
+                        _state.speed_ts.clear()
+                else:
+                    setattr(_state, key, None)
 
     with _state_lock:
         if not _state.mqtt_connected:

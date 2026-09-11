@@ -75,6 +75,7 @@ def read_response(bus, resp_lo: int = OBD_RESPONSE_BASE,
     expected_len: int | None = None
     buf = bytearray()
     resp_from: int | None = None
+    next_sequence = 1
     while time.monotonic() < deadline:
         try:
             msg = bus.recv(timeout=0.1)
@@ -86,31 +87,46 @@ def read_response(bus, resp_lo: int = OBD_RESPONSE_BASE,
             continue
         if msg.arbitration_id < resp_lo or msg.arbitration_id > resp_hi:
             continue
+        if any(getattr(msg, flag, False) is True for flag in
+               ('is_extended_id', 'is_error_frame', 'is_remote_frame')):
+            continue
+        if resp_from is not None and msg.arbitration_id != resp_from:
+            continue
         d = bytes(msg.data)
         if not d:
             continue
         pci = d[0] & 0xF0
         if pci == _SF:
             length = d[0] & 0x0F
-            return d[1:1 + length]
+            if resp_from is None and 1 <= length <= 7 and len(d) >= 1 + length:
+                return d[1:1 + length]
+            continue
         if pci == _FF:
+            if len(d) < 8 or resp_from is not None:
+                return None
             expected_len = ((d[0] & 0x0F) << 8) | d[1]
+            if expected_len <= 7:
+                return None
             buf.extend(d[2:8])
             resp_from = msg.arbitration_id
-            _send_flow_control(bus, resp_from - _RESP_TO_REQ_OFFSET)
+            if not _send_flow_control(bus, resp_from - _RESP_TO_REQ_OFFSET):
+                return None
             continue
         if pci == _CF:
             # Only accept consecutive frames from the ECU that sent the FF.
-            if resp_from is not None and msg.arbitration_id != resp_from:
+            if resp_from is None:
                 continue
+            if d[0] & 0x0F != next_sequence or len(d) < 2:
+                return None
+            if expected_len - len(buf) > len(d) - 1 and len(d) != 8:
+                return None  # non-final CF must carry all seven bytes
+            next_sequence = (next_sequence + 1) & 0x0F
             buf.extend(d[1:8])
             if expected_len is not None and len(buf) >= expected_len:
                 return bytes(buf[:expected_len])
             continue
         # Flow-control / unknown frames from the ECU are ignored.
-    if expected_len is not None and buf:
-        return bytes(buf[:expected_len])
-    return bytes(buf) if buf else None
+    return None
 
 
 def request(bus, service_bytes, req_id: int = OBD_REQUEST_ID,
@@ -121,6 +137,8 @@ def request(bus, service_bytes, req_id: int = OBD_REQUEST_ID,
     ``[0x09, 0x02]`` for VIN or ``[0x03]`` for stored DTCs. Returns ``None`` on
     a send error or no response."""
     n = len(service_bytes)
+    if not 1 <= n <= 7:
+        raise ValueError('ISO-TP single-frame request needs 1..7 service bytes')
     frame = [n, *list(service_bytes)]
     frame += [0x00] * (8 - len(frame))  # pad to the 8-byte CAN payload
     try:

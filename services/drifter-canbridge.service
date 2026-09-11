@@ -19,11 +19,12 @@ Wants=drifter-broker.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/drifter
-ExecStartPre=/usr/local/bin/drifter-setup-can
+ExecStartPre=/opt/drifter/venv/bin/python3 /opt/drifter/obd_transport.py
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/can_bridge.py
 Restart=on-failure
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
 
 # Vehicle-survival hardening 2026-05-20: canbridge has bounded ring
 # buffers — 256M ceiling, growth past this is a coding defect.

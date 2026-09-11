@@ -33,6 +33,7 @@ cd "$SRC_DIR"
 # npm ci is deterministic against package-lock.json and replaces stale
 # node_modules from earlier builds. Vite output is fully offline-capable.
 npm ci --no-audit --no-fund
+npm test
 npm run build
 
 [ -f "${SRC_DIR}/dist/index.html" ] || {

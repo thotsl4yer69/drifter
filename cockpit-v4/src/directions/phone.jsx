@@ -50,10 +50,10 @@ export function DirPhone({ t, onNav }) {
       ) : null}
 
       <div className="dr-tile bracketed" style={{ padding: '14px 18px 16px', flex: 'none', opacity: sim.link === 'lost' ? 0.55 : 1, transition: 'opacity 600ms' }}>
-        {noGps ? (
+        {sim.speed == null ? (
           <HonestState kind={sim.hw.gps === 'acquiring' ? 'acquiring' : 'no-hw'}
-            label={sim.hw.gps === 'acquiring' ? 'gps acquiring' : 'gps · no device'}
-            hint={sim.hw.gps === 'acquiring' ? 'awaiting 3D fix — no speed until real' : 'plug in the usb gps dongle'} />
+            label="vehicle speed unavailable"
+            hint="waiting for an OBD speed response" />
         ) : (
         <React.Fragment>
         <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -85,9 +85,9 @@ export function DirPhone({ t, onNav }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: 'none' }}>
-        <PkGauge label="rpm" num={drFmt.n1(sim.rpm / 1000)} unit="×1k" frac={sim.rpm / 7000} color="var(--cyan)" alarm={sim.rpm > 6300} noHw={noEcu} />
-        <PkGauge label="coolant" num={drFmt.n0(sim.coolant)} unit="°C" frac={(sim.coolant - 40) / 80} color="var(--acc)" alarm={sim.coolant > 104} noHw={noEcu} />
-        <PkGauge label="voltage" num={drFmt.n1(sim.voltage)} unit="V" frac={(sim.voltage - 11) / 4} color="var(--teal)" alarm={sim.voltage < 12} noHw={noEcu} />
+        <PkGauge label="rpm" num={drFmt.n1(sim.rpm == null ? null : sim.rpm / 1000)} unit="×1k" frac={sim.rpm / 7000} color="var(--cyan)" alarm={sim.rpm > 6300} noHw={noEcu || sim.rpm == null} />
+        <PkGauge label="coolant" num={drFmt.n0(sim.coolant)} unit="°C" frac={(sim.coolant - 40) / 80} color="var(--acc)" alarm={sim.coolant > 104} noHw={noEcu || sim.coolant == null} />
+        <PkGauge label="voltage" num={drFmt.n1(sim.voltage)} unit="V" frac={(sim.voltage - 11) / 4} color="var(--teal)" alarm={sim.voltage != null && sim.voltage < 12} noHw={noEcu || sim.voltage == null} />
         <PkGauge label="trip" num={drFmt.n1(sim.trip.km)} unit="km" frac={0} color="var(--vio)" />
       </div>
 

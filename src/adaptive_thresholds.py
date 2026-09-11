@@ -26,6 +26,8 @@ from config import (
     MQTT_PORT,
     TOPICS,
     WARMUP_COOLANT_THRESHOLD,
+    make_mqtt_client,
+    subscribe_on_connect,
 )
 
 logging.basicConfig(
@@ -255,7 +257,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    client = mqtt.Client(client_id="drifter-thresholds")
+    client = make_mqtt_client("drifter-thresholds")
     client.on_message = on_message
 
     connected = False
@@ -270,7 +272,7 @@ def main() -> None:
     if not running:
         return
 
-    client.subscribe([
+    subscribe_on_connect(client, [
         (TOPICS['snapshot'], 0),
         (TOPICS['drive_session'], 0),
         (TOPICS['vehicle_profile'], 0),

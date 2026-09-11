@@ -42,7 +42,8 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
-from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
+from config import MQTT_HOST, MQTT_PORT, lab_mode_allowed, make_mqtt_client
+from obd_transport import acquire_telemetry_lease
 
 logging.basicConfig(
     level=logging.INFO,
@@ -238,6 +239,13 @@ def run_command(command: str, body: dict, interface: str | None,
     if argv is None:
         response['error'] = 'bad_args'
         return response
+    if not lab_mode_allowed():
+        response['error'] = 'bench_only'
+        return response
+    lease = acquire_telemetry_lease()
+    if lease is None:
+        response['error'] = 'telemetry_busy'
+        return response
     timeout = CC_TIMEOUTS.get(command, 60.0)
     log.info("cc %s on %s (timeout %.0fs)", command, interface, timeout)
     try:
@@ -257,6 +265,8 @@ def run_command(command: str, body: dict, interface: str | None,
     except Exception as e:
         response['error'] = f'subprocess_error: {e}'
         return response
+    finally:
+        lease.close()
     response['returncode'] = completed.returncode
     response['results'] = _parse_cc_output(command, completed.stdout or '')
     if completed.returncode != 0 and completed.stderr:

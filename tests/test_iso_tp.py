@@ -120,3 +120,28 @@ class TestMultiFrame:
         bus = _FakeBus(frames)
         payload = iso_tp.read_response(bus, timeout=1.0)
         assert bytes(payload[3:]) == b'SAJEA51D44XD39283'
+
+    def test_incomplete_multiframe_is_not_returned(self):
+        assert iso_tp.read_response(_FakeBus(self._vin_frames()[:2]), timeout=0.02) is None
+
+    def test_out_of_order_consecutive_frame_is_rejected(self):
+        frames = self._vin_frames()
+        frames[1][1][0] = 0x22
+        assert iso_tp.read_response(_FakeBus(frames), timeout=0.02) is None
+
+    def test_orphan_consecutive_frames_are_ignored(self):
+        assert iso_tp.read_response(_FakeBus(self._vin_frames()[1:]), timeout=0.02) is None
+
+    def test_truncated_nonfinal_consecutive_frame_is_rejected(self):
+        frames = self._vin_frames()
+        frames[1] = (0x7E8, [0x21, 0x41])
+        assert iso_tp.read_response(_FakeBus(frames), timeout=0.02) is None
+
+    def test_failed_flow_control_aborts_read(self, monkeypatch):
+        monkeypatch.setattr(iso_tp, '_send_flow_control', lambda *a: False)
+        assert iso_tp.read_response(_FakeBus(self._vin_frames()), timeout=0.02) is None
+
+
+@pytest.mark.parametrize('data', [[0x04, 0x41, 0x0C, 0x1A], [0x00], [0x08] + [0] * 8])
+def test_truncated_or_invalid_single_frame_length_is_rejected(data):
+    assert iso_tp.read_response(_FakeBus([(0x7E8, data)]), timeout=0.02) is None

@@ -12,6 +12,9 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/safety_engine.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
+MemoryMax=256M
+OOMScoreAdjust=-800
 
 [Install]
 WantedBy=multi-user.target

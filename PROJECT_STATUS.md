@@ -5,6 +5,11 @@
 **Primary target:** Raspberry Pi vehicle node  
 **Last portfolio review:** 2026-08-13
 
+**Vehicle-test software review:** 2026-09-11. ELM/MQTT recovery and isolated
+installer rollback checks pass. The Pi was unreachable during this review;
+deployment, reader identification and Jaguar testing remain pending. See
+[findings/evidence](docs/VEHICLE_TEST_READINESS.md) and [the runbook](FIRST_DRIVE.md).
+
 ## What is demonstrated
 
 - Raspberry Pi/Linux deployment in the target vehicle-node role.
