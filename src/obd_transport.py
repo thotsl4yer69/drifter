@@ -7,11 +7,11 @@ therefore mutually exclusive:
 
   * ``can_bridge.py``  — raw SocketCAN (a CANable / gs_usb adapter → slcan0/can0).
     High poll rate, but only works when the car's OBD pins are CAN.
-  * ``obd_bridge.py``  — an ELM327 serial adapter. Slower, but abstracts the
-    physical layer so it works on K-line (ISO 9141 / KWP2000), J1850 and 29-bit
-    CAN that raw SocketCAN can't reach.
+  * ``obd_bridge.py``  — an ELM327 adapter over serial, Bluetooth Classic or
+    Wi-Fi TCP. Slower, but abstracts the physical layer so it works on K-line
+    (ISO 9141 / KWP2000), J1850 and CAN protocols supported by the ELM327.
 
-Both are now first-class monitored services (config.SERVICES). To keep them from
+Both are first-class monitored services (config.SERVICES). To keep them from
 double-publishing, each self-selects at boot (and re-checks on a slow timer) via
 :func:`select_transport`; the transport that isn't chosen idles and publishes a
 hardware-pending status instead of telemetry.
@@ -21,9 +21,15 @@ Selection precedence:
   2. A live SocketCAN interface (can0/can1/slcan0) → ``can``.
   3. A plugged raw-CAN serial adapter (VID:PID on ``config.CAN_USB_IDS``), before
      slcand has brought its interface up → ``can``.
-  4. An ELM327 serial device present at ``config.OBD_SERIAL_DEV`` → ``elm327``.
+  4. A configured Bluetooth/Wi-Fi ELM327 OR an ELM327 serial device present at
+     ``config.OBD_SERIAL_DEV`` → ``elm327``.
   5. Default → ``can`` (canbridge then idles hw-pending until an adapter appears;
      nothing double-publishes).
+
+The Bluetooth/Wi-Fi check is intentionally configuration-based rather than a
+radio scan. Discovery/pairing belongs to ``drifter obd setup``; once that tool
+proves an adapter it writes DRIFTER_TRANSPORT=elm327, making the choice explicit
+on every service and reboot.
 
 Deliberately imports only stdlib + config — NOT python-can — because obd_bridge
 must import and run on a K-line-only node where python-can may be absent.
@@ -87,7 +93,30 @@ def _can_serial_adapter_present() -> bool:
     return False
 
 
+def _configured_network_elm() -> bool:
+    """True when a non-serial ELM link has been intentionally configured.
+
+    The previous selector only looked for a tty path.  That meant a perfectly
+    configured Bluetooth or Wi-Fi ELM327 was invisible to the arbitration layer
+    and the system silently fell back to CAN.  Configuration is sufficient
+    here: the OBD bridge itself owns reachability/retry and publishes hw_pending
+    when the adapter is temporarily absent.
+    """
+    mode = (os.getenv("DRIFTER_ELM_LINK") or "").strip().lower()
+    bt_mac = (os.getenv("ELM_BT_MAC") or "").strip()
+    wifi_host = (os.getenv("ELM_WIFI_HOST") or "").strip()
+    if mode in {"bluetooth", "bt"}:
+        return bool(bt_mac)
+    if mode in {"wifi", "tcp", "network"}:
+        return bool(wifi_host)
+    # Backward-compatible: the latest installer may have written a target but
+    # omitted DRIFTER_ELM_LINK.  Presence of either endpoint still means ELM.
+    return bool(bt_mac or wifi_host)
+
+
 def _elm327_present() -> bool:
+    if _configured_network_elm():
+        return True
     try:
         return bool(OBD_SERIAL_DEV) and os.path.exists(OBD_SERIAL_DEV)
     except OSError:  # pragma: no cover - defensive
