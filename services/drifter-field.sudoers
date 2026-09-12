@@ -1,0 +1,12 @@
+# /etc/sudoers.d/drifter-field
+# Narrow privileges used by the local-only touchscreen FIELD OPS layer.
+# The HTTP handler validates MACs, devices, frequencies and action enums before
+# invoking any of these. No arbitrary shell is granted.
+
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter obd setup *
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter obd use-bt *
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter obd use-wifi *
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter obd use-serial *
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter display recover
+drifter ALL=(root) NOPASSWD: /usr/bin/bluetoothctl
+drifter ALL=(root) NOPASSWD: /usr/bin/nmcli device wifi connect *
