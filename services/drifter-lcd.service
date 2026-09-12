@@ -18,7 +18,9 @@ WorkingDirectory=/opt/drifter
 # leaving a physically white panel behind an apparently healthy framebuffer.
 # '-' = never block the dash if the device path differs; runs as root (no User=).
 ExecStartPre=-/bin/sh -c 'D=/sys/bus/spi/drivers/fb_ili9486; echo spi0.0 > $D/unbind 2>/dev/null; sleep 0.3; echo spi0.0 > $D/bind 2>/dev/null; sleep 1'
-ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/lcd_dashboard.py
+# Wrapper keeps the mature renderer but removes CAN-specific empty-state text:
+# ELM327, CAN and future OBD transports all get the same honest vehicle-link UI.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/field_lcd_dashboard.py
 Restart=on-failure
 RestartSec=5
 # Diag-core dash service — negative OOMScoreAdjust protects the in-car triage
