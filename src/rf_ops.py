@@ -107,7 +107,10 @@ def summary_candidates(summary: dict, margin_db: float = 10.0,
     for item in summary.get("bins", []) if isinstance(summary, dict) else []:
         try:
             freq_mhz = float(item["freq_hz"]) / 1e6
-            level = float(item.get("level_db_max", item["level_db_mean"]))
+            raw_level = item.get("level_db_max")
+            if raw_level is None:
+                raw_level = item.get("level_db_mean")
+            level = float(raw_level)
         except (KeyError, TypeError, ValueError):
             continue
         if math.isfinite(level):
