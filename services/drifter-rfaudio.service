@@ -11,14 +11,13 @@ User=drifter
 Group=drifter
 SupplementaryGroups=audio plugdev
 WorkingDirectory=/opt/drifter
-ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/rfaudio.py
+# Wrapper preserves rfaudio's mature worker while adding the shared RTL-SDR lease.
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/field_rfaudio.py
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/default/drifter
 
-# Vehicle-survival hardening 2026-05-20: rtl_fm + aplay pipeline; cap
-# to keep an audio stall from accumulating buffered frames.
 MemoryMax=384M
 ProtectSystem=strict
 ProtectHome=true
