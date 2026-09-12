@@ -19,9 +19,9 @@ import elm_link
 # there is no /dev/ttyUSB* node.
 if not os.getenv("DRIFTER_TRANSPORT"):
     mode = (os.getenv("DRIFTER_ELM_LINK", "auto") or "auto").strip().lower()
-    if mode in {"bluetooth", "bt", "wifi", "tcp", "network"}:
-        os.environ["DRIFTER_TRANSPORT"] = "elm327"
-    elif (os.getenv("ELM_BT_MAC") or os.getenv("ELM_WIFI_HOST")):
+    if mode in {"bluetooth", "bt", "wifi", "tcp", "network"} or (
+        os.getenv("ELM_BT_MAC") or os.getenv("ELM_WIFI_HOST")
+    ):
         os.environ["DRIFTER_TRANSPORT"] = "elm327"
 
 import obd_bridge  # noqa: E402  (env must be normalised first)
