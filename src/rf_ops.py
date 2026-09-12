@@ -17,8 +17,8 @@ import subprocess
 import threading
 import time
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from config import MQTT_HOST, MQTT_PORT, TOPICS, atomic_write_json, make_mqtt_client
 from sdr_arbiter import SDRLease, read_owner
