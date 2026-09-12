@@ -1,194 +1,172 @@
-# FIRST DRIVE — field runbook
+# FIRST DRIVE — touchscreen field runbook
 
-This runbook reflects the **12 Sep 2026 first real vehicle test**. The previous version was
-bench-oriented and assumed the CANable path. For the 2004 Jaguar X-Type, the acceptance path
-is now ELM327-first because the adapter can negotiate the OBD-II physical protocol instead of
-assuming SocketCAN/CAN.
+This runbook reflects the **12 Sep 2026 first real vehicle test** and the field-hardening work that followed it. Normal in-car operation is now **touchscreen-first**. Shell commands are engineering/debug fallbacks, not part of the operator workflow.
+
+Primary acceptance vehicle: **2004 Jaguar X-Type**. Primary telemetry path: **ELM327** with automatic OBD-II protocol negotiation.
 
 ## Non-negotiable field goals
 
-Before DRIFTER is considered vehicle-ready it must:
+DRIFTER is not vehicle-ready until it can:
 
 1. cold-boot from vehicle power without requiring a replug;
-2. show a usable operator screen rather than a white panel;
-3. identify or clearly guide setup of the attached ELM327;
+2. recover its operator display instead of leaving a white panel;
+3. discover and configure the attached ELM327 from the touchscreen;
 4. prove **adapter communication** separately from **ECU communication**;
-5. show live engine data and make its transport/status obvious;
-6. preserve logs from failed boots and recoverable crashes.
+5. show live engine data and the transport actually carrying it;
+6. operate the RTL-SDR through understandable field missions rather than raw sweep controls;
+7. keep one authoritative owner of the RTL-SDR so survey/hunt/listen/capture do not fight over USB;
+8. preserve enough evidence to diagnose a failed boot or runtime crash.
 
-## First Jaguar retest
+## Jaguar retest — normal operator flow
 
-### 1. Boot before touching OBD
+### 1. Power on once
 
-Power DRIFTER and leave it alone for the first boot attempt.
+Power DRIFTER and **do not immediately replug it** if the screen takes time to initialise. The display service is configured to keep retrying after controller resets instead of permanently hitting a restart limit.
 
-If the SPI panel stays white or the unit appears dead, **do not immediately keep power-cycling it**.
-If you can SSH in, collect evidence first:
+When the cockpit is available, open **FIELD OPS**. If no vehicle link has been configured, FIELD OPS opens the **VEHICLE** tab automatically.
 
-```bash
-drifter field-dump
-sudo drifter display recover
-```
+If the Linux node is alive but the panel is blank/white:
 
-`field-dump` records the current and previous boot journals, service restart counts, Pi throttle /
-undervoltage flags, framebuffer/SPI state, USB/Bluetooth/network state, retained OBD status and
-recent vehicle telemetry. The LCD service now keeps retrying instead of permanently hitting its
-restart-rate limit.
+**FIELD OPS → SYSTEM → RECOVER WHITE / BLANK DISPLAY**
 
-After the unit is stable, check:
+A white panel is not automatically treated as a dead Pi.
 
-```bash
-drifter display status
-drifter obd status
-```
+### 2. Connect one ELM327
 
-### 2. Plug the ELM327 into the Jaguar
+For the first Jaguar acceptance run use **one OBD reader at a time**. Plug the ELM327 into the diagnostic connector and turn ignition to **RUN**. Do not add the CANable during this test; a second telemetry transport only makes diagnosis ambiguous.
 
-Use **one reader at a time** for the first acceptance test. Turn ignition to **RUN**. Engine running
-is useful for the RPM proof but is not required for the initial supported-PID response.
+### 3. Tap AUTO DETECT
 
-Do not plug the CANable in during this test; it adds a second transport and makes diagnosis less
-clear.
+Open:
 
-### 3. Discover the adapter
+**FIELD OPS → VEHICLE → AUTO DETECT**
 
-```bash
-drifter obd scan
-```
+DRIFTER attempts the configured link first, then usable serial/USB candidates, paired Bluetooth readers and a reachable Wi-Fi ELM endpoint. An adapter is not saved merely because it was visible: the ELM AT-command handshake must succeed first.
 
-The scan lists:
+If AUTO DETECT cannot finish setup, tap **SCAN ADAPTERS**. The touchscreen lists:
 
-- serial/USB ELM candidates;
-- Bluetooth devices, marking likely ELM/OBD readers and whether they are paired;
-- visible Wi-Fi networks that look like OBD/ELM adapters.
+- USB/serial candidates;
+- Bluetooth devices, prioritising likely OBD/ELM names and showing paired/unpaired state;
+- visible Wi-Fi networks that resemble ELM/OBD adapters.
 
-### 4A. Bluetooth ELM327
+### 4. Bluetooth reader
 
-If the reader is shown as **unpaired**:
+For an already-paired reader tap **CONNECT + SAVE**.
 
-```bash
-sudo drifter obd pair AA:BB:CC:DD:EE:FF
-```
+For an unpaired reader, enter the reader PIN on-screen and tap **PAIR + CONNECT**. Common clone defaults are often `1234` or `0000`, but use the reader's documented PIN where available.
 
-Use the MAC printed by `drifter obd scan`. If the adapter requests a PIN, common clone defaults
-are `1234` or `0000`.
+The selected Bluetooth reader is only persisted after the ELM handshake succeeds.
 
-If it is already paired:
+### 5. Wi-Fi reader
 
-```bash
-sudo drifter obd setup
-```
+Choose the ELM Wi-Fi network, enter its password if required and tap **JOIN + AUTO DETECT**.
 
-or select it explicitly:
+When a second Wi-Fi adapter is present, DRIFTER prefers that interface for the ELM network so the primary control/hotspot radio is not unnecessarily displaced. With only one Wi-Fi radio, the local Pi touchscreen remains the primary recovery/control surface even if network topology changes while joining the reader.
 
-```bash
-sudo drifter obd use-bt AA:BB:CC:DD:EE:FF
-```
+### 6. Prove ECU communication
 
-### 4B. Wi-Fi ELM327
+Tap **TEST ECU**.
 
-Join the reader's Wi-Fi network with the DRIFTER Wi-Fi interface, then run:
+The touchscreen distinguishes four states:
 
-```bash
-sudo drifter obd setup
-```
+- **adapter not reachable** — DRIFTER cannot yet communicate with the ELM transport;
+- **adapter connected / ECU waiting** — ELM communication works but the vehicle ECU has not answered;
+- **ECU link online** — standard Mode 01 communication is proven;
+- **error** — a specific link/protocol failure was returned.
 
-If automatic gateway probing does not identify the TCP endpoint, select the reader explicitly:
+For a successful Jaguar test, DRIFTER should negotiate the vehicle protocol through the ELM rather than assuming CAN. When supported, RPM is used as an additional live sample proof.
 
-```bash
-sudo drifter obd use-wifi <ELM-IP> --port 35000
-```
+### 7. Confirm live vehicle data
 
-Use the address supplied by the adapter/network rather than guessing it.
-
-### 5. Prove the link
-
-Run:
-
-```bash
-drifter obd test
-```
-
-A useful result has **two independent PASS conditions**:
-
-```text
-[PASS] adapter  ELM327 ...
-[PASS] link     bluetooth://...   # or wifi:// / serial://
-[PASS] ECU      responding via <detected OBD protocol>
-[PASS] sample   engine RPM = ...  # when PID 010C is supported/responding
-```
-
-Interpret failures literally:
-
-- **adapter FAIL** — DRIFTER cannot communicate with the ELM327 transport yet;
-- **adapter PASS / ECU WAIT** — reader is connected, but the vehicle ECU is not answering;
-- **NO DATA** — check ignition state and ECU/PID availability;
-- **UNABLE TO CONNECT** — the ELM327 could not establish a vehicle OBD protocol.
-
-`ATSP0` is used so the ELM can negotiate a supported vehicle protocol instead of DRIFTER assuming
-CAN. That is the correct generic path for older OBD-II vehicles such as the X-Type as well as newer
-CAN-based cars, subject to what the adapter itself supports.
-
-### 6. Confirm DRIFTER is actually collecting data
-
-```bash
-drifter obd status
-mosquitto_sub -h 127.0.0.1 -t 'drifter/engine/#' -v -C 12 -W 5
-```
-
-The cockpit **Hardware** page now puts **Vehicle Link** first and reports the selected transport,
-ELM/CAN state, whether ECU telemetry is live, and the exact next action if it is not.
-
-For the Jaguar acceptance test, confirm at minimum:
+Return to the cockpit and confirm at minimum:
 
 - RPM changes with engine speed;
 - coolant temperature is plausible and updates;
-- vehicle speed remains zero while parked and changes on the road;
+- speed is zero while stationary and changes on-road;
 - voltage is plausible;
-- no stale CAN-only labels are being used to describe an ELM session.
+- the UI describes the active ELM/OBD link rather than showing stale CAN-only instructions.
 
-### 7. If anything fails in the car
+The direct SPI LCD's vehicle empty-state is transport-neutral as well: it reports **vehicle link waiting**, not `can0 idle`.
 
-Capture the bundle **before rebooting when possible**:
+## RTL-SDR field workflow
+
+Open **FIELD OPS → RF**.
+
+### SURVEY
+
+Tap **SURVEY**. DRIFTER performs a broad environmental sweep, estimates the local noise floor, ranks peaks that clear the adaptive threshold, then automatically performs finer scans around the strongest candidates.
+
+The result is a **Findings** list rather than a raw heat strip. Each finding can include:
+
+- frequency;
+- local peak and noise levels;
+- delta above local noise;
+- rough occupied bandwidth;
+- frequency-range context;
+- source/classifier information;
+- NEW/KNOWN state relative to a saved baseline.
+
+Frequency labels are context, not identity claims. For example, energy inside a cellular allocation is reported as **cellular-band energy**; the spectrum sweep alone does not claim to identify an IMSI catcher or other specific transmitter.
+
+### HUNT
+
+Select a finding and tap **HUNT**. DRIFTER repeatedly measures a narrow span around that frequency and shows current relative power plus a simple **STRONGER / WEAKER / STEADY** trend. This is proximity hunting, not true direction finding.
+
+### ZOOM
+
+Tap **ZOOM ±250K** for a finer spectrum around the selected finding. The targeted result is shown directly in the signal-investigation panel.
+
+### LISTEN
+
+Tap **LISTEN**. DRIFTER chooses a conservative demodulation suggestion from frequency context (for example AM in airband, WFM in FM broadcast, otherwise NFM) and exposes a manual AM/NFM/WFM/USB/LSB override.
+
+### CAPTURE IQ
+
+Choose **5 / 15 / 30 seconds**, then tap **CAPTURE IQ**. The capture is stored as SigMF data + metadata with frequency, sample rate, time, region and a recent GPS fix when one is available.
+
+### BASELINE
+
+After surveying a known environment, tap **SAVE BASELINE**. Later surveys mark peaks that closely match that baseline as KNOWN and surface new candidates as NEW.
+
+### One SDR, one owner
+
+The field stack uses a cross-process SDR lease for on-demand survey/hunt/capture/listen operations. Legacy `rtl_433` monitoring is paused before an operator mission and resumed afterwards. `rfaudio` uses the same lease. The UI exposes the current SDR owner so a busy receiver is explicit rather than becoming a mysterious `device busy` failure.
+
+A second RTL-SDR can still be useful later for genuinely simultaneous continuous monitoring plus operator hunting, but the single-dongle software path must pass acceptance first.
+
+## System recovery
+
+**FIELD OPS → SYSTEM** exposes current boot/watchdog/LCD/network state and the display-recovery action.
+
+If the whole node appears unstable, preserve evidence before repeated power cycling whenever possible. Engineering fallback commands remain available:
 
 ```bash
 drifter field-dump
-```
-
-Then use the focused checks:
-
-```bash
 drifter obd status
 drifter obd test
 drifter display status
 systemctl --failed
 ```
 
-If the panel alone is white but the Pi is reachable:
+These are debugging tools, not required normal operation.
 
-```bash
-sudo drifter display recover
-```
+## Acceptance gate
 
-Do not diagnose a white panel as a full Pi boot failure until SSH/network/service evidence confirms
-that the Pi itself is down.
+Do not mark DRIFTER field-ready until all of these are green:
 
-## Field acceptance gate
-
-Do not mark DRIFTER vehicle-ready until it passes all of these:
-
-- **10 cold starts** from the intended vehicle power source, 10/10 without manual replug;
-- ELM327 setup can go from blank configuration to proved adapter + ECU connection;
-- adapter unplug/replug is recovered or produces an explicit actionable state;
-- Jaguar live telemetry remains stable for a 30-minute stationary/road session;
-- display service/controller failure can recover without a full power cycle;
-- after an induced/recovered failure, `drifter field-dump` contains the relevant current and
-  previous boot evidence;
-- the cockpit never reports raw CAN as the required vehicle path when ELM327 owns telemetry.
+- **10/10 cold starts** from the intended vehicle power source without manual replug;
+- touchscreen goes from blank vehicle configuration to proved ELM adapter + ECU communication;
+- Bluetooth and Wi-Fi ELM setup can be completed without opening a terminal;
+- adapter unplug/replug recovers or produces a clear actionable state;
+- Jaguar live telemetry remains stable for a **30-minute** stationary/road session;
+- display/controller failure can recover without full power cycling when Linux remains alive;
+- **RF SURVEY** produces ranked findings without requiring SDR terminology;
+- HUNT, ZOOM, LISTEN and IQ CAPTURE operate from the selected finding;
+- changing RF modes does not produce unresolved `device busy` contention;
+- unplug/replug of the RTL-SDR recovers or produces an explicit missing-hardware state;
+- the cockpit never calls unknown hardware READY;
+- failures remain diagnosable through the field evidence bundle.
 
 ## Generic vehicle scope
 
-The target is **OBD-II-compliant vehicles supported by the attached ELM327**, not literally every
-car ever produced. DRIFTER should auto-negotiate through the adapter, detect what the ECU actually
-supports, and degrade with a specific explanation when a vehicle, ECU, PID or protocol is not
-available. The 2004 Jaguar X-Type is the primary acceptance vehicle until this field gate is green.
+The target is **OBD-II-compliant vehicles supported by the attached ELM327**, not literally every car ever produced. DRIFTER should negotiate through the adapter, discover what the ECU actually supports, and degrade with a specific explanation when a vehicle, ECU, PID or protocol is unavailable. The Jaguar remains the primary acceptance platform until this gate passes.
