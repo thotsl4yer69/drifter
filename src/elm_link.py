@@ -17,7 +17,7 @@ Configuration is environment-driven so existing installs remain compatible:
   ELM_WIFI_PORT=35000
 
 `auto` tries a present serial device first, then configured Bluetooth, then
-configured Wi-Fi.  The returned object implements the subset of pyserial used by
+configured Wi-Fi. The returned object implements the subset of pyserial used by
 obd_bridge.py: write(), read(), reset_input_buffer(), close().
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ class LinkConfig:
     timeout: float = 1.0
 
     @classmethod
-    def from_env(cls, *, serial_dev: str, serial_baud: int) -> "LinkConfig":
+    def from_env(cls, *, serial_dev: str, serial_baud: int) -> LinkConfig:
         return cls(
             mode=(os.getenv("DRIFTER_ELM_LINK", "auto") or "auto").strip().lower(),
             serial_dev=os.getenv("OBD_SERIAL_DEV", serial_dev),
@@ -75,7 +75,7 @@ class SocketStream:
                 remaining -= len(chunk)
                 if b">" in chunk:
                     break
-        except socket.timeout:
+        except TimeoutError:
             pass
         return b"".join(chunks)
 
@@ -152,7 +152,7 @@ def candidate_modes(cfg: LinkConfig) -> list[str]:
 def open_elm_link(cfg: LinkConfig):
     """Open the first configured ELM link and return (stream, description).
 
-    Raises RuntimeError only after every candidate has failed.  The caller owns
+    Raises RuntimeError only after every candidate has failed. The caller owns
     retry/backoff so vehicle-node services can degrade to hardware-pending.
     """
     errors = []
