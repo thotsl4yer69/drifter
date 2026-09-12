@@ -100,13 +100,40 @@ def parse_rtl_power(lines: Iterable[str]) -> list[dict]:
     return bins
 
 
+def _summary_group_span_mhz(summary: dict) -> float | None:
+    """Return the approximate frequency width represented by one summary bin.
+
+    rf_monitor.downsample_spectrum stores the *start* frequency of each grouped
+    bin plus min/max/mean levels. A target scan must cover the whole group or a
+    max near the far edge could otherwise be missed.
+    """
+    try:
+        count = int(summary.get("bin_count") or len(summary.get("bins", [])))
+        raw_range = str(summary.get("scan_range_mhz") or "")
+        low_s, high_s = raw_range.split("-", 1)
+        low = float(low_s)
+        high = float(high_s)
+        if count > 0 and high > low:
+            span = (high - low) / count
+            if math.isfinite(span) and 0.01 <= span <= 100.0:
+                return span
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return None
+
+
 def summary_candidates(summary: dict, margin_db: float = 10.0,
                        max_count: int = 7) -> list[dict]:
-    """Rank broad-sweep peaks by delta over the sweep's median noise floor."""
+    """Rank broad-sweep peaks by delta over the sweep's median noise floor.
+
+    When the summary reports its broad range/bin count, the returned seed is
+    shifted from each grouped-bin *start* to the group centre and carries a
+    target span wide enough to revisit the entire grouped range.
+    """
     groups = []
     for item in summary.get("bins", []) if isinstance(summary, dict) else []:
         try:
-            freq_mhz = float(item["freq_hz"]) / 1e6
+            start_mhz = float(item["freq_hz"]) / 1e6
             raw_level = item.get("level_db_max")
             if raw_level is None:
                 raw_level = item.get("level_db_mean")
@@ -114,31 +141,39 @@ def summary_candidates(summary: dict, margin_db: float = 10.0,
         except (KeyError, TypeError, ValueError):
             continue
         if math.isfinite(level):
-            groups.append((freq_mhz, level))
+            groups.append((start_mhz, level))
     if not groups:
         return []
 
+    group_span = _summary_group_span_mhz(summary)
     floor = statistics.median(level for _, level in groups)
-    ranked = sorted(
-        (
-            {
-                "freq_mhz": freq,
-                "peak_db": level,
-                "noise_db": floor,
-                "delta_db": level - floor,
-            }
-            for freq, level in groups
-            if level - floor >= margin_db
-        ),
-        key=lambda item: item["delta_db"],
-        reverse=True,
-    )
+    ranked = []
+    for start_mhz, level in groups:
+        delta = level - floor
+        if delta < margin_db:
+            continue
+        if group_span is not None:
+            seed_mhz = start_mhz + group_span / 2.0
+            target_span = max(4.0, group_span * 1.15)
+        else:
+            seed_mhz = start_mhz
+            target_span = 4.0
+        ranked.append({
+            "freq_mhz": seed_mhz,
+            "summary_start_mhz": start_mhz,
+            "target_span_mhz": target_span,
+            "peak_db": level,
+            "noise_db": floor,
+            "delta_db": delta,
+        })
+    ranked.sort(key=lambda item: item["delta_db"], reverse=True)
 
     selected = []
+    dedupe_mhz = max(5.0, (group_span or 4.0) * 1.25)
     for candidate in ranked:
         # One targeted scan per broad neighbourhood; otherwise a wide carrier
         # creates several adjacent candidates and wastes most of the field run.
-        if any(abs(candidate["freq_mhz"] - old["freq_mhz"]) < 5.0
+        if any(abs(candidate["freq_mhz"] - old["freq_mhz"]) < dedupe_mhz
                for old in selected):
             continue
         selected.append(candidate)
@@ -400,7 +435,11 @@ class RFOps:
                     freq_mhz=seed["freq_mhz"],
                 )
                 finding = analyse_bins(
-                    self.sweep(seed["freq_mhz"], 4.0, 25_000),
+                    self.sweep(
+                        seed["freq_mhz"],
+                        float(seed.get("target_span_mhz", 4.0)),
+                        25_000,
+                    ),
                     seed["freq_mhz"],
                 )
                 if finding is None or finding["delta_db"] < 6.0:
