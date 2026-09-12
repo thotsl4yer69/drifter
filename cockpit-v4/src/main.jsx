@@ -12,5 +12,11 @@ import './styles/drifter-dna.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { CockpitApp } from './app/shell.jsx';
+import { FieldOverlay } from './field/FieldOverlay.jsx';
 
-createRoot(document.getElementById('root')).render(<CockpitApp />);
+createRoot(document.getElementById('root')).render(
+  <React.Fragment>
+    <CockpitApp />
+    <FieldOverlay />
+  </React.Fragment>,
+);
