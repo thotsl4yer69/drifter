@@ -37,6 +37,30 @@ def test_summary_candidates_accept_mean_only_bins():
     assert abs(out[0]['freq_mhz'] - 433.92) < 0.01
 
 
+def test_summary_candidates_center_and_cover_downsampled_group():
+    summary = {
+        'scan_range_mhz': '24-1766',
+        'bin_count': 256,
+        'bins': [
+            {'freq_hz': 24e6, 'level_db_max': -82},
+            {'freq_hz': 30.8e6, 'level_db_max': -81},
+            {'freq_hz': 430.0e6, 'level_db_max': -40},
+            {'freq_hz': 900.0e6, 'level_db_max': -80},
+            {'freq_hz': 1500.0e6, 'level_db_max': -83},
+        ],
+    }
+    out = rf_ops.summary_candidates(summary, margin_db=10, max_count=3)
+    assert out
+    candidate = out[0]
+    expected_group_width = (1766 - 24) / 256
+    assert candidate['freq_mhz'] > candidate['summary_start_mhz']
+    assert candidate['target_span_mhz'] >= expected_group_width
+    low = candidate['freq_mhz'] - candidate['target_span_mhz'] / 2
+    high = candidate['freq_mhz'] + candidate['target_span_mhz'] / 2
+    assert low <= candidate['summary_start_mhz']
+    assert high >= candidate['summary_start_mhz'] + expected_group_width
+
+
 def test_analyse_bins_returns_local_noise_delta_and_bandwidth():
     bins = []
     for i in range(41):
