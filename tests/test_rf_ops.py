@@ -4,7 +4,7 @@ import rf_ops
 def test_au_band_context_is_region_aware_without_overclaiming():
     assert 'UHF-CB' in rf_ops.band_context(476.525, 'AU')
     assert 'airband' in rf_ops.band_context(121.5, 'AU')
-    assert 'cellular-band energy' == rf_ops.band_context(935.0, 'AU')
+    assert rf_ops.band_context(935.0, 'AU') == 'cellular-band energy'
     assert 'IMSI' not in rf_ops.band_context(935.0, 'AU')
 
 
