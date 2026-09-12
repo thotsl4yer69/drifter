@@ -4,15 +4,51 @@ The V4 cockpit is an operator control surface, not a read-only HUD.
 
 ## Entry points
 
-- Cockpit: `http://127.0.0.1:8080/` on the Pi touchscreen.
+- Cockpit: `http://127.0.0.1:8080/` on the **physical Pi touchscreen**.
 - Expanded FOOT / OPSEC console: `http://127.0.0.1:8090/`.
 - The kiosk launcher (`tools/launch-cockpit.sh`) opens the cockpit root on localhost, which is also inside the control API's local-peer ACL.
 
 The dashboard prefers `/opt/drifter/ui/v4/index.html`. The legacy single-file cockpit is only a fallback when the V4 build is missing.
 
-## Touch controls
+## FIELD OPS — in-car appliance controls
 
-The ARSENAL / FOOT surface now uses real dashboard APIs and displays backend state. It includes:
+The persistent **FIELD OPS** control is mounted directly into the V4 cockpit that the Pi touchscreen kiosk loads. It is not a separate desktop/admin page.
+
+FIELD OPS has three touchscreen tabs:
+
+### VEHICLE
+
+- **AUTO DETECT** — discover/prove a usable ELM327 path and save it only after the ELM handshake succeeds.
+- **SCAN ADAPTERS** — list serial/USB, Bluetooth and likely ELM Wi-Fi candidates.
+- Bluetooth PIN entry and **PAIR + CONNECT**.
+- Wi-Fi password entry and **JOIN + AUTO DETECT**; prefers a second Wi-Fi interface when one is present so the primary control radio is not unnecessarily displaced.
+- **TEST ECU** — proves vehicle ECU communication separately from adapter communication.
+- Explicit states for not configured / adapter waiting / ECU online / error.
+
+No terminal is required for normal vehicle-link setup.
+
+### RF
+
+- **SURVEY** — broad sweep followed by adaptive targeted scans and ranked findings.
+- select a finding, then **HUNT**, **ZOOM**, **LISTEN** or **CAPTURE IQ**.
+- AM/NFM/WFM/USB/LSB demodulation selection with a conservative AUTO suggestion.
+- 5 / 15 / 30 second SigMF IQ capture.
+- **SAVE BASELINE** for new-vs-known environment comparison.
+- **RESET RF** for receiver-owner recovery without USB replugging.
+- live SDR owner and READY / MISSING / UNKNOWN hardware state.
+
+The RF field controls are receive-only. Frequency labels describe spectrum context; they do not claim a transmitter identity that the available evidence cannot prove.
+
+### SYSTEM
+
+- current boot/watchdog/LCD/network state;
+- **RECOVER WHITE / BLANK DISPLAY** to reinitialise the display path when Linux is still alive.
+
+The direct SPI framebuffer vehicle screen remains a fallback/triage surface. Its no-data state is transport-neutral and tells the operator to use the cockpit Vehicle workflow rather than assuming raw CAN.
+
+## Existing cockpit touch controls
+
+The ARSENAL / FOOT surface uses real dashboard APIs and displays backend state. It includes:
 
 - DIAG, DRIVE and FOOT mode switches through `POST /api/mode/<mode>`.
 - Expand / close full-screen touch-console mode.
@@ -60,7 +96,7 @@ The quick-action row intentionally uses only commands that already exist in the 
 
 ## Deployment to the Pi
 
-From a terminal on the Pi, or via SSH from a LAN machine:
+The update itself is an engineering/deployment operation, not a normal in-car workflow. From a terminal on the Pi, or via SSH from a LAN machine:
 
 ```bash
 cd /home/kali/drifter
@@ -70,7 +106,9 @@ git pull --ff-only
 sudo ./scripts/oneshot.sh --skip-apt
 ```
 
-`--skip-apt` now skips only the expensive system package upgrade. It still deploys current source, rebuilds the V4 cockpit, copies the build into `/opt/drifter/ui/v4`, restarts services, settles back into the persisted persona, and runs the final control-surface checks.
+After that deployment, vehicle setup, RF field work and display recovery are performed from FIELD OPS on the touchscreen.
+
+`--skip-apt` skips only the expensive system package upgrade. It still deploys current source, rebuilds the V4 cockpit, copies the build into `/opt/drifter/ui/v4`, installs the narrowly scoped FIELD OPS sudoers policy, restarts services, settles back into the persisted persona, and runs the final control-surface checks.
 
 The final deploy stage must get HTTP 200 from:
 
@@ -85,15 +123,18 @@ A missing V4 `index.html` or a broken control dependency makes the deploy fail i
 
 ## Verify locally
 
+Engineering fallback only:
+
 ```bash
 test -f /opt/drifter/ui/v4/index.html && echo 'cockpit-v4 deployed'
 drifter status
 drifter mode status
 curl -fsS http://127.0.0.1:8080/healthz | python3 -m json.tool
-curl -fsS http://127.0.0.1:8080/api/arsenal | python3 -m json.tool
+curl -fsS http://127.0.0.1:8080/api/field/obd/status | python3 -m json.tool
+curl -fsS http://127.0.0.1:8080/api/field/rf/status | python3 -m json.tool
 ```
 
-Then launch/focus the touchscreen kiosk with:
+The touchscreen kiosk itself is launched/focused with:
 
 ```bash
 /opt/drifter/bin/launch-cockpit.sh
@@ -101,7 +142,7 @@ Then launch/focus the touchscreen kiosk with:
 
 ## Network control boundary
 
-The current high-impact dashboard routes deliberately trust localhost and the DRIFTER rescue-hotspot subnet. The physical Pi touchscreen uses localhost and therefore works without weakening that boundary. A browser reaching the cockpit through an ordinary home-LAN address may be able to render the UI while control POSTs are refused by the local-peer ACL. Do not broaden that ACL without adding an authenticated control mechanism.
+The high-impact dashboard routes deliberately trust localhost and the DRIFTER rescue-hotspot subnet. The physical Pi touchscreen uses localhost and therefore works without weakening that boundary. A browser reaching the cockpit through an ordinary home-LAN address may be able to render the UI while control POSTs are refused by the local-peer ACL. Do not broaden that ACL without adding an authenticated control mechanism.
 
 ## Tempest
 
