@@ -8,6 +8,14 @@ Wants=NetworkManager.service
 Type=oneshot
 RemainAfterExit=no
 WorkingDirectory=/opt/drifter
+# Field failures must survive a power cycle. Raspberry Pi OS/systemd may use a
+# volatile journal when /var/log/journal is absent; create the persistent store
+# on every boot and flush the runtime journal into it before the boot manager
+# proceeds. The '-' prefixes keep logging setup from ever wedging vehicle boot.
+ExecStartPre=-/bin/mkdir -p /var/log/journal
+ExecStartPre=-/bin/chown root:systemd-journal /var/log/journal
+ExecStartPre=-/bin/chmod 2755 /var/log/journal
+ExecStartPre=-/bin/journalctl --flush
 # Paints boot progress on /dev/fb1, waits for the spine, then exits so
 # drifter-lcd can take the screen. Always exits 0 — never wedges boot.
 ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/boot_manager.py
