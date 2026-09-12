@@ -15,7 +15,11 @@ import obd_transport
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    monkeypatch.delenv('DRIFTER_TRANSPORT', raising=False)
+    for key in (
+        'DRIFTER_TRANSPORT', 'DRIFTER_ELM_LINK', 'ELM_BT_MAC',
+        'ELM_WIFI_HOST', 'ELM_BT_CHANNEL', 'ELM_WIFI_PORT',
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 def _stub(monkeypatch, *, socketcan=False, can_serial=False, elm327=False):
@@ -90,4 +94,24 @@ class TestHelpers:
         monkeypatch.setattr(obd_transport.os.path, 'exists', lambda p: True)
         assert obd_transport._elm327_present() is True
         monkeypatch.setattr(obd_transport.os.path, 'exists', lambda p: False)
+        assert obd_transport._elm327_present() is False
+
+    def test_bluetooth_configuration_counts_as_elm_present(self, monkeypatch):
+        monkeypatch.setattr(obd_transport.os.path, 'exists', lambda p: False)
+        monkeypatch.setenv('DRIFTER_ELM_LINK', 'bluetooth')
+        monkeypatch.setenv('ELM_BT_MAC', 'AA:BB:CC:DD:EE:FF')
+        assert obd_transport._configured_network_elm() is True
+        assert obd_transport._elm327_present() is True
+
+    def test_wifi_configuration_counts_as_elm_present(self, monkeypatch):
+        monkeypatch.setattr(obd_transport.os.path, 'exists', lambda p: False)
+        monkeypatch.setenv('DRIFTER_ELM_LINK', 'wifi')
+        monkeypatch.setenv('ELM_WIFI_HOST', '192.168.0.10')
+        assert obd_transport._configured_network_elm() is True
+        assert obd_transport._elm327_present() is True
+
+    def test_empty_network_configuration_does_not_claim_elm(self, monkeypatch):
+        monkeypatch.setattr(obd_transport.os.path, 'exists', lambda p: False)
+        monkeypatch.setenv('DRIFTER_ELM_LINK', 'bluetooth')
+        assert obd_transport._configured_network_elm() is False
         assert obd_transport._elm327_present() is False
