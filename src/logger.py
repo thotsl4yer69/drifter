@@ -78,11 +78,13 @@ class DriveSession:
         self.last_speed = 0
         self.last_speed_time = 0
         self.last_running_ts: float | None = None
+        self.last_telemetry_ts: float | None = None
 
-    def start(self):
+    def start(self, now: float | None = None):
+        now = time.time() if now is None else float(now)
         self.active = True
-        self.start_time = time.time()
-        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.start_time = now
+        self.session_id = datetime.fromtimestamp(now).strftime("%Y%m%d_%H%M%S")
         self.max_rpm = 0
         self.max_speed = 0
         self.max_coolant = 0
@@ -91,8 +93,9 @@ class DriveSession:
         self.alert_count = 0
         self.highest_alert = 0
         self.last_speed = 0
-        self.last_speed_time = time.time()
-        self.last_running_ts = self.start_time
+        self.last_speed_time = now
+        self.last_running_ts = now
+        self.last_telemetry_ts = now
         log.info("Drive session started: %s", self.session_id)
 
     def stop(self):
@@ -108,6 +111,12 @@ class DriveSession:
     def update(self, topic, value, ts):
         if not self.active:
             return
+
+        # Any fresh engine/vehicle PID proves the ECU stream is still alive.
+        # This is deliberately separate from RPM so a slow K-line polling cycle
+        # cannot split a real drive simply because RPM has not come around yet.
+        if topic.startswith('drifter/engine/') or topic.startswith('drifter/vehicle/'):
+            self.last_telemetry_ts = ts
 
         if topic.endswith('/rpm'):
             self.max_rpm = max(self.max_rpm, value)
@@ -295,8 +304,7 @@ def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
 
     if rpm > ENGINE_ON_RPM:
         if not session.active:
-            session.start()
-            session.last_running_ts = now
+            session.start(now)
             try:
                 mqtt_client.publish(
                     TOPICS.get('drive_session', 'drifter/session'),
@@ -310,6 +318,7 @@ def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
                 pass
         else:
             session.last_running_ts = now
+            session.last_telemetry_ts = now
         return
 
     if not session.active:
@@ -390,13 +399,14 @@ def main():
             flush_buffer()
             last_flush = now
 
-        # ELM/K-line ECUs often stop answering immediately at key-off, so no
-        # final RPM=0 sample is guaranteed. End the session by elapsed wall time
-        # as well as by explicit low-RPM samples.
+        # K-line ECUs can go silent immediately at key-off, with no RPM=0
+        # sample. Use absence of *all* engine/vehicle telemetry as the silent
+        # fallback instead of absence of RPM alone, so a slow PID cycle cannot
+        # incorrectly split a live drive.
         if (
             session.active
-            and session.last_running_ts is not None
-            and time.time() - session.last_running_ts >= ENGINE_OFF_SECONDS
+            and session.last_telemetry_ts is not None
+            and time.time() - session.last_telemetry_ts >= ENGINE_OFF_SECONDS
         ):
             _finish_session(client)
 
@@ -415,8 +425,7 @@ def main():
     flush_buffer()
     _finalize_incident_if_ready(client, force=True)
     if session.active:
-        session.stop()
-        session.save_summary()
+        _finish_session(client)
     if current_file:
         current_file.close()
     client.loop_stop()
