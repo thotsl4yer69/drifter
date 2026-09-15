@@ -270,6 +270,24 @@ def on_message(client, userdata, msg):
     _process_blackbox(client, msg.topic, data, ts)
 
 
+def _finish_session(mqtt_client, *, now: float | None = None):
+    """Finalize one active drive session and publish its end event once."""
+    global session
+    if not session.active:
+        return
+    now = time.time() if now is None else float(now)
+    session.stop()
+    session.end_time = now
+    session.save_summary()
+    try:
+        mqtt_client.publish(
+            TOPICS.get('drive_session', 'drifter/session'),
+            json.dumps({'event': 'end', **session.summary()}),
+        )
+    except Exception:
+        pass
+
+
 def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
     """Track engine-run sessions by elapsed time, independent of PID poll rate."""
     global session
@@ -302,18 +320,7 @@ def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
     if now - session.last_running_ts < ENGINE_OFF_SECONDS:
         return
 
-    session.stop()
-    # Keep the externally supplied event time authoritative for deterministic
-    # tests and slow/queued ELM feeds.
-    session.end_time = now
-    session.save_summary()
-    try:
-        mqtt_client.publish(
-            TOPICS.get('drive_session', 'drifter/session'),
-            json.dumps({'event': 'end', **session.summary()}),
-        )
-    except Exception:
-        pass
+    _finish_session(mqtt_client, now=now)
 
 
 def _finalize_incident_if_ready(client, *, force: bool = False):
@@ -382,6 +389,16 @@ def main():
         if now - last_flush >= BUFFER_FLUSH_INTERVAL:
             flush_buffer()
             last_flush = now
+
+        # ELM/K-line ECUs often stop answering immediately at key-off, so no
+        # final RPM=0 sample is guaranteed. End the session by elapsed wall time
+        # as well as by explicit low-RPM samples.
+        if (
+            session.active
+            and session.last_running_ts is not None
+            and time.time() - session.last_running_ts >= ENGINE_OFF_SECONDS
+        ):
+            _finish_session(client)
 
         _finalize_incident_if_ready(client)
 
