@@ -48,7 +48,7 @@ function Card({ title, meta, children, style }) {
 function JsonNote({ value }) {
   if (!value) return null;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return <div style={{ ...mono, fontSize: 8.5, lineHeight: 1.55, color: 'var(--fg-mute)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 120, overflow: 'auto' }}>{text}</div>;
+  return <div style={{ ...mono, fontSize: 8.5, lineHeight: 1.55, color: 'var(--fg-mute)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 140, overflow: 'auto' }}>{text}</div>;
 }
 
 function VehiclePanel({ status, refreshStatus }) {
@@ -61,17 +61,23 @@ function VehiclePanel({ status, refreshStatus }) {
   const run = async (label, path, body = {}) => {
     setBusy(label); setResult(null);
     try {
-      const out = await api(path, body); setResult(out); await refreshStatus(); return out;
+      const out = await api(path, body);
+      setResult(out);
+      await refreshStatus();
+      return out;
     } finally { setBusy(''); }
   };
   const doScan = async () => {
-    setBusy('scan'); const out = await api('/api/field/obd/scan', { seconds: 6 });
+    setBusy('scan');
+    const out = await api('/api/field/obd/scan', { seconds: 6 });
     setScan(out); setResult(out); setBusy('');
   };
   const auto = () => run('auto', '/api/field/obd/auto');
   const test = () => run('test', '/api/field/obd/test');
 
-  const cfg = status?.config || {}; const eff = status?.effective_link || {}; const service = status?.service || {};
+  const cfg = status?.config || {};
+  const eff = status?.effective_link || {};
+  const service = status?.service || {};
   const explicitLink = String(cfg.DRIFTER_ELM_LINK || '').toLowerCase();
   const configured = cfg.DRIFTER_TRANSPORT === 'elm327' ||
     (['bluetooth', 'bt'].includes(explicitLink) && Boolean(cfg.ELM_BT_MAC)) ||
@@ -79,23 +85,31 @@ function VehiclePanel({ status, refreshStatus }) {
     (['serial', 'usb', 'tty', 'rfcomm'].includes(explicitLink) && Boolean(cfg.OBD_SERIAL_DEV));
   const mqtt = typeof status?.mqtt === 'object' && status.mqtt ? status.mqtt : {};
   const mqttState = typeof status?.mqtt === 'string'
-    ? (status.mqtt.includes('online') ? 'online' : status.mqtt.includes('error') ? 'error' : 'waiting')
+    ? (status.mqtt.includes('online') ? 'online' : status.mqtt.includes('error') ? 'adapter_error' : 'waiting')
     : String(mqtt.state || 'waiting').toLowerCase();
+  const adapterOk = mqtt.adapter_ok === true || ['online', 'ecu_waiting'].includes(mqttState);
+  const ecuOk = mqtt.ecu_ok === true || mqttState === 'online';
+  const linkBad = ['adapter_error', 'bus_unreachable', 'error'].includes(mqttState);
   const bluetooth = Array.isArray(scan?.bluetooth) ? [...scan.bluetooth].sort((a, b) => Number(Boolean(b.likely_elm)) - Number(Boolean(a.likely_elm))) : [];
   const wifi = Array.isArray(scan?.wifi) ? [...scan.wifi].sort((a, b) => Number(Boolean(b.likely_elm)) - Number(Boolean(a.likely_elm))) : [];
   const serial = Array.isArray(scan?.serial) ? scan.serial : [];
 
   return <div style={{ display: 'grid', gap: 10 }}>
-    <Card title="vehicle link" meta="touch workflow · no terminal">
+    <Card title="vehicle link" meta="adapter proof → ECU proof → live PIDs">
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
         <Pill live={configured}>{configured ? 'ELM CONFIGURED' : 'NOT CONFIGURED'}</Pill>
         <Pill live={service.active}>{service.ActiveState || 'service ?'}</Pill>
-        <Pill live={mqttState === 'online'} crit={mqttState === 'error'}>{mqttState === 'online' ? 'ECU LINK ONLINE' : mqttState === 'error' ? 'ECU LINK ERROR' : 'ECU WAITING'}</Pill>
+        <Pill live={adapterOk} crit={linkBad}>{linkBad ? 'ADAPTER ERROR' : adapterOk ? 'ADAPTER ONLINE' : 'ADAPTER WAITING'}</Pill>
+        <Pill live={ecuOk} crit={mqttState === 'bus_unreachable'}>{ecuOk ? 'ECU LINK ONLINE' : 'ECU WAITING'}</Pill>
+        {mqtt.protocol ? <Pill live={ecuOk}>{mqtt.protocol}</Pill> : null}
       </div>
       <div style={{ ...mono, fontSize: 10, color: 'var(--fg)', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
         <b>{eff.mode || 'auto'}</b>{eff.bt_mac ? ` · ${eff.bt_mac}` : ''}{eff.wifi_host ? ` · ${eff.wifi_host}:${eff.wifi_port}` : ''}{eff.serial_dev ? ` · ${eff.serial_dev}` : ''}
       </div>
-      <div style={{ ...mono, fontSize: 8.5, color: 'var(--fg-dim)', marginTop: 4 }}>Adapter discovery and ECU communication are separate checks. A visible ELM is never called connected until the ECU actually answers.</div>
+      {mqtt.reason ? <div style={{ ...mono, fontSize: 8.5, color: linkBad ? 'var(--red)' : 'var(--fg-dim)', marginTop: 5 }}>{mqtt.reason}</div> : null}
+      <div style={{ ...mono, fontSize: 8.5, color: 'var(--fg-dim)', marginTop: 4 }}>
+        DRIFTER separates adapter reachability from Jaguar ECU communication. A visible reader is not treated as a live vehicle link.
+      </div>
     </Card>
 
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}>
@@ -213,7 +227,45 @@ function RfPanel({ status, refresh }) {
 
 function SystemPanel({ status }) {
   const [result, setResult] = React.useState(null);
-  return <div style={{ display: 'grid', gap: 10 }}><Card title="field health" meta="recover without unplugging"><div style={{ display: 'grid', gap: 7 }}>{['boot','watchdog','lcd','network'].map((k) => <div key={k} style={{ display: 'flex', gap: 8, borderBottom: '1px dotted var(--edge)', paddingBottom: 6, flexWrap: 'wrap' }}><span style={{ ...mono, fontSize: 8.5, width: 80, color: 'var(--fg-deep)' }}>{k}</span><span style={{ ...mono, fontSize: 8.5, color: 'var(--fg-mute)', overflowWrap: 'anywhere', flex: '1 1 180px' }}>{JSON.stringify(status?.[k] || {})}</span></div>)}</div></Card><button style={btnCrit} onClick={async () => setResult(await api('/api/field/display/recover', {}))}>RECOVER WHITE / BLANK DISPLAY</button>{result ? <Card title="recovery result"><JsonNote value={result.error || result.output || result} /></Card> : null}</div>;
+  const incident = status?.incident || {};
+  const last = status?.last_incident?.id ? status.last_incident : (incident?.last || {});
+  const first = last?.first_change || {};
+  const flags = Array.isArray(last?.correlation_flags) ? last.correlation_flags : [];
+
+  const captureNow = async () => {
+    setResult(await api('/api/field/incident/capture', { reason: 'manual_field_capture' }));
+  };
+
+  return <div style={{ display: 'grid', gap: 10 }}>
+    <Card title="vehicle black box" meta={`${Number(incident.pre_seconds || 90)}s pre · ${Number(incident.post_seconds || 45)}s post`}>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
+        <Pill live>BUFFERING</Pill>
+        <Pill live={incident.active} crit={false}>{incident.active ? 'CAPTURING INCIDENT' : 'ARMED'}</Pill>
+        <Pill>{`${Number(incident.buffer_records || 0)} records buffered`}</Pill>
+      </div>
+      {incident.active ? <div style={{ ...mono, fontSize: 9, lineHeight: 1.6, color: 'var(--acc)' }}>
+        {incident.id}<br />{Array.isArray(incident.reasons) ? incident.reasons.join(' · ') : ''}
+      </div> : null}
+      {last?.id ? <div style={{ marginTop: 9, borderTop: '1px dotted var(--edge)', paddingTop: 9 }}>
+        <div style={{ ...mono, fontSize: 8, color: 'var(--fg-deep)', marginBottom: 5 }}>LAST INCIDENT · {last.id}</div>
+        <div style={{ ...mono, fontSize: 9, color: 'var(--fg-mute)', lineHeight: 1.6 }}>
+          {Array.isArray(last.reasons) ? last.reasons.join(' · ') : ''}
+        </div>
+        {first?.sensor ? <div style={{ ...mono, marginTop: 7, fontSize: 10, color: 'var(--fg)' }}>
+          FIRST CHANGE · <b>{String(first.sensor).toUpperCase()}</b> · {Number(first.offset_s) >= 0 ? '+' : ''}{first.offset_s}s · {first.baseline} → {first.value}
+        </div> : <div style={{ ...mono, marginTop: 7, fontSize: 8.5, color: 'var(--fg-dim)' }}>No material first-mover identified in the captured window.</div>}
+        {flags.length ? <div style={{ marginTop: 7 }}>{flags.slice(0, 4).map((f, i) => <div key={`${f.flag}-${i}`} style={{ ...mono, fontSize: 8.5, color: 'var(--teal)', lineHeight: 1.6 }}>{String(f.flag || '').replaceAll('_', ' ')}</div>)}</div> : null}
+      </div> : <div style={{ ...mono, fontSize: 8.5, color: 'var(--fg-dim)' }}>No completed incident yet. Automatic triggers include unstable/collapsing idle, extreme trims, voltage collapse, coolant events, OBD loss while running, and anomaly-engine events.</div>}
+    </Card>
+
+    <button style={btn} onClick={captureNow}>CAPTURE INCIDENT NOW</button>
+
+    <Card title="field health" meta="recover without unplugging">
+      <div style={{ display: 'grid', gap: 7 }}>{['boot','watchdog','lcd','network'].map((k) => <div key={k} style={{ display: 'flex', gap: 8, borderBottom: '1px dotted var(--edge)', paddingBottom: 6, flexWrap: 'wrap' }}><span style={{ ...mono, fontSize: 8.5, width: 80, color: 'var(--fg-deep)' }}>{k}</span><span style={{ ...mono, fontSize: 8.5, color: 'var(--fg-mute)', overflowWrap: 'anywhere', flex: '1 1 180px' }}>{JSON.stringify(status?.[k] || {})}</span></div>)}</div>
+    </Card>
+    <button style={btnCrit} onClick={async () => setResult(await api('/api/field/display/recover', {}))}>RECOVER WHITE / BLANK DISPLAY</button>
+    {result ? <Card title={result.ok === false ? 'action failed' : 'field action'}><JsonNote value={result.error || result.output || result.queued || result} /></Card> : null}
+  </div>;
 }
 
 export function FieldOverlay() {
@@ -247,5 +299,6 @@ export function FieldOverlay() {
   }, [open, tab, refreshObd, refreshRf, refreshSys]);
   const close = () => { sessionStorage.setItem('dr-field-closed', '1'); setOpen(false); };
   const rfBusy = rf?.ops?.mode && rf.ops.mode !== 'idle';
-  return <><button type="button" onClick={() => setOpen(true)} style={{ ...btn, position: 'fixed', zIndex: 950, right: 14, bottom: 14, minHeight: 42, padding: '8px 12px', boxShadow: '0 8px 30px rgba(0,0,0,.35)', background: 'rgba(7,9,13,.92)' }}><span style={{ color: health === 'degraded' ? 'var(--red)' : rfBusy ? 'var(--acc)' : 'var(--teal)' }}>●</span> FIELD OPS</button>{!open ? null : <div className="dr" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--bg-0)', color: 'var(--fg)', overflow: 'auto' }}><div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', background: 'rgba(7,9,13,.97)', borderBottom: '1px solid var(--stroke-acc)', flexWrap: 'wrap' }}><span className="stencil" style={{ fontSize: 10, color: 'var(--acc)', marginRight: 4, flex: '1 1 150px' }}>DRIFTER · FIELD OPS</span>{['vehicle','rf','system'].map((k) => <button type="button" key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btn : btnDim), minHeight: 40, padding: '7px 10px' }}>{k}</button>)}<button type="button" onClick={close} style={{ ...btnCrit, minHeight: 40, padding: '7px 10px' }}>CLOSE</button></div><main style={{ padding: 10, maxWidth: 1180, margin: '0 auto' }}>{tab === 'vehicle' ? <VehiclePanel status={obd} refreshStatus={refreshObd} /> : null}{tab === 'rf' ? <RfPanel status={rf} refresh={refreshRf} /> : null}{tab === 'system' ? <SystemPanel status={sys} /> : null}</main></div>}</>;
+  const incidentBusy = sys?.incident?.active;
+  return <><button type="button" onClick={() => setOpen(true)} style={{ ...btn, position: 'fixed', zIndex: 950, right: 14, bottom: 14, minHeight: 42, padding: '8px 12px', boxShadow: '0 8px 30px rgba(0,0,0,.35)', background: 'rgba(7,9,13,.92)' }}><span style={{ color: health === 'degraded' ? 'var(--red)' : incidentBusy || rfBusy ? 'var(--acc)' : 'var(--teal)' }}>●</span> FIELD OPS</button>{!open ? null : <div className="dr" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--bg-0)', color: 'var(--fg)', overflow: 'auto' }}><div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', background: 'rgba(7,9,13,.97)', borderBottom: '1px solid var(--stroke-acc)', flexWrap: 'wrap' }}><span className="stencil" style={{ fontSize: 10, color: 'var(--acc)', marginRight: 4, flex: '1 1 150px' }}>DRIFTER · FIELD OPS</span>{['vehicle','rf','system'].map((k) => <button type="button" key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btn : btnDim), minHeight: 40, padding: '7px 10px' }}>{k}</button>)}<button type="button" onClick={close} style={{ ...btnCrit, minHeight: 40, padding: '7px 10px' }}>CLOSE</button></div><main style={{ padding: 10, maxWidth: 1180, margin: '0 auto' }}>{tab === 'vehicle' ? <VehiclePanel status={obd} refreshStatus={refreshObd} /> : null}{tab === 'rf' ? <RfPanel status={rf} refresh={refreshRf} /> : null}{tab === 'system' ? <SystemPanel status={sys} /> : null}</main></div>}</>;
 }
