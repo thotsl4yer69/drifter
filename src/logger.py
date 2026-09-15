@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-MZ1312 DRIFTER — Telemetry Logger
-Logs all vehicle data to timestamped JSONL files.
-Detects drive sessions (ignition on/off) and generates per-drive summaries.
-Compresses old logs and manages storage.
-UNCAGED TECHNOLOGY — EST 1991
+MZ1312 DRIFTER — Telemetry Logger + vehicle black box.
+
+Continuously logs all DRIFTER MQTT traffic to timestamped JSONL, detects drive
+sessions, and keeps a bounded in-memory pre-fault ring. Deterministic incident
+triggers freeze the pre-fault context plus a post-fault tail into an evidence
+bundle with a first-change timeline.
 """
+from __future__ import annotations
 
 import gzip
 import json
 import logging
+import os
 import shutil
 import signal
 import threading
@@ -17,6 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from blackbox import IncidentBlackBox
 from config import (
     BUFFER_FLUSH_INTERVAL,
     LOG_DIR,
@@ -31,7 +35,7 @@ from config import (
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [LOGGER] %(message)s',
-    datefmt='%H:%M:%S'
+    datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
 
@@ -41,11 +45,23 @@ current_file = None
 current_date = None
 message_count = 0
 
-# ── Drive Session Detection ──
 SESSION_DIR = LOG_DIR / "sessions"
+INCIDENT_DIR = LOG_DIR / "incidents"
+INCIDENT_TRIGGER_TOPIC = TOPICS.get("incident_trigger", "drifter/incident/trigger")
+INCIDENT_STATUS_TOPIC = TOPICS.get("incident_status", "drifter/incident/status")
+INCIDENT_EVENT_TOPIC = TOPICS.get("incident_event", "drifter/incident/event")
+
+blackbox = IncidentBlackBox(
+    INCIDENT_DIR,
+    pre_seconds=float(os.getenv("DRIFTER_INCIDENT_PRE_SEC", "90")),
+    post_seconds=float(os.getenv("DRIFTER_INCIDENT_POST_SEC", "45")),
+    max_records=int(os.getenv("DRIFTER_INCIDENT_MAX_RECORDS", "15000")),
+    cooldown_seconds=float(os.getenv("DRIFTER_INCIDENT_COOLDOWN_SEC", "90")),
+)
+
 
 class DriveSession:
-    """Tracks a single drive session from ignition-on to ignition-off."""
+    """Tracks one engine-running session from RPM activity."""
 
     def __init__(self):
         self.active = False
@@ -61,7 +77,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = 0
-        self.low_rpm_streak = 0  # consecutive sub-ENGINE_ON_RPM samples
+        self.low_rpm_streak = 0
 
     def start(self):
         self.active = True
@@ -77,13 +93,17 @@ class DriveSession:
         self.last_speed = 0
         self.last_speed_time = time.time()
         self.low_rpm_streak = 0
-        log.info(f"Drive session started: {self.session_id}")
+        log.info("Drive session started: %s", self.session_id)
 
     def stop(self):
         self.active = False
         self.end_time = time.time()
-        log.info(f"Drive session ended: {self.session_id} "
-                 f"({self.duration_str}, {self.distance_km:.1f} km)")
+        log.info(
+            "Drive session ended: %s (%s, %.1f km)",
+            self.session_id,
+            self.duration_str,
+            self.distance_km,
+        )
 
     def update(self, topic, value, ts):
         if not self.active:
@@ -93,10 +113,6 @@ class DriveSession:
             self.max_rpm = max(self.max_rpm, value)
         elif topic.endswith('/speed'):
             self.max_speed = max(self.max_speed, value)
-            # Estimate distance: speed (km/h) × time (h). Cap the step so a
-            # stalled or bursting feed (or a mid-drive restart) can't inject
-            # phantom kilometres — without the cap a 10-min speed gap would
-            # integrate avg_speed × 600s in a single step.
             if self.last_speed_time:
                 dt_hours = min(ts - self.last_speed_time, 5.0) / 3600.0
                 if dt_hours > 0:
@@ -122,12 +138,10 @@ class DriveSession:
 
     @property
     def duration_str(self):
-        s = int(self.duration_seconds)
-        h, m = divmod(s, 3600)
-        m, s = divmod(m, 60)
-        if h:
-            return f"{h}h{m:02d}m"
-        return f"{m}m{s:02d}s"
+        seconds = int(self.duration_seconds)
+        hours, rem = divmod(seconds, 3600)
+        minutes, seconds = divmod(rem, 60)
+        return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m{seconds:02d}s"
 
     def summary(self):
         return {
@@ -147,18 +161,16 @@ class DriveSession:
     def save_summary(self):
         path = SESSION_DIR / f"session_{self.session_id}.json"
         atomic_write_json(path, self.summary())
-        log.info(f"Session summary saved: {path.name}")
+        log.info("Session summary saved: %s", path.name)
 
 
 session = DriveSession()
-ENGINE_ON_RPM = 300       # RPM above this = engine running
-ENGINE_OFF_SAMPLES = 600  # Samples below threshold = engine off (~60s at 10Hz)
+ENGINE_ON_RPM = 300
+ENGINE_OFF_SAMPLES = 600
 
 
 def get_log_file():
-    """Get or create today's log file."""
     global current_file, current_date
-
     today = datetime.now().strftime("%Y-%m-%d")
     if today != current_date:
         if current_file:
@@ -167,56 +179,40 @@ def get_log_file():
         filepath = LOG_DIR / f"drive_{today}.jsonl"
         current_file = open(filepath, 'a')
         current_date = today
-        log.info(f"Logging to: {filepath}")
-
+        log.info("Logging to: %s", filepath)
     return current_file
 
 
 def flush_buffer():
-    """Write buffered data to disk."""
     global buffer, message_count
-
-    # Atomically swap buffer under lock so MQTT thread appends into a new
-    # list while we safely iterate and write the old one.
     with _buffer_lock:
         to_flush = buffer
         buffer = []
-
     if not to_flush:
         return
-
     f = get_log_file()
     for entry in to_flush:
         f.write(json.dumps(entry) + '\n')
     f.flush()
-
     message_count += len(to_flush)
-    log.debug(f"Flushed {len(to_flush)} records (total: {message_count})")
 
 
 def compress_log(path: Path) -> Path:
-    """Gzip-compress a log file and remove the original."""
     gz_path = Path(str(path) + '.gz')
     with open(path, 'rb') as f_in, gzip.open(gz_path, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
     path.unlink(missing_ok=True)
-    log.info(f"Compressed: {path.name} → {gz_path.name}")
+    log.info("Compressed: %s -> %s", path.name, gz_path.name)
     return gz_path
 
 
 def cleanup_old_logs():
-    """Compress yesterday's logs; remove oldest compressed logs if over storage limit."""
     today = datetime.now().strftime("%Y-%m-%d")
-
-    # Compress any uncompressed log files that aren't today's
     for f in LOG_DIR.glob("*.jsonl"):
         if today not in f.name:
             compress_log(f)
 
-    # If still over storage limit, remove oldest compressed logs
-    all_logs = sorted(
-        LOG_DIR.glob("*.jsonl.gz"), key=lambda f: f.stat().st_mtime
-    )
+    all_logs = sorted(LOG_DIR.glob("*.jsonl.gz"), key=lambda f: f.stat().st_mtime)
     total_size = 0
     for f in all_logs:
         try:
@@ -233,78 +229,100 @@ def cleanup_old_logs():
             continue
         oldest.unlink(missing_ok=True)
         total_mb -= size
-        log.info(f"Removed old log: {oldest.name} ({size:.1f} MB)")
+        log.info("Removed old log: %s (%.1f MB)", oldest.name, size)
+
+
+def _publish_incident_status(client, event: dict | None = None):
+    payload = blackbox.status()
+    if event:
+        payload["event"] = event
+    client.publish(INCIDENT_STATUS_TOPIC, json.dumps(payload), qos=1, retain=True)
+
+
+def _process_blackbox(client, topic: str, data, ts: float):
+    event = blackbox.ingest(topic, data, ts)
+    if event:
+        log.warning("BLACK BOX trigger: %s", event)
+        _publish_incident_status(client, event)
 
 
 def on_message(client, userdata, msg):
-    """Buffer incoming telemetry and update drive session."""
     try:
         data = json.loads(msg.payload)
-        with _buffer_lock:
-            buffer.append({
-                'topic': msg.topic,
-                'data': data,
-                'ts': time.time()
-            })
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
 
-        # Update drive session tracking
-        value = data.get('value')
-        if value is not None:
-            session.update(msg.topic, value, time.time())
+    ts = time.time()
+    with _buffer_lock:
+        buffer.append({'topic': msg.topic, 'data': data, 'ts': ts})
 
-            # Drive session detection based on RPM
+    value = data.get('value') if isinstance(data, dict) else None
+    if value is not None:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            numeric = None
+        if numeric is not None:
+            session.update(msg.topic, numeric, ts)
             if msg.topic.endswith('/rpm'):
-                detect_session_change(value, client)
+                detect_session_change(numeric, client)
 
-    except json.JSONDecodeError:
-        pass
+    _process_blackbox(client, msg.topic, data, ts)
 
 
 def detect_session_change(rpm, mqtt_client):
-    """Detect engine on/off transitions."""
     global session
 
     if rpm > ENGINE_ON_RPM:
-        # Engine running — reset the off-streak and start a session if needed.
         session.low_rpm_streak = 0
         if not session.active:
             session.start()
-            # Publish session start
-            try:
-                mqtt_client.publish(TOPICS.get('drive_session', 'drifter/session'),
-                                    json.dumps({
-                                        'event': 'start',
-                                        'session_id': session.session_id,
-                                        'ts': time.time()
-                                    }))
-            except Exception:
-                pass
-
-    elif session.active:
-        # rpm <= ENGINE_ON_RPM. Count consecutive low samples; end the session
-        # once the engine has been off for ENGINE_OFF_SAMPLES in a row. A plain
-        # streak counter (vs the old fixed-size ring buffer) ends short drives
-        # correctly and isn't reset by total drive length.
-        session.low_rpm_streak += 1
-        if session.low_rpm_streak >= ENGINE_OFF_SAMPLES:
-            session.stop()
-            session.save_summary()
-            # Publish session end
             try:
                 mqtt_client.publish(
                     TOPICS.get('drive_session', 'drifter/session'),
                     json.dumps({
-                        'event': 'end',
-                        **session.summary()
-                    }))
+                        'event': 'start',
+                        'session_id': session.session_id,
+                        'ts': time.time(),
+                    }),
+                )
+            except Exception:
+                pass
+
+    elif session.active:
+        session.low_rpm_streak += 1
+        if session.low_rpm_streak >= ENGINE_OFF_SAMPLES:
+            session.stop()
+            session.save_summary()
+            try:
+                mqtt_client.publish(
+                    TOPICS.get('drive_session', 'drifter/session'),
+                    json.dumps({'event': 'end', **session.summary()}),
+                )
             except Exception:
                 pass
 
 
+def _finalize_incident_if_ready(client, *, force: bool = False):
+    summary = blackbox.finalize(force=force)
+    if not summary:
+        return
+    log.warning(
+        "BLACK BOX saved: %s records=%s first=%s",
+        summary.get("id"),
+        summary.get("record_count"),
+        (summary.get("first_change") or {}).get("sensor"),
+    )
+    client.publish(INCIDENT_EVENT_TOPIC, json.dumps(summary), qos=1, retain=True)
+    _publish_incident_status(client)
+
+
 def main():
-    log.info("DRIFTER Telemetry Logger starting...")
+    global current_file
+    log.info("DRIFTER Telemetry Logger + Black Box starting...")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    INCIDENT_DIR.mkdir(parents=True, exist_ok=True)
 
     running = True
 
@@ -323,40 +341,49 @@ def main():
         try:
             client.connect(MQTT_HOST, MQTT_PORT, 60)
             connected = True
-        except Exception as e:
-            log.warning(f"Waiting for MQTT broker... ({e})")
+        except Exception as exc:
+            log.warning("Waiting for MQTT broker... (%s)", exc)
             time.sleep(3)
 
     if not running:
         return
 
-    # Subscribe to everything from DRIFTER
     client.subscribe("drifter/#")
     client.loop_start()
 
-    log.info(f"Logging to {LOG_DIR}")
-    log.info(f"Drive sessions to {SESSION_DIR}")
-    log.info("Telemetry Logger is LIVE")
+    log.info("Logging to %s", LOG_DIR)
+    log.info(
+        "Black Box LIVE — %.0fs pre / %.0fs post -> %s",
+        blackbox.pre_seconds,
+        blackbox.post_seconds,
+        INCIDENT_DIR,
+    )
+    _publish_incident_status(client)
 
     last_flush = time.monotonic()
     last_cleanup = time.monotonic()
+    last_status = time.monotonic()
 
     while running:
         now = time.monotonic()
-
         if now - last_flush >= BUFFER_FLUSH_INTERVAL:
             flush_buffer()
             last_flush = now
 
-        # Cleanup check every hour
+        _finalize_incident_if_ready(client)
+
+        if now - last_status >= 5:
+            _publish_incident_status(client)
+            last_status = now
+
         if now - last_cleanup >= 3600:
             cleanup_old_logs()
             last_cleanup = now
 
-        time.sleep(1)
+        time.sleep(0.25)
 
-    # Final flush and session save
     flush_buffer()
+    _finalize_incident_if_ready(client, force=True)
     if session.active:
         session.stop()
         session.save_summary()
@@ -364,7 +391,7 @@ def main():
         current_file.close()
     client.loop_stop()
     client.disconnect()
-    log.info(f"Logger stopped. Total messages logged: {message_count}")
+    log.info("Logger stopped. Total messages logged: %s", message_count)
 
 
 if __name__ == '__main__':
