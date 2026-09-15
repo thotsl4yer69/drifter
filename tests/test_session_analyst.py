@@ -26,6 +26,25 @@ SAMPLE_ANOMALIES = [
      'context_json': '{"rpm": 1200, "coolant": 85.0}'},
 ]
 
+SAMPLE_INCIDENTS = [{
+    'id': 'incident-1',
+    'trigger': 1150.0,
+    'reasons': ['idle_rpm_collapse'],
+    'first_change': {
+        'sensor': 'stft_b1', 'offset_s': -2.4,
+        'baseline': 2.0, 'value': 18.0, 'delta': 16.0,
+    },
+    'first_changes': [
+        {'sensor': 'stft_b1', 'offset_s': -2.4, 'baseline': 2.0, 'value': 18.0},
+        {'sensor': 'maf', 'offset_s': -1.2, 'baseline': 4.2, 'value': 2.0},
+        {'sensor': 'rpm', 'offset_s': 0.0, 'baseline': 720, 'value': 480},
+    ],
+    'correlation_flags': [
+        {'flag': 'lean_trim_change_precedes_or_matches_rpm_drop'},
+    ],
+}]
+
+
 def test_build_context_packet_contains_key_sections():
     from session_analyst import build_context_packet
     packet = build_context_packet(
@@ -35,12 +54,34 @@ def test_build_context_packet_contains_key_sections():
         baseline={'avg_stft_b1': 2.1, 'avg_stft_b2': 1.8, 'warmup_seconds': 320.0,
                   'session_count': 5},
         kb_entries=['KNOWN ISSUE: Intake manifold gasket\nSymptoms: lean codes'],
+        incidents=SAMPLE_INCIDENTS,
     )
     assert 'P0171' in packet
     assert 'stft_b1' in packet
     assert '14.2' in packet
     assert 'KNOWN ISSUE' in packet
+    assert 'BLACK BOX INCIDENTS' in packet
+    assert 'FIRST MATERIAL CHANGE' in packet
+    assert 'lean_trim_change_precedes_or_matches_rpm_drop' in packet
     assert 'baseline' in packet.lower() or 'avg' in packet.lower()
+
+
+def test_load_incident_summaries_filters_to_session(tmp_path):
+    from session_analyst import load_incident_summaries
+
+    inside = tmp_path / 'incident_inside.json'
+    inside.write_text(json.dumps({
+        'id': 'inside', 'trigger': 1500.0, 'reasons': ['idle_rpm_collapse']
+    }))
+    outside = tmp_path / 'incident_outside.json'
+    outside.write_text(json.dumps({
+        'id': 'outside', 'trigger': 3000.0, 'reasons': ['voltage_collapse']
+    }))
+    (tmp_path / 'incident_broken.json').write_text('{bad json')
+
+    rows = load_incident_summaries(tmp_path, 1000.0, 2000.0)
+    assert [row['id'] for row in rows] == ['inside']
+
 
 def test_parse_report_valid_json():
     from session_analyst import parse_report
@@ -49,11 +90,13 @@ def test_parse_report_valid_json():
     assert result['parse_error'] is False
     assert result['primary_suspect']['diagnosis'] == 'MAF'
 
+
 def test_parse_report_invalid_json_sets_error_flag():
     from session_analyst import parse_report
     result = parse_report("This is not JSON at all")
     assert result['parse_error'] is True
     assert 'raw_response' in result
+
 
 def test_parse_report_extracts_json_from_surrounding_text():
     from session_analyst import parse_report
@@ -62,6 +105,7 @@ def test_parse_report_extracts_json_from_surrounding_text():
     assert result['parse_error'] is False
     assert result['primary_suspect']['diagnosis'] == 'Thermostat'
 
+
 def test_parse_report_handles_markdown_fences():
     from session_analyst import parse_report
     raw = '```json\n{"primary_suspect": {"diagnosis": "Coil pack"}, "safety_critical": true}\n```'
@@ -69,22 +113,21 @@ def test_parse_report_handles_markdown_fences():
     assert result['parse_error'] is False
     assert result['primary_suspect']['diagnosis'] == 'Coil pack'
 
+
 def test_compute_sensor_avgs_from_jsonl(tmp_path):
     from session_analyst import compute_sensor_avgs
-    # Write a mock JSONL file
     log_file = tmp_path / "drive_20260315.jsonl"
     records = [
         {'topic': 'drifter/engine/stft1', 'data': {'value': 5.0}, 'ts': 1100.0},
         {'topic': 'drifter/engine/stft1', 'data': {'value': 7.0}, 'ts': 1200.0},
         {'topic': 'drifter/engine/stft2', 'data': {'value': 6.0}, 'ts': 1100.0},
         {'topic': 'drifter/power/voltage', 'data': {'value': 13.5}, 'ts': 1100.0},
-        # Outside session range — should be excluded
         {'topic': 'drifter/engine/stft1', 'data': {'value': 99.0}, 'ts': 500.0},
     ]
     with open(log_file, 'w') as f:
-        for r in records:
-            f.write(json.dumps(r) + '\n')
+        for record in records:
+            f.write(json.dumps(record) + '\n')
     avgs = compute_sensor_avgs(log_file, start_ts=1000.0, end_ts=2000.0)
-    assert abs(avgs.get('stft_b1', 0) - 6.0) < 0.01  # (5+7)/2
+    assert abs(avgs.get('stft_b1', 0) - 6.0) < 0.01
     assert abs(avgs.get('stft_b2', 0) - 6.0) < 0.01
     assert abs(avgs.get('voltage', 0) - 13.5) < 0.01
