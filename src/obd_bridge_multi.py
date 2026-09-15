@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """DRIFTER multi-link ELM327 bridge entrypoint.
 
-Keeps the mature polling/PID/MQTT logic in obd_bridge.py and replaces only the
-physical ELM327 stream opener. Bluetooth Classic RFCOMM and Wi-Fi TCP adapters
-therefore behave exactly like the established serial/K-line path.
+Serial, Bluetooth Classic RFCOMM and Wi-Fi TCP all use the same parser-safe,
+K-line-aware initialisation in obd_bridge.py. The transport wrapper only opens
+the physical stream; it does not duplicate ELM AT setup policy.
 """
 from __future__ import annotations
 
 import logging
 import os
-import time
 
 import elm_link
 
 # If an operator explicitly configures Bluetooth/Wi-Fi but does not set the
-# high-level transport selector, make ELM327 the owner of OBD telemetry. This
-# prevents transport arbitration from falling back to raw CAN merely because
-# there is no /dev/ttyUSB* node.
+# high-level transport selector, make ELM327 the owner of OBD telemetry.
 if not os.getenv("DRIFTER_TRANSPORT"):
     mode = (os.getenv("DRIFTER_ELM_LINK", "auto") or "auto").strip().lower()
     if mode in {"bluetooth", "bt", "wifi", "tcp", "network"} or (
@@ -28,7 +25,6 @@ import obd_bridge  # noqa: E402  (env must be normalised first)
 from config import OBD_SERIAL_BAUD, OBD_SERIAL_DEV  # noqa: E402
 
 log = logging.getLogger("drifter.elm.multi")
-
 _last_link_description = ""
 
 
@@ -53,43 +49,59 @@ def _open_multi_elm():
         serial_dev=OBD_SERIAL_DEV,
         serial_baud=OBD_SERIAL_BAUD,
     )
-
-    # obd_bridge.main publishes its module-global OBD_SERIAL_DEV as the status
-    # device. Keep that field truthful for Bluetooth/Wi-Fi instead of claiming
-    # /dev/drifter-obd even when no serial device is involved.
-    obd_bridge.OBD_SERIAL_DEV = _configured_description(cfg)
+    configured = _configured_description(cfg)
+    obd_bridge.OBD_SERIAL_DEV = configured
+    # Make socket/serial timeout slightly more tolerant for K-line first init.
+    cfg = elm_link.LinkConfig(
+        mode=cfg.mode,
+        serial_dev=cfg.serial_dev,
+        serial_baud=cfg.serial_baud,
+        bt_mac=cfg.bt_mac,
+        bt_channel=cfg.bt_channel,
+        wifi_host=cfg.wifi_host,
+        wifi_port=cfg.wifi_port,
+        timeout=max(cfg.timeout, obd_bridge.ELM_IO_TIMEOUT),
+    )
 
     try:
         stream, description = elm_link.open_elm_link(cfg)
     except Exception as exc:
-        log.warning("ELM327 link open failed (%s): %s", obd_bridge.OBD_SERIAL_DEV, exc)
+        obd_bridge._last_elm_meta = {
+            "adapter_ok": False,
+            "ecu_ok": False,
+            "device": configured,
+            "protocol": "unknown",
+            "reason": f"link_open_failed: {exc}",
+        }
+        log.warning("ELM327 link open failed (%s): %s", configured, exc)
         return None
 
-    # Same adapter initialisation sequence as the established serial bridge.
-    # ATSP0 lets the ELM negotiate ISO9141/KWP, J1850 or CAN per vehicle.
-    for cmd in ("ATZ", "ATE0", "ATH0", "ATL0", "ATS0", "ATSP0"):
+    # Critical invariant: all transports share ONE ELM setup path. In
+    # particular this keeps ATS1 enabled; the old multi-link wrapper sent ATS0
+    # while obd_bridge's parser expected spaced bytes, making a connected ELM
+    # look alive while PIDs silently failed to decode.
+    meta = obd_bridge.initialise_elm(stream)
+    meta["device"] = description
+    obd_bridge._last_elm_meta = meta
+    if not meta.get("adapter_ok"):
         try:
-            stream.write(f"{cmd}\r".encode("ascii"))
-            time.sleep(0.45 if cmd == "ATZ" else 0.15)
-            stream.read(256)
-        except Exception as exc:
-            log.warning("ELM init %s failed on %s: %s", cmd, description, exc)
-            try:
-                stream.close()
-            except Exception:
-                pass
-            return None
+            stream.close()
+        except Exception:
+            pass
+        log.warning("ELM327 init failed via %s: %s", description, meta.get("reason"))
+        return None
 
-    proto = obd_bridge.detect_protocol(stream)
     _last_link_description = description
     obd_bridge.OBD_SERIAL_DEV = description
-    log.info("ELM327 ready via %s — protocol: %s", description, proto)
+    log.info(
+        "ELM327 ready via %s — ECU=%s protocol=%s",
+        description,
+        "online" if meta.get("ecu_ok") else "waiting",
+        meta.get("protocol"),
+    )
     return stream
 
 
-# Patch only the physical opener. All query parsing, PID support probing,
-# per-vehicle applicability, MQTT publication and retry semantics remain in the
-# original bridge.
 obd_bridge._open_elm = _open_multi_elm
 
 
