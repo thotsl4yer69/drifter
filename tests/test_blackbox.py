@@ -46,6 +46,17 @@ def test_idle_collapse_freezes_pre_fault_context_and_first_mover(tmp_path):
     assert any(r['topic'] == 'drifter/engine/rpm' for r in records)
 
 
+def test_sustained_same_fault_does_not_extend_incident_forever(tmp_path):
+    box = IncidentBlackBox(tmp_path, pre_seconds=20, post_seconds=5, cooldown_seconds=10)
+    first = box.trigger('voltage_collapse', 1000)
+    assert first is not None
+    original_end = box.active['end_at']
+    repeated = box.trigger('voltage_collapse', 1004)
+    assert repeated['extended'] is False
+    assert box.active['end_at'] == original_end
+    assert box.finalize(1005.1) is not None
+
+
 def test_manual_capture_bypasses_automatic_cooldown(tmp_path):
     box = IncidentBlackBox(tmp_path, pre_seconds=20, post_seconds=5, cooldown_seconds=90)
     first = box.trigger('manual_capture', 1000, manual=True, source='touchscreen')
