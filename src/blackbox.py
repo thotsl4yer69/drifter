@@ -121,13 +121,18 @@ class IncidentBlackBox:
         ts = float(ts or time.time())
         reason = _slug(reason)
         if self.active:
-            if reason not in self.active["reasons"]:
+            is_new_reason = reason not in self.active["reasons"]
+            if is_new_reason:
                 self.active["reasons"].append(reason)
             if note and note not in self.active["notes"]:
                 self.active["notes"].append(note[:300])
-            self.active["end_at"] = max(self.active["end_at"], ts + self.post_seconds)
+            # Do not let a sustained condition extend the incident forever.
+            # Only a materially new trigger opens another post-fault tail.
+            if is_new_reason:
+                self.active["end_at"] = max(self.active["end_at"], ts + self.post_seconds)
             return {"active": True, "id": self.active["id"],
-                    "reasons": list(self.active["reasons"]), "extended": True, "ts": ts}
+                    "reasons": list(self.active["reasons"]),
+                    "extended": is_new_reason, "ts": ts}
 
         if not manual and ts - self.last_trigger.get(reason, 0) < self.cooldown_seconds:
             return None
