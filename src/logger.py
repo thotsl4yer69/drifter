@@ -77,7 +77,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = 0
-        self.low_rpm_streak = 0
+        self.last_running_ts: float | None = None
 
     def start(self):
         self.active = True
@@ -92,7 +92,7 @@ class DriveSession:
         self.highest_alert = 0
         self.last_speed = 0
         self.last_speed_time = time.time()
-        self.low_rpm_streak = 0
+        self.last_running_ts = self.start_time
         log.info("Drive session started: %s", self.session_id)
 
     def stop(self):
@@ -166,7 +166,7 @@ class DriveSession:
 
 session = DriveSession()
 ENGINE_ON_RPM = 300
-ENGINE_OFF_SAMPLES = 600
+ENGINE_OFF_SECONDS = float(os.getenv("DRIFTER_ENGINE_OFF_SECONDS", "30"))
 
 
 def get_log_file():
@@ -265,42 +265,55 @@ def on_message(client, userdata, msg):
         if numeric is not None:
             session.update(msg.topic, numeric, ts)
             if msg.topic.endswith('/rpm'):
-                detect_session_change(numeric, client)
+                detect_session_change(numeric, client, now=ts)
 
     _process_blackbox(client, msg.topic, data, ts)
 
 
-def detect_session_change(rpm, mqtt_client):
+def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
+    """Track engine-run sessions by elapsed time, independent of PID poll rate."""
     global session
+    now = time.time() if now is None else float(now)
 
     if rpm > ENGINE_ON_RPM:
-        session.low_rpm_streak = 0
         if not session.active:
             session.start()
+            session.last_running_ts = now
             try:
                 mqtt_client.publish(
                     TOPICS.get('drive_session', 'drifter/session'),
                     json.dumps({
                         'event': 'start',
                         'session_id': session.session_id,
-                        'ts': time.time(),
+                        'ts': now,
                     }),
                 )
             except Exception:
                 pass
+        else:
+            session.last_running_ts = now
+        return
 
-    elif session.active:
-        session.low_rpm_streak += 1
-        if session.low_rpm_streak >= ENGINE_OFF_SAMPLES:
-            session.stop()
-            session.save_summary()
-            try:
-                mqtt_client.publish(
-                    TOPICS.get('drive_session', 'drifter/session'),
-                    json.dumps({'event': 'end', **session.summary()}),
-                )
-            except Exception:
-                pass
+    if not session.active:
+        return
+    if session.last_running_ts is None:
+        session.last_running_ts = now
+        return
+    if now - session.last_running_ts < ENGINE_OFF_SECONDS:
+        return
+
+    session.stop()
+    # Keep the externally supplied event time authoritative for deterministic
+    # tests and slow/queued ELM feeds.
+    session.end_time = now
+    session.save_summary()
+    try:
+        mqtt_client.publish(
+            TOPICS.get('drive_session', 'drifter/session'),
+            json.dumps({'event': 'end', **session.summary()}),
+        )
+    except Exception:
+        pass
 
 
 def _finalize_incident_if_ready(client, *, force: bool = False):
