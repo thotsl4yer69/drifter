@@ -139,3 +139,21 @@ def test_alert_level_payload_updates_session_counters(monkeypatch):
 
     assert logger.session.alert_count == 1
     assert logger.session.highest_alert == 3
+
+
+def test_session_end_payload_carries_active_incident_deadline(monkeypatch, tmp_path):
+    monkeypatch.setattr(logger, 'session', DriveSession())
+    monkeypatch.setattr(logger, 'SESSION_DIR', tmp_path)
+    monkeypatch.setattr(logger.blackbox, 'status', lambda: {
+        'active': True, 'id': 'incident-1', 'end_at': 1060.0,
+    })
+    logger.session.start(1000.0)
+    client = Client()
+
+    logger._finish_session(client, now=1030.0)
+
+    payloads = [json.loads(args[1]) for args, _kwargs in client.published
+                if args and args[0] == TOPICS['drive_session']]
+    assert payloads
+    assert payloads[-1]['incident_active'] is True
+    assert payloads[-1]['incident_end_at'] == 1060.0
