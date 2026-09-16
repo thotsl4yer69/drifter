@@ -49,6 +49,7 @@ OBD_INIT_TIMEOUT_SEC = float(os.getenv("OBD_INIT_TIMEOUT_SEC", "12"))
 OBD_DTC_POLL_SEC = float(os.getenv("OBD_DTC_POLL_SEC", "30"))
 OBD_VOLTAGE_POLL_SEC = float(os.getenv("OBD_VOLTAGE_POLL_SEC", "2"))
 OBD_REPROBE_AFTER_EMPTY_CYCLES = int(os.getenv("OBD_REPROBE_AFTER_EMPTY_CYCLES", "3"))
+OBD_SNAPSHOT_MAX_AGE_SEC = float(os.getenv("OBD_SNAPSHOT_MAX_AGE_SEC", "20"))
 OBD_SERIAL_BAUD_EFFECTIVE = int(os.getenv("OBD_SERIAL_BAUD", str(OBD_SERIAL_BAUD)))
 
 _last_elm_meta: dict = {}
@@ -185,8 +186,12 @@ def detect_protocol(ser) -> str:
     """Return the ELM-negotiated OBD protocol label."""
     try:
         raw = _exchange(ser, "ATDPN", timeout_s=1.5)
-        token = "".join(_response_lines(raw, "ATDPN")).replace(" ", "").upper()
-        token = token.lstrip("A").strip()
+        token = "".join(_response_lines(raw, "ATDPN")).replace(" ", "").upper().strip()
+        # ELM ATDPN prefixes an auto-selected protocol with one `A` (A3, A6,
+        # etc). Protocol A itself is J1939, so lstrip("A") incorrectly turned
+        # both manual `A` and auto-selected `AA` into an empty token.
+        if len(token) > 1 and token.startswith("A"):
+            token = token[1:]
         if not token:
             return "unknown"
         return _ELM_PROTO_NAMES.get(token[:1], f"unknown (ATDPN={token})")
@@ -436,6 +441,16 @@ def _status_payload(state: str, *, device: str, meta: dict | None = None, **extr
     return payload
 
 
+def _fresh_snapshot(snapshot: dict, last_metric_ts: dict[str, float], now: float,
+                    max_age: float = OBD_SNAPSHOT_MAX_AGE_SEC) -> dict:
+    """Return only sensor values that have actually refreshed recently."""
+    max_age = max(1.0, float(max_age))
+    return {
+        name: value for name, value in snapshot.items()
+        if now - last_metric_ts.get(name, 0.0) <= max_age
+    }
+
+
 def _idle(running_ref, seconds: float = 5.0):
     for _ in range(max(1, int(seconds / 0.25))):
         if not running_ref():
@@ -619,6 +634,8 @@ def main() -> None:
                         pass
                     ser = None
                     _last_elm_meta = {}
+                    snapshot.clear()
+                    last_metric_ts.clear()
                     _idle(_running, 2.0)
                     continue
 
@@ -667,11 +684,16 @@ def main() -> None:
                 )
             last_dtc = now
 
-        if snapshot and now - last_snap >= 1.0:
-            client.publish(
-                TOPICS["snapshot"],
-                json.dumps({**snapshot, "ts": now, "source": "obd_bridge"}),
-            )
+        # An aggregate snapshot is evidence of live ECU PID flow. ATRV can keep
+        # answering with ignition/ECU offline, so never let adapter-only voltage
+        # traffic resurrect stale engine values or falsely mark the ECU online.
+        if cycle_success and snapshot and now - last_snap >= 1.0:
+            snapshot = _fresh_snapshot(snapshot, last_metric_ts, now)
+            if snapshot:
+                client.publish(
+                    TOPICS["snapshot"],
+                    json.dumps({**snapshot, "ts": now, "source": "obd_bridge"}),
+                )
             last_snap = now
 
         if not cycle_success:
