@@ -71,3 +71,12 @@ def test_non_rpm_engine_pid_refreshes_kline_liveness():
     # ATRV can continue after ignition/key-off on some installations.
     s.update('drifter/power/voltage', 12.4, ts=1030.0)
     assert s.last_telemetry_ts == 1025.0
+
+
+def test_missing_voltage_is_none_not_fake_99_volts():
+    s = DriveSession()
+    s.start(1000.0)
+    assert s.summary()['min_voltage'] is None
+    s.update('drifter/power/voltage', 13.9, ts=1001.0)
+    s.update('drifter/power/voltage', 13.2, ts=1002.0)
+    assert s.summary()['min_voltage'] == 13.2
