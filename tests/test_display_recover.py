@@ -38,12 +38,14 @@ def _tree(tmp_path, monkeypatch, *, service_active=True, bound=True):
 
     state = 'active' if service_active else 'failed'
     sub = 'running' if service_active else 'failed'
+    main_status = 0 if service_active else 1
+    result_name = 'success' if service_active else 'exit-code'
 
     def fake_run(argv, **kwargs):
         if 'show' in argv:
             stdout = (
                 f'ActiveState={state}\nSubState={sub}\nNRestarts=0\n'
-                f'ExecMainStatus={0 if service_active else 1}\nResult={'success' if service_active else 'exit-code'}\n'
+                f'ExecMainStatus={main_status}\nResult={result_name}\n'
             )
             return subprocess.CompletedProcess(argv, 0, stdout, '')
         return subprocess.CompletedProcess(argv, 0, '', '')
