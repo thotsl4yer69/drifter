@@ -463,6 +463,12 @@ class SessionAnalyst:
                     self.incident_end_at = 0.0
                 return
             if topic == TOPICS['drive_session'] and data.get('event') == 'end':
+                if data.get('incident_active'):
+                    try:
+                        end_at = float(data.get('incident_end_at') or 0.0)
+                    except (TypeError, ValueError):
+                        end_at = 0.0
+                    self.incident_end_at = max(self.incident_end_at, end_at)
                 self.last_session = data
                 threading.Thread(
                     target=self._handle_session_end,
