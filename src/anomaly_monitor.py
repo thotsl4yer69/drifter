@@ -69,6 +69,16 @@ class AnomalyMonitor:
         self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
 
+    def _reset_session_state(self) -> None:
+        """Drop rolling baselines and context that must not cross drive sessions."""
+        for sensor_window in self.windows.values():
+            sensor_window.window.clear()
+        self.rpm_idle_window.clear()
+        self.current_coolant = 0.0
+        self.current_speed = 0.0
+        self.current_snapshot.clear()
+        self._alert_state.clear()
+
     def _should_publish_alert(self, sensor_name: str, z_score: float,
                               now: float | None = None):
         now = time.time() if now is None else now
@@ -147,12 +157,12 @@ class AnomalyMonitor:
             if topic == TOPICS.get('drive_session', 'drifter/session'):
                 event = data.get('event')
                 if event == 'start':
+                    self._reset_session_state()
                     self.current_session_id = data.get('session_id')
-                    self.rpm_idle_window.clear()
                     log.info("Session started: %s", self.current_session_id)
                 elif event == 'end':
                     self.current_session_id = None
-                    self.rpm_idle_window.clear()
+                    self._reset_session_state()
                 return
 
             value = data.get('value')
