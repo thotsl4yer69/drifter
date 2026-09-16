@@ -105,6 +105,37 @@ def test_load_incident_summaries_filters_to_session(tmp_path):
     assert [row['id'] for row in rows] == ['inside']
 
 
+def test_session_end_payload_updates_incident_deadline_before_analysis(monkeypatch):
+    import session_analyst
+
+    started = []
+
+    class DummyThread:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+
+        def start(self):
+            started.append(True)
+
+    monkeypatch.setattr(session_analyst.threading, 'Thread', DummyThread)
+    analyst = session_analyst.SessionAnalyst.__new__(session_analyst.SessionAnalyst)
+    analyst.incident_end_at = 1000.0
+    analyst.last_session = None
+
+    msg = type('Msg', (), {
+        'topic': session_analyst.TOPICS['drive_session'],
+        'payload': json.dumps({
+            'event': 'end', 'session_id': 'S1',
+            'incident_active': True, 'incident_end_at': 1060.0,
+        }).encode(),
+    })()
+    analyst._on_message(None, None, msg)
+
+    assert analyst.incident_end_at == 1060.0
+    assert analyst.last_session['session_id'] == 'S1'
+    assert started == [True]
+
+
 def test_parse_report_valid_json():
     from session_analyst import parse_report
     raw = '{"primary_suspect": {"diagnosis": "MAF", "confidence": 70, "evidence": "x", "confirm_with": "y"}, "secondary_suspects": [], "watch_items": [], "action_items": [], "safety_critical": false}'
