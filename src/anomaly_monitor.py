@@ -69,6 +69,20 @@ class AnomalyMonitor:
         self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
 
+    def _reset_session_state(self) -> None:
+        """Discard per-drive baselines and live values at a session boundary.
+
+        Carrying coolant/speed/baselines across key cycles can make a fresh cold
+        start look warm and compare the new drive against stale sensor history.
+        Session-scoped detection must start from an empty, fail-safe state.
+        """
+        self.windows = {name: SensorWindow() for name in MONITORED_SENSORS}
+        self.rpm_idle_window.clear()
+        self.current_coolant = 0.0
+        self.current_speed = 0.0
+        self.current_snapshot = {}
+        self._alert_state = {}
+
     def _should_publish_alert(self, sensor_name: str, z_score: float,
                               now: float | None = None):
         now = time.time() if now is None else now
@@ -147,12 +161,12 @@ class AnomalyMonitor:
             if topic == TOPICS.get('drive_session', 'drifter/session'):
                 event = data.get('event')
                 if event == 'start':
+                    self._reset_session_state()
                     self.current_session_id = data.get('session_id')
-                    self.rpm_idle_window.clear()
                     log.info("Session started: %s", self.current_session_id)
                 elif event == 'end':
                     self.current_session_id = None
-                    self.rpm_idle_window.clear()
+                    self._reset_session_state()
                 return
 
             value = data.get('value')
