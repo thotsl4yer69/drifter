@@ -4,7 +4,13 @@ sys.path.insert(0, 'src')
 
 import elm_link
 import obd_bridge
-import obd_bridge_multi
+
+# Importing the runtime multi-link entrypoint intentionally replaces
+# obd_bridge._open_elm. Restore the original immediately so test collection does
+# not alter unrelated obd_bridge tests; call _open_multi_elm directly below.
+_original_open_elm = obd_bridge._open_elm
+import obd_bridge_multi  # noqa: E402
+obd_bridge._open_elm = _original_open_elm
 
 
 class FakeStream:
