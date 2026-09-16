@@ -44,6 +44,7 @@ _buffer_lock = threading.Lock()
 current_file = None
 current_date = None
 message_count = 0
+latest_dtcs: set[str] = set()
 
 SESSION_DIR = LOG_DIR / "sessions"
 INCIDENT_DIR = LOG_DIR / "incidents"
@@ -58,6 +59,21 @@ blackbox = IncidentBlackBox(
     max_records=int(os.getenv("DRIFTER_INCIDENT_MAX_RECORDS", "15000")),
     cooldown_seconds=float(os.getenv("DRIFTER_INCIDENT_COOLDOWN_SEC", "90")),
 )
+
+
+def _extract_dtcs(payload: dict) -> set[str]:
+    out: set[str] = set()
+    if not isinstance(payload, dict):
+        return out
+    for key in ('stored', 'pending'):
+        values = payload.get(key) or []
+        if not isinstance(values, (list, tuple, set)):
+            continue
+        for value in values:
+            code = value if isinstance(value, str) else value.get('code') if isinstance(value, dict) else None
+            if code:
+                out.add(str(code).strip().upper())
+    return out
 
 
 class DriveSession:
@@ -112,16 +128,8 @@ class DriveSession:
 
     def update_dtcs(self, payload: dict) -> None:
         """Accumulate DTCs observed at any point during the active drive."""
-        if not self.active or not isinstance(payload, dict):
-            return
-        for key in ('stored', 'pending'):
-            values = payload.get(key) or []
-            if not isinstance(values, (list, tuple, set)):
-                continue
-            for value in values:
-                code = value if isinstance(value, str) else value.get('code') if isinstance(value, dict) else None
-                if code:
-                    self.dtcs_seen.add(str(code).strip().upper())
+        if self.active:
+            self.dtcs_seen.update(_extract_dtcs(payload))
 
     def update(self, topic, value, ts):
         if not self.active:
@@ -180,7 +188,7 @@ class DriveSession:
             'min_voltage': round(self.min_voltage, 2) if self.min_voltage is not None else None,
             'alert_count': self.alert_count,
             'highest_alert': self.highest_alert,
-            'dtcs_seen': sorted(self.dtcs_seen),
+            'dtcs_seen': json.dumps(sorted(self.dtcs_seen)),
         }
 
     def save_summary(self):
@@ -282,7 +290,17 @@ def on_message(client, userdata, msg):
         buffer.append({'topic': msg.topic, 'data': data, 'ts': ts})
 
     if msg.topic == TOPICS['dtc'] and isinstance(data, dict):
+        latest_dtcs.clear()
+        latest_dtcs.update(_extract_dtcs(data))
         session.update_dtcs(data)
+
+    if msg.topic == TOPICS['alert_level'] and isinstance(data, dict):
+        try:
+            alert_level = float(data.get('level'))
+        except (TypeError, ValueError):
+            alert_level = None
+        if alert_level is not None:
+            session.update(msg.topic, alert_level, ts)
 
     value = data.get('value') if isinstance(data, dict) else None
     if value is not None:
@@ -291,9 +309,11 @@ def on_message(client, userdata, msg):
         except (TypeError, ValueError):
             numeric = None
         if numeric is not None:
-            session.update(msg.topic, numeric, ts)
+            # Start the session before applying the first running RPM so max RPM
+            # and liveness evidence do not discard the sample that created it.
             if msg.topic.endswith('/rpm'):
                 detect_session_change(numeric, client, now=ts)
+            session.update(msg.topic, numeric, ts)
 
     _process_blackbox(client, msg.topic, data, ts)
 
@@ -324,6 +344,7 @@ def detect_session_change(rpm, mqtt_client, *, now: float | None = None):
     if rpm > ENGINE_ON_RPM:
         if not session.active:
             session.start(now)
+            session.dtcs_seen.update(latest_dtcs)
             try:
                 mqtt_client.publish(
                     TOPICS.get('drive_session', 'drifter/session'),
