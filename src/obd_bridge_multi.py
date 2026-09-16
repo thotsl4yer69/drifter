@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import replace
 
 import elm_link
 
@@ -44,6 +45,12 @@ def _configured_description(cfg: elm_link.LinkConfig) -> str:
 
 
 def _open_multi_elm():
+    """Open and prove each configured candidate before selecting the link.
+
+    Merely opening a tty/socket is not sufficient: in AUTO mode a present but
+    unrelated serial device must not permanently mask a valid Bluetooth/Wi-Fi
+    ELM327 configured behind it.
+    """
     global _last_link_description
     cfg = elm_link.LinkConfig.from_env(
         serial_dev=OBD_SERIAL_DEV,
@@ -51,55 +58,56 @@ def _open_multi_elm():
     )
     configured = _configured_description(cfg)
     obd_bridge.OBD_SERIAL_DEV = configured
-    # Make socket/serial timeout slightly more tolerant for K-line first init.
-    cfg = elm_link.LinkConfig(
-        mode=cfg.mode,
-        serial_dev=cfg.serial_dev,
-        serial_baud=cfg.serial_baud,
-        bt_mac=cfg.bt_mac,
-        bt_channel=cfg.bt_channel,
-        wifi_host=cfg.wifi_host,
-        wifi_port=cfg.wifi_port,
-        timeout=max(cfg.timeout, obd_bridge.ELM_IO_TIMEOUT),
-    )
+    cfg = replace(cfg, timeout=max(cfg.timeout, obd_bridge.ELM_IO_TIMEOUT))
 
+    errors: list[str] = []
     try:
-        stream, description = elm_link.open_elm_link(cfg)
+        modes = elm_link.candidate_modes(cfg)
     except Exception as exc:
-        obd_bridge._last_elm_meta = {
-            "adapter_ok": False,
-            "ecu_ok": False,
-            "device": configured,
-            "protocol": "unknown",
-            "reason": f"link_open_failed: {exc}",
-        }
-        log.warning("ELM327 link open failed (%s): %s", configured, exc)
-        return None
+        modes = []
+        errors.append(str(exc))
 
-    # Critical invariant: all transports share ONE ELM setup path. In
-    # particular this keeps ATS1 enabled; the old multi-link wrapper sent ATS0
-    # while obd_bridge's parser expected spaced bytes, making a connected ELM
-    # look alive while PIDs silently failed to decode.
-    meta = obd_bridge.initialise_elm(stream)
-    meta["device"] = description
-    obd_bridge._last_elm_meta = meta
-    if not meta.get("adapter_ok"):
+    for mode in modes:
+        candidate_cfg = replace(cfg, mode=mode)
+        try:
+            stream, description = elm_link.open_elm_link(candidate_cfg)
+        except Exception as exc:
+            errors.append(f"{mode}: open failed: {exc}")
+            continue
+
+        # Critical invariant: all transports share ONE ELM setup path. In
+        # particular this keeps ATS1 enabled; the old multi-link wrapper sent
+        # ATS0 while obd_bridge's parser expected spaced bytes.
+        meta = obd_bridge.initialise_elm(stream)
+        meta["device"] = description
+        if meta.get("adapter_ok"):
+            obd_bridge._last_elm_meta = meta
+            _last_link_description = description
+            obd_bridge.OBD_SERIAL_DEV = description
+            log.info(
+                "ELM327 ready via %s — ECU=%s protocol=%s",
+                description,
+                "online" if meta.get("ecu_ok") else "waiting",
+                meta.get("protocol"),
+            )
+            return stream
+
+        errors.append(f"{mode}: ELM proof failed: {meta.get('reason', 'unknown')}")
         try:
             stream.close()
         except Exception:
             pass
-        log.warning("ELM327 init failed via %s: %s", description, meta.get("reason"))
-        return None
 
-    _last_link_description = description
-    obd_bridge.OBD_SERIAL_DEV = description
-    log.info(
-        "ELM327 ready via %s — ECU=%s protocol=%s",
-        description,
-        "online" if meta.get("ecu_ok") else "waiting",
-        meta.get("protocol"),
-    )
-    return stream
+    reason = "; ".join(errors) or "no ELM327 link candidates configured"
+    obd_bridge._last_elm_meta = {
+        "adapter_ok": False,
+        "ecu_ok": False,
+        "device": configured,
+        "protocol": "unknown",
+        "reason": f"all_candidates_failed: {reason}",
+    }
+    log.warning("ELM327 candidates exhausted (%s): %s", configured, reason)
+    return None
 
 
 obd_bridge._open_elm = _open_multi_elm

@@ -5,6 +5,7 @@ Single source of truth for all persistent analyst data.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import json
 import logging
 import sqlite3
 import threading
@@ -51,6 +52,54 @@ CREATE TABLE IF NOT EXISTS reports (
 # Thread-local storage: each thread gets its own reusable connection
 # instead of opening+closing the DB file on every single query.
 _local = threading.local()
+
+
+_SESSION_OPTIONAL_FIELDS = (
+    'distance_km', 'duration_seconds', 'max_rpm', 'max_speed',
+    'max_coolant', 'min_voltage', 'warmup_seconds',
+    'avg_stft_b1', 'avg_stft_b2', 'avg_ltft_b1', 'avg_ltft_b2',
+    'idle_rpm_stddev', 'alert_count',
+)
+
+
+def _normalise_session(session: dict) -> dict:
+    """Normalize live/logger and analyst session shapes to the DB contract.
+
+    The logger publishes `start`/`end` plus the metrics it actually measured,
+    while historical/manual analyst callers may already provide `start_ts` /
+    `end_ts` and the full baseline fields. Missing measurements are stored as
+    NULL rather than making the whole post-drive analysis fail at SQL binding.
+    """
+    if not isinstance(session, dict):
+        raise TypeError("session must be a dict")
+    session_id = session.get('session_id')
+    if not session_id:
+        raise ValueError("session_id is required")
+
+    row = {
+        'session_id': str(session_id),
+        'start_ts': session.get('start_ts', session.get('start')),
+        'end_ts': session.get('end_ts', session.get('end')),
+    }
+    for field in _SESSION_OPTIONAL_FIELDS:
+        row[field] = session.get(field)
+
+    # A live logger end event does not currently carry all analyst-only fields.
+    # Keep absence explicit and use a stable JSON representation for DTCs.
+    dtcs = session.get('dtcs_seen', '[]')
+    if dtcs is None:
+        dtcs = '[]'
+    elif isinstance(dtcs, str):
+        pass
+    elif isinstance(dtcs, (list, tuple, set)):
+        dtcs = json.dumps(list(dtcs))
+    else:
+        dtcs = json.dumps(dtcs)
+    row['dtcs_seen'] = dtcs
+
+    if row['alert_count'] is None:
+        row['alert_count'] = 0
+    return row
 
 
 def _conn():
@@ -104,7 +153,7 @@ def insert_session(session: dict):
         :idle_rpm_stddev, :dtcs_seen, :alert_count
     )"""
     conn = _conn()
-    conn.execute(sql, session)
+    conn.execute(sql, _normalise_session(session))
     conn.commit()
 
 

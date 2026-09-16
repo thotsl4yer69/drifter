@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import os
 import signal
 import threading
 import time
@@ -36,6 +37,10 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 INCIDENT_DIR = LOG_DIR / "incidents"
+INCIDENT_STATUS_TOPIC = TOPICS.get('incident_status', 'drifter/incident/status')
+ANALYST_INCIDENT_SETTLE_MAX_SEC = max(
+    0.0, float(os.getenv('DRIFTER_ANALYST_INCIDENT_SETTLE_MAX_SEC', '50'))
+)
 
 _DIAGNOSIS_SCHEMA = """{
   "primary_suspect": {
@@ -129,6 +134,21 @@ def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[
     return {k: sums[k] / counts[k] for k in sums if counts.get(k, 0) > 0}
 
 
+def _session_with_averages(session: dict, sensor_avgs: dict[str, float]) -> dict:
+    """Persist measured averages so future sessions have a real baseline."""
+    out = dict(session)
+    mapping = {
+        'avg_stft_b1': 'stft_b1',
+        'avg_stft_b2': 'stft_b2',
+        'avg_ltft_b1': 'ltft_b1',
+        'avg_ltft_b2': 'ltft_b2',
+    }
+    for field, sensor in mapping.items():
+        if out.get(field) is None and sensor in sensor_avgs:
+            out[field] = sensor_avgs[sensor]
+    return out
+
+
 def load_incident_summaries(
     incident_dir: Path,
     start_ts: float,
@@ -201,6 +221,10 @@ def build_context_packet(
 ) -> str:
     """Assemble the diagnostic context packet sent to the LLM."""
     session_start = float(session.get('start', session.get('start_ts', 0)) or 0)
+    min_voltage = session.get('min_voltage')
+    min_voltage_text = '?' if min_voltage is None else min_voltage
+    warmup = session.get('warmup_seconds')
+    warmup_text = '?' if warmup is None else warmup
     lines = [
         f"VEHICLE: {vehicle_profile.prompt_identity()}",
         "",
@@ -208,8 +232,8 @@ def build_context_packet(
         f"  Duration: {int(session.get('duration_seconds', 0) // 60)}m",
         f"  Distance: {session.get('distance_km', 0):.1f} km",
         f"  Max coolant: {session.get('max_coolant', '?')}°C",
-        f"  Min voltage: {session.get('min_voltage', '?')}V",
-        f"  Warm-up time: {session.get('warmup_seconds', '?')}s",
+        f"  Min voltage: {min_voltage_text}V",
+        f"  Warm-up time: {warmup_text}s",
     ]
 
     dtcs = json.loads(session.get('dtcs_seen') or '[]')
@@ -322,8 +346,6 @@ def run_analysis(session: dict) -> dict | None:
     session_id = session['session_id']
     log.info("Starting analysis for %s", session_id)
 
-    db.insert_session(session)
-
     anomalies = db.get_session_anomalies(session_id)
     log.info("  %d anomaly events", len(anomalies))
 
@@ -333,6 +355,8 @@ def run_analysis(session: dict) -> dict | None:
     date_str = session_id[:8]
     log_file = LOG_DIR / f"drive_{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}.jsonl"
     sensor_avgs = compute_sensor_avgs(log_file, start_ts, end_ts)
+    session_for_storage = _session_with_averages(session, sensor_avgs)
+    db.insert_session(session_for_storage)
 
     incidents = load_incident_summaries(INCIDENT_DIR, start_ts, end_ts)
     log.info("  %d black-box incidents", len(incidents))
@@ -374,7 +398,7 @@ def run_analysis(session: dict) -> dict | None:
                 )
 
     packet = build_context_packet(
-        session,
+        session_for_storage,
         anomalies,
         sensor_avgs,
         baseline,
@@ -418,6 +442,7 @@ class SessionAnalyst:
     def __init__(self):
         self.running = True
         self.last_session: dict | None = None
+        self.incident_end_at = 0.0
         db.init_db()
         self.client = make_mqtt_client("drifter-session-analyst")
         self.client.on_message = self._on_message
@@ -425,25 +450,56 @@ class SessionAnalyst:
     def _on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload)
+            if not isinstance(data, dict):
+                return
             topic = msg.topic
+            if topic == INCIDENT_STATUS_TOPIC:
+                if data.get('active'):
+                    try:
+                        self.incident_end_at = float(data.get('end_at') or 0.0)
+                    except (TypeError, ValueError):
+                        self.incident_end_at = 0.0
+                else:
+                    self.incident_end_at = 0.0
+                return
             if topic == TOPICS['drive_session'] and data.get('event') == 'end':
+                if data.get('incident_active'):
+                    try:
+                        end_at = float(data.get('incident_end_at') or 0.0)
+                    except (TypeError, ValueError):
+                        end_at = 0.0
+                    self.incident_end_at = max(self.incident_end_at, end_at)
                 self.last_session = data
                 threading.Thread(
                     target=self._handle_session_end,
-                    args=(data,),
+                    args=(data, True),
                     daemon=True,
                 ).start()
             elif topic == TOPICS.get('analysis_request', 'drifter/analysis/request'):
                 if self.last_session:
                     threading.Thread(
                         target=self._handle_session_end,
-                        args=(self.last_session,),
+                        args=(self.last_session, False),
                         daemon=True,
                     ).start()
         except Exception as exc:
             log.warning("Message error: %s", exc)
 
-    def _handle_session_end(self, session: dict):
+    def _wait_for_incident_tail(self) -> None:
+        """Wait only while the logger says a black-box incident is still active."""
+        if ANALYST_INCIDENT_SETTLE_MAX_SEC <= 0:
+            return
+        budget_end = time.monotonic() + ANALYST_INCIDENT_SETTLE_MAX_SEC
+        while self.running:
+            remaining_tail = self.incident_end_at - time.time()
+            remaining_budget = budget_end - time.monotonic()
+            if remaining_tail <= 0 or remaining_budget <= 0:
+                return
+            time.sleep(min(1.0, remaining_tail + 0.25, remaining_budget))
+
+    def _handle_session_end(self, session: dict, settle_incident: bool = True):
+        if settle_incident:
+            self._wait_for_incident_tail()
         report = run_analysis(session)
         if report:
             self.client.publish(
@@ -467,6 +523,7 @@ class SessionAnalyst:
         self.client.subscribe([
             (TOPICS['drive_session'], 0),
             (TOPICS.get('analysis_request', 'drifter/analysis/request'), 0),
+            (INCIDENT_STATUS_TOPIC, 0),
         ])
         self.client.loop_start()
         log.info("Session Analyst LIVE")

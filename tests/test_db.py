@@ -6,6 +6,7 @@ Run: pytest tests/test_db.py -v
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import json
 import threading
 import time
 
@@ -92,6 +93,35 @@ class TestSessionCRUD:
         rows = db.get_recent_sessions(5)
         assert len(rows) == 1
         assert rows[0]['distance_km'] == 20.0
+
+    def test_live_logger_shape_is_normalised(self):
+        """Real logger end events must not fail the analyst DB insert contract."""
+        db.insert_session({
+            'event': 'end',
+            'session_id': 'live-001',
+            'start': 1000.0,
+            'end': 1600.0,
+            'duration_seconds': 600.0,
+            'distance_km': 3.2,
+            'max_rpm': 2200,
+            'max_speed': 45,
+            'max_coolant': 91,
+            'min_voltage': 13.4,
+            'alert_count': 1,
+        })
+        row = db.get_recent_sessions(1)[0]
+        assert row['session_id'] == 'live-001'
+        assert row['start_ts'] == 1000.0
+        assert row['end_ts'] == 1600.0
+        assert row['warmup_seconds'] is None
+        assert row['avg_stft_b1'] is None
+        assert row['dtcs_seen'] == '[]'
+        assert row['alert_count'] == 1
+
+    def test_dtc_collections_are_serialised(self):
+        db.insert_session(_make_session(session_id='dtc-list', dtcs_seen=['P0171', 'P0174']))
+        row = db.get_recent_sessions(1)[0]
+        assert json.loads(row['dtcs_seen']) == ['P0171', 'P0174']
 
 
 class TestAnomalyEvents:

@@ -66,6 +66,28 @@ def test_build_context_packet_contains_key_sections():
     assert 'baseline' in packet.lower() or 'avg' in packet.lower()
 
 
+def test_session_with_averages_persists_measured_trim_baselines():
+    from session_analyst import _session_with_averages
+
+    enriched = _session_with_averages(
+        {'session_id': 'S1', 'avg_stft_b1': None, 'avg_ltft_b1': 3.0},
+        {'stft_b1': 6.25, 'stft_b2': -1.5, 'ltft_b1': 9.0, 'ltft_b2': 2.5},
+    )
+    assert enriched['avg_stft_b1'] == 6.25
+    assert enriched['avg_stft_b2'] == -1.5
+    assert enriched['avg_ltft_b1'] == 3.0  # explicit caller value wins
+    assert enriched['avg_ltft_b2'] == 2.5
+
+
+def test_build_context_packet_formats_missing_voltage_as_unknown():
+    from session_analyst import build_context_packet
+
+    session = dict(SESSION_PAYLOAD, min_voltage=None)
+    packet = build_context_packet(session, [], {}, None, [])
+    assert 'Min voltage: ?V' in packet
+    assert '99.0V' not in packet
+
+
 def test_load_incident_summaries_filters_to_session(tmp_path):
     from session_analyst import load_incident_summaries
 
@@ -81,6 +103,37 @@ def test_load_incident_summaries_filters_to_session(tmp_path):
 
     rows = load_incident_summaries(tmp_path, 1000.0, 2000.0)
     assert [row['id'] for row in rows] == ['inside']
+
+
+def test_session_end_payload_updates_incident_deadline_before_analysis(monkeypatch):
+    import session_analyst
+
+    started = []
+
+    class DummyThread:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+
+        def start(self):
+            started.append(True)
+
+    monkeypatch.setattr(session_analyst.threading, 'Thread', DummyThread)
+    analyst = session_analyst.SessionAnalyst.__new__(session_analyst.SessionAnalyst)
+    analyst.incident_end_at = 1000.0
+    analyst.last_session = None
+
+    msg = type('Msg', (), {
+        'topic': session_analyst.TOPICS['drive_session'],
+        'payload': json.dumps({
+            'event': 'end', 'session_id': 'S1',
+            'incident_active': True, 'incident_end_at': 1060.0,
+        }).encode(),
+    })()
+    analyst._on_message(None, None, msg)
+
+    assert analyst.incident_end_at == 1060.0
+    assert analyst.last_session['session_id'] == 'S1'
+    assert started == [True]
 
 
 def test_parse_report_valid_json():
