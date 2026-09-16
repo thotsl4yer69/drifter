@@ -66,6 +66,28 @@ def test_build_context_packet_contains_key_sections():
     assert 'baseline' in packet.lower() or 'avg' in packet.lower()
 
 
+def test_session_with_averages_persists_measured_trim_baselines():
+    from session_analyst import _session_with_averages
+
+    enriched = _session_with_averages(
+        {'session_id': 'S1', 'avg_stft_b1': None, 'avg_ltft_b1': 3.0},
+        {'stft_b1': 6.25, 'stft_b2': -1.5, 'ltft_b1': 9.0, 'ltft_b2': 2.5},
+    )
+    assert enriched['avg_stft_b1'] == 6.25
+    assert enriched['avg_stft_b2'] == -1.5
+    assert enriched['avg_ltft_b1'] == 3.0  # explicit caller value wins
+    assert enriched['avg_ltft_b2'] == 2.5
+
+
+def test_build_context_packet_formats_missing_voltage_as_unknown():
+    from session_analyst import build_context_packet
+
+    session = dict(SESSION_PAYLOAD, min_voltage=None)
+    packet = build_context_packet(session, [], {}, None, [])
+    assert 'Min voltage: ?V' in packet
+    assert '99.0V' not in packet
+
+
 def test_load_incident_summaries_filters_to_session(tmp_path):
     from session_analyst import load_incident_summaries
 
