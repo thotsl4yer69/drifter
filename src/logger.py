@@ -71,7 +71,7 @@ class DriveSession:
         self.max_rpm = 0
         self.max_speed = 0
         self.max_coolant = 0
-        self.min_voltage = 99.0
+        self.min_voltage: float | None = None
         self.distance_km = 0.0
         self.alert_count = 0
         self.highest_alert = 0
@@ -88,7 +88,7 @@ class DriveSession:
         self.max_rpm = 0
         self.max_speed = 0
         self.max_coolant = 0
-        self.min_voltage = 99.0
+        self.min_voltage = None
         self.distance_km = 0.0
         self.alert_count = 0
         self.highest_alert = 0
@@ -133,7 +133,7 @@ class DriveSession:
             self.max_coolant = max(self.max_coolant, value)
         elif topic.endswith('/voltage'):
             if value > 0:
-                self.min_voltage = min(self.min_voltage, value)
+                self.min_voltage = value if self.min_voltage is None else min(self.min_voltage, value)
         elif topic.endswith('/alert/level'):
             level = int(value) if isinstance(value, (int, float)) else 0
             if level >= 2:
@@ -162,7 +162,7 @@ class DriveSession:
             'max_rpm': round(self.max_rpm),
             'max_speed': round(self.max_speed),
             'max_coolant': round(self.max_coolant, 1),
-            'min_voltage': round(self.min_voltage, 2),
+            'min_voltage': round(self.min_voltage, 2) if self.min_voltage is not None else None,
             'alert_count': self.alert_count,
             'highest_alert': self.highest_alert,
         }
