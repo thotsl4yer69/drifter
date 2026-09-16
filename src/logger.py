@@ -327,10 +327,18 @@ def _finish_session(mqtt_client, *, now: float | None = None):
     session.stop()
     session.end_time = now
     session.save_summary()
+    incident_status = blackbox.status()
+    end_payload = {
+        'event': 'end',
+        **session.summary(),
+        'incident_active': bool(incident_status.get('active')),
+    }
+    if incident_status.get('active') and incident_status.get('end_at') is not None:
+        end_payload['incident_end_at'] = incident_status['end_at']
     try:
         mqtt_client.publish(
             TOPICS.get('drive_session', 'drifter/session'),
-            json.dumps({'event': 'end', **session.summary()}),
+            json.dumps(end_payload),
         )
     except Exception:
         pass
