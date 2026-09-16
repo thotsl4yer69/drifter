@@ -82,6 +82,31 @@ def test_session_end_clears_live_state(tmp_path, monkeypatch):
     assert list(monitor.windows['maf'].window) == []
 
 
+def test_cold_start_rpm_variation_does_not_feed_idle_anomaly_window(tmp_path, monkeypatch):
+    _reset_db(tmp_path, monkeypatch)
+    monitor = AnomalyMonitor()
+    monitor.current_session_id = 'SESSION-COLD'
+    monitor.current_coolant = config.WARMUP_COOLANT_THRESHOLD - 10
+    monitor.current_speed = 0.0
+
+    for rpm in (1200, 1050, 900, 1100, 850, 1000):
+        monitor._on_message(None, None, Msg(config.TOPICS['rpm'], {'value': rpm}))
+
+    assert list(monitor.rpm_idle_window) == []
+
+
+def test_warm_stationary_rpm_enters_idle_anomaly_window(tmp_path, monkeypatch):
+    _reset_db(tmp_path, monkeypatch)
+    monitor = AnomalyMonitor()
+    monitor.current_session_id = 'SESSION-WARM'
+    monitor.current_coolant = config.WARMUP_COOLANT_THRESHOLD + 10
+    monitor.current_speed = 0.0
+
+    monitor._on_message(None, None, Msg(config.TOPICS['rpm'], {'value': 720}))
+
+    assert list(monitor.rpm_idle_window) == [720.0]
+
+
 def test_published_anomaly_is_available_to_blackbox_bus(tmp_path, monkeypatch):
     _reset_db(tmp_path, monkeypatch)
     monitor = AnomalyMonitor()
