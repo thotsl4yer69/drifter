@@ -63,6 +63,23 @@ def test_initialise_elm_proves_adapter_and_ecu_separately():
     assert 'ISO 9141-2' in meta['protocol']
 
 
+def test_detect_protocol_preserves_manual_j1939_protocol_a():
+    elm = FakeELM({'ATDPN': b'A>'})
+    assert obd_bridge.detect_protocol(elm) == 'SAE J1939 CAN'
+
+
+def test_detect_protocol_preserves_auto_selected_j1939_protocol_a():
+    elm = FakeELM({'ATDPN': b'AA>'})
+    assert obd_bridge.detect_protocol(elm) == 'SAE J1939 CAN'
+
+
+def test_fresh_snapshot_drops_values_that_have_not_refreshed():
+    snapshot = {'rpm': 700, 'coolant': 90, 'voltage': 13.8}
+    last_ts = {'rpm': 100.0, 'coolant': 119.0, 'voltage': 120.0}
+    fresh = obd_bridge._fresh_snapshot(snapshot, last_ts, now=120.0, max_age=10.0)
+    assert fresh == {'coolant': 90, 'voltage': 13.8}
+
+
 def test_voltage_fallback_uses_adapter_supply_voltage():
     elm = FakeELM({'ATRV': b'12.6V>'})
     assert obd_bridge._query_voltage(elm) == 12.6
