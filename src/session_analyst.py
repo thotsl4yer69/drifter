@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 MZ1312 DRIFTER — Session Analyst
-Post-drive diagnostic analysis using LLM with full context.
+Post-drive diagnostic analysis using LLM with deterministic fault evidence.
 Triggered automatically on drive end via MQTT, or manually via /api/analyse.
-UNCAGED TECHNOLOGY — EST 1991
 """
+from __future__ import annotations
 
 import gzip
 import json
@@ -28,15 +28,15 @@ from config import (
 )
 from mechanic import search as kb_search
 
-# Note: TOPICS is used in TOPIC_TO_SENSOR below (no hardcoded topic strings)
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANALYST] %(message)s',
-                    datefmt='%H:%M:%S')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [ANALYST] %(message)s',
+    datefmt='%H:%M:%S',
+)
 log = logging.getLogger(__name__)
 
-# Structured-diagnosis system prompt (moved here from the deleted llm_client
-# v1 shim `query_llm`, which hard-wired this exact text). Owned by the only
-# caller now; llm_client_v2.query() takes the system prompt explicitly.
+INCIDENT_DIR = LOG_DIR / "incidents"
+
 _DIAGNOSIS_SCHEMA = """{
   "primary_suspect": {
     "diagnosis": "...",
@@ -55,67 +55,51 @@ _DIAGNOSIS_SCHEMA = """{
 
 
 def build_system_prompt() -> str:
-    """Structured-diagnosis system prompt, grounded in the ACTIVE vehicle
-    profile (identity + known failure modes) so it adapts to whatever car is
-    plugged in. Current symptoms/DTCs are delivered live in the context packet,
-    not hardcoded here."""
+    """Build the active-vehicle diagnostic prompt."""
     ki_block = vehicle_profile.known_issues_block()
     ki_section = f"\n{ki_block}" if ki_block else ""
     return (
         f"You are an expert diagnostic technician for the "
         f"{vehicle_profile.prompt_identity()}.\n\n"
-        "You receive structured telemetry data and anomaly events from a live "
-        "OBD-II/CAN bus monitoring system (DRIFTER). Analyse the data and "
-        "produce a structured diagnosis.\n\n"
+        "You receive structured telemetry, anomaly events and deterministic "
+        "black-box fault timelines from a live OBD-II/CAN monitoring system "
+        "(DRIFTER). Analyse the data and produce a structured diagnosis.\n\n"
         "CRITICAL: Return valid JSON ONLY — no markdown fences, no explanation "
         "outside the JSON.\n\n"
         "JSON structure required:\n"
         f"{_DIAGNOSIS_SCHEMA}\n"
         f"{ki_section}"
         "\nRules:\n"
-        "- Be specific to this vehicle — cite its known failure modes where the "
-        "data supports them\n"
-        "- THINK THROUGH the diagnosis — consider interconnected failures\n"
-        "- Rank by probability, cite the actual data values that support each "
-        "suspect\n"
-        "- Give actionable tests (smoke test, coil swap test, compression test, "
-        "multimeter reading)\n"
+        "- Be specific to this vehicle; cite known failure modes only where data supports them\n"
+        "- Treat BLACK BOX first-change sequencing as measured correlation, not proof of causation\n"
+        "- Rank hypotheses by what changed first, then corroborating telemetry, DTCs and baselines\n"
+        "- Cite actual values and timing offsets wherever available\n"
+        "- Give actionable confirmation tests (smoke test, coil swap, compression, multimeter, etc.)\n"
         "- Flag anything safety-critical immediately with safety_critical: true\n"
         "- Give cost estimates in the operator's local currency\n"
     )
 
 
-# Built once at import from the profile active at process start; call
-# build_system_prompt() for a fresh build after a live profile change.
 SYSTEM_PROMPT = build_system_prompt()
 
-# Topic → sensor name mapping (for compute_sensor_avgs)
 TOPIC_TO_SENSOR = {
-    TOPICS['stft1']:   'stft_b1',
-    TOPICS['stft2']:   'stft_b2',
-    TOPICS['ltft1']:   'ltft_b1',
-    TOPICS['ltft2']:   'ltft_b2',
-    TOPICS['rpm']:     'rpm',
+    TOPICS['stft1']: 'stft_b1',
+    TOPICS['stft2']: 'stft_b2',
+    TOPICS['ltft1']: 'ltft_b1',
+    TOPICS['ltft2']: 'ltft_b2',
+    TOPICS['rpm']: 'rpm',
     TOPICS['coolant']: 'coolant',
-    TOPICS['iat']:     'iat',
-    TOPICS['maf']:     'maf',
+    TOPICS['iat']: 'iat',
+    TOPICS['maf']: 'maf',
     TOPICS['throttle']: 'throttle',
     TOPICS['voltage']: 'voltage',
 }
 
 
 def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[str, float]:
-    """Read JSONL log and compute per-sensor averages within the session time range.
-
-    Uses running sums instead of accumulating all values in memory,
-    so this stays O(1) per sensor even for multi-hour drives.
-    """
+    """Compute session sensor averages from live or compressed JSONL logs."""
     sums: dict[str, float] = {}
     counts: dict[str, int] = {}
-    # logger.cleanup_old_logs compresses every non-today drive_*.jsonl to
-    # .jsonl.gz and deletes the original, so analysing a session from a prior
-    # day (or a re-analyse after the daily compress) must fall back to the gz
-    # copy — otherwise all SESSION AVERAGES silently vanish from the report.
     gz_file = Path(str(log_file) + '.gz')
     if not log_file.exists() and gz_file.exists():
         opener = lambda: gzip.open(gz_file, 'rt')  # noqa: E731
@@ -130,7 +114,7 @@ def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[
                     if ts < start_ts:
                         continue
                     if ts > end_ts:
-                        break  # JSONL is time-ordered — no need to read further
+                        break
                     sensor = TOPIC_TO_SENSOR.get(rec.get('topic', ''))
                     if sensor is None:
                         continue
@@ -138,11 +122,73 @@ def compute_sensor_avgs(log_file: Path, start_ts: float, end_ts: float) -> dict[
                     if value is not None:
                         sums[sensor] = sums.get(sensor, 0.0) + float(value)
                         counts[sensor] = counts.get(sensor, 0) + 1
-                except (json.JSONDecodeError, KeyError):
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                     continue
     except FileNotFoundError:
-        log.warning(f"JSONL log not found: {log_file}")
+        log.warning("JSONL log not found: %s", log_file)
     return {k: sums[k] / counts[k] for k in sums if counts.get(k, 0) > 0}
+
+
+def load_incident_summaries(
+    incident_dir: Path,
+    start_ts: float,
+    end_ts: float,
+    *,
+    margin_s: float = 5.0,
+    limit: int = 12,
+) -> list[dict]:
+    """Load black-box incidents whose trigger belongs to this drive session."""
+    incident_dir = Path(incident_dir)
+    if not incident_dir.exists():
+        return []
+    out: list[dict] = []
+    for path in incident_dir.glob('incident_*.json'):
+        try:
+            payload = json.loads(path.read_text())
+            trigger = float(payload.get('trigger', 0))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if start_ts - margin_s <= trigger <= end_ts + margin_s:
+            payload['_summary_file'] = str(path)
+            out.append(payload)
+    out.sort(key=lambda row: float(row.get('trigger', 0)))
+    return out[:max(1, limit)]
+
+
+def _incident_context_lines(incidents: list[dict], session_start: float) -> list[str]:
+    if not incidents:
+        return []
+    lines = ["", f"BLACK BOX INCIDENTS ({len(incidents)} captured):"]
+    for incident in incidents:
+        trigger = float(incident.get('trigger', session_start))
+        rel = trigger - session_start
+        reasons = ', '.join(incident.get('reasons') or ['unspecified'])
+        lines.append(f"  {rel:+.1f}s INCIDENT {incident.get('id', '?')} · {reasons}")
+        first = incident.get('first_change') or {}
+        if first.get('sensor'):
+            lines.append(
+                "    FIRST MATERIAL CHANGE: "
+                f"{first['sensor']} at {float(first.get('offset_s', 0)):+.2f}s relative to trigger · "
+                f"{first.get('baseline')} -> {first.get('value')} "
+                f"(delta {first.get('delta')})"
+            )
+        changes = incident.get('first_changes') or []
+        if changes:
+            ordered = []
+            for change in changes[:8]:
+                sensor = change.get('sensor', '?')
+                offset = float(change.get('offset_s', 0))
+                ordered.append(
+                    f"{sensor}@{offset:+.2f}s:{change.get('baseline')}->{change.get('value')}"
+                )
+            lines.append("    ORDERED CHANGES: " + ' | '.join(ordered))
+        flags = incident.get('correlation_flags') or []
+        if flags:
+            lines.append(
+                "    CORRELATION FLAGS: "
+                + ', '.join(str(flag.get('flag', '')) for flag in flags[:6] if flag.get('flag'))
+            )
+    return lines
 
 
 def build_context_packet(
@@ -151,8 +197,10 @@ def build_context_packet(
     sensor_avgs: dict[str, float],
     baseline: dict | None,
     kb_entries: list[str],
+    incidents: list[dict] | None = None,
 ) -> str:
-    """Assemble the diagnostic context packet to send to the LLM."""
+    """Assemble the diagnostic context packet sent to the LLM."""
+    session_start = float(session.get('start', session.get('start_ts', 0)) or 0)
     lines = [
         f"VEHICLE: {vehicle_profile.prompt_identity()}",
         "",
@@ -164,19 +212,20 @@ def build_context_packet(
         f"  Warm-up time: {session.get('warmup_seconds', '?')}s",
     ]
 
-    # DTCs
     dtcs = json.loads(session.get('dtcs_seen') or '[]')
     if dtcs:
         lines.append(f"  Active DTCs: {', '.join(dtcs)}")
 
-    # Anomaly events
     if anomalies:
         lines.append("")
         lines.append(f"ANOMALY EVENTS ({len(anomalies)} detected):")
         for ev in sorted(anomalies, key=lambda e: e['ts']):
-            ctx = json.loads(ev.get('context_json', '{}'))
+            try:
+                ctx = json.loads(ev.get('context_json', '{}'))
+            except json.JSONDecodeError:
+                ctx = {}
             ctx_str = ', '.join(f"{k}={v}" for k, v in list(ctx.items())[:5])
-            ts_rel = int(ev['ts'] - session.get('start', session.get('start_ts', ev['ts'])))
+            ts_rel = int(ev['ts'] - session_start)
             lines.append(
                 f"  +{ts_rel:04d}s  {ev['sensor']} = {ev['value']} "
                 f"(z={ev['z_score']}, {ev['severity']})  [{ctx_str}]"
@@ -184,13 +233,13 @@ def build_context_packet(
     else:
         lines.append("ANOMALY EVENTS: None detected")
 
-    # Sensor averages
+    lines.extend(_incident_context_lines(incidents or [], session_start))
+
     lines.append("")
     lines.append("SESSION AVERAGES:")
     for sensor, avg in sorted(sensor_avgs.items()):
         lines.append(f"  {sensor}: {avg:.2f}")
 
-    # Baseline comparison
     if baseline and baseline.get('session_count', 0) > 0:
         lines.append("")
         lines.append(f"BASELINE ({baseline['session_count']} prior sessions):")
@@ -209,27 +258,26 @@ def build_context_packet(
             if base_val is not None and cur_val is not None:
                 delta = float(cur_val) - float(base_val)
                 flag = ' ⚠' if abs(delta) > abs(float(base_val)) * 0.2 else ''
-                lines.append(f"  {label}: {cur_val:.1f} (baseline {base_val:.1f}, Δ{delta:+.1f}){flag}")
+                lines.append(
+                    f"  {label}: {cur_val:.1f} "
+                    f"(baseline {base_val:.1f}, Δ{delta:+.1f}){flag}"
+                )
 
-    # KB context
     if kb_entries:
         lines.append("")
         lines.append("RELEVANT VEHICLE KNOWLEDGE:")
-        for entry in kb_entries:
-            lines.append(entry)
+        lines.extend(kb_entries)
 
     return '\n'.join(lines)
 
 
 def parse_report(raw_text: str) -> dict:
     """Parse LLM JSON response. Sets parse_error=True on failure."""
-    # Strip markdown fences if present
     text = raw_text.strip()
     if text.startswith('```'):
         text = '\n'.join(text.split('\n')[1:])
         if text.endswith('```'):
             text = text[:-3]
-    # Extract JSON object if surrounded by extra text
     text = text.strip()
     if not text.startswith('{'):
         start = text.find('{')
@@ -245,32 +293,56 @@ def parse_report(raw_text: str) -> dict:
         return {'parse_error': True, 'raw_response': raw_text}
 
 
-def run_analysis(session: dict) -> dict | None:
-    """Full analysis pipeline for a completed session."""
-    session_id = session['session_id']
-    log.info(f"Starting analysis for {session_id}")
+def _incident_kb_queries(incidents: list[dict]) -> set[str]:
+    queries: set[str] = set()
+    for incident in incidents:
+        for flag in incident.get('correlation_flags') or []:
+            name = str(flag.get('flag') or '')
+            if 'lean' in name or 'trim' in name:
+                queries.add('lean fuel trim')
+            if 'airflow' in name or 'maf' in name:
+                queries.add('MAF sensor')
+            if 'electrical' in name or 'voltage' in name:
+                queries.add('alternator voltage')
+            if 'rpm' in name or 'idle' in name:
+                queries.add('idle instability')
+        for reason in incident.get('reasons') or []:
+            reason = str(reason)
+            if 'idle' in reason or 'rpm' in reason:
+                queries.add('idle instability')
+            elif 'voltage' in reason:
+                queries.add('alternator voltage')
+            elif 'coolant' in reason:
+                queries.add('coolant temperature')
+    return queries
 
-    # 1. Insert session row into DB (before baseline query that depends on it)
+
+def run_analysis(session: dict) -> dict | None:
+    """Run the full post-drive diagnostic analysis pipeline."""
+    session_id = session['session_id']
+    log.info("Starting analysis for %s", session_id)
+
     db.insert_session(session)
 
-    # 2. Load anomaly events
     anomalies = db.get_session_anomalies(session_id)
-    log.info(f"  {len(anomalies)} anomaly events")
+    log.info("  %d anomaly events", len(anomalies))
 
-    # 3. Compute sensor averages from JSONL
-    date_str = session_id[:8]  # YYYYMMDD
+    start_ts = float(session.get('start', session.get('start_ts', 0)) or 0)
+    end_ts = float(session.get('end', session.get('end_ts', time.time())) or time.time())
+
+    date_str = session_id[:8]
     log_file = LOG_DIR / f"drive_{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}.jsonl"
-    sensor_avgs = compute_sensor_avgs(
-        log_file,
-        session.get('start', session.get('start_ts', 0)),
-        session.get('end', session.get('end_ts', time.time())),
+    sensor_avgs = compute_sensor_avgs(log_file, start_ts, end_ts)
+
+    incidents = load_incident_summaries(INCIDENT_DIR, start_ts, end_ts)
+    log.info("  %d black-box incidents", len(incidents))
+
+    baseline = db.get_baseline(
+        exclude_session_id=session_id,
+        n=ANALYST_BASELINE_SESSIONS,
     )
 
-    # 4. Baseline delta
-    baseline = db.get_baseline(exclude_session_id=session_id, n=ANALYST_BASELINE_SESSIONS)
-
-    # 5. KB retrieval — search on unique symptom types
-    kb_queries = set()
+    kb_queries = _incident_kb_queries(incidents)
     for ev in anomalies:
         sensor = ev.get('sensor', '')
         if 'stft' in sensor or 'ltft' in sensor:
@@ -283,44 +355,51 @@ def run_analysis(session: dict) -> dict | None:
             kb_queries.add('alternator voltage')
         elif 'maf' in sensor:
             kb_queries.add('MAF sensor')
+
     dtcs = json.loads(session.get('dtcs_seen') or '[]')
     for dtc in dtcs[:3]:
         kb_queries.add(dtc)
+
     kb_entries = []
-    for query in list(kb_queries)[:5]:
+    for query in list(kb_queries)[:6]:
         results = kb_search(query)
-        for r in results[:2]:
-            if r.get('type') == 'problem':
-                p = r['data']
+        for result in results[:2]:
+            if result.get('type') == 'problem':
+                problem = result['data']
                 kb_entries.append(
-                    f"KNOWN ISSUE: {p['title']}\n"
-                    f"Symptoms: {', '.join(p.get('symptoms', []))}\n"
-                    f"Cause: {p.get('cause', '')}\n"
-                    f"Fix: {p.get('fix', '')}"
+                    f"KNOWN ISSUE: {problem['title']}\n"
+                    f"Symptoms: {', '.join(problem.get('symptoms', []))}\n"
+                    f"Cause: {problem.get('cause', '')}\n"
+                    f"Fix: {problem.get('fix', '')}"
                 )
 
-    # 6. Build context packet
-    packet = build_context_packet(session, anomalies, sensor_avgs, baseline, kb_entries)
-    log.info(f"  Context packet: {len(packet)} chars")
+    packet = build_context_packet(
+        session,
+        anomalies,
+        sensor_avgs,
+        baseline,
+        kb_entries,
+        incidents=incidents,
+    )
+    log.info("  Context packet: %d chars", len(packet))
 
-    # 7. Call LLM
     try:
         llm_result = llm_client.query(packet, build_system_prompt())
-    except Exception as e:
-        log.error(f"LLM call failed: {e}")
+    except Exception as exc:
+        log.error("LLM call failed: %s", exc)
         return None
 
-    # 8. Parse report
     report = parse_report(llm_result['text'])
     report['session_id'] = session_id
     report['generated_at'] = time.time()
     report['model_used'] = llm_result['model']
     report['tokens_used'] = llm_result['tokens']
+    report['incidents_used'] = [incident.get('id') for incident in incidents if incident.get('id')]
 
-    # 9. Save
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = REPORTS_DIR / f"report_{session_id}.json"
     report_path.write_text(json.dumps(report, indent=2))
-    log.info(f"  Report saved: {report_path.name}")
+    log.info("  Report saved: %s", report_path.name)
 
     db.insert_report({
         'session_id': session_id,
@@ -349,22 +428,29 @@ class SessionAnalyst:
             topic = msg.topic
             if topic == TOPICS['drive_session'] and data.get('event') == 'end':
                 self.last_session = data
-                threading.Thread(target=self._handle_session_end, args=(data,), daemon=True).start()
+                threading.Thread(
+                    target=self._handle_session_end,
+                    args=(data,),
+                    daemon=True,
+                ).start()
             elif topic == TOPICS.get('analysis_request', 'drifter/analysis/request'):
                 if self.last_session:
-                    threading.Thread(target=self._handle_session_end,
-                                     args=(self.last_session,), daemon=True).start()
-        except Exception as e:
-            log.warning(f"Message error: {e}")
+                    threading.Thread(
+                        target=self._handle_session_end,
+                        args=(self.last_session,),
+                        daemon=True,
+                    ).start()
+        except Exception as exc:
+            log.warning("Message error: %s", exc)
 
     def _handle_session_end(self, session: dict):
         report = run_analysis(session)
         if report:
             self.client.publish(
                 TOPICS.get('analysis_report', 'drifter/analysis/report'),
-                json.dumps(report)
+                json.dumps(report),
             )
-            log.info(f"Analysis complete: {session.get('session_id')}")
+            log.info("Analysis complete: %s", session.get('session_id'))
 
     def start(self):
         log.info("Session Analyst starting...")
@@ -373,9 +459,11 @@ class SessionAnalyst:
             try:
                 self.client.connect(MQTT_HOST, MQTT_PORT, 60)
                 connected = True
-            except Exception as e:
-                log.warning(f"MQTT connect failed: {e}")
+            except Exception as exc:
+                log.warning("MQTT connect failed: %s", exc)
                 time.sleep(3)
+        if not self.running:
+            return
         self.client.subscribe([
             (TOPICS['drive_session'], 0),
             (TOPICS.get('analysis_request', 'drifter/analysis/request'), 0),
@@ -390,8 +478,10 @@ class SessionAnalyst:
 
 def main():
     analyst = SessionAnalyst()
+
     def _stop(sig, frame):
         analyst.running = False
+
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     analyst.start()

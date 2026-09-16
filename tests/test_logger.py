@@ -1,11 +1,4 @@
-"""Regression tests for logger drive-session distance + engine-off detection.
-
-- Distance must cap the per-update time step so a stalled/bursting speed feed
-  can't inject phantom kilometres.
-- Engine-off must be detected via a consecutive low-RPM streak, so short drives
-  finalize correctly (the old fixed-size ring buffer required >=600 samples to
-  ever fill, so brief drives never ended).
-"""
+"""Regression tests for logger distance + poll-rate-independent session timing."""
 from __future__ import annotations
 
 import sys
@@ -13,58 +6,68 @@ import sys
 sys.path.insert(0, 'src')
 
 import logger
-from logger import ENGINE_OFF_SAMPLES, ENGINE_ON_RPM, DriveSession
+from logger import ENGINE_OFF_SECONDS, ENGINE_ON_RPM, DriveSession
 
 
 def test_distance_caps_long_gap():
     s = DriveSession()
-    s.start()
-    # First speed sample at t=1000 establishes the baseline (no integration).
+    s.start(999.0)
     s.update('drifter/engine/speed', 80, ts=1000.0)
-    assert s.distance_km == 0.0
-    # Next sample arrives 10 minutes later (stall/burst). Without the 5s cap
-    # this would add 80 km/h * 600s ≈ 13.3 km; capped it's 80 * 5/3600 ≈ 0.111.
+    # First update integrates only the capped one-second interval from start.
+    first = s.distance_km
     s.update('drifter/engine/speed', 80, ts=1600.0)
-    assert s.distance_km < 0.2
+    assert s.distance_km - first < 0.2
 
 
 def test_distance_normal_step():
     s = DriveSession()
-    s.start()
+    s.start(2000.0)
     s.update('drifter/engine/speed', 60, ts=2000.0)
-    s.update('drifter/engine/speed', 60, ts=2001.0)  # 1 s @ 60 km/h
-    # 60 km/h * 1/3600 h ≈ 0.0167 km
-    assert abs(s.distance_km - (60 / 3600.0)) < 1e-6
+    before = s.distance_km
+    s.update('drifter/engine/speed', 60, ts=2001.0)
+    assert abs((s.distance_km - before) - (60 / 3600.0)) < 1e-6
 
 
-def test_engine_off_detected_by_streak(monkeypatch):
-    # Use the module-global session that detect_session_change mutates.
+def test_engine_off_detected_by_elapsed_time(monkeypatch, tmp_path):
     monkeypatch.setattr(logger, 'session', DriveSession())
+    monkeypatch.setattr(logger, 'SESSION_DIR', tmp_path)
     client = type('C', (), {'publish': lambda *a, **k: None})()
 
-    # Engine on -> session starts.
-    logger.detect_session_change(ENGINE_ON_RPM + 200, client)
+    logger.detect_session_change(ENGINE_ON_RPM + 200, client, now=1000.0)
     assert logger.session.active
 
-    # ENGINE_OFF_SAMPLES-1 low samples: still active.
-    for _ in range(ENGINE_OFF_SAMPLES - 1):
-        logger.detect_session_change(0, client)
+    logger.detect_session_change(0, client, now=1000.0 + ENGINE_OFF_SECONDS - 0.1)
     assert logger.session.active
 
-    # One more low sample crosses the threshold -> session ends.
-    logger.detect_session_change(0, client)
+    logger.detect_session_change(0, client, now=1000.0 + ENGINE_OFF_SECONDS + 0.1)
     assert not logger.session.active
 
 
-def test_low_streak_resets_on_rev(monkeypatch):
+def test_rev_resets_engine_off_clock(monkeypatch, tmp_path):
     monkeypatch.setattr(logger, 'session', DriveSession())
+    monkeypatch.setattr(logger, 'SESSION_DIR', tmp_path)
     client = type('C', (), {'publish': lambda *a, **k: None})()
-    logger.detect_session_change(ENGINE_ON_RPM + 200, client)
 
-    for _ in range(ENGINE_OFF_SAMPLES - 1):
-        logger.detect_session_change(0, client)
-    # A rev resets the streak, so the session must survive a subsequent dip.
-    logger.detect_session_change(ENGINE_ON_RPM + 500, client)
-    assert logger.session.low_rpm_streak == 0
-    logger.detect_session_change(0, client)
+    logger.detect_session_change(ENGINE_ON_RPM + 200, client, now=1000.0)
+    logger.detect_session_change(0, client, now=1000.0 + ENGINE_OFF_SECONDS - 1)
     assert logger.session.active
+
+    logger.detect_session_change(ENGINE_ON_RPM + 500, client, now=1020.0)
+    assert logger.session.last_running_ts == 1020.0
+
+    logger.detect_session_change(0, client, now=1020.0 + ENGINE_OFF_SECONDS - 0.1)
+    assert logger.session.active
+    logger.detect_session_change(0, client, now=1020.0 + ENGINE_OFF_SECONDS + 0.1)
+    assert not logger.session.active
+
+
+def test_non_rpm_engine_pid_refreshes_kline_liveness():
+    s = DriveSession()
+    s.start(1000.0)
+    assert s.last_telemetry_ts == 1000.0
+    s.update('drifter/engine/coolant', 90, ts=1025.0)
+    assert s.last_telemetry_ts == 1025.0
+    # Power-only adapter voltage is intentionally not treated as ECU liveness;
+    # ATRV can continue after ignition/key-off on some installations.
+    s.update('drifter/power/voltage', 12.4, ts=1030.0)
+    assert s.last_telemetry_ts == 1025.0

@@ -2,8 +2,8 @@
 """Field-first HTTP routes layered over the existing DRIFTER dashboard.
 
 Routes are local/hotspot-only and provide touch-safe structured operations for
-vehicle-link setup, passive RF field work and display recovery. Existing
-DashboardHandler routes remain the fallback for the full cockpit.
+vehicle-link setup, passive RF field work, vehicle incident capture and display
+recovery. Existing DashboardHandler routes remain the fallback for the cockpit.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ FIELD_MAX_BODY = 32 * 1024
 _MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _DEV_RE = re.compile(r"^/dev/[A-Za-z0-9_./:-]{1,180}$")
+_REASON_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,64}$")
 _RF_ACTIONS = {
     "survey", "survey_stop", "hunt_start", "hunt_stop",
     "capture", "zoom", "listen", "listen_stop",
@@ -36,12 +37,8 @@ def _local(peer: str) -> bool:
 def _run(argv: list[str], timeout: float = 20.0, *, input_text: str | None = None) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
-            argv,
-            input=input_text,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+            argv, input=input_text, capture_output=True, text=True,
+            timeout=timeout, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return subprocess.CompletedProcess(argv, 127, "", str(exc))
@@ -58,8 +55,7 @@ def _json_from_stdout(result: subprocess.CompletedProcess) -> dict:
         pass
     if result.returncode != 0:
         return {
-            "ok": False,
-            "rc": result.returncode,
+            "ok": False, "rc": result.returncode,
             "error": (result.stderr or result.stdout or "command failed").strip()[:1200],
         }
     return {"ok": True, "rc": 0, "output": result.stdout.strip()[:4000]}
@@ -76,13 +72,7 @@ def _list_count(value) -> int:
 
 
 def _preferred_obd_wifi_iface() -> str:
-    """Prefer a secondary Wi-Fi NIC so joining an ELM AP doesn't kill control.
-
-    DRIFTER normally owns wlan0 for client/hotspot resilience. When the D-Link
-    or another second adapter exists, use it for a Wi-Fi ELM327. If there is
-    only one radio nmcli may still use it; the Pi-local touchscreen remains
-    available but the API tells the operator which interface was selected.
-    """
+    """Prefer a secondary Wi-Fi NIC so joining an ELM AP doesn't kill control."""
     result = _run(["/usr/bin/nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"], timeout=5)
     wifi = []
     for line in result.stdout.splitlines():
@@ -138,7 +128,6 @@ class FieldDashboardHandler(DashboardHandler):
         return False
 
     def _obd_status(self) -> dict:
-        """Cheap status snapshot: no mosquitto_sub or Bluetooth scan per poll."""
         cfg = obd_setup._configured_cfg()
         env = obd_setup._load_env()
         return {
@@ -188,6 +177,8 @@ class FieldDashboardHandler(DashboardHandler):
                 "watchdog": state.latest_state.get("system_watchdog") or {},
                 "lcd": state.latest_state.get("lcd_status") or {},
                 "network": state.latest_state.get("network_status") or {},
+                "incident": state.latest_state.get("incident_status") or {},
+                "last_incident": state.latest_state.get("incident_event") or {},
                 "ts": time.time(),
             })
 
@@ -225,8 +216,7 @@ class FieldDashboardHandler(DashboardHandler):
                 timeout=35,
             )
             return self._field_json({
-                "ok": result.returncode == 0,
-                "rc": result.returncode,
+                "ok": result.returncode == 0, "rc": result.returncode,
                 "output": result.stdout.strip()[-5000:],
                 "error": result.stderr.strip()[-1500:],
             })
@@ -261,8 +251,7 @@ class FieldDashboardHandler(DashboardHandler):
                 return self._field_json({"ok": False, "error": "mode must be bluetooth, wifi or serial"}, 400)
             result = _run(argv, timeout=25)
             return self._field_json({
-                "ok": result.returncode == 0,
-                "rc": result.returncode,
+                "ok": result.returncode == 0, "rc": result.returncode,
                 "output": result.stdout.strip()[-5000:],
                 "error": result.stderr.strip()[-1500:],
             })
@@ -276,11 +265,8 @@ class FieldDashboardHandler(DashboardHandler):
                 "power on", "agent KeyboardOnly", "default-agent",
                 f"pair {mac}", pin, f"trust {mac}", f"connect {mac}", "quit", "",
             ])
-            result = _run(
-                ["sudo", "-n", "/usr/bin/bluetoothctl"],
-                timeout=25,
-                input_text=script,
-            )
+            result = _run(["sudo", "-n", "/usr/bin/bluetoothctl"],
+                          timeout=25, input_text=script)
             text = (result.stdout + "\n" + result.stderr).strip()
             paired = (
                 "Pairing successful" in text
@@ -303,12 +289,27 @@ class FieldDashboardHandler(DashboardHandler):
                 argv += ["ifname", iface]
             result = _run(argv, timeout=25)
             return self._field_json({
-                "ok": result.returncode == 0,
-                "rc": result.returncode,
+                "ok": result.returncode == 0, "rc": result.returncode,
                 "interface": iface or None,
                 "output": result.stdout.strip()[-2000:],
                 "error": result.stderr.strip()[-1000:],
             })
+
+        if path == "/api/field/incident/capture":
+            reason = str(body.get("reason") or "manual_capture").strip()
+            note = str(body.get("note") or "").strip()
+            if not _REASON_RE.fullmatch(reason):
+                return self._field_json({"ok": False, "error": "invalid incident reason"}, 400)
+            if len(note) > 300:
+                return self._field_json({"ok": False, "error": "incident note too long"}, 400)
+            if state.mqtt_client is None:
+                return self._field_json({"ok": False, "error": "MQTT not ready"}, 503)
+            payload = {
+                "reason": reason, "note": note, "severity": "info",
+                "source": "touchscreen", "ts": time.time(),
+            }
+            state.mqtt_client.publish("drifter/incident/trigger", json.dumps(payload), qos=1)
+            return self._field_json({"ok": True, "queued": payload})
 
         if path == "/api/field/rf/command":
             action = str(body.get("action") or "").lower().strip()
@@ -347,8 +348,7 @@ class FieldDashboardHandler(DashboardHandler):
                 timeout=20,
             )
             return self._field_json({
-                "ok": result.returncode == 0,
-                "rc": result.returncode,
+                "ok": result.returncode == 0, "rc": result.returncode,
                 "output": result.stdout.strip()[-3000:],
                 "error": result.stderr.strip()[-1000:],
             })
