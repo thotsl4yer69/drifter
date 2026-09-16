@@ -75,6 +75,7 @@ class DriveSession:
         self.distance_km = 0.0
         self.alert_count = 0
         self.highest_alert = 0
+        self.dtcs_seen: set[str] = set()
         self.last_speed = 0
         self.last_speed_time = 0
         self.last_running_ts: float | None = None
@@ -92,6 +93,7 @@ class DriveSession:
         self.distance_km = 0.0
         self.alert_count = 0
         self.highest_alert = 0
+        self.dtcs_seen.clear()
         self.last_speed = 0
         self.last_speed_time = now
         self.last_running_ts = now
@@ -107,6 +109,19 @@ class DriveSession:
             self.duration_str,
             self.distance_km,
         )
+
+    def update_dtcs(self, payload: dict) -> None:
+        """Accumulate DTCs observed at any point during the active drive."""
+        if not self.active or not isinstance(payload, dict):
+            return
+        for key in ('stored', 'pending'):
+            values = payload.get(key) or []
+            if not isinstance(values, (list, tuple, set)):
+                continue
+            for value in values:
+                code = value if isinstance(value, str) else value.get('code') if isinstance(value, dict) else None
+                if code:
+                    self.dtcs_seen.add(str(code).strip().upper())
 
     def update(self, topic, value, ts):
         if not self.active:
@@ -165,6 +180,7 @@ class DriveSession:
             'min_voltage': round(self.min_voltage, 2) if self.min_voltage is not None else None,
             'alert_count': self.alert_count,
             'highest_alert': self.highest_alert,
+            'dtcs_seen': sorted(self.dtcs_seen),
         }
 
     def save_summary(self):
@@ -264,6 +280,9 @@ def on_message(client, userdata, msg):
     ts = time.time()
     with _buffer_lock:
         buffer.append({'topic': msg.topic, 'data': data, 'ts': ts})
+
+    if msg.topic == TOPICS['dtc'] and isinstance(data, dict):
+        session.update_dtcs(data)
 
     value = data.get('value') if isinstance(data, dict) else None
     if value is not None:
