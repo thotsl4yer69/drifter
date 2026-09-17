@@ -10,9 +10,9 @@ vehicle acceptance, including the ISO 9141/KWP fallback ladder.
 * exit 3: adapter proved/configured, but ECU not proved yet;
 * exit 2: adapter/transport itself not proved.
 
-An adapter-only result may still be persisted so an operator can configure a
-reader with ignition off, but FIELD OPS must not report that as a completed
-vehicle connection.
+When the production bridge already owns the ELM link, ``test`` consumes its
+fresh retained health instead of opening a second serial/RFCOMM/TCP connection.
+That prevents the acceptance test itself from causing adapter contention.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ import obd_setup as base
 EXIT_OK = 0
 EXIT_ADAPTER_ONLY = 3
 EXIT_ADAPTER_UNREACHABLE = 2
+BRIDGE_STATUS_MAX_AGE_SEC = 20.0
 
 
 def result_code(result: dict[str, object]) -> int:
@@ -38,13 +39,7 @@ def result_code(result: dict[str, object]) -> int:
 
 
 def runtime_probe(cfg) -> dict[str, object]:
-    """Probe one configured link through the same initializer used in service.
-
-    This deliberately avoids a second field-only protocol implementation. The
-    production bridge owns adapter setup, ATS1, slow K-line timing and the
-    auto -> ISO9141/KWP -> CAN fallback ladder; acceptance must exercise that
-    same path or it can disagree with the running service.
-    """
+    """Probe one configured link through the same initializer used in service."""
     result: dict[str, object] = {
         "ok": False,
         "adapter_ok": False,
@@ -55,6 +50,7 @@ def runtime_probe(cfg) -> dict[str, object]:
         "protocol": "",
         "protocol_attempt": "",
         "rpm": None,
+        "source": "direct_runtime_probe",
         "error": "",
     }
     stream = None
@@ -94,6 +90,61 @@ def runtime_probe(cfg) -> dict[str, object]:
     return result
 
 
+def bridge_status_probe(*, now: float | None = None) -> dict[str, object] | None:
+    """Return fresh retained bridge health when the service currently owns ELM."""
+    service = base._service_state()
+    if not service.get("active"):
+        return None
+
+    raw = base._mqtt_status(2)
+    try:
+        status = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        status = {}
+    if not isinstance(status, dict):
+        status = {}
+
+    now = time.time() if now is None else float(now)
+    try:
+        ts = float(status.get("ts", 0) or 0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    age = max(0.0, now - ts) if ts else None
+    adapter_ok = bool(status.get("adapter_ok"))
+    ecu_ok = bool(status.get("ecu_ok"))
+    fresh = age is not None and age <= BRIDGE_STATUS_MAX_AGE_SEC
+
+    result: dict[str, object] = {
+        "ok": bool(fresh and adapter_ok and ecu_ok and str(status.get("state") or "") == "online"),
+        "adapter_ok": adapter_ok,
+        "ecu_ok": bool(fresh and ecu_ok),
+        "mode": base._configured_cfg().mode,
+        "link": str(status.get("device") or "running bridge"),
+        "adapter": str(status.get("identity") or ""),
+        "protocol": str(status.get("protocol") or ""),
+        "protocol_attempt": str(status.get("protocol_attempt") or ""),
+        "rpm": None,
+        "source": "running_bridge_status",
+        "state": str(status.get("state") or "unknown"),
+        "status_age_s": round(age, 3) if age is not None else None,
+        "error": "",
+    }
+    if not raw:
+        result["adapter_ok"] = False
+        result["ecu_ok"] = False
+        result["error"] = "OBD bridge is active but no retained status was received"
+    elif not fresh:
+        result["ecu_ok"] = False
+        result["error"] = f"OBD bridge retained status is stale ({age:.1f}s old)" if age is not None else "OBD bridge status has no timestamp"
+    elif not adapter_ok:
+        result["error"] = str(status.get("reason") or "running bridge cannot reach the ELM adapter")
+    elif not ecu_ok:
+        result["error"] = str(status.get("reason") or "running bridge has not proved ECU communication")
+    elif result["state"] != "online":
+        result["error"] = f"running bridge state is {result['state']}, not online"
+    return result
+
+
 def _print_result(result: dict[str, object], *, as_json: bool = False) -> None:
     if as_json:
         payload = dict(result)
@@ -103,10 +154,14 @@ def _print_result(result: dict[str, object], *, as_json: bool = False) -> None:
         base._print_probe(result)
         if result.get("protocol_attempt"):
             print(f"[INFO] protocol attempt = {result['protocol_attempt']}")
+        if result.get("source"):
+            print(f"[INFO] proof source = {result['source']}")
 
 
 def cmd_test(args) -> int:
-    result = runtime_probe(base._configured_cfg())
+    result = bridge_status_probe()
+    if result is None:
+        result = runtime_probe(base._configured_cfg())
     _print_result(result, as_json=bool(args.json))
     return result_code(result)
 
@@ -156,12 +211,7 @@ def cmd_pair(args) -> int:
 
 
 def cmd_setup(args) -> int:
-    """Run discovery, then require a production-path final ECU proof.
-
-    ``obd_setup.cmd_setup`` may intentionally save an adapter that is reachable
-    while ignition is off. Re-probe the persisted configuration with the
-    service stopped and convert that state to exit 3 rather than false success.
-    """
+    """Run discovery, then require a production-path final ECU proof."""
     rc = base.cmd_setup(args)
     if rc != 0:
         return rc
@@ -197,7 +247,6 @@ def main(argv: list[str] | None = None) -> int:
     if command == "use-wifi":
         return _strict_activate(base._cfg_wifi(args.host, args.port))
 
-    # status/scan are read-only and keep their existing behavior.
     return int(args.func(args))
 
 
