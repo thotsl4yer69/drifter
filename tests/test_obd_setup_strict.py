@@ -1,4 +1,5 @@
 """Release-gate tests for the field-facing OBD CLI contract."""
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,12 +35,7 @@ def test_runtime_probe_uses_production_initializer_and_reports_fallback(monkeypa
     stream = FakeStream()
     cfg = SimpleNamespace(mode="serial")
     calls = []
-
-    monkeypatch.setattr(
-        strict.base.elm_link,
-        "open_elm_link",
-        lambda _cfg: (stream, "fake ELM"),
-    )
+    monkeypatch.setattr(strict.base.elm_link, "open_elm_link", lambda _cfg: (stream, "fake ELM"))
 
     def initialise(value):
         calls.append(value)
@@ -64,17 +60,14 @@ def test_runtime_probe_uses_production_initializer_and_reports_fallback(monkeypa
     assert result["protocol"] == "ISO 9141-2"
     assert result["protocol_attempt"] == "3"
     assert result["rpm"] == 800.0
+    assert result["source"] == "direct_runtime_probe"
     assert stream.closed is True
 
 
 def test_runtime_probe_adapter_only_is_explicitly_degraded(monkeypatch):
     stream = FakeStream()
     cfg = SimpleNamespace(mode="serial")
-    monkeypatch.setattr(
-        strict.base.elm_link,
-        "open_elm_link",
-        lambda _cfg: (stream, "fake ELM"),
-    )
+    monkeypatch.setattr(strict.base.elm_link, "open_elm_link", lambda _cfg: (stream, "fake ELM"))
     monkeypatch.setattr(
         strict.obd_bridge,
         "initialise_elm",
@@ -98,7 +91,64 @@ def test_runtime_probe_adapter_only_is_explicitly_degraded(monkeypatch):
     assert stream.closed is True
 
 
+def test_bridge_status_probe_uses_fresh_running_bridge_without_opening_elm(monkeypatch):
+    now = 2000.0
+    monkeypatch.setattr(strict.base, "_service_state", lambda: {"active": True})
+    monkeypatch.setattr(strict.base, "_configured_cfg", lambda: SimpleNamespace(mode="bluetooth"))
+    monkeypatch.setattr(
+        strict.base,
+        "_mqtt_status",
+        lambda _timeout: json.dumps({
+            "state": "online",
+            "adapter_ok": True,
+            "ecu_ok": True,
+            "device": "bluetooth:AA:BB",
+            "identity": "ELM327 v1.5",
+            "protocol": "ISO 9141-2",
+            "ts": now - 5,
+        }),
+    )
+    monkeypatch.setattr(
+        strict.base.elm_link,
+        "open_elm_link",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("must not open a second ELM link")),
+    )
+
+    result = strict.bridge_status_probe(now=now)
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["source"] == "running_bridge_status"
+    assert result["status_age_s"] == 5.0
+
+
+def test_bridge_status_probe_rejects_stale_retained_success(monkeypatch):
+    now = 2000.0
+    monkeypatch.setattr(strict.base, "_service_state", lambda: {"active": True})
+    monkeypatch.setattr(strict.base, "_configured_cfg", lambda: SimpleNamespace(mode="serial"))
+    monkeypatch.setattr(
+        strict.base,
+        "_mqtt_status",
+        lambda _timeout: json.dumps({
+            "state": "online",
+            "adapter_ok": True,
+            "ecu_ok": True,
+            "protocol": "ISO 9141-2",
+            "ts": now - strict.BRIDGE_STATUS_MAX_AGE_SEC - 1,
+        }),
+    )
+
+    result = strict.bridge_status_probe(now=now)
+
+    assert result is not None
+    assert result["ok"] is False
+    assert result["adapter_ok"] is True
+    assert result["ecu_ok"] is False
+    assert "stale" in result["error"]
+
+
 def test_cmd_test_does_not_report_adapter_only_as_success(monkeypatch, capsys):
+    monkeypatch.setattr(strict, "bridge_status_probe", lambda: None)
     monkeypatch.setattr(strict.base, "_configured_cfg", lambda: object())
     monkeypatch.setattr(strict, "runtime_probe", lambda _cfg: _result(adapter=True, ecu=False))
     monkeypatch.setattr(strict.base, "_print_probe", lambda result: print("probe", result["ecu_ok"]))
@@ -109,7 +159,19 @@ def test_cmd_test_does_not_report_adapter_only_as_success(monkeypatch, capsys):
     assert "probe False" in capsys.readouterr().out
 
 
+def test_cmd_test_prefers_running_bridge_status(monkeypatch):
+    live = {**_result(adapter=True, ecu=True), "source": "running_bridge_status"}
+    monkeypatch.setattr(strict, "bridge_status_probe", lambda: live)
+    monkeypatch.setattr(
+        strict,
+        "runtime_probe",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("direct probe must not run")),
+    )
+    assert strict.cmd_test(SimpleNamespace(json=True)) == 0
+
+
 def test_json_test_includes_degraded_exit_code(monkeypatch, capsys):
+    monkeypatch.setattr(strict, "bridge_status_probe", lambda: None)
     monkeypatch.setattr(strict.base, "_configured_cfg", lambda: object())
     monkeypatch.setattr(strict, "runtime_probe", lambda _cfg: _result(adapter=True, ecu=False))
 
