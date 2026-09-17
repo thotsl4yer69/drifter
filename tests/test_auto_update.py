@@ -69,7 +69,7 @@ def test_preflight_rejects_diff_check_failure(monkeypatch):
     assert "whitespace error" in detail
 
 
-def test_rollback_resets_exact_previous_commit_before_redeploy(monkeypatch):
+def test_rollback_restores_exact_previous_tree_before_redeploy(monkeypatch):
     calls = []
 
     def fake_git(*args, **kwargs):
@@ -86,7 +86,8 @@ def test_rollback_resets_exact_previous_commit_before_redeploy(monkeypatch):
     ok, _detail = updater._rollback("abc123")
     assert ok is True
     assert calls[0] == ("git", ("reset", "--hard", "abc123"))
-    assert calls[1][0] == "deploy"
+    assert calls[1] == ("git", ("clean", "-fd"))
+    assert calls[2][0] == "deploy"
 
 
 def test_systemd_timer_is_installed_by_existing_installer_contract():
