@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically check GitHub main for DRIFTER updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=drifter-update.service
+
+[Install]
+WantedBy=timers.target
