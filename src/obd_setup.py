@@ -345,7 +345,11 @@ def probe(cfg: elm_link.LinkConfig) -> dict[str, object]:
         stream, description = elm_link.open_elm_link(cfg)
         result["link"] = description
         _command(stream, "ATZ", delay=0.8, reads=7)
-        for command in ("ATE0", "ATL0", "ATS0", "ATH0", "ATSP0"):
+        # Keep spaces enabled here as well as in the runtime bridge. The
+        # runtime parser is intentionally spacing-aware, and leaving a reader
+        # in ATS0 after setup can produce an apparently healthy adapter with
+        # undecodable PID frames on the next hand-off.
+        for command in ("ATE0", "ATL0", "ATS1", "ATH0", "ATSP0"):
             _command(stream, command)
 
         ident = _clean_response(_command(stream, "ATI", delay=0.2), "ATI")

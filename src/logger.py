@@ -50,6 +50,8 @@ INCIDENT_DIR = LOG_DIR / "incidents"
 INCIDENT_TRIGGER_TOPIC = TOPICS.get("incident_trigger", "drifter/incident/trigger")
 INCIDENT_STATUS_TOPIC = TOPICS.get("incident_status", "drifter/incident/status")
 INCIDENT_EVENT_TOPIC = TOPICS.get("incident_event", "drifter/incident/event")
+INCIDENT_MIN_KEEP = max(1, int(os.getenv("DRIFTER_INCIDENT_MIN_KEEP", "8")))
+STALE_TEMP_SECONDS = max(300.0, float(os.getenv("DRIFTER_STALE_TEMP_SECONDS", "3600")))
 
 blackbox = IncidentBlackBox(
     INCIDENT_DIR,
@@ -112,9 +114,6 @@ class DriveSession:
         if not self.active:
             return
 
-        # Any fresh engine/vehicle PID proves the ECU stream is still alive.
-        # This is deliberately separate from RPM so a slow K-line polling cycle
-        # cannot split a real drive simply because RPM has not come around yet.
         if topic.startswith('drifter/engine/') or topic.startswith('drifter/vehicle/'):
             self.last_telemetry_ts = ts
 
@@ -215,30 +214,123 @@ def compress_log(path: Path) -> Path:
     return gz_path
 
 
-def cleanup_old_logs():
-    today = datetime.now().strftime("%Y-%m-%d")
-    for f in LOG_DIR.glob("*.jsonl"):
-        if today not in f.name:
-            compress_log(f)
+def _safe_stat(path: Path) -> tuple[int, float] | None:
+    try:
+        stat = path.stat()
+        return stat.st_size, stat.st_mtime
+    except FileNotFoundError:
+        return None
 
-    all_logs = sorted(LOG_DIR.glob("*.jsonl.gz"), key=lambda f: f.stat().st_mtime)
-    total_size = 0
-    for f in all_logs:
-        try:
-            total_size += f.stat().st_size
-        except FileNotFoundError:
-            pass
-    total_mb = total_size / (1024 * 1024)
 
-    while total_mb > MAX_LOG_SIZE_MB * 0.8 and all_logs:
-        oldest = all_logs.pop(0)
-        try:
-            size = oldest.stat().st_size / (1024 * 1024)
-        except FileNotFoundError:
+def _incident_bundles() -> list[tuple[float, int, list[Path]]]:
+    """Return finalized incident files grouped so data+summary prune together."""
+    groups: dict[str, list[Path]] = {}
+    for path in INCIDENT_DIR.glob("incident_*"):
+        name = path.name
+        if ".tmp." in name:
             continue
-        oldest.unlink(missing_ok=True)
-        total_mb -= size
-        log.info("Removed old log: %s (%.1f MB)", oldest.name, size)
+        if name.endswith(".jsonl.gz"):
+            key = name[:-9]
+        elif name.endswith(".json"):
+            key = name[:-5]
+        else:
+            continue
+        groups.setdefault(key, []).append(path)
+
+    bundles: list[tuple[float, int, list[Path]]] = []
+    for paths in groups.values():
+        size = 0
+        mtimes = []
+        live_paths = []
+        for path in paths:
+            info = _safe_stat(path)
+            if info is None:
+                continue
+            file_size, mtime = info
+            size += file_size
+            mtimes.append(mtime)
+            live_paths.append(path)
+        if live_paths:
+            bundles.append((max(mtimes), size, live_paths))
+    return sorted(bundles, key=lambda item: item[0])
+
+
+def cleanup_old_logs():
+    """Bound telemetry + finalized incident evidence under the logger quota.
+
+    The active daily JSONL is never deleted.  Finalized incident data and its
+    JSON summary are treated as one bundle, and the newest incident bundles are
+    protected even when old telemetry must be pruned first.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    INCIDENT_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in LOG_DIR.glob("*.jsonl"):
+        if today not in path.name:
+            compress_log(path)
+
+    now = time.time()
+    for path in INCIDENT_DIR.glob("*.tmp.*"):
+        info = _safe_stat(path)
+        if info is not None and now - info[1] >= STALE_TEMP_SECONDS:
+            path.unlink(missing_ok=True)
+            log.info("Removed stale incident temp: %s", path.name)
+
+    bundles = _incident_bundles()
+    protected_incidents = bundles[-INCIDENT_MIN_KEEP:] if bundles else []
+    protected_paths = {
+        path for _mtime, _size, paths in protected_incidents for path in paths
+    }
+
+    managed_paths: set[Path] = set(LOG_DIR.glob("*.jsonl"))
+    managed_paths.update(LOG_DIR.glob("*.jsonl.gz"))
+    managed_paths.update(SESSION_DIR.glob("session_*.json"))
+    for _mtime, _size, paths in bundles:
+        managed_paths.update(paths)
+
+    total_bytes = 0
+    for path in managed_paths:
+        info = _safe_stat(path)
+        if info is not None:
+            total_bytes += info[0]
+
+    target_bytes = int(MAX_LOG_SIZE_MB * 0.8 * 1024 * 1024)
+    if total_bytes <= target_bytes:
+        return
+
+    deletion_units: list[tuple[float, int, list[Path], str]] = []
+    for path in LOG_DIR.glob("*.jsonl.gz"):
+        info = _safe_stat(path)
+        if info is not None:
+            deletion_units.append((info[1], info[0], [path], "telemetry"))
+
+    for mtime, size, paths in bundles:
+        if any(path in protected_paths for path in paths):
+            continue
+        deletion_units.append((mtime, size, paths, "incident"))
+
+    deletion_units.sort(key=lambda item: item[0])
+    for _mtime, size, paths, kind in deletion_units:
+        if total_bytes <= target_bytes:
+            break
+        for path in paths:
+            path.unlink(missing_ok=True)
+        total_bytes -= size
+        log.info(
+            "Removed old %s evidence: %s (%.1f MB)",
+            kind,
+            ", ".join(path.name for path in paths),
+            size / (1024 * 1024),
+        )
+
+    if total_bytes > target_bytes:
+        log.warning(
+            "Evidence store remains above target after safe pruning: %.1f MB > %.1f MB",
+            total_bytes / (1024 * 1024),
+            target_bytes / (1024 * 1024),
+        )
 
 
 def _publish_incident_status(client, event: dict | None = None):
@@ -352,6 +444,7 @@ def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     INCIDENT_DIR.mkdir(parents=True, exist_ok=True)
+    cleanup_old_logs()
 
     running = True
 
@@ -399,10 +492,6 @@ def main():
             flush_buffer()
             last_flush = now
 
-        # K-line ECUs can go silent immediately at key-off, with no RPM=0
-        # sample. Use absence of *all* engine/vehicle telemetry as the silent
-        # fallback instead of absence of RPM alone, so a slow PID cycle cannot
-        # incorrectly split a live drive.
         if (
             session.active
             and session.last_telemetry_ts is not None

@@ -13,7 +13,11 @@ case "${1:-}" in
         ;;
     obd)
         shift
-        exec "$PY" /opt/drifter/obd_setup.py "$@"
+        exec "$PY" /opt/drifter/obd_setup_strict.py "$@"
+        ;;
+    acceptance|accept)
+        shift
+        exec "$PY" /opt/drifter/field_acceptance.py "$@"
         ;;
     field-dump|fielddump)
         shift

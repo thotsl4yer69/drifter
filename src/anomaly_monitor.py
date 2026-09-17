@@ -69,6 +69,15 @@ class AnomalyMonitor:
         self.client = make_mqtt_client("drifter-anomaly-monitor")
         self.client.on_message = self._on_message
 
+    def _reset_session_state(self) -> None:
+        """Discard per-drive baselines and live values at a session boundary."""
+        self.windows = {name: SensorWindow() for name in MONITORED_SENSORS}
+        self.rpm_idle_window.clear()
+        self.current_coolant = 0.0
+        self.current_speed = 0.0
+        self.current_snapshot = {}
+        self._alert_state = {}
+
     def _should_publish_alert(self, sensor_name: str, z_score: float,
                               now: float | None = None):
         now = time.time() if now is None else now
@@ -94,7 +103,6 @@ class AnomalyMonitor:
         return False, summary
 
     def _publish_anomaly(self, event: dict) -> None:
-        """Persist and publish every anomaly so the black box can freeze it live."""
         db.insert_anomaly_event(event)
         payload = dict(event)
         context = payload.get('context_json')
@@ -141,18 +149,15 @@ class AnomalyMonitor:
                 return
             topic = msg.topic
 
-            # Session messages have no `value`; process lifecycle BEFORE the
-            # numeric-sensor guard. The old order silently left session_id None
-            # and therefore suppressed the entire anomaly detector.
             if topic == TOPICS.get('drive_session', 'drifter/session'):
                 event = data.get('event')
                 if event == 'start':
+                    self._reset_session_state()
                     self.current_session_id = data.get('session_id')
-                    self.rpm_idle_window.clear()
                     log.info("Session started: %s", self.current_session_id)
                 elif event == 'end':
                     self.current_session_id = None
-                    self.rpm_idle_window.clear()
+                    self._reset_session_state()
                 return
 
             value = data.get('value')
@@ -182,10 +187,17 @@ class AnomalyMonitor:
 
             if sensor_name == 'rpm':
                 self.windows['rpm'].add(value)
-                if self.current_speed <= 2 and self.current_session_id:
+                # Cold starts legitimately surge and settle. Do not teach the
+                # idle-instability detector from that phase or let it trigger
+                # black-box incidents until the coolant warm-up gate is met.
+                if self.current_coolant < WARMUP_COOLANT_THRESHOLD:
+                    self.rpm_idle_window.clear()
+                elif self.current_speed <= 2 and self.current_session_id:
                     self.rpm_idle_window.append(value)
                     for event in self._check_rpm_instability():
                         self._publish_anomaly(event)
+                else:
+                    self.rpm_idle_window.clear()
         except Exception as exc:
             log.warning("Message error: %s", exc)
 
