@@ -117,3 +117,10 @@ def test_cli_routes_acceptance_to_harness():
     text = Path("bin/drifter").read_text(encoding="utf-8")
     assert 'acceptance|accept)' in text
     assert 'exec "$PY" /opt/drifter/field_acceptance.py "$@"' in text
+
+
+def test_install_deploys_all_python_modules_including_release_gate():
+    text = Path("install.sh").read_text(encoding="utf-8")
+    assert 'cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"' in text
+    assert Path("src/field_acceptance.py").exists()
+    assert Path("src/obd_setup_strict.py").exists()
