@@ -23,7 +23,6 @@ import pwd
 import shutil
 import subprocess
 import tempfile
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -171,12 +170,23 @@ def _current_branch() -> str:
     return _git_text("branch", "--show-current")
 
 
+def _candidate_root() -> Path:
+    path = Path(tempfile.mkdtemp(prefix="drifter-update-"))
+    if os.geteuid() == 0:
+        try:
+            account = pwd.getpwnam(REPO_USER)
+        except KeyError:
+            return path
+        os.chown(path, account.pw_uid, account.pw_gid)
+    return path
+
+
 def _preflight(target: str) -> tuple[bool, str]:
     diff = _git("diff", "--check", "HEAD", target)
     if diff.returncode != 0:
         return False, (diff.stderr or diff.stdout).strip()[:1500]
 
-    tmp_root = Path(tempfile.mkdtemp(prefix="drifter-update-"))
+    tmp_root = _candidate_root()
     worktree = tmp_root / "candidate"
     added = False
     try:
@@ -226,10 +236,16 @@ def _rollback(previous: str) -> tuple[bool, str]:
     reset = _git("reset", "--hard", previous, timeout=90)
     if reset.returncode != 0:
         return False, f"git rollback failed: {(reset.stderr or reset.stdout).strip()[:1200]}"
+    clean = _git("clean", "-fd", timeout=90)
+    if clean.returncode != 0:
+        return False, f"git rollback clean failed: {(clean.stderr or clean.stdout).strip()[:1200]}"
     deploy = _deploy()
     if deploy.returncode != 0:
-        return False, f"rollback deploy failed rc={deploy.returncode}: {(deploy.stderr or deploy.stdout).strip()[-1200:]}"
-    return True, "previous commit restored and redeployed"
+        return False, (
+            f"rollback deploy failed rc={deploy.returncode}: "
+            f"{(deploy.stderr or deploy.stdout).strip()[-1200:]}"
+        )
+    return True, "previous commit restored, new files removed, and previous release redeployed"
 
 
 def run_update() -> int:
