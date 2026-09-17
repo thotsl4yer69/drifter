@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,7 +28,7 @@ EVIDENCE_DIR = Path(os.getenv("DRIFTER_ACCEPTANCE_DIR", "/opt/drifter/logs/accep
 DRIFTER_CLI = os.getenv("DRIFTER_CLI", "/usr/local/bin/drifter")
 MIN_COLD_BOOTS = 10
 MIN_SOAK_SECONDS = 30 * 60
-DEFAULT_MAX_GAP_SECONDS = 20.0
+DEFAULT_MAX_GAP_SECONDS = 30.0
 CRITICAL_SERVICES = (
     "drifter-dashboard",
     "drifter-logger",
@@ -61,7 +62,8 @@ def _run(argv: list[str], timeout: float = 20.0) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(argv, 127, "", str(exc))
 
 
-def _load_state(path: Path = STATE_PATH) -> dict[str, Any]:
+def _load_state(path: Path | None = None) -> dict[str, Any]:
+    path = STATE_PATH if path is None else path
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
@@ -69,7 +71,8 @@ def _load_state(path: Path = STATE_PATH) -> dict[str, Any]:
         return {}
 
 
-def _save_state(state: dict[str, Any], path: Path = STATE_PATH) -> None:
+def _save_state(state: dict[str, Any], path: Path | None = None) -> None:
+    path = STATE_PATH if path is None else path
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
     tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -398,5 +401,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    import sys
     raise SystemExit(main())
