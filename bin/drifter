@@ -15,6 +15,10 @@ case "${1:-}" in
         shift
         exec "$PY" /opt/drifter/obd_setup_strict.py "$@"
         ;;
+    acceptance|accept)
+        shift
+        exec "$PY" /opt/drifter/field_acceptance.py "$@"
+        ;;
     field-dump|fielddump)
         shift
         exec "$PY" /opt/drifter/field_dump.py "$@"
