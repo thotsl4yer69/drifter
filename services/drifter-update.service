@@ -1,0 +1,23 @@
+[Unit]
+Description=DRIFTER safe self-update from GitHub main
+Wants=network-online.target
+After=network-online.target
+ConditionPathIsDirectory=/home/kali/drifter/.git
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/kali/drifter
+Environment=PYTHONUNBUFFERED=1
+Environment=DRIFTER_REPO=/home/kali/drifter
+Environment=DRIFTER_REPO_USER=kali
+EnvironmentFile=-/opt/drifter/.env
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_update.py
+TimeoutStartSec=25min
+Nice=10
+IOSchedulingClass=idle
+
+# The updater needs to deploy system files/services, so it intentionally runs
+# as root. Git operations themselves are executed as DRIFTER_REPO_USER to avoid
+# turning the checkout into a root-owned worktree.
+User=root
+Group=root
