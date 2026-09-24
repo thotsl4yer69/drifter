@@ -70,6 +70,7 @@ def test_status_requires_ten_unique_boots_full_soak_and_vim_physical_gates(monke
     assert '"signoff_ready": true' in output
     assert '"rf_sequence"' in output
 
+
 def test_status_fails_when_required_vim_recovery_gate_missing(monkeypatch, tmp_path, capsys):
     state_file = tmp_path / "acceptance.json"
     state = {
