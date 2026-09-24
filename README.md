@@ -1,12 +1,20 @@
-# DRIFTER — Vehicle Intelligence Module
+# MAZLABZ DRIFTER VIM — Vehicle Intelligence Module
 
-**Raspberry Pi vehicle telemetry, diagnostics and edge-services platform**
+**Dedicated Raspberry Pi vehicle intelligence, diagnostics and incident-evidence platform**
+
+> **Founding beta:** DRIFTER is being opened to technically capable vehicle testers while the primary Jaguar acceptance gate is completed. Start with [the beta tester guide](docs/BETA_TESTER_GUIDE.md) and [compatibility matrix](docs/COMPATIBILITY_MATRIX.md).
 
 [![Status](https://img.shields.io/badge/status-hardware--integrated%20prototype-blue)](PROJECT_STATUS.md)
 ![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%205-red)
 ![Messaging](https://img.shields.io/badge/messaging-MQTT-blue)
 
 > **Maturity: Hardware-integrated prototype / active hardening.** DRIFTER is running as a real Raspberry Pi vehicle-node project, but it is not represented as production-ready or universally compatible. Validation depends on the vehicle, OBD transport and attached hardware. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## The wedge
+
+**The fault vanished. The evidence didn't.**
+
+DRIFTER is built for intermittent faults and persistent vehicle evidence, not just code reading. Its always-on incident black box can preserve a bounded **90-second pre-event window** and **45-second post-event tail**, then carry ordered sensor changes into the diagnostic workflow.
 
 ## What it is
 
@@ -86,6 +94,17 @@ Typical development stack:
 
 Use the exact wiring/transport guide for the target vehicle. Do not assume OBD connector pinout implies a specific protocol without checking the vehicle.
 
+## Founding beta
+
+DRIFTER is not yet represented as a finished retail appliance. The founding beta is collecting measured compatibility across real vehicle + adapter combinations.
+
+- [Beta tester guide](docs/BETA_TESTER_GUIDE.md)
+- [Evidence-based compatibility matrix](docs/COMPATIBILITY_MATRIX.md)
+- [First-drive / field runbook](FIRST_DRIVE.md)
+- [Current project status](PROJECT_STATUS.md)
+
+Use one issue per unique vehicle + adapter combination. Never post VINs, credentials, API keys or hotspot passwords.
+
 ## Deployment
 
 The repository contains multiple deployment paths and field documentation. Start with the documented flow rather than copying a generic command from an old README revision:
@@ -130,4 +149,4 @@ DRIFTER is a strong example of the core MAZLABZ skill set because it crosses phy
 
 ---
 
-**MZ1312 / MAZLABZ — prototype, measure, harden.**
+**MAZLABZ DRIFTER VIM — prototype, measure, harden.**
