@@ -90,7 +90,7 @@ Before paid promotion or manufactured packaging:
 - [ ] rotate historically committed OpenWeatherMap / Google Maps credentials provider-side (#73);
 - [ ] decide whether to rewrite git history for historical identifier/key removal (#73);
 - [ ] complete final product-name/trademark/domain/handle clearance (#75);
-- [ ] lock hardware BOM, power path, display and enclosure;
+- [ ] lock hardware BOM, power path, display and enclosure (#78);
 - [ ] validate a second vehicle + adapter combination;
 - [ ] measure clean-install and support burden.
 
@@ -142,6 +142,7 @@ Do not spend paid media before naming and hardware gates are resolved.
 - `docs/BETA_TESTER_GUIDE.md` — beta test protocol.
 - `docs/COMPATIBILITY_MATRIX.md` — evidence-only compatibility.
 - `docs/VIM_PRODUCT_PROFILE.md` — product/R&D scope boundary.
+- `docs/BETA_HARDWARE.md` — evidence-based reference hardware/BOM authority.
 - `launch/MARKETING.md` — marketing system.
 - `launch/PRESS_KIT.md` — messaging/press facts.
 - `launch/MARKET_SNAPSHOT_2026-09-24.md` — dated market reference.
