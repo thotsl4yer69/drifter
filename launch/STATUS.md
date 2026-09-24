@@ -145,7 +145,9 @@ Do not spend paid media before naming and hardware gates are resolved.
 - `launch/MARKETING.md` — marketing system.
 - `launch/PRESS_KIT.md` — messaging/press facts.
 - `launch/MARKET_SNAPSHOT_2026-09-24.md` — dated market reference.
-- `launch/OUTREACH.md` — external contact log.
+- `launch/OUTREACH.md` — external media contact log.
+- `launch/FUNDING.md` — funding execution path.
+- `launch/FUNDING_OUTREACH.md` — capital/program contact log.
 
 ## Hosting / CI state
 
