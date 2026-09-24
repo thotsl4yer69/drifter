@@ -149,6 +149,9 @@ Do not spend paid media before naming and hardware gates are resolved.
 - `launch/OUTREACH.md` — external media contact log.
 - `launch/FUNDING.md` — funding execution path.
 - `launch/FUNDING_OUTREACH.md` — capital/program contact log.
+- `launch/INVESTOR_ONE_PAGER.md` — current investor narrative without fabricated traction.
+- `launch/IP_STRATEGY.md` — public-disclosure/IP operating boundary.
+- `launch/CONTENT_BANK.md` — proof-driven launch content authority.
 
 ## Hosting / CI state
 
