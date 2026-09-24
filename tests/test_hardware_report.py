@@ -37,3 +37,10 @@ def test_udev_allowlist_excludes_unique_serial_fields():
     assert "ID_SERIAL_SHORT" not in hr._UDEV_KEYS
     assert "ID_VENDOR_ID" in hr._UDEV_KEYS
     assert "ID_MODEL_ID" in hr._UDEV_KEYS
+
+
+def test_cli_routes_hardware_report():
+    from pathlib import Path
+    text = Path("bin/drifter").read_text(encoding="utf-8")
+    assert "hardware-report|hw-report)" in text
+    assert 'exec "$PY" /opt/drifter/hardware_report.py "$@"' in text
