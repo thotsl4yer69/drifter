@@ -51,10 +51,10 @@ else
     warn "safety.yaml already present — not overwriting"
 fi
 cp "${REPO_DIR}/vehicles/default.yaml" "${DRIFTER_DIR}/vehicles/" 2>/dev/null || true
-if [ -f "${REPO_DIR}/vehicles/SAJEA51D44XD39283.yaml" ]; then
-    cp "${REPO_DIR}/vehicles/SAJEA51D44XD39283.yaml" "${DRIFTER_DIR}/vehicles/"
-    ok "X-Type profile deployed"
-fi
+# Real VIN-specific profiles are local deployment data and are deliberately not
+# shipped in the public repository. Existing files under /opt/drifter/vehicles
+# are preserved across installs.
+ok "Generic vehicle profile deployed; local VIN profiles preserved"
 
 step 4 "Installing systemd services"
 for svc in safety aidiag reporter batcher thresholds vehicleid kb learn \
