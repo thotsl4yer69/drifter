@@ -1,0 +1,90 @@
+name: DRIFTER VIM founding beta vehicle test
+description: Apply to test DRIFTER VIM on a real OBD-II vehicle.
+title: "[BETA] <year make model> — <adapter>"
+labels: ["beta", "vehicle-validation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DRIFTER VIM is a hardware-integrated prototype under active field hardening.
+        This intake is for technically capable testers who can provide real vehicle evidence.
+
+  - type: input
+    id: vehicle
+    attributes:
+      label: Vehicle
+      description: Year, make, model, engine/powertrain.
+      placeholder: "2012 Subaru Forester 2.5 petrol"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: powertrain
+    attributes:
+      label: Powertrain
+      options:
+        - Petrol
+        - Diesel
+        - Hybrid
+        - EV
+        - Other / unknown
+    validations:
+      required: true
+
+  - type: input
+    id: adapter
+    attributes:
+      label: OBD adapter
+      description: Exact adapter/clone/model if known.
+      placeholder: "ELM327 Bluetooth v1.5 / OBDLink MX+ / CANable"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pi
+    attributes:
+      label: Raspberry Pi hardware
+      options:
+        - Raspberry Pi 5 8 GB
+        - Raspberry Pi 5 4 GB
+        - Raspberry Pi 4
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: display
+    attributes:
+      label: Display
+      placeholder: "5-inch SPI LCD / HDMI touchscreen / browser only"
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to diagnose or test?
+      placeholder: "Intermittent idle drop, long-term logging, dedicated gauges..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: evidence
+    attributes:
+      label: Evidence you can provide
+      options:
+        - label: I can run cold-boot tests and report pass/fail.
+        - label: I can run a 30-minute live telemetry session.
+        - label: I can test adapter unplug/replug recovery.
+        - label: I can upload a DRIFTER field-dump with sensitive values redacted.
+        - label: I can provide photos/video of the hardware setup.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Test scope
+      options:
+        - label: I will test only on a vehicle/equipment I own or am authorised to test.
+          required: true
+        - label: I understand compatibility is not guaranteed in the founding beta.
+          required: true
+        - label: I will not post VINs, API keys, Wi-Fi credentials or other secrets in this issue.
+          required: true
