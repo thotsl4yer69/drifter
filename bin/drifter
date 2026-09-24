@@ -23,6 +23,10 @@ case "${1:-}" in
         shift
         exec "$PY" /opt/drifter/field_dump.py "$@"
         ;;
+    hardware-report|hw-report)
+        shift
+        exec "$PY" /opt/drifter/hardware_report.py "$@"
+        ;;
     display)
         shift
         exec "$PY" /opt/drifter/display_recover.py "$@"
