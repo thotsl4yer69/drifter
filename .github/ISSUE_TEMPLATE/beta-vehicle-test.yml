@@ -1,7 +1,6 @@
 name: DRIFTER VIM founding beta vehicle test
 description: Apply to test DRIFTER VIM on a real OBD-II vehicle.
 title: "[BETA] <year make model> — <adapter>"
-labels: ["beta", "vehicle-validation"]
 body:
   - type: markdown
     attributes:
