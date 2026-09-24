@@ -13,9 +13,9 @@ DRIFTER is not vehicle-ready until it can:
 3. discover and configure the attached ELM327 from the touchscreen;
 4. prove **adapter communication** separately from **ECU communication**;
 5. show live engine data and the transport actually carrying it;
-6. operate the RTL-SDR through understandable field missions rather than raw sweep controls;
-7. keep one authoritative owner of the RTL-SDR so survey/hunt/listen/capture do not fight over USB;
-8. preserve enough evidence to diagnose a failed boot or runtime crash.
+6. preserve enough evidence to diagnose a failed boot or runtime crash.
+
+The RTL-SDR workflow documented later in this file belongs to the broader DRIFTER R&D platform. It is optional for DRIFTER VIM vehicle sign-off.
 
 ## Jaguar retest — normal operator flow
 
@@ -160,12 +160,12 @@ Do not mark DRIFTER field-ready until all of these are green:
 - adapter unplug/replug recovers or produces a clear actionable state;
 - Jaguar live telemetry remains stable for a **30-minute** stationary/road session;
 - display/controller failure can recover without full power cycling when Linux remains alive;
-- **RF SURVEY** produces ranked findings without requiring SDR terminology;
-- HUNT, ZOOM, LISTEN and IQ CAPTURE operate from the selected finding;
-- changing RF modes does not produce unresolved `device busy` contention;
-- unplug/replug of the RTL-SDR recovers or produces an explicit missing-hardware state;
-- the cockpit never calls unknown hardware READY;
+- the cockpit never calls unknown vehicle hardware READY;
 - failures remain diagnosable through the field evidence bundle.
+
+### Optional broader-platform RF acceptance
+
+RF SURVEY / HUNT / ZOOM / LISTEN / IQ CAPTURE and RTL-SDR unplug/replug recovery remain useful acceptance tests for the wider DRIFTER R&D platform, but they do not block VIM vehicle sign-off.
 
 ## Generic vehicle scope
 

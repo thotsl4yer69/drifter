@@ -26,8 +26,8 @@ drifter:
   vehicle:     "2004 Jaguar X-Type 2.5 V6 (AJ-V6)"
   hardware:    "Raspberry Pi 5 Model B Rev 1.1, 16GB RAM, Kali GNU/Linux Rolling aarch64, 128GB SD (mmcblk0, NO NVMe)"
   hotspot:     MZ1312_DRIFTER                # rescue-only AP (autoconnect falls back to it after 90s);
-                                            # PSK intentionally NOT recorded here — rotation still pending,
-                                            # PSK remains embedded in install.sh
+                                            # PSK intentionally NOT recorded here; current install generates
+                                            # or accepts a per-node value outside git
   hotspot_ip:  10.42.0.1/24
   ports:
     dashboard: 8080                          # 0.0.0.0 bind (verified via ss, 2026-08-24)
@@ -102,12 +102,10 @@ drifter:
     NOTE: its timer is disabled and unit is Type=oneshot/static — nothing re-fires
     the warm ping periodically. Warm inference ≈0.9s vs 13.2s cold-load before.
 
-    SECURITY — hotspot PSK rotation STILL PENDING: the PSK remains embedded in
-    install.sh (lines ~583/704) and sshd still accepts password logins
-    (passwordauthentication yes). Do NOT put any new secret values in this file;
-    the previously inlined hotspot PSK comment has been removed from inventory.
-    Sole authorized SSH key: ed25519 mazla-drifter-20260824; apt backlog ~1630
-    upgradable packages on Kali rolling.
+    SECURITY — current repository source no longer embeds a hotspot PSK; the
+    install path generates or accepts a per-node secret outside git. Historical
+    credentials from earlier revisions still require provider-side rotation where
+    applicable. Do not put secret values in this inventory.
 
     Contract layer is on main (merged).
     Spec-vs-code discrepancies documented in CLAUDE.md:

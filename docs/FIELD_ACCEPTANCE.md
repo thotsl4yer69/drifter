@@ -41,13 +41,17 @@ sudo drifter display recover
 drifter acceptance mark display-recovery --pass --note "display recovered without Pi power cycle"
 ```
 
-## 4. Physical RTL-SDR sequence
+## 4. Optional broader-platform RF sequence
 
-Complete `SURVEY -> finding -> HUNT -> ZOOM -> LISTEN -> IQ CAPTURE`, then unplug/replug the SDR and confirm recovery without unresolved `device busy` contention. Record:
+The RTL-SDR sequence belongs to the broader DRIFTER R&D platform and is **not required for DRIFTER VIM vehicle sign-off**.
+
+If the SDR research path is being validated, complete `SURVEY -> finding -> HUNT -> ZOOM -> LISTEN -> IQ CAPTURE`, then unplug/replug the SDR and record it separately:
 
 ```bash
-drifter acceptance mark rf-sequence --pass --note "survey/hunt/zoom/listen/capture + unplug/replug passed"
+drifter acceptance mark rf-sequence --pass --note "optional R&D RF sequence passed"
 ```
+
+A missing or failed RF sequence does not block VIM vehicle acceptance.
 
 ## 5. Thirty-minute Jaguar telemetry soak
 
@@ -63,6 +67,8 @@ The default run is 1,800 seconds. It requires continuing RPM, coolant, speed and
 drifter acceptance status
 ```
 
-DRIFTER is fully field-signed-off only when it reports `"signoff_ready": true`.
+DRIFTER VIM is vehicle-signed-off only when it reports `"signoff_ready": true`.
 
-Issue #67 remains open until that state is achieved. A green software review alone is not sufficient.
+That state requires the vehicle cold-boot, telemetry-soak, ELM-recovery, display-recovery and live-health gates. The optional RF record is still shown in the acceptance output but is not part of VIM readiness.
+
+Issue #67 remains open until the VIM state is achieved. A green software review alone is not sufficient.

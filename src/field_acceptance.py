@@ -2,9 +2,10 @@
 """Evidence-backed DRIFTER physical field acceptance gate.
 
 This command does not turn hardware assumptions into software claims. It records
-repeatable evidence for the remaining release gates: ten unique vehicle-power
+repeatable evidence for the DRIFTER VIM release gates: ten unique vehicle-power
 cold boots, strict adapter+ECU proof, a 30-minute live telemetry soak, and
-operator-confirmed ELM/display/RF recovery tests.
+operator-confirmed ELM/display recovery tests. The broader R&D platform may
+also record an RF sequence, but RF is not required for VIM vehicle sign-off.
 """
 from __future__ import annotations
 
@@ -36,6 +37,8 @@ CRITICAL_SERVICES = (
     "drifter-lcd",
 )
 PHYSICAL_GATES = ("elm_recovery", "display_recovery", "rf_sequence")
+VIM_REQUIRED_PHYSICAL_GATES = ("elm_recovery", "display_recovery")
+VIM_OPTIONAL_PHYSICAL_GATES = ("rf_sequence",)
 TELEMETRY_TOPICS = {
     "rpm": TOPICS["rpm"],
     "coolant": TOPICS["coolant"],
@@ -329,7 +332,10 @@ def _status(args) -> int:
 
     boot_gate = len(passed_boots) >= MIN_COLD_BOOTS
     soak_gate = bool(soak.get("ok")) and float(soak.get("duration_s", 0) or 0) >= MIN_SOAK_SECONDS
-    physical_gate = all(bool((physical.get(name) or {}).get("ok")) for name in PHYSICAL_GATES)
+    physical_gate = all(
+        bool((physical.get(name) or {}).get("ok"))
+        for name in VIM_REQUIRED_PHYSICAL_GATES
+    )
     live_gate = True if args.no_live else bool(
         live.get("obd", {}).get("ok")
         and live.get("display", {}).get("ok")
@@ -347,6 +353,8 @@ def _status(args) -> int:
             "evidence": soak.get("evidence"),
         },
         "physical": {name: physical.get(name) or {"ok": False} for name in PHYSICAL_GATES},
+        "required_physical_gates": list(VIM_REQUIRED_PHYSICAL_GATES),
+        "optional_physical_gates": list(VIM_OPTIONAL_PHYSICAL_GATES),
         "live": live,
         "state_file": str(STATE_PATH),
     }
