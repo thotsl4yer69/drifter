@@ -1,0 +1,52 @@
+# DRIFTER — Example Vehicle Profile
+# Sanitised from the primary Jaguar X-Type validation profile.
+# Copy this file to vehicles/<VIN>.yaml on a deployment and replace the example values
+# with measurements/specifications verified for that exact vehicle.
+
+vin: "TEST0000000000000"
+make: "Jaguar"
+model: "X-Type"
+year: 2004
+engine: "AJ-V6 2.5 (Duratec-derived)"
+displacement_cc: 2495
+peak_hp: 194
+peak_torque_nm: 245
+cylinder_count: 6
+firing_order: [1, 4, 2, 5, 3, 6]
+coil_type: "COP"
+
+fuel_type: "petrol"
+fuel_octane: 95
+tank_litres: 61
+avg_consumption_l_per_100km: 11.0
+
+drivetrain: "AWD"
+transmission: "5AT-JF506E"
+oil_capacity_l: 6.5
+coolant_capacity_l: 9.0
+
+tire_size: "205/55R16"
+tire_pressure_front: 30
+tire_pressure_rear: 30
+
+thresholds:
+  coolant_amber: 104
+  coolant_red: 108
+  thermostat_oscillation: 8.0
+  maf_idle_low: 2.5
+  idle_rpm_baseline: 720
+
+known_issues:
+  - "Thermostat housing failures are reported on this platform; verify against the exact engine and symptoms."
+  - "Coil-on-plug faults can present as intermittent misfire."
+  - "MAF contamination can affect fuel-trim behaviour."
+  - "Throttle-body deposits can affect idle control."
+
+service_notes:
+  spark_plugs: "Verify plug specification and gap against the exact VIN/engine before service."
+  coil_packs: "Use vehicle-correct parts; swap-testing can help isolate an intermittent misfire."
+  thermostat: "Verify the exact housing/stat assembly for the engine before replacement."
+  oil_grade: "Verify against the vehicle handbook/service data."
+  coolant: "Verify against the vehicle handbook/service data."
+
+source: "example"
