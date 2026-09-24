@@ -1,82 +1,161 @@
-# DRIFTER Wiring Guide
+# DRIFTER VIM Wiring & Hardware Paths
 
-## Connections (3 total)
+This guide reflects the **founding-beta vehicle product**, not the wider DRIFTER R&D platform.
 
-### 1. CAN Bus (Car → Pi)
+The primary Jaguar validation path is **ELM327-first**. Do not assume the vehicle exposes ISO 15765 CAN on OBD pins 6/14 until it is physically proven on that exact vehicle.
 
-```
-OBD-II Port (under steering column)
-  Pin 6  (CAN-H) ──→ USB2CANFD screw terminal: H
-  Pin 14 (CAN-L) ──→ USB2CANFD screw terminal: L
+## Core founding-beta topology
 
-USB2CANFD ──USB──→ Pi 5 USB port
-```
-
-Use an OBD-II pigtail cable with bare wire ends. Screw CAN-H and CAN-L
-into the green screw terminals on the USB2CANFD adapter. Plug the USB
-end into any Pi 5 USB port.
-
-The X-Type uses ISO 15765 CAN at 500 kbps. The USB2CANFD handles this
-natively via the gs_usb driver — no configuration needed.
-
-### 2. Audio (Pi → Pioneer)
-
-```
-Pi 5 (3.5mm headphone jack)
-  ──→ Ground Loop Isolator (inline 3.5mm)
-  ──→ Pioneer AUX input (3.5mm or RCA)
+```text
+Vehicle OBD-II port
+      │
+      └── ELM327-compatible adapter
+              │
+              ├── Bluetooth ─────┐
+              ├── Wi-Fi ─────────┼──> Raspberry Pi 5
+              └── USB/serial ────┘        │
+                                          ├── touchscreen / browser UI
+                                          ├── local telemetry + diagnostics
+                                          └── incident evidence storage
 ```
 
-The ground loop isolator is critical. Without it, you'll hear engine RPM
-whine through the speakers caused by ground potential differences between
-the Pi's power supply and the car's electrical system.
+Use **one OBD transport at a time** during first validation. A second adapter makes transport diagnosis ambiguous.
 
-### 3. Power (Whatever → Pi)
+## 1. Vehicle interface — reference path
 
-For bench testing or basic use:
-- USB-C battery pack → Pi 5 USB-C power port
-- Car USB port → Pi 5 (may brownout under load — test first)
+### Bluetooth ELM327
 
-For permanent install (future):
-- 12V fuse tap → Geekworm X1205 UPS → Pi 5 (via pogo pins)
-- Or: 12V fuse tap → buck converter (5V/5A USB-C) → Pi 5
+1. Plug the ELM327 into the vehicle OBD-II connector.
+2. Turn ignition to RUN.
+3. Pair the adapter through **FIELD OPS → VEHICLE**.
+4. Use **AUTO DETECT**, then **TEST ECU**.
+5. Do not treat Bluetooth pairing as proof that the ECU is responding.
 
-## Phone Setup
+DRIFTER distinguishes:
+- adapter unreachable;
+- adapter connected / ECU waiting;
+- ECU link online;
+- live PID flow.
 
+### Wi-Fi ELM327
+
+1. Plug the adapter into OBD-II.
+2. Join the adapter network from **FIELD OPS → VEHICLE**.
+3. Use **JOIN + AUTO DETECT**, then **TEST ECU**.
+4. Keep the Pi touchscreen available as the local recovery path if the network changes.
+
+### USB/serial ELM327
+
+Connect the adapter to a Pi USB port. DRIFTER's serial-device resolution prefers an explicit environment override, then a stable udev symlink, then the historical raw device path.
+
+## 2. Raw CAN / SocketCAN path — optional until proven
+
+A CANable/USB2CANFD-class adapter is supported by the architecture, but it is **not the primary Jaguar acceptance transport** until the car proves CAN/ISO-15765 responses on the diagnostic connector.
+
+Do not wire a raw CAN adapter merely because the connector has pins 6 and 14 populated.
+
+If raw CAN is being tested on a vehicle that is confirmed to expose OBD-II over CAN:
+
+```text
+OBD-II pin 6  (CAN-H) ──> adapter CAN-H
+OBD-II pin 14 (CAN-L) ──> adapter CAN-L
+adapter USB ─────────────> Raspberry Pi 5
 ```
-Pi 5 Wi-Fi Hotspot (MZ1312_DRIFTER)
-  ──Wi-Fi──→ Phone (RealDash app, MQTT to 10.42.0.1:1883)
-  ──USB────→ Pioneer (Android Auto projects RealDash to screen)
+
+Then run:
+
+```bash
+drifter diagnose
+ip -brief link show can0
+ip -brief link show slcan0
 ```
 
-Use WIRED Android Auto (USB cable from phone to Pioneer).
-Do NOT use wireless AA — it conflicts with the Pi hotspot connection.
+A CAN request with no ECU response is evidence to investigate, not proof that the dashboard is broken. On older vehicles the correct path may be ISO 9141/KWP through an ELM327.
 
-## Pin Reference (USB2CANFD V1 Screw Terminals)
+## 3. Power
 
+### Bench / development
+
+Use a Pi 5 supply path that can sustain the node under peak load. Record any Raspberry Pi undervoltage/throttle flags during acceptance.
+
+Typical development paths:
+- suitable USB-C Pi supply;
+- suitable USB-C power bank.
+
+### Vehicle development
+
+The permanent product power architecture is **not yet locked**.
+
+Current candidate classes:
+- automotive-rated 12 V → regulated 5 V USB-C supply sized for Pi 5 peak load;
+- UPS/HAT path with controlled ride-through/shutdown.
+
+The production choice must pass:
+- 10/10 cold boot gate;
+- cranking / transient behaviour;
+- no undervoltage flags;
+- clean recovery after abrupt power loss;
+- acceptable idle/off-current behaviour;
+- thermal testing in the enclosure.
+
+Do not freeze a retail BOM until that test evidence exists.
+
+## 4. Display
+
+DRIFTER supports more than one operator surface, but the reference physical node currently includes a local display.
+
+Supported development paths include:
+- the existing SPI framebuffer panel used by `drifter-lcd`;
+- browser cockpit;
+- HDMI touchscreen where configured.
+
+Record the exact panel/controller in each beta vehicle report. “3.5-inch screen” is not enough for a reproducible BOM.
+
+## 5. Audio
+
+**Raspberry Pi 5 has no built-in 3.5 mm analogue headphone jack.**
+
+Use an audio device that Linux actually enumerates, for example:
+- USB audio adapter;
+- HDMI/display audio;
+- another explicitly configured USB audio interface.
+
+Confirm with:
+
+```bash
+aplay -l
+arecord -l
 ```
-┌─────────────────────┐
-│  H    L    GND      │  ← Green screw terminals
-│  │    │    │        │
-│  CAN  CAN  (not     │
-│  High Low  needed)  │
-└─────────────────────┘
+
+Audio is not allowed to block the core vehicle telemetry/incident-evidence path.
+
+## 6. GPS / optional sensors
+
+GPS and other peripheral services are hardware-optional in the beta product unless a test explicitly requires them. Use stable USB device naming where possible and record the exact hardware in the beta issue.
+
+## 7. What is *not* required for VIM sign-off
+
+The broader DRIFTER repository includes SDR/RF and network-research hardware. Those devices are not required to prove the commercial vehicle product.
+
+The VIM physical sign-off is based on:
+- vehicle transport;
+- ECU/live PID proof;
+- repeatable power/boot;
+- local display recovery on the reference unit;
+- sustained telemetry;
+- incident evidence.
+
+## 8. Evidence before changing wiring
+
+When the node fails in-car, capture evidence before rewiring:
+
+```bash
+drifter field-dump
+drifter obd status
+drifter obd test
+drifter display status
+systemctl --failed
+vcgencmd get_throttled
 ```
 
-## OBD-II Port Pinout (Relevant Pins Only)
-
-```
-    ┌─────────────────┐
-    │ 1  2  3  4  5   │
-    │                  │  Standard OBD-II connector
-    │ 6  7  8  9  10  │  (under driver dash)
-    │    11 12 13 14  │
-    │  15 16          │
-    └─────────────────┘
-
-Pin 6:  CAN-H (ISO 15765)  → Connect this
-Pin 14: CAN-L (ISO 15765)  → Connect this
-Pin 16: Battery positive    → (not needed, power via USB)
-Pin 4:  Chassis ground      → (not needed)
-Pin 5:  Signal ground       → (not needed)
-```
+That keeps power, display, adapter, ECU and application failures separate instead of changing several variables at once.
