@@ -32,6 +32,24 @@ The beta issue form records the exact Pi, adapter and display so compatibility e
 
 ## Reference-node capture required before hardware pricing
 
+After deploying current main, the preferred capture is now one command:
+
+```bash
+drifter hardware-report
+```
+
+It writes a JSON evidence file under `/opt/drifter/logs/hardware/` and deliberately omits VINs, Wi-Fi credentials, API keys and USB serial numbers while redacting Bluetooth MAC and IP addresses.
+
+Use:
+
+```bash
+drifter hardware-report --json
+```
+
+to also print the redacted report.
+
+The manual commands below remain useful for drill-down when a component is not identified by the one-command report.
+
 Capture these from the physical node:
 
 ### Pi / OS
