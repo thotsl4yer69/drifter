@@ -41,7 +41,7 @@ def test_telemetry_summary_fails_on_obd_fault_even_with_sensor_data():
     assert report["ok"] is False
 
 
-def test_status_requires_ten_unique_boots_full_soak_and_physical_gates(monkeypatch, tmp_path, capsys):
+def test_status_requires_ten_unique_boots_full_soak_and_vim_physical_gates(monkeypatch, tmp_path, capsys):
     state_file = tmp_path / "acceptance.json"
     state = {
         "cold_boots": [
@@ -54,8 +54,9 @@ def test_status_requires_ten_unique_boots_full_soak_and_physical_gates(monkeypat
             "evidence": "/tmp/soak.json",
         },
         "physical": {
-            gate: {"ok": True, "recorded": "now"}
-            for gate in acceptance.PHYSICAL_GATES
+            "elm_recovery": {"ok": True, "recorded": "now"},
+            "display_recovery": {"ok": True, "recorded": "now"},
+            "rf_sequence": {"ok": False, "recorded": "now"},
         },
     }
     acceptance._save_state(state, state_file)
@@ -67,6 +68,32 @@ def test_status_requires_ten_unique_boots_full_soak_and_physical_gates(monkeypat
 
     assert rc == 0
     assert '"signoff_ready": true' in output
+    assert '"rf_sequence"' in output
+
+def test_status_fails_when_required_vim_recovery_gate_missing(monkeypatch, tmp_path, capsys):
+    state_file = tmp_path / "acceptance.json"
+    state = {
+        "cold_boots": [{"boot_id": f"boot-{idx}", "ok": True} for idx in range(10)],
+        "telemetry_soak": {
+            "ok": True,
+            "duration_s": acceptance.MIN_SOAK_SECONDS,
+            "evidence": "/tmp/soak.json",
+        },
+        "physical": {
+            "elm_recovery": {"ok": True, "recorded": "now"},
+            "display_recovery": {"ok": False, "recorded": "now"},
+            "rf_sequence": {"ok": True, "recorded": "now"},
+        },
+    }
+    acceptance._save_state(state, state_file)
+    monkeypatch.setattr(acceptance, "STATE_PATH", state_file)
+    monkeypatch.setattr(acceptance, "_live_checks", _live_ok)
+
+    rc = acceptance._status(SimpleNamespace(no_live=False))
+    output = capsys.readouterr().out
+
+    assert rc == 2
+    assert '"signoff_ready": false' in output
 
 
 def test_duplicate_boot_id_does_not_inflate_gate(monkeypatch, tmp_path, capsys):
