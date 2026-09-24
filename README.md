@@ -100,6 +100,7 @@ DRIFTER is not yet represented as a finished retail appliance. The founding beta
 
 - [Launch authority / current commercial state](launch/STATUS.md)
 - [Beta tester guide](docs/BETA_TESTER_GUIDE.md)
+- [Founding-beta hardware authority](docs/BETA_HARDWARE.md)
 - [Evidence-based compatibility matrix](docs/COMPATIBILITY_MATRIX.md)
 - [First-drive / field runbook](FIRST_DRIVE.md)
 - [Current project status](PROJECT_STATUS.md)
