@@ -125,11 +125,8 @@ profile is active — the offline suite proves it).
       now per-node.
 - [ ] **HW / operator** Rotate the historically-committed API keys (OWM /
       Google Maps) provider-side — they remain recoverable from git history.
-- [ ] **operator** Decide on the committed vehicle profile
-      `vehicles/SAJEA51D44XD39283.yaml` (real VIN). `.gitignore` now prevents
-      *new* VIN profiles from being committed; to remove the existing one from
-      the public repo run `git rm --cached vehicles/SAJEA51D44XD39283.yaml`
-      (it stays on the Pi under `/opt/drifter/vehicles/`).
+- [x] Removed the real VIN profile from the public branch tip and replaced it
+      with a sanitised example. Real vehicle profiles remain local node data.
 
 ---
 
@@ -140,8 +137,8 @@ Every non-hardware item above is done and the offline suite is green
 repo alone — the remaining items **all need the physical node/vehicle** (or are
 operator/provider actions) and are the yellow → green gate:
 
-- **Operator/provider actions:** rotate the historically-committed API keys
-  provider-side; decide whether to `git rm --cached` the committed VIN profile.
+- **Operator/provider action:** rotate the historically-committed API keys
+  provider-side. The current public branch tip no longer ships a real VIN profile.
 - **Hardware validation gate** (below), including the new multi-vehicle items —
   the transport auto-select, K-line-vs-CAN confirmation on the X-Type, live PID
   discovery, and (if available) an EV/hybrid and a second-vehicle smoke.

@@ -84,24 +84,24 @@ class TestSingleFrame:
 
 class TestMultiFrame:
     """VIN (Mode 09 PID 02): First Frame + Consecutive Frames, gated on Flow
-    Control. VIN 'SAJEA51D44XD39283' split across 3 frames."""
+    Control. synthetic Jaguar-format VIN 'SAJAA01M94FN00001' split across 3 frames."""
 
     def _vin_frames(self):
         return [
             # FF: total len 0x14 (20) = [0x49,0x02,count] + 17 VIN bytes
             (0x7E8, [0x10, 0x14, 0x49, 0x02, 0x01,
                      ord('S'), ord('A'), ord('J')]),
-            (0x7E8, [0x21, ord('E'), ord('A'), ord('5'),
-                     ord('1'), ord('D'), ord('4'), ord('4')]),
-            (0x7E8, [0x22, ord('X'), ord('D'), ord('3'),
-                     ord('9'), ord('2'), ord('8'), ord('3')]),
+            (0x7E8, [0x21, ord('A'), ord('A'), ord('0'),
+                     ord('1'), ord('M'), ord('9'), ord('4')]),
+            (0x7E8, [0x22, ord('F'), ord('N'), ord('0'),
+                     ord('0'), ord('0'), ord('0'), ord('1')]),
         ]
 
     def test_reassembles_full_payload(self):
         bus = _FakeBus(self._vin_frames())
         payload = iso_tp.read_response(bus, timeout=1.0)
         assert payload[:3] == bytes([0x49, 0x02, 0x01])
-        assert bytes(payload[3:]) == b'SAJEA51D44XD39283'
+        assert bytes(payload[3:]) == b'SAJAA01M94FN00001'
         assert len(payload) == 20
 
     def test_flow_control_sent_to_the_responding_ecu(self):
@@ -119,4 +119,4 @@ class TestMultiFrame:
         frames.insert(1, (0x7E9, [0x21, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0]))
         bus = _FakeBus(frames)
         payload = iso_tp.read_response(bus, timeout=1.0)
-        assert bytes(payload[3:]) == b'SAJEA51D44XD39283'
+        assert bytes(payload[3:]) == b'SAJAA01M94FN00001'

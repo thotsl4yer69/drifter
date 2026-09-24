@@ -3,15 +3,15 @@ import vin_decoder as vd
 
 
 def test_validity():
-    assert vd.is_valid("SAJEA51D44XD39283")          # the shipped Jaguar VIN
+    assert vd.is_valid("SAJAA01M94FN00001")          # synthetic Jaguar-format VIN
     assert not vd.is_valid(None)
     assert not vd.is_valid("TOOSHORT")
-    assert not vd.is_valid("SAJEA51D44XD3928I")        # contains illegal 'I'
-    assert not vd.is_valid("SAJEA51D44XD3928_")        # illegal char
+    assert not vd.is_valid("SAJAA01M94FN0000I")        # contains illegal 'I'
+    assert not vd.is_valid("SAJAA01M94FN0000_")        # illegal char
 
 
 def test_decode_jaguar():
-    d = vd.decode("SAJEA51D44XD39283")
+    d = vd.decode("SAJAA01M94FN00001")
     assert d["valid"] is True
     assert d["make"] == "Jaguar"          # WMI SAJ
     assert d["region"] == "Europe"        # first char 'S'

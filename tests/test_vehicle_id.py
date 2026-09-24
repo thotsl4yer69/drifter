@@ -6,7 +6,7 @@ import vehicle_id
 
 
 def test_decoded_seed_from_vin():
-    seed = vehicle_id._decoded_seed("SAJEA51D44XD39283")
+    seed = vehicle_id._decoded_seed("SAJAA01M94FN00001")
     assert seed["make"] == "Jaguar"
     assert seed["year"] == 2004
 
@@ -68,7 +68,7 @@ def _vin_payload(vin, with_count=True):
 
 
 def test_parse_vin_standard_with_count_byte():
-    vin = "SAJEA51D44XD39283"
+    vin = "SAJAA01M94FN00001"
     assert vehicle_id._parse_vin_payload(_vin_payload(vin)) == vin
 
 

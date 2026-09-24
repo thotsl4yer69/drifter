@@ -29,13 +29,10 @@ within the law in your jurisdiction.
   is recoverable only on the device (`nmcli --show-secrets`).
 - API keys live only in `/opt/drifter/.env` (git-ignored), seeded from
   `config/.env.example`.
-- Per-vehicle profiles (`vehicles/<VIN>.yaml`) contain a real VIN and are
-  operator PII. `.gitignore` prevents **new** VIN profiles from being committed
-  (only `vehicles/default.yaml` is tracked). One real profile
-  (`vehicles/SAJEA51D44XD39283.yaml`) was committed before this policy and is
-  still tracked — before publishing, remove it with
-  `git rm --cached vehicles/SAJEA51D44XD39283.yaml` (it stays on the Pi under
-  `/opt/drifter/vehicles/`). See `RELEASE-CHECKLIST.md`.
+- Per-vehicle profiles (`vehicles/<VIN>.yaml`) can contain a real VIN and are
+  operator data. The public tree tracks only the generic default and sanitised
+  examples. Real vehicle profiles belong under `/opt/drifter/vehicles/` on the
+  node and are ignored by git.
 
 If you are deploying from a fork or an older revision: **rotate any API keys
 that were ever committed to git history** (earlier revisions hardcoded live

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAZLABZ DRIFTER VIM — Vehicle Intelligence Module</title>
+<meta name="description" content="A dedicated local vehicle computer for OBD-II telemetry, diagnostics, drive logging and incident evidence capture.">
+<style>
+:root{--bg:#080a0c;--panel:#101419;--line:#26303a;--text:#f4f7f8;--muted:#9aa6b2;--cyan:#43d9ff;--amber:#ffb640;--max:1160px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:inherit}.wrap{max-width:var(--max);margin:auto;padding:0 24px}
+nav{height:72px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.brand{font-weight:800;letter-spacing:.16em}.brand small{color:var(--muted);font-weight:600;letter-spacing:.08em}
+.badge{border:1px solid var(--line);border-radius:999px;padding:8px 12px;color:var(--muted);font-size:13px}
+.hero{padding:96px 0 72px;display:grid;grid-template-columns:1.35fr .65fr;gap:48px;align-items:center}
+.kicker{color:var(--cyan);font-weight:800;letter-spacing:.12em;font-size:13px}
+h1{font-size:clamp(48px,8vw,92px);line-height:.94;margin:14px 0 24px;letter-spacing:-.055em}
+.lede{font-size:22px;line-height:1.55;color:#c6d0d7;max-width:780px}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:34px}.btn{display:inline-block;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:800}.primary{background:var(--text);color:#080a0c}.secondary{border:1px solid var(--line)}
+.status{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}.status h3{margin-top:0}.row{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding:13px 0;color:var(--muted)}.row b{color:var(--text)}.live{color:var(--cyan)!important}.warn{color:var(--amber)!important}
+section{padding:72px 0;border-top:1px solid var(--line)}h2{font-size:38px;letter-spacing:-.03em;margin:0 0 16px}.sub{color:var(--muted);font-size:18px;max-width:760px;line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:34px}.card{border:1px solid var(--line);background:var(--panel);border-radius:16px;padding:22px}.card h3{margin-top:0}.card p{color:var(--muted);line-height:1.55}
+.timeline{margin-top:38px;display:grid;grid-template-columns:2fr 1fr 1fr;border:1px solid var(--line);border-radius:16px;overflow:hidden}.t{padding:26px}.t+ .t{border-left:1px solid var(--line)}.pre{background:#0e171b}.event{background:#221b0d}.post{background:#111419}.big{font-size:34px;font-weight:900}.label{font-size:12px;letter-spacing:.13em;color:var(--muted)}
+.proof{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:34px}.proof .card{min-height:180px}
+footer{padding:42px 0;color:var(--muted);border-top:1px solid var(--line);font-size:14px}
+@media(max-width:800px){.hero{grid-template-columns:1fr;padding-top:64px}.grid,.proof{grid-template-columns:1fr}.timeline{grid-template-columns:1fr}.t+.t{border-left:0;border-top:1px solid var(--line)}nav .badge{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><div class="brand">MAZLABZ <small>/ DRIFTER VIM</small></div><div class="badge">FOUNDING BETA · ACTIVE HARDENING</div></nav>
+<main>
+<div class="hero">
+<div>
+<div class="kicker">VEHICLE INTELLIGENCE MODULE</div>
+<h1>The fault vanished.<br>The evidence didn't.</h1>
+<p class="lede">MAZLABZ DRIFTER VIM is a dedicated local vehicle computer for live OBD-II telemetry, touchscreen diagnostics, drive logging and incident evidence capture.</p>
+<div class="actions">
+<a class="btn primary" href="mailto:mazlabz.ai@gmail.com?subject=DRIFTER%20VIM%20Founding%20Beta">Request beta access</a>
+<a class="btn secondary" href="https://github.com/thotsl4yer69/drifter">View engineering repo</a>
+</div>
+</div>
+<div class="status">
+<h3>FIELD STATUS</h3>
+<div class="row"><span>Platform</span><b>Raspberry Pi 5</b></div>
+<div class="row"><span>Primary vehicle</span><b>2004 Jaguar X-Type</b></div>
+<div class="row"><span>Core architecture</span><b class="live">Hardware integrated</b></div>
+<div class="row"><span>Commercial state</span><b class="warn">Founding beta</b></div>
+<div class="row"><span>Validation</span><b>Active hardening</b></div>
+</div>
+</div>
+
+<section>
+<h2>Not another phone code reader.</h2>
+<p class="sub">Most OBD tools answer the question you ask now. DRIFTER is built for the harder problem: keeping the context around faults that are intermittent, short-lived or difficult to reproduce.</p>
+<div class="grid">
+<div class="card"><h3>Always-on evidence</h3><p>The vehicle node keeps a bounded rolling window and can preserve evidence when a fault or operator capture occurs.</p></div>
+<div class="card"><h3>Dedicated touchscreen</h3><p>Vehicle-link state, live telemetry, diagnostics and capture controls live on the node rather than requiring a phone for the core workflow.</p></div>
+<div class="card"><h3>Local-first</h3><p>Telemetry and service logic run on the Raspberry Pi using a modular Linux/MQTT architecture.</p></div>
+</div>
+</section>
+
+<section>
+<h2>The incident black box.</h2>
+<p class="sub">When a trigger fires, DRIFTER preserves a bounded window around the event and orders material sensor changes so the investigation starts with evidence instead of memory.</p>
+<div class="timeline">
+<div class="t pre"><div class="label">BEFORE</div><div class="big">90 sec</div><p>Rolling pre-fault evidence.</p></div>
+<div class="t event"><div class="label">EVENT</div><div class="big">FAULT</div><p>Automatic or manual capture.</p></div>
+<div class="t post"><div class="label">AFTER</div><div class="big">45 sec</div><p>Post-event tail.</p></div>
+</div>
+</section>
+
+<section>
+<h2>Built in public. Proven on hardware.</h2>
+<p class="sub">DRIFTER is a substantial hardware-integrated prototype, not a finished retail appliance. The founding beta is about completing field proof across real vehicles and adapters.</p>
+<div class="proof">
+<div class="card"><div class="label">CURRENT GATE</div><h3>Jaguar field acceptance</h3><p>10/10 cold starts, stable 30-minute RPM/coolant/speed/voltage telemetry, adapter recovery and display recovery.</p></div>
+<div class="card"><div class="label">TARGET SCOPE</div><h3>Standards-based OBD-II</h3><p>Capability depends on the vehicle protocol, adapter and PIDs the ECU actually supports. New combinations are validated with real evidence.</p></div>
+</div>
+</section>
+
+<section>
+<h2>Founding beta.</h2>
+<p class="sub">We are looking for technically capable founding testers who want to run DRIFTER on real OBD-II vehicles and help harden onboarding, compatibility and evidence capture before a paid hardware release.</p>
+<div class="actions"><a class="btn primary" href="mailto:mazlabz.ai@gmail.com?subject=DRIFTER%20VIM%20Founding%20Beta&body=Vehicle%3A%0AOBD%20adapter%3A%0AWhy%20I%20want%20to%20test%3A">Apply to test DRIFTER VIM</a></div>
+</section>
+
+<section>
+<h2>Apply with a real vehicle.</h2>
+<p class="sub">The fastest way to move DRIFTER forward is evidence from additional vehicle + adapter combinations. The structured founding-beta intake records the exact hardware, protocol and recovery results without exposing VINs or credentials.</p>
+<div class="actions">
+<a class="btn primary" href="https://github.com/thotsl4yer69/drifter/issues/new?template=beta-vehicle-test.yml">Open beta vehicle test</a>
+<a class="btn secondary" href="https://github.com/thotsl4yer69/drifter/blob/main/docs/BETA_TESTER_GUIDE.md">Read tester guide</a>
+</div>
+</section>
+</main>
+<footer>MAZLABZ DRIFTER VIM · Vehicle Intelligence Module · Hardware-integrated prototype / active hardening.</footer>
+</div>
+</body>
+</html>

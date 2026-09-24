@@ -258,7 +258,7 @@ probes** anywhere to compensate.
 | Same PSK echoed to operator | `install.sh:704` | CRITICAL (same secret) |
 | Same PSK in docs | `docs/FIELD_DEPLOY.md:136`, `docs/fleet-inventory-drifter.yaml:24`, `README.md:103` | CRITICAL (same secret in 3 docs; CLAUDE/AGENTS claim it was already rotated out of docs — it wasn't) |
 | Historical live OWM + Google Maps keys | git history (per `CLAUDE.md:275`, `config/.env.example:51`) | CRITICAL (historical) — recoverable from history; rotate provider-side |
-| Real VIN as filename + content | `vehicles/SAJEA51D44XD39283.yaml` | Medium — personal-identifier disclosure |
+| Real VIN as filename + content | `vehicles/<REDACTED_REAL_VIN>.yaml` | Medium — personal-identifier disclosure |
 | Real-format VIN | `config/home.yaml:5` (`SAJDA01N04FK00000` — looks placeholder) | Low |
 
 **Config trap:** `config/.env.example:61` documents `DRIFTER_HOTSPOT_PSK` as "consumed by
