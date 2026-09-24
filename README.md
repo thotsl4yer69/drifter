@@ -98,6 +98,7 @@ Use the exact wiring/transport guide for the target vehicle. Do not assume OBD c
 
 DRIFTER is not yet represented as a finished retail appliance. The founding beta is collecting measured compatibility across real vehicle + adapter combinations.
 
+- [Launch authority / current commercial state](launch/STATUS.md)
 - [Beta tester guide](docs/BETA_TESTER_GUIDE.md)
 - [Evidence-based compatibility matrix](docs/COMPATIBILITY_MATRIX.md)
 - [First-drive / field runbook](FIRST_DRIVE.md)
