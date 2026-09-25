@@ -1,8 +1,9 @@
 /** DRIFTER static publisher. Node built-ins only. Never reads the vehicle runtime. */
-import {readFile,writeFile,mkdir,rm,copyFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {makeSocialCard} from './social-card.mjs';
 
 const root=dirname(fileURLToPath(import.meta.url)), out=join(root,'dist');
 const read=name=>readFile(join(root,name),'utf8');
@@ -31,7 +32,7 @@ function meta(html,path){
   let additions='<meta property="og:site_name" content="DRIFTER VIM by MAZLABZ"><meta property="og:locale" content="en_AU"><link rel="manifest" href="manifest.webmanifest">';
   if(siteURL){
     const url=new URL(path,siteURL).href, image=new URL('og-card.png',siteURL).href;
-    additions+=`<link rel="canonical" href="${escape(url)}"><meta property="og:url" content="${escape(url)}"><meta property="og:image" content="${escape(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="DRIFTER VIM — A memory for your machine. Field edition."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${escape(image)}">`;
+    additions+=`<link rel="canonical" href="${escape(url)}"><meta property="og:url" content="${escape(url)}"><meta property="og:image" content="${escape(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="DRIFTER VIM Field Recorder wordmark on a paper background."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${escape(image)}">`;
   }else{ additions+='<meta name="twitter:card" content="summary">'; }
   if(process.env.VERCEL_ENV==='preview') additions+='<meta name="robots" content="noindex, nofollow">';
   return html.replace('</head>',additions+'\n</head>');
@@ -66,7 +67,7 @@ let notFound=await read('404.html');
 notFound=notFound.replace(/href="\.\/"/g,`href="${siteURL?escape(siteURL):'/'}"`).replace('</head>','<meta name="robots" content="noindex"></head>');
 await write('404.html',notFound);
 await write('brand-wordmark.svg',wordmark);await write('favicon.svg',favicon);
-await copyFile(join(root,'og-card.png'),join(out,'og-card.png'));
+await write('og-card.png',makeSocialCard(wordmark));
 await write('manifest.webmanifest',JSON.stringify({name:'DRIFTER VIM — Field Recorder',short_name:'DRIFTER VIM',start_url:'./',scope:'./',display:'browser',background_color:'#eeede6',theme_color:'#151713',icons:[{src:'favicon.svg',sizes:'any',type:'image/svg+xml',purpose:'any'}]},null,2));
 const preview=process.env.VERCEL_ENV==='preview';
 await write('robots.txt',preview?'User-agent: *\nDisallow: /\n':`User-agent: *\nAllow: /\n${siteURL?'Sitemap: '+new URL('sitemap.xml',siteURL).href+'\n':''}`);
