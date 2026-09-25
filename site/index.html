@@ -1,315 +1,162 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#080a0c">
-  <meta name="color-scheme" content="dark">
-  <title>MAZLABZ / DRIFTER VIM — Vehicle Intelligence Module</title>
-  <meta name="description" content="DRIFTER VIM is a dedicated Raspberry Pi vehicle computer for OBD-II telemetry, touchscreen diagnostics, drive logging and incident evidence capture.">
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="DRIFTER VIM — The fault vanished. The evidence didn't.">
-  <meta property="og:description" content="A dedicated local vehicle computer for OBD-II telemetry, diagnostics, drive logging and incident evidence capture.">
-  <meta property="og:image" content="https://thotsl4yer69.github.io/drifter/og-card.svg">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="DRIFTER VIM — Vehicle Intelligence Module">
-  <meta name="twitter:description" content="90 seconds before. Fault capture. 45 seconds after.">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#151713">
+<title>DRIFTER VIM — A memory for your machine.</title>
+<meta name="description" content="A dedicated vehicle computer for the fault that won't happen twice. Local OBD-II telemetry, drive recording and incident evidence. A MAZLABZ field-testing project.">
+<meta property="og:type" content="website"><meta property="og:title" content="DRIFTER VIM — A memory for your machine."><meta property="og:description" content="90 seconds before. 45 seconds after. The context around an intermittent fault, kept.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23151713'/%3E%3Cpath d='M20 15h11L18 49H7zM41 15h11L39 49H28z' fill='%23eeede6'/%3E%3C/svg%3E">
+<style>
+:root{--paper:#eeeDE6;--ink:#151713;--muted:#696d64;--line:#c9ccc2;--dark:#141713;--white:#efeee7;--silver:#a8afa4;--amber:#ffb640;--cyan:#43d9ff;--pad:clamp(22px,4.6vw,76px);--mono:'Courier New',monospace;--sans:Arial,Helvetica,sans-serif}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:80px}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}body.menu-open{overflow:hidden}a{color:inherit;text-decoration:none}button,input,textarea,select{font:inherit}button{cursor:pointer}button:disabled{cursor:default}button,a,input,textarea,select{-webkit-tap-highlight-color:transparent}:focus-visible{outline:3px solid #9a5a0d;outline-offset:5px}::selection{background:var(--amber);color:var(--ink)}.mono{font-family:var(--mono);font-size:11px;line-height:1.5;letter-spacing:.06em;text-transform:uppercase;font-weight:400}.dim{color:var(--muted)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip{position:fixed;z-index:100;left:20px;top:12px;background:var(--paper);padding:14px;transform:translateY(-180%)}.skip:focus{transform:none}.shell{padding-inline:var(--pad)}
+.site-header{height:72px;display:flex;align-items:center;justify-content:space-between;gap:30px;border-bottom:1px solid var(--line);position:relative;z-index:20;background:var(--paper)}.identity{display:flex;align-items:center;gap:12px}.identity b{font-size:13px;letter-spacing:.01em}.slashmark{width:30px;height:25px;display:inline-flex;gap:5px;transform:skewX(-22deg);margin:0 4px}.slashmark:before,.slashmark:after{content:'';display:block;height:100%;width:10px;background:currentColor}.identity .mono{display:block;font-size:9px;letter-spacing:.1em;margin-top:3px}.nav{display:flex;align-items:center;gap:34px}.nav a:not(.nav-cta){font-size:12px;color:#4e514b}.nav a:hover{text-decoration:underline;text-underline-offset:6px}.nav-cta{display:inline-flex;align-items:center;gap:24px;font-size:12px;border:1px solid var(--ink);padding:12px 17px;transition:background .2s,color .2s}.nav-cta:hover{background:var(--ink);color:var(--paper);text-decoration:none!important}.arrow{display:inline-block;font-size:20px;font-family:Arial;line-height:1}.menu-toggle{display:none;border:1px solid var(--ink);background:transparent;padding:12px 14px;font-size:11px;min-height:44px}
+.masthead{padding-top:26px;padding-bottom:24px}.masthead-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.masthead-logo{display:flex;align-items:flex-end;gap:20px}.logotype{display:block;width:100%;height:auto;fill:var(--ink);overflow:visible}.masthead-vim{writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--mono);font-size:clamp(11px,1.6vw,24px);letter-spacing:.14em;margin:0 0 6px;align-self:stretch;text-align:center}.masthead-rule{display:flex;justify-content:space-between;margin-top:17px;color:var(--muted)}
+.recorder{background:var(--dark);color:var(--white);position:relative;isolation:isolate;overflow:hidden}.recorder:before{content:'';position:absolute;inset:0;pointer-events:none;z-index:3;opacity:.16;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.94' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.17' filter='url(%23n)'/%3E%3C/svg%3E")}.recorder-grid{display:grid;grid-template-columns:.88fr 1.12fr;min-height:458px}.recorder-copy{padding-top:44px;padding-bottom:42px;position:relative;z-index:4;max-width:540px}.recorder-copy .eyebrow{display:flex;gap:10px;align-items:center;color:var(--silver)}.square{width:6px;height:6px;background:var(--amber);display:inline-block}.recorder h1{font-size:clamp(46px,4.55vw,76px);font-weight:400;line-height:1.00;letter-spacing:-.067em;margin:30px 0 24px}.recorder h1 em{font-family:Georgia,'Times New Roman',serif;font-weight:400;letter-spacing:-.06em;font-style:italic}.recorder-copy>p{font-size:15px;color:#b8beb3;line-height:1.65;max-width:350px;margin:0 0 28px}.text-cta{display:inline-flex;align-items:center;gap:40px;border-bottom:1px solid #92998b;padding:0 0 10px;font-size:13px}.text-cta:hover .arrow{transform:translate(3px,-3px)}.text-cta .arrow{transition:transform .2s}.recorder :focus-visible{outline-color:var(--amber)}.scene{position:relative;min-width:0;border-left:1px solid #353a32;overflow:hidden}.scene-top{display:flex;justify-content:space-between;position:absolute;top:28px;left:26px;right:26px;gap:16px;z-index:4;color:#aab1a4}.scene-top .tiny{font-size:9px;color:#828c7a}.scene canvas{width:100%;height:100%;min-height:440px;display:block;position:absolute;inset:0}.scene-tag{position:absolute;bottom:27px;left:26px;color:#b7beaf;z-index:4}.scene-tag small{display:block;color:#88917f;font-size:9px;margin-top:7px}.scene-corner{position:absolute;right:26px;bottom:24px;font-size:40px;line-height:1;font-weight:400;color:#d2d8cb;z-index:4;letter-spacing:-.065em;font-variant-numeric:tabular-nums}.scene-corner small{font-family:var(--mono);font-size:9px;display:block;letter-spacing:.06em;margin-top:9px;text-align:right;color:#88917f}.scene-fallback{position:absolute;inset:85px 30px;display:flex;align-items:center;font-size:20px;color:#aab1a4;line-height:1.6}.scene.ready .scene-fallback{display:none}
+.transport{position:relative;z-index:4;border-top:1px solid #363c31;padding-top:20px;padding-bottom:18px;display:grid;grid-template-columns:180px 1fr;gap:36px;align-items:center;background:#181c15}.transport-label{display:flex;align-items:center;gap:14px}.play-btn{height:43px;width:43px;border:1px solid #626b57;background:transparent;display:grid;place-items:center;color:var(--white)}.play-btn:hover{background:#30372a}.play-glyph{width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:8px solid currentColor;margin-left:2px}.playing .play-glyph{width:9px;height:12px;border-top:0;border-bottom:0;border-left:3px solid currentColor;border-right:3px solid currentColor;margin:0}.transport-label .mono{font-size:10px}.transport-label small{display:block;color:#919b85;font-size:9px;margin-top:4px}.track{position:relative;padding-top:13px}.track-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#a5af98;margin-top:11px;position:relative}.track-labels span:nth-child(2){position:absolute;left:66.6667%;transform:translateX(-50%);color:var(--amber)}.tick-line{position:absolute;top:9px;left:0;right:0;height:9px;background:repeating-linear-gradient(90deg,#56634c 0 1px,transparent 1px calc(100% / 54))}.track input{display:block;position:relative;width:100%;height:24px;margin:0;-webkit-appearance:none;appearance:none;background:transparent;cursor:ew-resize;z-index:2}.track input::-webkit-slider-runnable-track{height:1px;background:#738065}.track input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:7px;height:29px;background:var(--amber);border:0;border-radius:0;margin-top:-14px;box-shadow:0 0 0 4px #171c1560}.track input::-moz-range-track{height:1px;background:#738065}.track input::-moz-range-thumb{width:7px;height:29px;background:var(--amber);border:0;border-radius:0}.track-zero{position:absolute;left:66.6667%;top:5px;height:36px;border-left:1px dashed #9d7546;z-index:1}.transport-hint{font-size:9px;display:none;color:#929d86}
+.section{padding-top:100px;padding-bottom:100px}.section-label{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:16px;margin-bottom:62px}.section-label .mono:first-child{display:flex;gap:38px}.intro-layout{display:grid;grid-template-columns:1fr 1fr;gap:80px}.intro h2,.system h2,.field h2,.join h2{font-weight:400;letter-spacing:-.062em;font-size:clamp(40px,4.5vw,70px);line-height:1.04;margin:0}.intro h2 em{font-weight:400;font-family:Georgia,serif}.intro-text{max-width:415px;justify-self:end}.intro-text>p{font-size:20px;line-height:1.5;margin:4px 0 24px;letter-spacing:-.015em}.intro-text .small{font-size:14px;color:var(--muted);line-height:1.75;letter-spacing:0}.time-chapters{display:grid;grid-template-columns:2fr 1fr 1fr;margin-top:62px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.time-chapter{appearance:none;text-align:left;background:transparent;border:0;min-width:0;padding:24px 30px 30px 0;position:relative;color:var(--ink)}.time-chapter+.time-chapter{border-left:1px solid var(--line);padding-left:30px}.time-chapter:before{content:'';height:3px;background:var(--ink);position:absolute;left:0;right:0;top:-2px;transform:scaleX(0);transform-origin:left;transition:transform .25s}.time-chapter:hover:before,.time-chapter[aria-pressed=true]:before{transform:scaleX(1)}.time-chapter .chapter-number{font-size:clamp(72px,9vw,130px);font-weight:400;letter-spacing:-.08em;line-height:1.04;display:block;margin-top:35px}.time-chapter .chapter-number sup{font-size:25px;vertical-align:top;line-height:2.2;letter-spacing:-.04em}.chapter-title{display:block;font-size:16px;margin-top:30px;margin-bottom:8px}.chapter-description{display:block;color:var(--muted);font-size:13px;line-height:1.65;max-width:310px}.time-chapter .arrow{position:absolute;right:20px;top:24px;color:var(--muted)}.chapter-note{margin-top:16px;color:var(--muted);font-size:10px}
+.system{background:var(--ink);color:var(--paper)}.system .section-label{border-color:#42483d}.system .dim{color:#a7ae9f}.system-layout{display:grid;grid-template-columns:.95fr 1.05fr;gap:8vw}.system-lede{font-size:15px;line-height:1.7;color:#adb5a5;margin:30px 0 45px;max-width:350px}.system-aside{display:flex;gap:30px;border-top:1px solid #40463b;padding-top:22px;max-width:365px}.system-aside span{display:block;font-size:11px}.system-aside b{font-size:13px;display:block;margin-top:8px;font-weight:400}.stack{border-top:1px solid #535b4c}.stack-item{border-bottom:1px solid #535b4c}.stack-item summary{display:grid;grid-template-columns:34px 1fr auto;gap:20px;list-style:none;cursor:pointer;align-items:center;padding:23px 0;min-height:94px}.stack-item summary::-webkit-details-marker{display:none}.stack-number{font-family:var(--mono);font-size:10px;color:#a9b39e}.stack-item summary h3{font-size:30px;font-weight:400;letter-spacing:-.045em;margin:0}.stack-item summary p{font-size:10px;font-family:var(--mono);text-transform:uppercase;color:#a9b39e;margin:7px 0 0}.stack-plus{font-size:24px;line-height:1;color:var(--paper)}.stack-item[open] .stack-plus{transform:rotate(45deg)}.stack-content{padding:0 45px 28px 54px;color:#b7bfb0;font-size:14px;line-height:1.75}.stack-content p{margin:0 0 16px}.stack-content .mono{font-size:10px;color:#c9d2bf}.stack-content .route{padding:16px 0 3px;border-top:1px dotted #485340}.status-demo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;text-transform:uppercase}.status-demo:before{content:'';height:5px;width:5px;background:var(--cyan)}.stack-item :focus-visible{outline-color:var(--amber)}
+.field-layout{display:grid;grid-template-columns:1fr 1.05fr;gap:8vw}.field-intro{font-size:16px;line-height:1.7;color:var(--muted);max-width:390px;margin:30px 0}.field h2 .outline{-webkit-text-stroke:1px var(--ink);color:transparent}.field-title-note{font-size:10px;color:var(--muted);max-width:320px;line-height:1.6}.dossier{border:1px solid #afb5a6;padding:30px;position:relative}.dossier:before,.dossier:after{content:'+';position:absolute;font-family:var(--mono);font-size:22px;line-height:1;color:#5c6651}.dossier:before{left:-8px;top:-12px}.dossier:after{right:-8px;bottom:-9px}.dossier-top{display:flex;justify-content:space-between;gap:20px}.dossier-status{border:1px solid #8b671f;background:#e9d8a0;padding:5px 8px;font-size:9px;color:#533e13;align-self:start}.vehicle-type{font-size:12px;color:var(--muted);margin:38px 0 8px}.vehicle-name{font-size:clamp(34px,3.7vw,58px);letter-spacing:-.058em;line-height:1.1;font-weight:400;margin:0}.vehicle-sub{font-size:11px;margin-top:14px;color:var(--muted)}.spec-list{margin-top:38px;border-top:1px solid var(--line)}.spec-list>div{padding:17px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}.spec-list dt{font-size:12px}.spec-list dd{margin:0;font-family:var(--mono);font-size:10px;color:#616958}.spec-list dt small{display:block;font-family:var(--mono);font-size:9px;color:#737b6a;line-height:1.5;margin-top:5px}.dossier-foot{font-size:10px;line-height:1.6;color:var(--muted);margin:20px 0 0}.field-link{display:inline-flex;align-items:center;gap:24px;border-bottom:1px solid var(--ink);padding-bottom:8px;margin-top:28px;font-size:12px}
+.questions{padding-top:0;padding-bottom:80px}.faq-layout{display:grid;grid-template-columns:.65fr 1.35fr;gap:80px;border-top:1px solid var(--line);padding-top:38px}.faq-heading{margin:0;font-size:28px;font-weight:400;letter-spacing:-.04em}.faq-item{border-bottom:1px solid var(--line)}.faq-item summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:20px;cursor:pointer;font-size:16px;padding:20px 0}.faq-item summary::-webkit-details-marker{display:none}.faq-item summary:after{content:'+';font-family:var(--mono);font-size:20px;flex-shrink:0}.faq-item[open] summary:after{content:'−'}.faq-item p{font-size:14px;color:var(--muted);line-height:1.75;margin:0 40px 22px 0}.faq-item a{text-decoration:underline;text-underline-offset:4px}
+.join{background:#d7dbce;position:relative;overflow:hidden;padding-top:72px;padding-bottom:74px;border-top:1px solid #a7af9d}.join .join-top{display:flex;justify-content:space-between;gap:20px;margin-bottom:50px}.join-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:9vw;align-items:end}.join h2{font-size:clamp(50px,6.8vw,110px);letter-spacing:-.065em;line-height:1.01}.join h2 em{font-weight:400;font-family:Georgia,serif;letter-spacing:-.055em}.join-copy p{font-size:15px;line-height:1.7;max-width:300px;margin:0 0 24px}.solid-btn{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:18px 22px;display:inline-flex;gap:32px;align-items:center;justify-content:space-between;font-size:13px;min-height:54px;text-align:left}.solid-btn:hover{background:#34392f}.join-note{font-size:10px!important;color:#515a47;line-height:1.65;margin:14px 0 0!important}.site-footer{padding-top:35px;padding-bottom:28px}.footer-top{display:flex;justify-content:space-between;align-items:center;gap:28px}.footer-links{display:flex;gap:28px;font-size:12px}.footer-links a:hover{text-decoration:underline;text-underline-offset:5px}.footer-bottom{display:flex;justify-content:space-between;gap:24px;margin-top:45px;padding-top:18px;border-top:1px solid var(--line);font-size:9px;font-family:var(--mono);color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.application{border:0;background:var(--paper);color:var(--ink);padding:0;width:min(640px,calc(100% - 30px));max-height:calc(100dvh - 30px);box-shadow:0 20px 90px #0006}.application::backdrop{background:#0c130eda;backdrop-filter:blur(6px)}.dialog-inner{padding:32px}.dialog-top{display:flex;align-items:center;justify-content:space-between;gap:20px}.close-btn{background:transparent;border:1px solid var(--line);font-size:24px;min-width:44px;min-height:44px}.application h2{font-weight:400;font-size:40px;letter-spacing:-.055em;line-height:1.05;margin:28px 0 15px}.form-intro{font-size:14px;line-height:1.7;color:var(--muted);max-width:440px;margin-bottom:26px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.field-input.full{grid-column:1 / -1}.field-input label{font-size:11px;display:block;margin:0 0 8px;font-family:var(--mono);letter-spacing:.02em}.field-input input,.field-input select,.field-input textarea{width:100%;padding:13px;border:1px solid #a6afa0;background:#f6f6ef;color:var(--ink);font-size:15px;border-radius:0;min-height:46px}.field-input textarea{resize:vertical;min-height:100px}.form-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}.quiet-btn{display:inline-flex;gap:20px;align-items:center;padding:13px 16px;border:1px solid #98a18f;background:transparent;font-size:12px;min-height:48px}.form-note{font-size:11px;color:var(--muted);line-height:1.6;margin:17px 0 0}.form-note a{text-decoration:underline}.form-message{font-size:13px;line-height:1.6;background:#d6dfc8;padding:14px;display:none;margin-top:16px}.form-message.show{display:block}.email-manual{font-size:11px;line-height:1.6;color:var(--muted)}.copy-area{width:100%;height:180px;font-size:12px;border:1px solid var(--line);background:#f7f7ef;padding:12px;display:none;margin-top:12px}.copy-area.show{display:block}
+.press-hero{padding-top:82px;padding-bottom:60px}.press-hero h1{font-size:clamp(60px,9vw,140px);font-weight:400;letter-spacing:-.075em;line-height:1;margin:32px 0}.press-hero>p{font-size:20px;max-width:720px;line-height:1.6}.press-grid{display:grid;grid-template-columns:.65fr 1.35fr;gap:8vw;padding-block:40px;border-top:1px solid var(--line)}.press-grid h2{font-size:32px;font-weight:400;letter-spacing:-.045em;margin:0}.press-grid p,.press-grid li{font-size:16px;line-height:1.8;max-width:680px;color:#525a4b}.press-grid p:first-child{margin-top:0}.press-grid a{text-decoration:underline;text-underline-offset:4px}.press-grid ul{padding-left:20px}.release-note{font-size:11px!important;color:var(--muted)!important}.press-main{padding-bottom:70px}
+@media(min-width:1550px){.recorder-grid{min-height:520px}.scene canvas{min-height:490px}.masthead-logo{max-height:250px}.logotype{height:250px}.recorder h1{font-size:80px}.recorder-copy{max-width:610px}}
+@media(max-width:1050px){.nav{gap:22px}.recorder-grid{grid-template-columns:1fr 1fr}.recorder-copy{padding-right:25px}.recorder h1{font-size:54px}.recorder-copy>p{font-size:14px}.scene-top{flex-direction:column;gap:5px}.intro-layout{gap:44px}.intro-text>p{font-size:18px}.field-layout,.system-layout{gap:6vw}.section{padding-block:80px}.chapter-number{font-size:88px!important}.join-grid{gap:5vw}.dossier{padding:24px}.section-label{margin-bottom:48px}}
+@media(max-width:760px){html{scroll-padding-top:20px}.site-header{height:66px}.menu-toggle{display:block}.nav{display:none;position:absolute;top:65px;left:0;right:0;background:var(--paper);border-bottom:1px solid var(--ink);padding:25px var(--pad) 35px;z-index:30}.nav.open{display:flex;align-items:stretch;flex-direction:column;gap:0}.nav a:not(.nav-cta){font-size:20px;padding:18px 0;border-bottom:1px solid var(--line)}.nav-cta{margin-top:22px;justify-content:space-between}.masthead{padding-top:20px;padding-bottom:18px}.masthead-meta{margin-bottom:16px}.masthead-meta .mono{font-size:9px}.masthead-meta .index-label{display:none}.masthead-rule .mono{font-size:8px}.masthead-logo{gap:10px}.masthead-vim{font-size:11px;margin-bottom:0}.masthead-rule{margin-top:13px}.recorder-grid{grid-template-columns:1fr}.recorder-copy{padding-top:32px;padding-bottom:32px;padding-right:0;max-width:100%}.recorder h1{font-size:clamp(50px,10vw,76px);line-height:1;max-width:600px;margin:28px 0 22px}.recorder h1 br{display:none}.recorder-copy>p{font-size:15px;max-width:440px;margin-bottom:24px}.recorder-copy .eyebrow{font-size:9px}.scene{border-left:0;border-top:1px solid #363c31;min-height:315px;margin-left:calc(-1*var(--pad));margin-right:calc(-1*var(--pad))}.scene canvas{min-height:315px}.scene-top{top:22px;left:var(--pad);right:var(--pad);flex-direction:row}.scene-top .mono{font-size:9px}.scene-top .tiny{display:none}.scene-tag{left:var(--pad);bottom:22px;font-size:9px}.scene-tag small{font-size:8px}.scene-corner{font-size:34px;right:var(--pad)}.scene-corner small{font-size:8px}.transport{padding-top:16px;padding-bottom:18px;grid-template-columns:44px 1fr;gap:19px}.transport-label>div{display:none}.transport-hint{display:block;grid-column:2;margin-top:-12px;font-family:var(--mono)}.track-labels{font-size:8px}.tick-line{background:repeating-linear-gradient(90deg,#56634c 0 1px,transparent 1px calc(100% / 27))}.section{padding-top:64px;padding-bottom:64px}.section-label{margin-bottom:40px;padding-top:14px}.section-label .mono:first-child{gap:17px}.section-label .mono{font-size:9px}.section-label .right-label{display:none}.intro-layout,.system-layout,.field-layout,.faq-layout,.join-grid{grid-template-columns:1fr;gap:34px}.intro h2,.system h2,.field h2{font-size:44px}.intro-text{justify-self:start;max-width:100%}.intro-text>p{font-size:19px;margin-top:0}.time-chapters{grid-template-columns:1fr 1fr 1fr;margin-top:36px}.time-chapter{padding:20px 10px 24px 0}.time-chapter+.time-chapter{padding-left:13px}.time-chapter .mono{font-size:8px}.chapter-number{font-size:68px!important;margin-top:30px!important}.chapter-number sup{font-size:17px!important}.chapter-title{font-size:12px;margin-top:22px}.chapter-description{font-size:11px;line-height:1.65}.time-chapter .arrow{display:none}.chapter-note{font-size:8px;line-height:1.7}.system-lede{max-width:450px;margin-bottom:25px}.system-aside{max-width:100%;margin-bottom:4px}.stack-item summary h3{font-size:27px}.stack-item summary{min-height:88px}.stack-content{padding-left:54px;padding-right:10px}.field-intro{max-width:100%}.field-link{margin-top:12px}.dossier{margin-top:8px}.vehicle-name{font-size:43px}.faq-layout{gap:14px;padding-top:26px}.questions{padding-bottom:60px}.faq-item summary{font-size:15px}.faq-item p{font-size:13px;margin-right:0}.join{padding-top:40px;padding-bottom:48px}.join .join-top{margin-bottom:33px}.join .join-top .mono{font-size:9px}.join h2{font-size:58px}.join-copy p{max-width:460px}.solid-btn{width:100%}.footer-top{align-items:start;flex-direction:column;gap:28px}.footer-links{gap:24px;font-size:11px}.footer-bottom{flex-direction:column;gap:10px;margin-top:30px;font-size:8px}.dialog-inner{padding:23px}.application h2{font-size:36px}.form-grid{grid-template-columns:1fr;gap:15px}.form-actions{flex-direction:column}.form-actions .quiet-btn{justify-content:center}.press-hero{padding-top:42px;padding-bottom:30px}.press-hero h1{font-size:70px}.press-hero>p{font-size:18px}.press-grid{grid-template-columns:1fr;gap:25px;padding-block:30px}.press-grid h2{font-size:28px}.press-grid p,.press-grid li{font-size:14px}}
+@media(max-width:365px){.time-chapter .chapter-number{font-size:60px!important}.identity b{font-size:12px}.masthead-meta .mono{font-size:8px}.recorder h1{font-size:46px}.recorder-copy>p{font-size:14px}.chapter-title{font-size:11px}.join h2{font-size:52px}.scene-corner{font-size:28px}.scene-tag{max-width:170px}.track-labels{font-size:7px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}.recorder:before{opacity:.10}}
+@media print{.site-header,.transport,.nav,.scene,.application,.join,.footer-links,.menu-toggle{display:none!important}body,.recorder,.system{background:white!important;color:black!important}.section{padding-block:25px}.recorder-grid,.system-layout,.field-layout{display:block}.recorder p,.system-lede,.stack-content{color:black!important}.masthead{padding-block:20px}.section-label{margin-bottom:20px}.recorder-copy{max-width:100%}details:not([open])>*:not(summary){display:block!important}.spec-list>div{break-inside:avoid}}
+</style>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-
-  <header class="site-header" data-header>
-    <div class="shell header-inner">
-      <a class="brand-lockup" href="#top" aria-label="MAZLABZ DRIFTER VIM home">
-        <span class="mark" aria-hidden="true">D/</span>
-        <span class="wordmark">
-          <strong>DRIFTER VIM</strong>
-          <small>VEHICLE INTELLIGENCE MODULE / MAZLABZ</small>
-        </span>
-      </a>
-
-      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle>
-        <span class="sr-only">Toggle navigation</span>
-        <span></span><span></span>
-      </button>
-
-      <nav id="site-nav" class="site-nav" aria-label="Primary navigation" data-nav>
-        <a href="#black-box">Black box</a>
-        <a href="#system">System</a>
-        <a href="#proof">Field proof</a>
-        <a href="#beta">Beta</a>
-        <a class="nav-cta" href="https://github.com/thotsl4yer69/drifter" target="_blank" rel="noreferrer">Engineering repo ↗</a>
-      </nav>
-    </div>
-  </header>
-
-  <main id="main">
-    <section class="hero" id="top">
-      <div class="hero-grid" aria-hidden="true"></div>
-      <div class="trace trace-one" aria-hidden="true"></div>
-      <div class="trace trace-two" aria-hidden="true"></div>
-
-      <div class="shell hero-layout">
-        <div class="hero-copy reveal">
-          <div class="eyebrow"><span class="live-dot"></span> HARDWARE-INTEGRATED PROTOTYPE / FOUNDING BETA</div>
-          <h1>The fault vanished.<br><span>The evidence didn't.</span></h1>
-          <p class="hero-lede">DRIFTER VIM is a dedicated local vehicle computer that watches OBD-II telemetry, logs drives and preserves the context around intermittent faults.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="#beta">Request beta access</a>
-            <a class="button button-secondary" href="#black-box">See how capture works</a>
-          </div>
-          <dl class="hero-facts" aria-label="DRIFTER VIM facts">
-            <div><dt>Platform</dt><dd>Raspberry Pi 5</dd></div>
-            <div><dt>Reference vehicle</dt><dd>2004 Jaguar X-Type</dd></div>
-            <div><dt>Target</dt><dd>Standards-based OBD-II</dd></div>
-          </dl>
-        </div>
-
-        <div class="hero-instrument reveal" aria-label="Illustrative DRIFTER VIM system status panel">
-          <div class="instrument-topline">
-            <span class="instrument-label">VEHICLE LINK</span>
-            <span class="status-chip live">LIVE SYSTEM MODEL</span>
-          </div>
-          <p class="instrument-title">Adapter connected / ECU waiting</p>
-          <p class="instrument-sub">Illustrative state model — not live vehicle telemetry.</p>
-
-          <div class="link-states" role="group" aria-label="Illustrative vehicle connection states">
-            <button class="state-button active" type="button" data-demo-state="adapter">ADAPTER</button>
-            <button class="state-button" type="button" data-demo-state="ecu">ECU</button>
-            <button class="state-button" type="button" data-demo-state="pid">PID FLOW</button>
-          </div>
-
-          <div class="state-readout" data-demo-readout>
-            <div>
-              <span class="readout-label">STATE</span>
-              <strong data-demo-title>ONLINE</strong>
-            </div>
-            <p data-demo-copy>The transport is reachable. DRIFTER keeps adapter state separate from ECU response and live PID flow.</p>
-          </div>
-
-          <div class="instrument-footer">
-            <span>LOCAL FIRST</span>
-            <span>MQTT SERVICES</span>
-            <span>TOUCHSCREEN</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="problem band" aria-labelledby="problem-title">
-      <div class="shell problem-grid">
-        <div class="section-heading reveal">
-          <span class="section-number">01</span>
-          <div>
-            <p class="kicker">THE PROBLEM</p>
-            <h2 id="problem-title">Intermittent faults don't wait for a scanner.</h2>
-          </div>
-        </div>
-        <div class="problem-copy reveal">
-          <p>Most diagnostic sessions begin after the symptom has already stopped. DRIFTER is built around the opposite assumption: preserve the window first, investigate second.</p>
-          <p>It runs as a dedicated node in the vehicle rather than depending on a phone being connected at the exact moment something goes wrong.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="black-box section" id="black-box" aria-labelledby="black-box-title">
-      <div class="shell">
-        <div class="section-heading reveal">
-          <span class="section-number">02</span>
-          <div>
-            <p class="kicker">INCIDENT BLACK BOX</p>
-            <h2 id="black-box-title">Keep the window around the event.</h2>
-            <p class="section-intro">A bounded rolling buffer preserves evidence around automatic or manual incident capture. Sequencing shows what changed first; it does not pretend correlation proves root cause.</p>
-          </div>
-        </div>
-
-        <div class="incident-window reveal" aria-label="Incident capture window">
-          <div class="incident-segment before">
-            <span class="segment-label">BEFORE</span>
-            <strong>90 sec</strong>
-            <p>Rolling pre-fault evidence</p>
-            <div class="signal-line" aria-hidden="true"><span></span></div>
-          </div>
-          <div class="incident-segment event">
-            <span class="segment-label">EVENT</span>
-            <strong>FAULT</strong>
-            <p>Automatic or manual capture</p>
-            <div class="event-pulse" aria-hidden="true"></div>
-          </div>
-          <div class="incident-segment after">
-            <span class="segment-label">AFTER</span>
-            <strong>45 sec</strong>
-            <p>Post-event tail</p>
-            <div class="signal-line short" aria-hidden="true"><span></span></div>
-          </div>
-        </div>
-
-        <div class="feature-grid">
-          <article class="feature-card reveal">
-            <span class="feature-index">A01</span>
-            <h3>Persistent evidence</h3>
-            <p>Keep incident context even when the symptom clears before you can reproduce it.</p>
-          </article>
-          <article class="feature-card reveal">
-            <span class="feature-index">A02</span>
-            <h3>Ordered change sequence</h3>
-            <p>Surface the first material sensor changes and the order they occurred in.</p>
-          </article>
-          <article class="feature-card reveal">
-            <span class="feature-index">A03</span>
-            <h3>Manual capture</h3>
-            <p>Use CAPTURE INCIDENT NOW when the driver notices something the rules did not trigger.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="system section" id="system" aria-labelledby="system-title">
-      <div class="shell">
-        <div class="section-heading reveal">
-          <span class="section-number">03</span>
-          <div>
-            <p class="kicker">THE SYSTEM</p>
-            <h2 id="system-title">A dedicated vehicle node, not another dashboard skin.</h2>
-            <p class="section-intro">Vehicle data enters through the supported transport, moves through local services and becomes usable evidence at the touchscreen, logger and diagnostic layers.</p>
-          </div>
-        </div>
-
-        <div class="architecture reveal" aria-label="DRIFTER VIM system architecture">
-          <div class="arch-node">
-            <span class="arch-label">INPUT</span>
-            <strong>Vehicle / OBD-II</strong>
-            <p>ELM327 / legacy OBD paths or SocketCAN-oriented integration where appropriate.</p>
-          </div>
-          <div class="arch-link" aria-hidden="true"><span></span></div>
-          <div class="arch-node emphasis">
-            <span class="arch-label">CORE</span>
-            <strong>DRIFTER VIM</strong>
-            <p>Raspberry Pi Linux node with MQTT service communication, local rules and logging.</p>
-          </div>
-          <div class="arch-link" aria-hidden="true"><span></span></div>
-          <div class="arch-node">
-            <span class="arch-label">OUTPUT</span>
-            <strong>Evidence / UI</strong>
-            <p>Touchscreen state, incident bundles, drive logs, alerts and post-drive analysis.</p>
-          </div>
-        </div>
-
-        <div class="capability-grid">
-          <article class="capability reveal"><span>01</span><h3>Transport-aware</h3><p>Adapter reachability, ECU response and live PID flow are separate states rather than one vague “connected” indicator.</p></article>
-          <article class="capability reveal"><span>02</span><h3>Local-first</h3><p>The core telemetry and evidence path runs on the node. Cloud access is not required for the core loop.</p></article>
-          <article class="capability reveal"><span>03</span><h3>Touchscreen-first</h3><p>Normal vehicle onboarding and recovery are designed to happen in FIELD OPS without a terminal.</p></article>
-          <article class="capability reveal"><span>04</span><h3>Conservative updates</h3><p>The updater is designed to defer while vehicle telemetry indicates the car is active and roll back a failed deployment.</p></article>
-          <article class="capability reveal"><span>05</span><h3>Profile-driven</h3><p>Vehicle identity, supported PIDs and diagnostic context can vary by validated vehicle profile.</p></article>
-          <article class="capability reveal"><span>06</span><h3>Evidence-led</h3><p>Measured sequencing and correlations are retained as evidence, not promoted as automatic proof of causation.</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="proof section" id="proof" aria-labelledby="proof-title">
-      <div class="shell">
-        <div class="section-heading reveal">
-          <span class="section-number">04</span>
-          <div>
-            <p class="kicker">FIELD PROOF</p>
-            <h2 id="proof-title">Built on hardware. Still earning the green light.</h2>
-            <p class="section-intro">DRIFTER is a substantial hardware-integrated prototype under active hardening. These are the acceptance gates that matter before a paid hardware release.</p>
-          </div>
-        </div>
-
-        <div class="proof-layout">
-          <div class="proof-card current reveal">
-            <div class="proof-card-top">
-              <span class="status-chip warning">CURRENT GATE</span>
-              <span class="mono">REFERENCE / JAGUAR X-TYPE</span>
-            </div>
-            <h3>Primary vehicle acceptance</h3>
-            <p>The 2004 Jaguar X-Type remains the reference platform until repeatability is recorded on the intended in-car hardware.</p>
-            <ul class="gate-list">
-              <li><span></span>10/10 cold starts from the intended vehicle power source</li>
-              <li><span></span>30-minute RPM / coolant / speed / voltage telemetry session</li>
-              <li><span></span>ELM327 unplug / replug recovery or explicit actionable state</li>
-              <li><span></span>Display recovery without a full power cycle when Linux remains alive</li>
-              <li><span></span>Incident capture and field evidence preserved after a fault</li>
-            </ul>
-          </div>
-
-          <aside class="scope-card reveal">
-            <p class="kicker">COMPATIBILITY LANGUAGE</p>
-            <h3>Targets standards-based OBD-II vehicles.</h3>
-            <p>Actual capability depends on the vehicle protocol, attached adapter and PIDs the ECU supports. New combinations are promoted as tested only after real evidence.</p>
-            <div class="scope-status"><span>OBSERVED</span><span>FUNCTIONAL</span><span>VALIDATED</span></div>
-          </aside>
-        </div>
-      </div>
-    </section>
-
-    <section class="comparison section" aria-labelledby="comparison-title">
-      <div class="shell">
-        <div class="section-heading reveal">
-          <span class="section-number">05</span>
-          <div>
-            <p class="kicker">WHY A DEDICATED NODE</p>
-            <h2 id="comparison-title">The difference is persistence.</h2>
-          </div>
-        </div>
-
-        <div class="comparison-table reveal" role="table" aria-label="Persistent vehicle node compared with a typical scan session">
-          <div class="comparison-row header" role="row">
-            <div role="columnheader">WORKFLOW</div>
-            <div role="columnheader">TYPICAL SCAN SESSION</div>
-            <div role="columnheader">DRIFTER VIM</div>
-          </div>
-          <div class="comparison-row" role="row"><div role="cell">When data starts</div><div role="cell">When you connect</div><div class="positive" role="cell">Designed to live with the vehicle</div></div>
-          <div class="comparison-row" role="row"><div role="cell">Intermittent event</div><div role="cell">May be gone before diagnosis begins</div><div class="positive" role="cell">Pre/post incident window can be preserved</div></div>
-          <div class="comparison-row" role="row"><div role="cell">Connection state</div><div role="cell">Often one connected/disconnected label</div><div class="positive" role="cell">Adapter / ECU / PID flow kept distinct</div></div>
-          <div class="comparison-row" role="row"><div role="cell">Interface</div><div role="cell">Phone or handheld session</div><div class="positive" role="cell">Dedicated local touchscreen node</div></div>
-          <div class="comparison-row" role="row"><div role="cell">Evidence</div><div role="cell">Depends on what was captured manually</div><div class="positive" role="cell">Drive logs + incident bundles</div></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="beta section" id="beta" aria-labelledby="beta-title">
-      <div class="shell beta-panel reveal">
-        <div>
-          <p class="kicker">FOUNDING BETA</p>
-          <h2 id="beta-title">Bring a real vehicle. Return real evidence.</h2>
-          <p>We're looking for technically capable testers who can run DRIFTER on a real OBD-II vehicle, test onboarding and recovery, and report exactly what happened.</p>
-        </div>
-        <div class="beta-actions">
-          <a class="button button-primary" href="https://github.com/thotsl4yer69/drifter/issues/new?template=beta-vehicle-test.yml" target="_blank" rel="noreferrer">Apply with your vehicle ↗</a>
-          <a class="button button-secondary" href="https://github.com/thotsl4yer69/drifter/blob/main/docs/BETA_TESTER_GUIDE.md" target="_blank" rel="noreferrer">Read tester guide ↗</a>
-          <a class="text-link" href="mailto:mazlabz.ai@gmail.com?subject=DRIFTER%20VIM">Commercial / media enquiry →</a>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="shell footer-grid">
-      <div>
-        <div class="brand-lockup footer-brand">
-          <span class="mark" aria-hidden="true">D/</span>
-          <span class="wordmark"><strong>DRIFTER VIM</strong><small>BY MAZLABZ</small></span>
-        </div>
-        <p>Vehicle intelligence module. Hardware-integrated prototype / active hardening.</p>
-      </div>
-      <div class="footer-links">
-        <a href="https://github.com/thotsl4yer69/drifter" target="_blank" rel="noreferrer">GitHub</a>
-        <a href="https://github.com/thotsl4yer69/drifter/blob/main/PROJECT_STATUS.md" target="_blank" rel="noreferrer">Project status</a>
-        <a href="https://github.com/thotsl4yer69/drifter/blob/main/CAPABILITIES.md" target="_blank" rel="noreferrer">Capabilities</a>
-        <a href="press.html">Media / press</a>
-        <a href="mailto:mazlabz.ai@gmail.com">Contact</a>
-      </div>
-    </div>
-    <div class="shell footer-bottom">
-      <span>© 2026 MAZLABZ</span>
-      <span>Prototype, measure, harden.</span>
-    </div>
-  </footer>
-</body>
-</html>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header shell">
+ <a class="identity" href="#top" aria-label="DRIFTER VIM home"><span class="slashmark" aria-hidden="true"></span><span><b>MAZLABZ / DRIFTER VIM</b><span class="mono">Vehicle intelligence</span></span></a>
+ <button class="menu-toggle" type="button" aria-controls="navigation" aria-expanded="false">MENU +</button>
+ <nav class="nav" id="navigation" aria-label="Main navigation"><a href="#recorder">The recorder</a><a href="#system">Inside the system</a><a href="#field-notes">Field notes</a><a class="nav-cta" href="#join">Join the field test <span class="arrow" aria-hidden="true">↗</span></a></nav>
+</header>
+<main id="main">
+ <section class="masthead shell" id="top" aria-label="DRIFTER Vehicle Intelligence Module">
+  <div class="masthead-meta"><span class="mono">Built for the fault that won’t happen twice.</span><span class="mono index-label">A MAZLABZ project / Field edition 01</span></div>
+  <div class="masthead-logo"><svg class="logotype" viewBox="0 0 972 180" role="img" aria-label="DRIFTER"><title>DRIFTER</title><path d="M0 0H103L140 36V144L103 180H0ZM38 35V145H87L102 130V50L87 35Z" transform="translate(0)" fill-rule="evenodd"/><path d="M0 0H104L140 34V77L111 104L145 180H103L72 110H38V180H0ZM38 34V78H88L102 66V46L88 34Z" transform="translate(156)" fill-rule="evenodd"/><path d="M0 0H38V180H0Z" transform="translate(317)" fill-rule="evenodd"/><path d="M0 0H133V36H38V74H113V110H38V180H0Z" transform="translate(371)" fill-rule="evenodd"/><path d="M0 0H143V36H91V180H53V36H0Z" transform="translate(520)" fill-rule="evenodd"/><path d="M0 0H132V36H38V72H115V108H38V144H132V180H0Z" transform="translate(679)" fill-rule="evenodd"/><path d="M0 0H104L140 34V77L111 104L145 180H103L72 110H38V180H0ZM38 34V78H88L102 66V46L88 34Z" transform="translate(827)" fill-rule="evenodd"/></svg><span class="masthead-vim">VIM / 01</span></div>
+  <div class="masthead-rule"><span class="mono">Local vehicle intelligence</span><span class="mono">Record. Understand. Investigate.</span></div>
+ </section>
+ <section class="recorder" id="recorder" aria-labelledby="main-title">
+  <div class="recorder-grid shell">
+   <div class="recorder-copy">
+    <div class="mono eyebrow"><span class="square" aria-hidden="true"></span> An ongoing field experiment</div>
+    <h1 id="main-title">A memory<br> for your<br> <em>machine.</em></h1>
+    <p>The engine stumbles. Then it’s fine.<br>DRIFTER is built to keep what happened around that moment — not just what’s left afterwards.</p>
+    <a class="text-cta" href="#context">Why the before matters <span class="arrow" aria-hidden="true">↗</span></a>
+   </div>
+   <div class="scene" id="scene">
+    <div class="scene-top"><span class="mono">Time, held in a window.</span><span class="mono tiny">Interactive capture study</span></div>
+    <canvas id="ribbon" role="img" aria-label="Abstract layered ribbon representing the recording window, with an amber marker at the selected point in time. This is an illustration, not recorded vehicle data."></canvas>
+    <p class="scene-fallback">90 seconds before an event.<br>45 seconds after.<br>A window of context, preserved.</p>
+    <div class="mono scene-tag"><span id="phase-name">Before the event</span><small>Illustrative. No live vehicle data.</small></div>
+    <div class="scene-corner"><span id="time-display">−00:32</span><small>RELATIVE TO EVENT</small></div>
+   </div>
+  </div>
+  <div class="transport shell" aria-label="Explore the capture window">
+   <div class="transport-label"><button class="play-btn" type="button" aria-label="Play capture-window illustration" aria-pressed="false"><span class="play-glyph" aria-hidden="true"></span></button><div class="mono">Explore time<small>Drag the amber marker</small></div></div>
+   <div class="track"><div class="tick-line" aria-hidden="true"></div><div class="track-zero" aria-hidden="true"></div><label class="sr-only" for="time-range">Time relative to the event, in seconds</label><input id="time-range" type="range" min="-90" max="45" step="1" value="-32" aria-valuetext="32 seconds before the event"><div class="track-labels" aria-hidden="true"><span>−90s / BEFORE</span><span>0 / EVENT</span><span>+45s / AFTER</span></div></div>
+   <div class="transport-hint">DRAG TO EXPLORE · ILLUSTRATION</div>
+  </div>
+ </section>
+ <section class="intro section shell" id="context" aria-labelledby="context-title">
+  <div class="section-label"><span class="mono"><span>01</span>Context, not guesswork.</span><span class="mono dim right-label">The incident recorder</span></div>
+  <div class="intro-layout"><h2 id="context-title">A fault is a moment.<br>The story is<br><em>on either side.</em></h2><div class="intro-text"><p>A strange idle. A sudden hesitation. Something you felt, but can’t make happen again.</p><p class="small">DRIFTER VIM is a Raspberry Pi vehicle computer. It keeps a rolling record of supported OBD-II data, then preserves a window around an automatic or manual incident capture.</p><p class="small">The point isn’t to guess which part broke. It’s to give the investigation something to work with.</p></div></div>
+  <div class="time-chapters" role="group" aria-label="Choose a part of the recording window">
+   <button class="time-chapter" type="button" data-time="-60" aria-pressed="true"><span class="mono">01 / Before</span><span class="arrow" aria-hidden="true">↗</span><span class="chapter-number">90<sup>s</sup></span><span class="chapter-title">Keep the lead-up.</span><span class="chapter-description">A bounded rolling buffer holds the available data before the trigger.</span></button>
+   <button class="time-chapter" type="button" data-time="0" aria-pressed="false"><span class="mono">02 / Event</span><span class="arrow" aria-hidden="true">↗</span><span class="chapter-number">00</span><span class="chapter-title">Mark the moment.</span><span class="chapter-description">A rule triggers, or you choose to capture an incident.</span></button>
+   <button class="time-chapter" type="button" data-time="30" aria-pressed="false"><span class="mono">03 / After</span><span class="arrow" aria-hidden="true">↗</span><span class="chapter-number">45<sup>s</sup></span><span class="chapter-title">Let the story finish.</span><span class="chapter-description">A post-event tail preserves what follows the trigger.</span></button>
+  </div>
+  <p class="mono chapter-note">Select a chapter to move the recorder above. These are capture-window settings, not field-test results.</p>
+ </section>
+ <section class="system section shell" id="system" aria-labelledby="system-title">
+  <div class="section-label"><span class="mono"><span>02</span>A computer, not a dongle.</span><span class="mono dim right-label">Inside the system</span></div>
+  <div class="system-layout">
+   <div><h2 id="system-title">Your vehicle.<br>Your data.<br>Your investigation.</h2><p class="system-lede">An OBD adapter connects the car. A dedicated Raspberry Pi does the recording. The touchscreen makes the connection, capture and recovery states visible.</p><div class="system-aside"><div><span class="mono dim">Core processing</span><b>Local, on the vehicle node.</b></div><div><span class="mono dim">Platform</span><b>Raspberry Pi / Linux</b></div></div></div>
+   <div class="stack" aria-label="Explore the three parts of the system">
+    <details class="stack-item" open><summary><span class="stack-number">01</span><div><h3>The connection.</h3><p>Vehicle → OBD transport</p></div><span class="stack-plus" aria-hidden="true">+</span></summary><div class="stack-content"><p>ELM327 and SocketCAN-oriented paths connect the node to supported vehicle data. The adapter, ECU and actual PID traffic are treated as separate states.</p><div class="route mono">Adapter reachable ≠ ECU responding ≠ data flowing.</div></div></details>
+    <details class="stack-item"><summary><span class="stack-number">02</span><div><h3>The recorder.</h3><p>Raspberry Pi → local services</p></div><span class="stack-plus" aria-hidden="true">+</span></summary><div class="stack-content"><p>Local MQTT services connect telemetry, rules and drive logging. Incident capture retains a bounded window without requiring an AI model to be available.</p><div class="route mono">Core telemetry + incident capture: local first.</div></div></details>
+    <details class="stack-item"><summary><span class="stack-number">03</span><div><h3>The evidence.</h3><p>Session → incident → investigation</p></div><span class="stack-plus" aria-hidden="true">+</span></summary><div class="stack-content"><p>Review a drive, inspect an incident and see the order of material sensor changes. Sequence can suggest what to investigate next. It is not proof of fault causation.</p><div class="route mono">Measured context. Not an automatic parts diagnosis.</div></div></details>
+   </div>
+  </div>
+ </section>
+ <section class="field section shell" id="field-notes" aria-labelledby="field-title">
+  <div class="section-label"><span class="mono"><span>03</span>The work, in the open.</span><span class="mono dim right-label">Engineering field notes</span></div>
+  <div class="field-layout">
+   <div><h2 id="field-title">Real hardware.<br><span class="outline">Unfinished business.</span></h2><p class="field-intro">A working project is not the same as a finished product. DRIFTER is a hardware-integrated prototype. Repeatable cold starts, sustained telemetry and recovery are still being validated.</p><p class="mono field-title-note">The reference vehicle is a 2004 Jaguar X-Type. Support for other vehicles depends on the adapter, protocol and available PIDs.</p><a class="field-link" href="https://github.com/thotsl4yer69/drifter/issues/67" target="_blank" rel="noopener noreferrer">Read the actual acceptance record <span class="arrow" aria-hidden="true">↗</span></a></div>
+   <article class="dossier" aria-label="Reference vehicle and outstanding acceptance tests">
+    <div class="dossier-top"><span class="mono">Reference vehicle<br><span class="dim">Test dossier / 001</span></span><span class="mono dossier-status">IN VALIDATION</span></div>
+    <p class="vehicle-type">Primary development platform</p><h3 class="vehicle-name">Jaguar X-Type.</h3><p class="mono vehicle-sub">2004 / 2.5 L V6 / ELM327 path</p>
+    <dl class="spec-list"><div><dt>Power-on repeatability<small>10 cold starts, without replugging.</small></dt><dd>PENDING</dd></div><div><dt>Sustained telemetry<small>30-minute RPM / coolant / speed / voltage run.</small></dt><dd>PENDING</dd></div><div><dt>Recovery behaviour<small>OBD adapter + operator display.</small></dt><dd>PENDING</dd></div></dl>
+    <p class="mono dossier-foot">PENDING = acceptance evidence not yet signed off.<br>This is not a compatibility guarantee.</p>
+   </article>
+  </div>
+ </section>
+ <section class="questions shell" aria-labelledby="faq-title"><div class="faq-layout"><h2 class="faq-heading" id="faq-title">Before you join.</h2><div>
+  <details class="faq-item"><summary>Is this a finished product I can buy?</summary><p>Not yet. This is a field-testing programme for a hardware-integrated prototype. There is no checkout, delivery promise or finished hardware kit on this site. The immediate aim is repeatable operation and useful incident evidence.</p></details>
+  <details class="faq-item"><summary>What hardware is involved?</summary><p>The reference setup uses a Raspberry Pi 5, storage, a display or browser interface, suitable power and an appropriate OBD adapter. The Pi is the computer; the adapter is the vehicle connection. See the <a href="https://github.com/thotsl4yer69/drifter/blob/main/docs/BETA_TESTER_GUIDE.md" target="_blank" rel="noopener noreferrer">tester guide</a> for the current setup.</p></details>
+  <details class="faq-item"><summary>Will it work with my car?</summary><p>The target is standards-based OBD-II data. Actual support depends on your vehicle’s protocol, adapter and available PIDs. The Jaguar is the reference platform; another combination needs its own evidence. The field-testing application asks for your exact setup.</p></details>
+  <details class="faq-item"><summary>Does the recorder need the cloud?</summary><p>The core vehicle telemetry, deterministic rules, logging and incident capture run locally. Optional online services and AI-assisted features are separate from that core recording path.</p></details>
+ </div></div></section>
+ <section class="join shell" id="join" aria-labelledby="join-title"><div class="join-top"><span class="mono">Founding field programme</span><span class="mono">Open to technically capable testers</span></div><div class="join-grid"><h2 id="join-title">Bring your<br><em>unrepeatable fault.</em></h2><div class="join-copy"><p>Have a car, a Raspberry Pi and the patience to test properly? Help turn an interesting build into a dependable tool.</p><button type="button" class="solid-btn" data-apply>Apply for field testing <span class="arrow" aria-hidden="true">↗</span></button><p class="join-note">Tell us your vehicle and hardware.<br>No payment. No hardware reservation.</p></div></div></section>
+</main>
+<footer class="site-footer shell"><div class="footer-top"><a class="identity" href="#top" aria-label="Back to top"><span class="slashmark" aria-hidden="true"></span><span><b>DRIFTER VIM</b><span class="mono">A MAZLABZ project</span></span></a><div class="footer-links"><a href="https://github.com/thotsl4yer69/drifter" target="_blank" rel="noopener noreferrer">Source ↗</a><a href="press.html">Media notes ↗</a><a href="mailto:mazlabz.ai@gmail.com?subject=DRIFTER%20VIM">Contact ↗</a></div></div><div class="footer-bottom"><span>© 2026 MAZLABZ / Vehicle Intelligence Module</span><span>Field edition 01 / Hardware-integrated prototype</span></div></footer>
+<dialog class="application" id="application" aria-labelledby="application-title"><div class="dialog-inner"><div class="dialog-top"><span class="mono">DRIFTER / Field application</span><button class="close-btn" type="button" data-close aria-label="Close application">×</button></div><h2 id="application-title">What are you driving?</h2><p class="form-intro">Give us the setup and the symptom. This prepares an email to MAZLABZ; nothing is sent until you send it from your email app.</p><form id="apply-form"><div class="form-grid"><div class="field-input full"><label for="vehicle">Vehicle · year, make, model and engine</label><input id="vehicle" name="vehicle" autocomplete="off" required maxlength="150"></div><div class="field-input"><label for="adapter">OBD adapter</label><input id="adapter" name="adapter" required maxlength="120" autocomplete="off"></div><div class="field-input"><label for="hardware">Computer / Pi</label><select id="hardware" name="hardware" required><option value="">Choose your hardware</option><option>Raspberry Pi 5</option><option>Raspberry Pi 4</option><option>Another Linux computer</option><option>No hardware yet</option></select></div><div class="field-input full"><label for="goal">The symptom or what you would like to test</label><textarea id="goal" name="goal" required maxlength="1200" rows="3"></textarea></div></div><div class="form-actions"><button class="solid-btn" type="submit">Prepare email <span class="arrow" aria-hidden="true">↗</span></button><button class="quiet-btn" type="button" id="copy-application">Copy application</button></div><p class="form-note">Prefer GitHub? <a href="https://github.com/thotsl4yer69/drifter/issues/new?template=beta-vehicle-test.yml" target="_blank" rel="noopener noreferrer">Use the vehicle-test form.</a> Don’t include your VIN, registration or account credentials.</p><div class="form-message" role="status" aria-live="polite" id="form-message"></div><textarea class="copy-area" id="copy-area" aria-label="Application text to copy" readonly></textarea></form></div></dialog>
+<script>
+(()=>{'use strict';
+ const $=(s,root=document)=>root.querySelector(s), $$=(s,root=document)=>[...root.querySelectorAll(s)];
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+ const menu=$('.menu-toggle'),nav=$('#navigation');
+ function setMenu(open){if(!menu||!nav)return;nav.classList.toggle('open',open);menu.setAttribute('aria-expanded',String(open));menu.textContent=open?'CLOSE −':'MENU +';document.body.classList.toggle('menu-open',open);}
+ menu?.addEventListener('click',()=>setMenu(menu.getAttribute('aria-expanded')!=='true'));
+ $$('.nav a').forEach(a=>a.addEventListener('click',()=>setMenu(false)));
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu?.getAttribute('aria-expanded')==='true'){setMenu(false);menu.focus();}});
+ matchMedia('(min-width: 761px)').addEventListener('change',e=>{if(e.matches)setMenu(false);});
+ const dialog=$('#application'),form=$('#apply-form'),message=$('#form-message');let returnFocus=null;
+ $$('[data-apply]').forEach(b=>b.addEventListener('click',()=>{returnFocus=b;if(typeof dialog?.showModal==='function'){dialog.showModal();$('#vehicle').focus();}else{location.href='mailto:mazlabz.ai@gmail.com?subject=DRIFTER%20VIM%20field%20application';}}));
+ $('[data-close]')?.addEventListener('click',()=>dialog.close());
+ dialog?.addEventListener('close',()=>returnFocus?.focus());
+ dialog?.addEventListener('click',e=>{if(e.target===dialog){const b=dialog.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)dialog.close();}});
+ const applicationText=()=>`DRIFTER VIM — Field application\n\nVehicle: ${$('#vehicle').value.trim()}\nOBD adapter: ${$('#adapter').value.trim()}\nComputer: ${$('#hardware').value}\n\nWhat I would like to test:\n${$('#goal').value.trim()}\n\nI understand this is a prototype field-testing application, not an order.`;
+ const announce=s=>{if(message){message.textContent=s;message.classList.add('show');}};
+ form?.addEventListener('submit',e=>{e.preventDefault();if(!form.reportValidity())return;const href='mailto:mazlabz.ai@gmail.com?subject='+encodeURIComponent('DRIFTER VIM — Field application')+'&body='+encodeURIComponent(applicationText());announce('Your email app will open with the application prepared. It has not been sent. No email app? Use Copy application and send it to mazlabz.ai@gmail.com.');location.href=href;});
+ $('#copy-application')?.addEventListener('click',async()=>{if(!form.reportValidity())return;const text=applicationText();try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(text);announce('Application copied. Send it to mazlabz.ai@gmail.com. Nothing has been submitted from this page.');}catch{const area=$('#copy-area');area.value=text;area.classList.add('show');area.focus();area.select();announce('Select and copy the application below, then email it to mazlabz.ai@gmail.com.');}});
+ const canvas=$('#ribbon'),scene=$('#scene'),range=$('#time-range');if(!canvas||!scene||!range)return;
+ const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)return;
+ let W=1,H=1,dpr=1,time=Number(range.value),yaw=0,pitch=0,playing=false,raf=0,last=0,onscreen=true;
+ const play=$('.play-btn'),display=$('#time-display'),phase=$('#phase-name'),chapters=$$('.time-chapter');
+ function textTime(n){const abs=Math.abs(Math.round(n));return(n<0?'−':n>0?'+':'')+String(Math.floor(abs/60)).padStart(2,'0')+':'+String(abs%60).padStart(2,'0');}
+ function updateText(){const n=Math.round(time);range.value=String(n);display.textContent=textTime(n);phase.textContent=n<0?'Before the event':n===0?'The capture moment':'After the event';range.setAttribute('aria-valuetext',n<0?`${Math.abs(n)} seconds before the event`:n===0?'The event':`${n} seconds after the event`);chapters.forEach((b,i)=>b.setAttribute('aria-pressed',String(i===(n<0?0:n===0?1:2))));}
+ function setPlaying(value){playing=value;play.classList.toggle('playing',value);play.setAttribute('aria-pressed',String(value));play.setAttribute('aria-label',value?'Pause capture-window illustration':'Play capture-window illustration');if(value){if(time>=45)time=-90;last=performance.now();requestDraw();}}
+ function requestDraw(){if(!raf&&onscreen)raf=requestAnimationFrame(frame);}
+ function surface(u,v){const x=u*330;const y=79*Math.sin(u*4.55)*Math.exp(-.28*u*u)+38*Math.sin(v*2.9)*Math.exp(-2.3*u*u)+13*Math.cos(u*7+v)*Math.exp(-u*u);const z=v*128;return{x,y,z};}
+ function project(p){const a=-.18+yaw,b=.61+pitch;const cx=p.x*Math.cos(a)-p.z*Math.sin(a),cz=p.x*Math.sin(a)+p.z*Math.cos(a);const cy=-p.y*Math.cos(b)+cz*Math.sin(b);const depth=p.y*Math.sin(b)+cz*Math.cos(b);const perspective=1/(1+depth/1250);const s=Math.min(W/660,H/332);return{x:W*.50+cx*s*perspective,y:H*.52+cy*s*perspective};}
+ function path(points){ctx.beginPath();points.forEach((p,i)=>{const q=project(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});}
+ function draw(){ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#141713';ctx.fillRect(0,0,W,H);
+  const glow=ctx.createRadialGradient(W*.60,H*.49,0,W*.60,H*.49,W*.70);glow.addColorStop(0,'#283024');glow.addColorStop(.56,'#1a2017');glow.addColorStop(1,'#141713');ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
+  ctx.lineWidth=.55;ctx.strokeStyle='rgba(176,190,160,.085)';for(let k=-5;k<=5;k++){path([{x:-370,y:-119,z:k*42},{x:370,y:-119,z:k*42}]);ctx.stroke();}for(let k=-8;k<=8;k++){path([{x:k*47,y:-119,z:-215},{x:k*47,y:-119,z:215}]);ctx.stroke();}
+  const eventU=(90/135)*2-1;
+  for(let k=0;k<88;k++){const v=-1+2*k/87;const pts=[];for(let j=0;j<=150;j++){const u=-1+2*j/150;pts.push(surface(u,v));}const next=pts.map(p=>({...p,z:p.z+2.4}));path([...pts,...next.reverse()]);ctx.closePath();ctx.fillStyle='rgba(6,10,5,.5)';ctx.fill();path(pts);const alpha=.22+.50*(k/87);const grad=ctx.createLinearGradient(W*.05,0,W*.97,0);grad.addColorStop(0,`rgba(184,196,173,${alpha*.25})`);grad.addColorStop(.26,`rgba(237,239,224,${alpha})`);grad.addColorStop(.57,`rgba(242,245,231,${alpha*.88})`);grad.addColorStop(.87,`rgba(222,233,205,${alpha*.62})`);grad.addColorStop(1,`rgba(190,204,175,${alpha*.15})`);ctx.strokeStyle=grad;ctx.lineWidth=.70;ctx.stroke();}
+  const event=[];for(let i=0;i<=80;i++)event.push(surface(eventU,-1+2*i/80));path(event);ctx.strokeStyle='rgba(255,182,64,.40)';ctx.lineWidth=.8;ctx.stroke();
+  const u=(time+90)/135*2-1;const selected=[];for(let i=0;i<=80;i++)selected.push(surface(u,-1+2*i/80));path(selected);ctx.strokeStyle='#ffb640';ctx.lineWidth=1.8;ctx.stroke();
+  const front=surface(u,1),q=project(front),base=project({...front,y:-119});ctx.setLineDash([2,4]);ctx.strokeStyle='rgba(255,182,64,.45)';ctx.lineWidth=.75;ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(base.x,base.y+10);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffb640';ctx.fillRect(q.x-2.5,q.y-2.5,5,5);
+  const fade=ctx.createLinearGradient(0,0,0,H);fade.addColorStop(0,'rgba(20,23,19,.4)');fade.addColorStop(.20,'rgba(20,23,19,0)');fade.addColorStop(.77,'rgba(20,23,19,0)');fade.addColorStop(1,'rgba(20,23,19,.65)');ctx.fillStyle=fade;ctx.fillRect(0,0,W,H);
+ }
+ function frame(now){raf=0;if(playing){time=Math.min(45,time+Math.min((now-last)/1000,.1)*15);last=now;updateText();if(time>=45)setPlaying(false);}draw();if(playing)requestDraw();}
+ function resize(){const r=scene.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);requestDraw();}
+ range.addEventListener('input',()=>{setPlaying(false);time=Number(range.value);updateText();requestDraw();});play.addEventListener('click',()=>setPlaying(!playing));
+ chapters.forEach(b=>b.addEventListener('click',()=>{setPlaying(false);time=Number(b.dataset.time);updateText();requestDraw();$('#recorder').scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'start'});}));
+ scene.addEventListener('pointermove',e=>{if(reduce.matches||e.pointerType==='touch')return;const r=scene.getBoundingClientRect();yaw=(e.clientX-r.left-r.width/2)/r.width*.12;pitch=(e.clientY-r.top-r.height/2)/r.height*.10;requestDraw();});scene.addEventListener('pointerleave',()=>{yaw=0;pitch=0;requestDraw();});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)setPlaying(false);});
+ if('IntersectionObserver'in window){new IntersectionObserver(entries=>{onscreen=entries[0].isIntersecting;if(!onscreen)setPlaying(false);else requestDraw();},{rootMargin:'120px'}).observe(scene);}
+ if('ResizeObserver'in window)new ResizeObserver(resize).observe(scene);else window.addEventListener('resize',resize,{passive:true});
+ reduce.addEventListener('change',()=>{yaw=0;pitch=0;setPlaying(false);requestDraw();});
+ scene.classList.add('ready');updateText();resize();
+})();
+</script>
+</body></html>
