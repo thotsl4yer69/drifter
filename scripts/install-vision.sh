@@ -45,7 +45,7 @@ fi
 
 step 3 "Deploying vision modules + working dirs"
 mkdir -p "${DRIFTER_DIR}/dashcam" "${DRIFTER_DIR}/vision-models"
-for f in vision_engine.py alpr_engine.py dashcam.py forward_collision.py; do
+for f in vision_engine.py alpr_engine.py dashcam.py forward_collision.py perception_fusion.py; do
     cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
     chmod +x "${DRIFTER_DIR}/${f}"
 done
@@ -60,7 +60,7 @@ else
 fi
 
 step 5 "Installing systemd services"
-for svc in vision dashcam alpr fcw; do
+for svc in vision dashcam alpr fcw perception; do
     cp "${REPO_DIR}/services/drifter-${svc}.service" /etc/systemd/system/
     systemctl enable "drifter-${svc}"
     ok "drifter-${svc} enabled"
@@ -70,4 +70,4 @@ systemctl daemon-reload
 echo ""
 echo -e "${GREEN}  Vision stack installed.${NC}"
 echo -e "  Drop a yolov8s.hef (Hailo) or yolov8s.onnx into ${CYAN}${DRIFTER_DIR}/vision-models/${NC}"
-echo -e "  Start:  ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw${NC}"
+echo -e "  Start:  ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
