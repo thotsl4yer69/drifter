@@ -1,0 +1,67 @@
+name: field-readiness
+
+on:
+  push:
+    branches: ['hardening/in-car-readiness-*']
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'services/**'
+      - 'config/**'
+      - 'pyproject.toml'
+      - '.github/workflows/field-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: field-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  software-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Record source revision
+        run: |
+          mkdir -p field-evidence
+          git rev-parse HEAD > field-evidence/commit.txt
+          git archive --format=zip HEAD -o field-evidence/source.zip
+          printf 'Software checks only. Pi boot, display, vehicle power and ECU acceptance remain hardware-pending.\n' > field-evidence/SCOPE.txt
+      - name: Install test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Python syntax
+        if: ${{ !cancelled() }}
+        run: python -m compileall -q src
+      - name: Shell syntax
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            bash -n "$file" || status=1
+          done < <(git ls-files -z '*.sh')
+          exit "$status"
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: ruff check src tests --output-format=github
+      - name: Regression tests
+        if: ${{ !cancelled() }}
+        run: pytest -q --junitxml=field-evidence/pytest.xml
+      - name: Preserve evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: field-readiness-${{ github.sha }}
+          path: field-evidence/
+          retention-days: 14
