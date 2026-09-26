@@ -61,4 +61,4 @@ No external font, runtime JavaScript package, API key, database or payment servi
 
 ## Build and test evidence
 
-This release passed 21 Node publication tests, 121 local Chromium document checks and 43 local HTTP/link/archive checks. The browser checks use local HTML document rendering; they are not public-deployment or real-device verification. See `QA-SUMMARY.md` for details.
+This release passed 21 Node publication tests, 123 local Chromium document checks and 43 local HTTP/link/archive checks. The browser checks use local HTML document rendering; they are not public-deployment or real-device verification. See `QA-SUMMARY.md` for details.
