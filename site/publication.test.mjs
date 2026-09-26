@@ -1,61 +1,25 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
-import {readFileSync,readdirSync} from 'node:fs';
-import {dirname,join} from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {inflateSync} from 'node:zlib';
-const root=dirname(fileURLToPath(import.meta.url));
-const read=name=>readFileSync(join(root,'dist',name),'utf8');
-const production='https://drifter-vim-js-projects-cdc6aae4.vercel.app/';
-function build(env={}) {
-  const e={...process.env};
-  for(const k of ['SITE_URL','VERCEL_ENV','VERCEL_PROJECT_PRODUCTION_URL','VERCEL_URL'])delete e[k];
-  return execFileSync(process.execPath,['build.mjs'],{cwd:root,env:{...e,...env},encoding:'utf8',stdio:['ignore','pipe','pipe']});
-}
-test('no-host build does not invent public URLs',()=>{
-  build(); const s=read('index.html');
-  assert.ok(!s.includes('rel="canonical"'));assert.ok(!readdirSync(join(root,'dist')).includes('sitemap.xml'));
-});
-test('original Field Recorder copy preserved, enquiry path enhanced',()=>{
- const s=read('index.html');
- assert.ok(s.includes('A memory'));assert.ok(s.includes('class="hero-apply"'));
- assert.match(s,/<a class="solid-btn" data-apply href="mailto:/);
- assert.ok(s.includes('id="jump-event"'));assert.ok(s.includes('const $$ ='));
-});
-test('distribution is an explicit public-file allowlist',()=>{
- const names=readdirSync(join(root,'dist'));
- assert.equal(names.length,10);assert.ok(!names.includes('build.mjs'));
- for(const p of ['index.html','press.html','privacy.html','404.html','og-card.png','brand-wordmark.svg','favicon.svg','manifest.webmanifest','version.json','robots.txt'])assert.ok(names.includes(p),p);
-});
-test('production URL generates aligned metadata and sitemap',()=>{
- build({SITE_URL:production,VERCEL_ENV:'production'});
- assert.ok(read('index.html').includes('rel="canonical" href="'+production+'"'));
- assert.ok(read('index.html').includes(production+'og-card.png'));
- assert.ok(read('sitemap.xml').includes(production+'privacy.html'));
- assert.ok(read('robots.txt').includes(production+'sitemap.xml'));
- assert.ok(!read('index.html').includes('thotsl4yer69.github.io'));
-});
-test('Vercel project production URL is accepted without protocol',()=>{
- build({VERCEL_PROJECT_PRODUCTION_URL:new URL(production).host});
- assert.ok(read('index.html').includes('rel="canonical" href="'+production+'"'));
-});
-test('preview is noindex and disallowed to crawlers',()=>{
- build({SITE_URL:production,VERCEL_ENV:'preview'});
- assert.ok(read('index.html').includes('noindex, nofollow'));
- assert.equal(read('robots.txt'),'User-agent: *\nDisallow: /\n');
-});
-test('malformed or credentialed public site URL fails rather than leaking',()=>{
- for(const url of ['javascript:alert(1)','https://user:secret@host.test/','http://public.test/','https://host.test/?secret=1'])assert.throws(()=>build({SITE_URL:url}));
-});
-test('generated social card is a decodable 1200 by 630 PNG',()=>{
- const b=readFileSync(join(root,'dist','og-card.png'));
- assert.deepEqual([...b.subarray(0,8)],[137,80,78,71,13,10,26,10]);
- assert.equal(b.readUInt32BE(16),1200);assert.equal(b.readUInt32BE(20),630);
- const data=[];let offset=8;
- while(offset<b.length){const length=b.readUInt32BE(offset),type=b.toString('ascii',offset+4,offset+8);if(type==='IDAT')data.push(b.subarray(offset+8,offset+8+length));offset+=length+12;}
- assert.equal(offset,b.length);assert.equal(inflateSync(Buffer.concat(data)).length,630*(1200*3+1));
-});
-test('regenerate portable output after environment-specific tests',()=>{
- build();assert.ok(read('version.json').includes('Field Recorder 01.1'));
-});
+import test from 'node:test';import assert from 'node:assert/strict';import {execFileSync}from'node:child_process';import{readFileSync,readdirSync,existsSync}from'node:fs';import{dirname,join}from'node:path';import{fileURLToPath}from'node:url';import{inflateSync}from'node:zlib';import{resolveURL}from'./complete-site.mjs';
+const root=dirname(fileURLToPath(import.meta.url)),out=join(root,'dist'),get=n=>readFileSync(join(out,n),'utf8');
+function run(extra={}){const env={...process.env};for(const n of ['SITE_URL','VERCEL_ENV','VERCEL_PROJECT_PRODUCTION_URL'])delete env[n];execFileSync(process.execPath,['build.mjs'],{cwd:root,env:{...env,...extra},stdio:'pipe'});}
+const host='https://drifter-vim-js-projects-cdc6aae4.vercel.app/';
+test('build has no runtime or package dependencies',()=>{run();assert.ok(existsSync(join(out,'index.html')));assert.ok(!existsSync(join(out,'package.json')));});
+test('nine complete routes are published',()=>assert.equal(readdirSync(out).filter(n=>n.endsWith('.html')).length,9));
+test('homepage preserves the original composition',()=>{const h=get('index.html');for(const s of ['A memory','id="ribbon"','id="time-range"','Go beyond the first look.'])assert.ok(h.includes(s),s);assert.ok(!h.includes('LIVE SYSTEM MODEL'));});
+test('every route has exactly one main and h1',()=>{for(const n of readdirSync(out).filter(n=>n.endsWith('.html'))){const h=get(n);assert.equal((h.match(/<main\b/g)||[]).length,1,n);assert.equal((h.match(/<h1\b/g)||[]).length,1,n);}});
+test('shared navigation covers all primary routes',()=>{for(const n of ['hardware','recorder','field-notes','apply','press'])assert.ok(get('index.html').includes('href="'+n+'.html"'));});
+test('public output excludes all source and legacy dashboard files',()=>{for(const name of ['build.mjs','pages.mjs','site.js','styles.css','FIELD-EDITION.md','AGENTS.md','home-source.html'])assert.ok(!existsSync(join(out,name)),name);});
+test('twelve original vectors and two PDFs are present',()=>{const a=readdirSync(join(out,'assets'));assert.equal(a.filter(n=>n.endsWith('.svg')).length,12);assert.equal(a.filter(n=>n.endsWith('.pdf')).length,2);});
+test('media bundle is a ZIP file',()=>{const b=readFileSync(join(out,'assets/drifter-media-kit.zip'));assert.equal(b.readUInt32LE(0),0x04034b50);assert.equal(b.readUInt32LE(b.length-22),0x06054b50);assert.equal(b.readUInt16LE(b.length-12),16);});
+test('PDF signatures are correct',()=>{for(const n of ['drifter-factsheet.pdf','drifter-field-worksheet.pdf'])assert.equal(readFileSync(join(out,'assets',n)).toString('ascii',0,5),'%PDF-');});
+test('no URL is invented for a portable build',()=>{assert.ok(!get('index.html').includes('rel="canonical"'));assert.ok(!existsSync(join(out,'sitemap.xml')));});
+test('production metadata uses the selected hostname',()=>{run({SITE_URL:host,VERCEL_ENV:'production'});assert.ok(get('hardware.html').includes('href="'+host+'hardware.html"'));assert.ok(get('index.html').includes(host+'og-card.png'));assert.ok(!get('index.html').includes('thotsl4yer69.github.io'));});
+test('sitemap has eight indexable pages, not the 404',()=>{const s=get('sitemap.xml');assert.equal((s.match(/<url>/g)||[]).length,8);assert.ok(s.includes('field-guide.html'));assert.ok(!s.includes('404.html'));});
+test('nested 404 uses the site base and is not indexed',()=>{const h=get('404.html');assert.ok(h.includes('<base href="'+host+'">'));assert.ok(h.includes('noindex'));});
+test('project production URL works without protocol',()=>assert.equal(resolveURL({VERCEL_PROJECT_PRODUCTION_URL:new URL(host).host}),host));
+test('preview is excluded from indexing',()=>{run({SITE_URL:host,VERCEL_ENV:'preview'});assert.equal(get('robots.txt'),'User-agent: *\nDisallow: /\n');assert.ok(get('apply.html').includes('noindex, nofollow'));});
+test('malformed and credentialed base URLs are rejected',()=>{for(const url of ['javascript:alert(1)','https://user:secret@host.test/','http://public.test/','https://host.test/?token=secret'])assert.throws(()=>resolveURL({SITE_URL:url}));});
+test('social card is a decoded 1200x630 PNG',()=>{const b=readFileSync(join(out,'og-card.png'));assert.equal(b.readUInt32BE(16),1200);assert.equal(b.readUInt32BE(20),630);const data=[];let pos=8;while(pos<b.length){const len=b.readUInt32BE(pos);if(b.toString('ascii',pos+4,pos+8)==='IDAT')data.push(b.subarray(pos+8,pos+8+len));pos+=len+12;}assert.equal(pos,b.length);assert.equal(inflateSync(Buffer.concat(data)).length,630*(1200*3+1));});
+test('applications do not claim a server submission',()=>{const h=get('apply.html');assert.ok(h.includes('Nothing leaves this page until'));assert.ok(h.includes('Email prepared, not sent'));assert.ok(!h.includes('action="/api/'));});
+test('worksheet reports start unknown, never pre-passed',()=>{const h=get('field-guide.html');assert.equal((h.match(/data-outcome/g)||[]).length>=7,true);assert.ok(h.includes('USER-REPORTED'));assert.ok(!h.includes('value="pass" selected'));});
+test('no analytics or credential-bearing network calls',()=>{for(const n of readdirSync(out).filter(n=>n.endsWith('.html'))){const h=get(n);assert.ok(!h.includes('googletagmanager'));assert.ok(!h.includes('localStorage.setItem'));assert.ok(!h.includes('api.openai.com'));}});
+test('finish with the portable publication build',()=>{run();assert.equal(JSON.parse(get('version.json')).edition,'Field Recorder 01.2');});

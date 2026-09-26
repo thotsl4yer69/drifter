@@ -1,64 +1,64 @@
-# DRIFTER VIM — publish Field Recorder 01.1
+# Publish DRIFTER / Field Recorder 01.2
 
-## Use the existing Vercel project
+## Current delivery state
 
-Project: `drifter-vim`, under `js-projects-cdc6aae4`.
-Repository: `thotsl4yer69/drifter`.
-Website branch: `design/field-recorder-edition` (PR #84).
+The complete website is built and locally tested. The existing Vercel project is `drifter-vim` in `js-projects-cdc6aae4`. The connected Vercel reader still returns 403 for that team/project. This release is not represented as live at the old production alias.
 
-The current ChatGPT Vercel connection receives a 403 for that team's project. Reauthorize the connection using the account/team that owns it. Publishing directly from that team's Vercel dashboard does not require the ChatGPT connection to be working.
+## Exact project settings
 
-## Publish this version now, without merging vehicle code
-
-1. Open the existing `drifter-vim` project in Vercel. In Settings → Git, connect `thotsl4yer69/drifter` if it is not already linked.
-2. Under Settings → Build and Deployment, use the settings below.
-3. Under Settings → Environments → Production → Branch Tracking, select `design/field-recorder-edition` and save. This publishes the website branch; it does not change the vehicle's `main` checkout.
-4. Open Deployments → Create Deployment and select that branch. Wait for READY, then open the production URL shown by Vercel.
+Repository: `thotsl4yer69/drifter`
+Website branch: `design/field-recorder-edition` / PR #84
 
 | Setting | Value |
-|---|---|
-| Framework preset | Other |
-| Root directory | `site` |
-| Build command | `node build.mjs` |
-| Output directory | `dist` |
-| Install command | Empty; no package installation is required |
+| --- | --- |
+| Framework | Other |
+| Root Directory | `site` |
+| Build Command | `node build.mjs` |
+| Output Directory | `dist` |
+| Install Command | Empty; no package installation |
 
-The build/output values are also committed in `site/vercel.json`. The root directory is a project setting, not a field in that JSON.
+The build settings are also in `site/vercel.json`. Root Directory remains a Vercel project setting. Do not publish the repository root or serve the source directory as the site.
 
-Do not redeploy the old `main` commit and expect this design to appear. After PR #84 is merged, the production branch can be changed to `main`.
+Use the Vercel account/team that owns the project, connect the Git repository if needed, and select `design/field-recorder-edition` as the production branch. Create a deployment from that branch. Once READY, open the production URL shown by Vercel and verify the version as below. No merge into the deployed vehicle's `main` checkout is required just to publish this website branch.
 
-## What gets published
+To finish from the ChatGPT integration, reauthorize Vercel for the account/team owning this project. An existing connection without that project scope is not sufficient.
 
-The publisher creates `site/dist/` from the Field Recorder source. Only that folder is served. It includes the homepage, media notes, data/contact page, 404, wordmark, generated PNG share image, favicon, manifest, crawler rules and version record. A sitemap is generated when a public site URL is known. Source files, tests and old dashboard assets are not included.
+## Source and build
 
-The homepage remains self-contained for local review: styles and client JavaScript are inlined in the generated HTML. The renderer, email composer and local interactions require no API key or database.
+`build.mjs` invokes `complete-site.mjs`. The build uses only Node built-ins and the local allowlisted website files. Canonical sources are `home-source.html`, `brand-base.css`, `complete.css`, `pages.mjs`, `site.js`, `recorder-runtime.js`, `assets.mjs`, the two PDFs in `assets/`, the existing wordmark, `social-card.mjs` and `field-refinements.css`.
 
-## URL and custom domain
+The generated homepage contains its own CSS and JavaScript. Other pages use the same design system. Only `dist` is deployed: legacy dashboard files, source, tests and vehicle services stay out.
 
-Vercel's `VERCEL_PROJECT_PRODUCTION_URL` supplies the production hostname at build time. `SITE_URL` overrides it after a custom domain is configured. Keep `SITE_URL` unset until there is a real final URL; the build never invents one. Preview environments receive noindex metadata and restrictive crawler rules.
-
-A custom domain is not necessary to publish. Add it to the same Vercel project later, follow the DNS values Vercel gives for that domain, set `SITE_URL` to the actual HTTPS domain, then redeploy.
-
-## Confirm the published version
-
-- Homepage shows “A memory for your machine.” and the geometric DRIFTER wordmark.
-- “Jump to event” sets the recorder to 00:00.
-- `/version.json` reports `Field Recorder 01.1` and, for Git deployments, the built commit.
-- `press.html` and `privacy.html` open correctly.
-- Application preparation does not claim to send an email. It opens the user's mail app or copies the application.
-
-## Repeatable local checks
-
-From the repository's `site` directory:
+From `site`:
 
 ```sh
 node --test publication.test.mjs
 node build.mjs
+node serve.mjs
 ```
 
-The nine publishing tests cover URL handling, public output, previews and PNG decoding. The accompanying browser report records 51 local Chromium assertions. Browser tests are document-rendering tests; they are not proof of a successful Vercel build, public HTTP routing, real-phone behavior or vehicle acceptance.
+The preview server binds to localhost on port 8173 by default. `PORT` overrides it. To review without a server, open `dist/index.html`; links refer to the other files in the same folder.
 
-## Official publishing references
+## Domain and metadata
 
-- https://vercel.com/docs/builds/configure-a-build
-- https://vercel.com/docs/git
+A custom domain is not necessary for initial publication. `VERCEL_PROJECT_PRODUCTION_URL` supplies the actual production hostname during a Vercel build. `SITE_URL` overrides it after a real custom domain has been configured. Do not substitute an unowned or speculative domain.
+
+Portable builds without a public hostname do not invent canonical URLs or a sitemap. Production builds generate metadata and an eight-page sitemap for the selected host. Preview builds are marked noindex. The 404 document sets a site-root base, so nested missing paths can navigate home correctly.
+
+## Verify the published build
+
+1. The homepage shows the geometric DRIFTER wordmark and “A memory for your machine.”
+2. `/version.json` reports `Field Recorder 01.2` and the Git revision when provided by Vercel.
+3. The header reaches Recorder, Hardware, Field notes, Media and Apply. The footer reaches the test guide and data/contact page.
+4. The recorder scrubs and jumps to the event. The report writer exports user-entered evidence. Media SVG, PNG and ZIP downloads work.
+5. A nonexistent nested URL returns HTTP 404, not a homepage disguised as success.
+
+These production checks have not been completed through the currently scope-denied Vercel connection.
+
+## What the website does not require
+
+No external font, runtime JavaScript package, API key, database or payment service is required. The application flow opens the visitor's email app or generates a text file. It does not claim to deliver messages itself. The website does not require access to the vehicle node.
+
+## Build and test evidence
+
+This release passed 21 Node publication tests, 121 local Chromium document checks and 43 local HTTP/link/archive checks. The browser checks use local HTML document rendering; they are not public-deployment or real-device verification. See `QA-SUMMARY.md` for details.
