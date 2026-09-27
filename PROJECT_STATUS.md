@@ -25,9 +25,9 @@ The strongest currently defensible wording is: **targets standards-based OBD-II 
 
 ## Current release state — 28 September 2026
 
-PR #87 is merged to `main` with the boot-readiness deadline and strict OBD retained-status fixes. The exact audit evidence is **21 boot checks + 46 OBD checks passed** in the targeted harness. GitHub-hosted checks did not receive a runner, so the merged head does not yet have a current full-repository pytest/Ruff/Vite pass.
+PR #87 is merged with the boot-readiness deadline and strict OBD retained-status fixes. PR #88 is also merged with deployment hardening: fail-closed vehicle-state guarding for self-update, a 30-minute updater timer, bounded display `systemctl` calls, staged cockpit release activation, and `sudo drifter update`. The exact targeted audit evidence remains **21 boot + 46 OBD checks passed**; the deployment-hardening follow-up added **10 targeted regression checks passed** plus Python compilation and shell syntax.
 
-The merge is a **software promotion only**. The Pi has not been observed running this merged revision, and the physical release gate remains open: ten consecutive cold boots, blank-config touchscreen OBD onboarding, parked recovery/display tests, and an uninterrupted 1,800-second live telemetry run.
+These merges are **software promotion only**. The Pi has not been observed running the current merged revision, and GitHub-hosted jobs still fail before runner allocation. The physical release gate remains open: ten consecutive cold boots, blank-config touchscreen OBD onboarding, parked recovery/display tests, and an uninterrupted 1,800-second live telemetry run.
 
 ## Known work remaining
 
