@@ -248,7 +248,7 @@ export function CockpitApp() {
       gridTemplateAreas: showDrawer ? '"top top top" "rail main right"' : '"top top" "rail main"',
     }} data-screen-label={`cockpit · ${surf}`}>
       <div style={{ gridArea: 'top', display: 'grid' }}><LgTop sim={sim} narrow={layout === 'mid'} /></div>
-      <div style={{ gridArea: 'rail', display: 'grid' }}><LgRail active={surf === 'vivi' ? 'cockpit' : surf} onPick={onNav} /></div>
+      <div style={{ gridArea: 'rail', display: 'grid' }}><LgRail active={surf} onPick={onNav} /></div>
       <div style={{ gridArea: 'main', display: 'grid', minHeight: 0, minWidth: 0 }}>
         <ShBoundary surfKey={surf}><ShSurface surf={surf} sim={sim} short={short} onNav={onNav} /></ShBoundary>
       </div>
