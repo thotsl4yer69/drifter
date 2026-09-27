@@ -85,6 +85,7 @@ systemctl daemon-reload
 
 echo ""
 echo -e "${GREEN}  Vision stack installed.${NC}"
-echo -e "  Preferred backend: place ${CYAN}yolov8s.hef${NC} in ${CYAN}${DRIFTER_DIR}/vision-models/${NC}; drifter-vision uses Picamera2/Hailo post-processing."
+echo -e "  Preferred backend: Picamera2/Hailo with the packaged YOLOv8 HEF auto-selected for Hailo-8/8L/10H."
+echo -e "  Optional override: place ${CYAN}yolov8s.hef${NC} in ${CYAN}${DRIFTER_DIR}/vision-models/${NC}."
 echo -e "  CPU fallback: place ${CYAN}yolov8s.onnx${NC} in the same directory."
 echo -e "  Start vision: ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
