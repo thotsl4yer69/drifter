@@ -19,6 +19,7 @@ import logging
 import math
 import os
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -291,7 +292,16 @@ class HailoYolo:
     """Hailo detector using Raspberry Pi's supported Picamera2 device wrapper."""
 
     def __init__(self, model_path: Path) -> None:
-        from picamera2.devices import Hailo  # type: ignore[import]
+        try:
+            from picamera2.devices import Hailo  # type: ignore[import]
+        except ImportError:
+            # Picamera2/Hailo is normally installed by apt. DRIFTER's venv is
+            # deliberately isolated, so expose the distro package path only
+            # for this optional backend rather than globally to every service.
+            system_dist = "/usr/lib/python3/dist-packages"
+            if system_dist not in sys.path:
+                sys.path.append(system_dist)
+            from picamera2.devices import Hailo  # type: ignore[import]
 
         self._context = Hailo(str(model_path))
         enter = getattr(self._context, "__enter__", None)
