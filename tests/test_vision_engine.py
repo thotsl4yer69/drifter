@@ -1,17 +1,19 @@
-"""Regression tests for DRIFTER ONNX vision decoding.
+"""Regression tests for DRIFTER ONNX/Hailo vision decoding.
 
 These are software-only tensor/preprocessing checks. They do not establish
-camera, Hailo, Pi, road-scene, latency, or safety performance.
+camera, Hailo hardware, Pi, road-scene, latency, or safety performance.
 """
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+import types
 
 import numpy as np
 import pytest
 
 import vision_engine as vision
-from vision_engine import HailoYolo, OnnxYolo, _decode_yolo_output
+from vision_engine import HailoYolo, OnnxYolo, _decode_hailo_output, _decode_yolo_output
 
 
 def test_infer_returns_empty_when_no_session():
@@ -97,9 +99,20 @@ def test_malformed_or_nonfinite_outputs_do_not_create_detections(raw):
     assert _decode_yolo_output(raw, frame_w=640, frame_h=640) == []
 
 
-def test_direct_hailo_adapter_fails_closed_instead_of_claiming_empty_inference():
-    with pytest.raises(RuntimeError, match="direct Hailo HEF inference is not wired"):
-        HailoYolo(Path("/tmp/yolov8s.hef"))
+def test_hailo_postprocessed_output_maps_normalised_box_to_frame():
+    raw = [[] for _ in range(80)]
+    raw[2] = [np.array([0.25, 0.20, 0.75, 0.80, 0.92], dtype=np.float32)]
+
+    detections = _decode_hailo_output(raw, frame_w=1000, frame_h=500)
+
+    assert len(detections) == 1
+    det = detections[0]
+    assert det["class"] == "car"
+    assert det["confidence"] == pytest.approx(0.92)
+    assert det["bbox"]["x1"] == pytest.approx(200)
+    assert det["bbox"]["y1"] == pytest.approx(125)
+    assert det["bbox"]["width"] == pytest.approx(600)
+    assert det["bbox"]["height"] == pytest.approx(250)
 
 
 class _FakeSession:
@@ -118,10 +131,8 @@ class _FakeCv2:
 
     @staticmethod
     def resize(frame, size, interpolation):
-        assert size == (vision.VISION_INPUT_W, vision.VISION_INPUT_H)
         assert interpolation == _FakeCv2.INTER_LINEAR
-        # Deterministic 640x640 BGR fixture.
-        return np.zeros((vision.VISION_INPUT_H, vision.VISION_INPUT_W, 3), dtype=np.uint8)
+        return np.zeros((size[1], size[0], 3), dtype=np.uint8)
 
     @staticmethod
     def cvtColor(frame, code):
@@ -147,3 +158,55 @@ def test_onnx_infer_runs_preprocessing_session_and_decoder(monkeypatch):
     feed = obj.session.seen[1]["images"]
     assert feed.shape == (1, 3, 640, 640)
     assert feed.dtype == np.float32
+
+
+
+class _FakeHailoRuntime:
+    instances = []
+
+    def __init__(self, path):
+        self.path = path
+        self.closed = False
+        self.last_frame = None
+        self.__class__.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.closed = True
+
+    def get_input_shape(self):
+        return (320, 320, 3)
+
+    def run(self, frame):
+        self.last_frame = frame
+        raw = [[] for _ in range(80)]
+        raw[2] = [np.array([0.25, 0.25, 0.75, 0.75, 0.93], dtype=np.float32)]
+        return raw
+
+
+def test_hailo_backend_uses_picamera_wrapper_preprocesses_and_closes(monkeypatch):
+    devices = types.ModuleType("picamera2.devices")
+    devices.Hailo = _FakeHailoRuntime
+    picamera2 = types.ModuleType("picamera2")
+    picamera2.devices = devices
+    monkeypatch.setitem(sys.modules, "picamera2", picamera2)
+    monkeypatch.setitem(sys.modules, "picamera2.devices", devices)
+    monkeypatch.setitem(sys.modules, "cv2", _FakeCv2)
+
+    detector = HailoYolo(Path("/tmp/yolov8s.hef"))
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    detections = detector.infer(frame)
+
+    assert len(detections) == 1
+    assert detections[0]["class"] == "car"
+    assert detector.hailo.last_frame.shape == (320, 320, 3)
+    assert detector.hailo.last_frame.flags["C_CONTIGUOUS"]
+    detector.close()
+    assert detector._context.closed is True
+
+
+def test_camera_source_honours_env_override(monkeypatch):
+    monkeypatch.setenv("DRIFTER_DASHCAM_DEV", "/dev/video7")
+    assert vision._camera_source() == "/dev/video7"
