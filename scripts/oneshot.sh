@@ -167,7 +167,7 @@ SERVICES=(
     drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid
     drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge
     drifter-lcd drifter-location drifter-logger drifter-marauder
-    drifter-opsec drifter-realdash drifter-reporter drifter-rf
+    drifter-opsec drifter-perception drifter-realdash drifter-reporter drifter-rf
     drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi
     drifter-voice drifter-voicein drifter-wardrive drifter-watchdog
     drifter-weather drifter-wifi-audit drifter-vehicleid
