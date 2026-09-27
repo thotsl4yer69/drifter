@@ -41,7 +41,18 @@ sudo drifter display recover
 drifter acceptance mark display-recovery --pass --note "display recovered without Pi power cycle"
 ```
 
-## 4. Optional broader-platform RF sequence
+## 4. Hailo + forward camera acceptance
+
+After installing the AI HAT and Camera Module 3, reboot the Pi and run:
+
+```bash
+sudo ./scripts/vision-acceptance.sh
+drifter acceptance mark hailo-vision --pass --note "Hailo NPU, camera and 5s YOLOv8 pipeline smoke passed"
+```
+
+Do not mark this pass unless the script ends with `VISION: PASS`. This records Hailo as a separate capability gate without blocking the core VIM if the optional AI HAT is removed.
+
+## 5. Optional broader-platform RF sequence
 
 The RTL-SDR sequence belongs to the broader DRIFTER R&D platform and is **not required for DRIFTER VIM vehicle sign-off**.
 
@@ -53,7 +64,7 @@ drifter acceptance mark rf-sequence --pass --note "optional R&D RF sequence pass
 
 A missing or failed RF sequence does not block VIM vehicle acceptance.
 
-## 5. Thirty-minute Jaguar telemetry soak
+## 6. Thirty-minute Jaguar telemetry soak
 
 ```bash
 drifter acceptance soak
