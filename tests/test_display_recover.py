@@ -86,3 +86,31 @@ def test_recover_uses_configured_spi_target_and_requires_post_check(tmp_path, mo
 
     assert display.recover() == 0
     assert (driver / 'bind').read_text() == 'spi0.0'
+
+
+def test_service_state_times_out_instead_of_hanging(tmp_path, monkeypatch):
+    _tree(tmp_path, monkeypatch, service_active=True, bound=True)
+
+    def timeout(argv, **kwargs):
+        assert kwargs["timeout"] == display.SYSTEMCTL_TIMEOUT_SEC
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(display.subprocess, "run", timeout)
+    state = display._service_state()
+    assert state["active"] is False
+    assert state["returncode"] == 124
+    assert "timed out" in state["detail"]
+
+
+def test_recover_fails_cleanly_when_systemctl_restart_times_out(tmp_path, monkeypatch):
+    _tree(tmp_path, monkeypatch, service_active=True, bound=False)
+    monkeypatch.setattr(display.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(display.time, "sleep", lambda _seconds: None)
+
+    def timeout(argv, **kwargs):
+        assert argv[:2] == ["systemctl", "restart"]
+        assert kwargs["timeout"] == display.SYSTEMCTL_TIMEOUT_SEC
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(display.subprocess, "run", timeout)
+    assert display.recover() == 2
