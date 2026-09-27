@@ -77,8 +77,9 @@ from **yellow → green**.
 ## Multi-vehicle — "works in any OBD-II car" (Phase C–F)
 Target: any OBD-II vehicle via standardized PIDs; VIN auto-detect + manual
 override; EV/hybrid at the standard-PID level. Powertrain-aware, profile-driven.
-The 2004 X-Type is the regression baseline (its behaviour is unchanged when its
-profile is active — the offline suite proves it).
+The 2004 X-Type is the regression baseline. Historical offline coverage exists,
+but the 28 September audit did not rerun the complete repository suite against
+the merged head; current exact-head evidence is listed below.
 
 ### Phase C — universal PID / transport
 - [x] Unified PID table (`src/obd_pids.py`) — one canonical Mode-01 registry;
@@ -130,21 +131,24 @@ profile is active — the offline suite proves it).
 
 ---
 
-## What still requires the physical vehicle
+## Current merged-head verification gate
 
-Every non-hardware item above is done and the offline suite is green
-(`pytest -q` + `ruff check src tests`). Nothing further can be closed from the
-repo alone — the remaining items **all need the physical node/vehicle** (or are
-operator/provider actions) and are the yellow → green gate:
+PR #87 is merged to `main` as `e3cdcd868380a98c78f1e93cc1cfef88d6fdb68e`. The audit's exact targeted evidence is **21 boot checks + 46 OBD checks passed**, plus compilation of the changed runtime/test files. The GitHub-hosted PR jobs failed before receiving a runner (`steps=[]`, `runner_id=0`), so they provide no full-suite result.
 
-- **Operator/provider action:** rotate the historically-committed API keys
-  provider-side. The current public branch tip no longer ships a real VIN profile.
-- **Hardware validation gate** (below), including the new multi-vehicle items —
-  the transport auto-select, K-line-vs-CAN confirmation on the X-Type, live PID
-  discovery, and (if available) an EV/hybrid and a second-vehicle smoke.
+Before yellow → green, the following software checks still need a real full checkout/run:
+- [ ] **SW** `pytest -q tests/` passes on the exact merged main revision.
+- [ ] **SW** `ruff check src tests` passes on the exact merged main revision.
+- [ ] **SW** `node --test cockpit-v4/tests/*.test.mjs` and `(cd cockpit-v4 && npm ci --no-audit --no-fund && npm run build)` pass.
+- [ ] **SW/HW** Deploy current `main` to the Pi with `scripts/oneshot.sh`, then record `drifter version` and the installed revision/hash evidence.
+
+Operator/provider action also remains open: rotate the historically committed OWM / Google Maps keys provider-side.
 
 ## Hardware validation gate (yellow → green)
 Run on the physical node and confirm before declaring green:
+- [ ] **HW** Complete **10 consecutive genuine cold boots** on the intended vehicle power path; no rescued/replugged attempt counts as a first-start pass.
+- [ ] **HW** From blank configuration, complete touchscreen OBD onboarding through adapter discovery/pairing or Wi-Fi join, ELM handshake, separate ECU proof and changing supported PIDs.
+- [ ] **HW** While parked, verify ELM unplug/replug, broker interruption, browser restart and white/blank-display recovery without a Pi power cycle.
+- [ ] **HW** Complete an uninterrupted **1,800-second** live RPM/coolant/speed/voltage run with no synthetic/replay publisher, misleading stale values, reconnect loop or unexplained blank screen.
 - [ ] **HW** `sudo ./scripts/oneshot.sh` ends with `DEPLOY: ok`.
 - [ ] **HW** `curl -fsS http://127.0.0.1:8080/healthz` returns `ok` or
       `ok-hw-pending`.

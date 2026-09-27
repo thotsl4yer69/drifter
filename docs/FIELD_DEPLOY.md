@@ -33,7 +33,7 @@ ssh kali@10.42.0.1
 Last known IP: `10.246.228.156`. DHCP leases shift — `arp -a` is the
 truth.
 
-## Step 2 — Pull this branch onto the Pi
+## Step 2 — Pull current `main` onto the Pi
 
 ```bash
 ssh kali@<pi-ip>
@@ -167,9 +167,7 @@ plugged in, not a failure. A 503 means something like `dashboard`, `logger`,
 file is broken or its dependency isn't met. Check
 `systemctl status drifter-X` and the unit file in `/etc/systemd/system/`.
 
-**MQTT broker not reachable** — `systemctl status nanomq` (preferred)
-or `systemctl status mosquitto` (fallback). `install.sh` enables one
-or the other depending on which apt source is reachable.
+**MQTT broker not reachable** — Mosquitto is the default: check `systemctl status mosquitto`. If this node was intentionally installed with `--with-nanomq`, check `systemctl status nanomq` instead. `install.sh` makes that broker choice explicitly.
 
 **`can0` doesn't exist** — the bench-validated adapter is a **CANable/slcan**
 (`0483:5740`), which comes up as **`slcan0`**, *not* `can0`. So `candump can0`
@@ -205,5 +203,4 @@ candump slcan0          # NOT can0 — see above
 share USB ID `0483:5740`, so the bridges will grab the wrong device. Unplug one
 before testing the other.
 
-See [`FIRST_DRIVE.md`](../FIRST_DRIVE.md) for the full hardware-validated
-walkthrough.
+See [`FIRST_DRIVE.md`](../FIRST_DRIVE.md) for the full first-drive walkthrough. Complete the release checklist before treating the current build as hardware-validated.

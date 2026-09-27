@@ -10,6 +10,8 @@
 
 > **Maturity: Hardware-integrated prototype / active hardening.** DRIFTER is running as a real Raspberry Pi vehicle-node project, but it is not represented as production-ready or universally compatible. Validation depends on the vehicle, OBD transport and attached hardware. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
+> **Current hardening state (28 Sep 2026):** PR #87 is merged to `main` with boot-deadline and OBD-proof fixes. Targeted software checks passed; full hosted CI did not receive a runner, and Pi/vehicle acceptance is still outstanding. See [the evidence audit](docs/AUDIT_2026-09-28.md).
+
 ## The wedge
 
 **The fault vanished. The evidence didn't.**
@@ -109,13 +111,20 @@ Use one issue per unique vehicle + adapter combination. Never post VINs, credent
 
 ## Deployment
 
-The repository contains multiple deployment paths and field documentation. Start with the documented flow rather than copying a generic command from an old README revision:
+For an existing DRIFTER Pi checkout, the canonical update path is:
 
-1. review [PROJECT_STATUS.md](PROJECT_STATUS.md);
-2. review [FIRST_DRIVE.md](FIRST_DRIVE.md);
-3. review [CAPABILITIES.md](CAPABILITIES.md);
-4. follow the vehicle/profile and field-deployment documentation under `docs/`;
-5. run the repository tests/checks before connecting the target vehicle.
+```bash
+cd /home/kali/drifter
+git fetch origin
+git checkout main
+git pull --ff-only
+sudo ./scripts/oneshot.sh --skip-apt
+drifter version
+drifter healthz
+drifter diagnose
+```
+
+Use `sudo ./scripts/oneshot.sh` without `--skip-apt` for a fresh/full install. A successful software deploy is not the physical acceptance gate; record the installed revision and complete the cold-boot, OBD onboarding, recovery/display and 30-minute telemetry checks in [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md). The detailed field sequence is in [docs/FIELD_DEPLOY.md](docs/FIELD_DEPLOY.md).
 
 ## Documentation map
 
@@ -131,13 +140,13 @@ The repository contains multiple deployment paths and field documentation. Start
 
 ## Current hardening priorities
 
-- repeatable clean installation on the target Pi;
-- transport validation across additional real vehicles;
-- current hardware/wiring matrix;
-- service failure and recovery testing;
-- network exposure review;
-- tagged builds with test evidence;
-- road-test evidence tied to exact vehicle/adapter combinations.
+- current full-repository pytest/Ruff/Vite verification on merged `main`;
+- deploy merged `main` to the target Pi and record `drifter version` / installed hashes;
+- 10/10 genuine cold boots without rescue power cycles;
+- blank-config touchscreen OBD onboarding through adapter → ECU → changing PID proof;
+- parked browser/display/ELM/broker recovery testing;
+- uninterrupted 30-minute live telemetry evidence;
+- transport validation across additional real vehicles.
 
 ## Development provenance
 

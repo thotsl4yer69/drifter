@@ -3,7 +3,7 @@
 **Portfolio class:** Flagship  
 **Maturity:** **Hardware-integrated prototype / active hardening**  
 **Primary target:** Raspberry Pi vehicle node  
-**Last portfolio review:** 2026-08-13
+**Last portfolio review:** 2026-09-28
 
 ## What is demonstrated
 
@@ -22,6 +22,12 @@ DRIFTER is **not currently represented as production-ready**. It is a substantia
 Claims such as “any OBD-II car,” exact service counts, RF coverage or fully automatic vehicle adaptation should be read as architectural targets unless the specific vehicle/transport combination has been bench- or road-validated and documented.
 
 The strongest currently defensible wording is: **targets standards-based OBD-II vehicles, with validation dependent on the vehicle transport/protocol and available hardware.**
+
+## Current release state — 28 September 2026
+
+PR #87 is merged to `main` with the boot-readiness deadline and strict OBD retained-status fixes. The exact audit evidence is **21 boot checks + 46 OBD checks passed** in the targeted harness. GitHub-hosted checks did not receive a runner, so the merged head does not yet have a current full-repository pytest/Ruff/Vite pass.
+
+The merge is a **software promotion only**. The Pi has not been observed running this merged revision, and the physical release gate remains open: ten consecutive cold boots, blank-config touchscreen OBD onboarding, parked recovery/display tests, and an uninterrupted 1,800-second live telemetry run.
 
 ## Known work remaining
 

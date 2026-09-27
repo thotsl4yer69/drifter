@@ -4,6 +4,18 @@ All notable changes to DRIFTER are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); the project is pre-1.0 and
 ships from the default branch.
 
+## [Unreleased] — 2026-09-28 boot / OBD proof hardening
+
+### Fixed
+- Core-service readiness now shares one stage deadline: individual `systemctl` probes and sleeps are capped by the remaining budget, with no post-deadline probe sweep.
+- Strict OBD retained-status proof now rejects invalid/future timestamps and non-boolean adapter/ECU flags instead of allowing malformed retained data to appear healthy.
+
+### Verification
+- PR #87 merged to `main` as `e3cdcd868380a98c78f1e93cc1cfef88d6fdb68e`.
+- Exact targeted evidence: **21 boot checks + 46 OBD checks passed**, plus compilation of the changed runtime/test files.
+- Hosted PR jobs failed before receiving a runner (`steps=[]`, `runner_id=0`), so full repository pytest/Ruff/Vite verification remains open.
+- Pi deployment and physical acceptance remain open: 10 cold boots, touchscreen OBD onboarding, display/recovery checks and an uninterrupted 30-minute live telemetry run.
+
 ## [Unreleased] — Multi-vehicle (any OBD-II car)
 
 DRIFTER now targets **any OBD-II vehicle**, not just the reference X-Type. It
