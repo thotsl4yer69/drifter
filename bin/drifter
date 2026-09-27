@@ -15,6 +15,14 @@ case "${1:-}" in
         shift
         exec "$PY" /opt/drifter/obd_setup_strict.py "$@"
         ;;
+    update)
+        shift
+        if [ "$EUID" -ne 0 ]; then
+            echo "Run with sudo: sudo drifter update" >&2
+            exit 2
+        fi
+        exec "$PY" /opt/drifter/auto_update.py "$@"
+        ;;
     acceptance|accept)
         shift
         exec "$PY" /opt/drifter/field_acceptance.py "$@"
