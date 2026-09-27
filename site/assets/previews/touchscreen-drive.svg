@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480" role="img" aria-labelledby="title desc">
+<title id="title">DRIFTER touchscreen component preview</title>
+<desc id="desc">Static vector export of actual React 16-rendered cockpit components with synthetic test data. Not a vehicle capture or production-app validation.</desc>
+<style>.t0{fill:#e8eaed;font-family:Courier New,monospace;font-size:21px;font-weight:700;letter-spacing:2.52px}.t1{fill:#8da4ad;font-family:Courier New,monospace;font-size:9px;font-weight:400;letter-spacing:0.63px}.t2{fill:#8da4ad;font-family:Courier New,monospace;font-size:11px;font-weight:400;letter-spacing:0px}.t3{fill:#e8eaed;font-family:Courier New,monospace;font-size:12px;font-weight:400;letter-spacing:0px}.t4{fill:#8da4ad;font-family:Courier New,monospace;font-size:9px;font-weight:400;letter-spacing:0px}.t5{fill:#8da4ad;font-family:Courier New,monospace;font-size:9px;font-weight:500;letter-spacing:0px}.t6{fill:#8da4ad;font-family:Courier New,monospace;font-size:11px;font-weight:400;letter-spacing:0.66px}.t7{fill:#e8eaed;font-family:Courier New,monospace;font-size:62px;font-weight:600;letter-spacing:0px}.t8{fill:#8da4ad;font-family:Courier New,monospace;font-size:13px;font-weight:400;letter-spacing:0px}.t9{fill:#8da4ad;font-family:Courier New,monospace;font-size:10px;font-weight:400;letter-spacing:0px}.t10{fill:#e8eaed;font-family:Courier New,monospace;font-size:36px;font-weight:600;letter-spacing:0px}.t11{fill:#8da4ad;font-family:Courier New,monospace;font-size:10px;font-weight:500;letter-spacing:0px}.t12{fill:#e8eaed;font-family:Arial,sans-serif;font-size:16px;font-weight:700;letter-spacing:0px}.t13{fill:#8da4ad;font-family:Arial,sans-serif;font-size:12px;font-weight:400;letter-spacing:0px}.t14{fill:#dfc68f;font-family:Arial,sans-serif;font-size:18px;font-weight:400;letter-spacing:0px}.t15{fill:#dfc68f;font-family:Courier New,monospace;font-size:12px;font-weight:400;letter-spacing:0.48px}.t16{fill:#8da4ad;font-family:Arial,sans-serif;font-size:18px;font-weight:400;letter-spacing:0px}.t17{fill:#8da4ad;font-family:Courier New,monospace;font-size:12px;font-weight:400;letter-spacing:0.48px}</style>
+<rect x="0" y="0" width="800" height="480" rx="0" fill="#080a0e"/>
+<text x="10" y="34.35" class="t0">DRIFTER</text>
+<text x="10" y="47.05" class="t1">VEHICLE / FIELD NODE</text>
+<text x="570.58" y="36.1" class="t2">TEST DATA</text>
+<rect x="640" y="3.5" width="70" height="58" rx="8" fill="#10151c" stroke="#46505b"/>
+<text x="656.98" y="36.7" class="t3">AMBER</text>
+<rect x="720" y="3.5" width="70" height="58" rx="8" fill="#10151c" stroke="#46505b"/>
+<text x="740.59" y="36.7" class="t3">DATA</text>
+<rect x="8" y="74" width="108.56" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="14" y="83.31" width="4" height="4" rx="50" fill="#8da4ad"/>
+<text x="24" y="88.31" class="t4">OBD</text>
+<text x="24" y="100" class="t5">DATA</text>
+<rect x="120.56" y="74" width="108.58" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="126.56" y="83.31" width="4" height="4" rx="50" fill="#596973"/>
+<text x="136.56" y="88.31" class="t4">GPS</text>
+<text x="136.56" y="100" class="t5">NO FIX</text>
+<rect x="233.14" y="74" width="108.56" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="239.14" y="83.31" width="4" height="4" rx="50" fill="#596973"/>
+<text x="249.14" y="88.31" class="t4">HAILO</text>
+<text x="249.14" y="100" class="t5">UNVERIFIED</text>
+<rect x="345.7" y="74" width="108.58" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="351.7" y="83.31" width="4" height="4" rx="50" fill="#596973"/>
+<text x="361.7" y="88.31" class="t4">CAM</text>
+<text x="361.7" y="100" class="t5">UNKNOWN</text>
+<rect x="458.28" y="74" width="108.56" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="464.28" y="83.31" width="4" height="4" rx="50" fill="#596973"/>
+<text x="474.28" y="88.31" class="t4">SDR</text>
+<text x="474.28" y="100" class="t5">NO DEVICE</text>
+<rect x="570.84" y="74" width="108.58" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="576.84" y="83.31" width="4" height="4" rx="50" fill="#596973"/>
+<text x="586.84" y="88.31" class="t4">REC</text>
+<text x="586.84" y="100" class="t5">READY</text>
+<rect x="683.42" y="74" width="108.56" height="36" rx="5" fill="#0b0f14" stroke="#232a34"/>
+<rect x="689.42" y="83.31" width="4" height="4" rx="50" fill="#8da4ad"/>
+<text x="699.42" y="88.31" class="t4">LINK</text>
+<text x="699.42" y="100" class="t5">LIVE</text>
+<rect x="8" y="118" width="247.62" height="146.67" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="21" y="137.6" class="t6">SPEED · OBD</text>
+<text x="21" y="196.47" class="t7">72</text>
+<text x="21" y="220.67" class="t8">km/h</text>
+<svg x="21" y="226.67" width="221.62" height="14" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,20 16.666666666666668,17.81818181818182 33.333333333333336,12.727272727272727 50,9.090909090909092 66.66666666666667,6.909090909090908 83.33333333333333,5.454545454545455 100,4" fill="none" stroke="#8da4ad" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>
+<text x="21" y="252.47" class="t9">TEST DATA</text>
+<rect x="263.62" y="118" width="170.8" height="146.67" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="276.62" y="137.6" class="t6">ENGINE RPM</text>
+<text x="276.62" y="200.47" class="t10">2.2</text>
+<text x="276.62" y="220.67" class="t8">× 1000 rpm</text>
+<svg x="276.62" y="226.67" width="144.8" height="14" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,20 33.333333333333336,8 66.66666666666667,10 100,4" fill="none" stroke="#8da4ad" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>
+<text x="276.62" y="252.47" class="t9">TEST DATA</text>
+<rect x="442.42" y="118" width="170.78" height="146.67" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="455.42" y="137.6" class="t6">COOLANT</text>
+<text x="455.42" y="200.47" class="t10">91.2</text>
+<text x="455.42" y="220.67" class="t8">°C</text>
+<svg x="455.42" y="226.67" width="144.78" height="14" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,20 33.333333333333336,12.727272727272737 66.66666666666667,5.454545454545473 100,4" fill="none" stroke="#dfc68f" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>
+<text x="455.42" y="252.47" class="t9">TEST DATA</text>
+<rect x="621.2" y="118" width="170.8" height="146.67" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="634.2" y="137.6" class="t6">SUPPLY</text>
+<text x="634.2" y="200.47" class="t10">14.1</text>
+<text x="634.2" y="220.67" class="t8">V</text>
+<svg x="634.2" y="226.67" width="144.8" height="14" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,20 50,4 100,12" fill="none" stroke="#8da4ad" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>
+<text x="634.2" y="252.47" class="t9">TEST DATA</text>
+<rect x="8" y="272.67" width="415.06" height="133.33" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="21" y="291.47" class="t9">DIAGNOSTICS</text>
+<text x="350.05" y="291.47" class="t11">0 REPORTED</text>
+<text x="21" y="312.27" class="t12">NO ALERTS REPORTED</text>
+<text x="21" y="334.26" class="t13">Open DIAG for fault codes and connection checks.</text>
+<text x="21" y="393.8" class="t9">OPEN DIAG →</text>
+<rect x="431.06" y="272.67" width="360.92" height="133.33" rx="8" fill="#10151c" stroke="#232a34"/>
+<text x="444.06" y="291.47" class="t9">PERCEPTION</text>
+<text x="724.97" y="291.47" class="t11">NO VISION</text>
+<text x="444.06" y="312.27" class="t12">VISION UNAVAILABLE</text>
+<text x="444.06" y="334.26" class="t13">Vehicle telemetry does not depend on vision.</text>
+<rect x="0" y="414" width="800" height="66" rx="0" fill="none" stroke="#232a34"/>
+<rect x="4" y="418.5" width="109.7" height="58" rx="8" fill="#19160f" stroke="#494032"/>
+<text x="51.92" y="444.5" class="t14">◈</text>
+<text x="39.64" y="464.7" class="t15">drive</text>
+<rect x="117.7" y="418.5" width="109.72" height="58" rx="8" fill="none"/>
+<text x="167.48" y="444" class="t16">⌖</text>
+<text x="161.03" y="464.2" class="t17">map</text>
+<rect x="231.42" y="418.5" width="109.72" height="58" rx="8" fill="none"/>
+<text x="277.77" y="444.5" class="t16">▤</text>
+<text x="270.91" y="464.7" class="t17">diag</text>
+<rect x="345.14" y="418.5" width="109.7" height="58" rx="8" fill="none"/>
+<text x="392.44" y="444.5" class="t16">⊚</text>
+<text x="392.3" y="464.7" class="t17">rf</text>
+<rect x="458.84" y="418.5" width="109.72" height="58" rx="8" fill="none"/>
+<text x="506.16" y="444.5" class="t16">⊗</text>
+<text x="498.33" y="464.7" class="t17">foot</text>
+<rect x="572.56" y="418.5" width="109.72" height="58" rx="8" fill="none"/>
+<text x="621.98" y="444" class="t16">●</text>
+<text x="612.05" y="464.2" class="t17">vivi</text>
+<rect x="686.28" y="418.5" width="109.72" height="58" rx="8" fill="none"/>
+<text x="735.78" y="444" class="t16">◌</text>
+<text x="718.09" y="464.2" class="t17">system</text>
+</svg>

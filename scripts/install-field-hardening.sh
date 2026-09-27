@@ -8,7 +8,8 @@ TARGET="$ROOT/field_acceptance.py"
 PY="$ROOT/venv/bin/python3"
 MODE="${1:---check}"
 BASE="9b5b1e3112e6e5c5a164586b148a2f49d58141a3"
-PATCHED="3009cfa9c7d26cfcef137f51bdc6c4af4c55f6b9"
+PREVIOUS_PATCHED="3009cfa9c7d26cfcef137f51bdc6c4af4c55f6b9"
+PATCHED="797f2822152afda43f72aa5293337f28e625b111"
 fail() { printf 'HOLD: %s\n' "$*" >&2; exit 2; }
 [[ $# -le 1 && ( "$MODE" == --check || "$MODE" == --apply ) ]] || fail 'Usage: install-field-hardening.sh [--check|--apply]'
 [[ -f "$SOURCE" && -f "$TARGET" && -x "$PY" ]] || fail 'A complete existing DRIFTER install is required; nothing changed.'
@@ -31,7 +32,7 @@ if [[ "$CURRENT" == "$PATCHED" ]]; then
     echo 'Field hardening is already installed. Existing evidence was not reset.'
     exit 0
 fi
-[[ "$CURRENT" == "$BASE" ]] || fail 'Installed field gate is a different revision. Refusing a mixed-version update; nothing changed.'
+[[ "$CURRENT" == "$BASE" || "$CURRENT" == "$PREVIOUS_PATCHED" ]] || fail 'Installed field gate is a different revision. Refusing a mixed-version update; nothing changed.'
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$ROOT" "$PY" - "$SOURCE" <<'PY'
 import ast
 import sys
