@@ -45,7 +45,7 @@ TELEMETRY_TOPICS = {
     "speed": TOPICS["speed"],
     "voltage": TOPICS["voltage"],
 }
-OBD_STATUS_TOPIC = "drifter/obd/status"
+OBD_STATUS_TOPIC = TOPICS["obd_status"]
 
 
 def _utc() -> str:
@@ -70,7 +70,7 @@ def _load_state(path: Path | None = None) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
 
 
@@ -78,8 +78,14 @@ def _save_state(state: dict[str, Any], path: Path | None = None) -> None:
     path = STATE_PATH if path is None else path
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, indent=2, sort_keys=True, allow_nan=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _boot_id() -> str:
@@ -150,6 +156,37 @@ def _live_checks() -> dict[str, Any]:
     }
 
 
+def _passed_boot_ids(boots: list[dict[str, Any]]) -> set[str]:
+    """Count the current consecutive passing sequence, not lifetime successes."""
+    passed: set[str] = set()
+    for item in boots:
+        boot_id = item.get("boot_id")
+        if item.get("ok") is not True or not boot_id or boot_id == "unknown":
+            passed.clear()
+        else:
+            passed.add(boot_id)
+    return passed
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _live_ok(checks: dict[str, Any]) -> bool:
+    return bool(
+        checks.get("obd", {}).get("ok")
+        and checks.get("display", {}).get("ok")
+        and checks.get("services_ok")
+        and checks.get("power", {}).get("ok")
+    )
+
+
 def _record_cold_boot(args) -> int:
     state = _load_state()
     boot_id = _boot_id()
@@ -171,13 +208,23 @@ def _record_cold_boot(args) -> int:
         "checks": checks,
         "field_dump": _field_dump(),
     }
+    previous = [item for item in state.get("cold_boots", []) if item.get("boot_id") == boot_id]
+    failed = next((item for item in previous if item.get("ok") is not True), None)
+    if failed is not None:
+        ok = False
+        entry["ok"] = False
+        entry["first_failure"] = failed.get("first_failure") or {
+            "recorded": failed.get("recorded"),
+            "checks": failed.get("checks"),
+            "no_replug": failed.get("no_replug"),
+        }
     boots = [item for item in state.get("cold_boots", []) if item.get("boot_id") != boot_id]
     boots.append(entry)
     state["cold_boots"] = boots
     state["updated"] = _utc()
     _save_state(state)
 
-    passed = len({item.get("boot_id") for item in boots if item.get("ok")})
+    passed = len(_passed_boot_ids(boots))
     print(json.dumps({"record": entry, "passed_unique_boots": passed, "required": MIN_COLD_BOOTS}, indent=2))
     return 0 if ok else 2
 
@@ -191,7 +238,7 @@ def _summarize_telemetry(
 ) -> dict[str, Any]:
     duration = max(0.0, end - start)
     sensors: dict[str, Any] = {}
-    all_ok = True
+    all_ok = math.isfinite(end - start) and end >= start and math.isfinite(max_gap) and 2 <= max_gap <= DEFAULT_MAX_GAP_SECONDS
     for name in TELEMETRY_TOPICS:
         points = samples.get(name, [])
         times = [point[0] for point in points]
@@ -202,6 +249,9 @@ def _summarize_telemetry(
         worst_gap = max(gaps, default=0.0) if times else math.inf
         ok = bool(
             len(points) >= 3
+            and all(math.isfinite(t) and start <= t <= end for t in times)
+            and all(math.isfinite(v) for v in values)
+            and all(gap >= 0 for gap in gaps)
             and first_delay <= max_gap
             and tail_delay <= max_gap
             and worst_gap <= max_gap
@@ -227,17 +277,48 @@ def _summarize_telemetry(
 
 
 def _telemetry_soak(args) -> int:
-    duration = max(10.0, float(args.seconds))
-    max_gap = max(2.0, float(args.max_gap))
+    duration = _finite_number(args.seconds)
+    max_gap = _finite_number(args.max_gap)
+    if duration is None or not 10 <= duration <= 86400:
+        print("--seconds must be finite and between 10 and 86400", file=sys.stderr)
+        return 2
+    if max_gap is None or not 2 <= max_gap <= DEFAULT_MAX_GAP_SECONDS:
+        print("--max-gap must be finite and between 2 and 30", file=sys.stderr)
+        return 2
+
     samples: dict[str, list[tuple[float, float]]] = {name: [] for name in TELEMETRY_TOPICS}
     topic_to_name = {topic: name for name, topic in TELEMETRY_TOPICS.items()}
     obd_failures: list[dict[str, Any]] = []
+    before = _live_checks()
     start_wall = time.time()
     start = time.monotonic()
+    stopping = False
+
+    def failure(state: str, **details) -> None:
+        obd_failures.append({"offset_s": round(time.monotonic() - start, 3), "state": state, **details})
+
+    if not _live_ok(before):
+        failure("preflight_failed")
 
     client = make_mqtt_client(f"drifter-acceptance-{os.getpid()}")
 
+    def on_connect(cli, _userdata, _flags, reason_code, _properties):
+        if reason_code != 0:
+            failure("mqtt_connection_refused", reason=str(reason_code))
+            return
+        # Subscribe on EVERY CONNACK, including after a broker restart.
+        for topic in [*TELEMETRY_TOPICS.values(), OBD_STATUS_TOPIC]:
+            result, _mid = cli.subscribe(topic)
+            if result != 0:
+                failure("mqtt_subscribe_failed", topic=topic, rc=result)
+
+    def on_disconnect(_client, _userdata, _flags, reason_code, _properties):
+        if not stopping:
+            failure("mqtt_disconnected", reason=str(reason_code))
+
     def on_message(_client, _userdata, msg):
+        if stopping:
+            return
         now = time.monotonic()
         try:
             data = json.loads(msg.payload)
@@ -245,53 +326,69 @@ def _telemetry_soak(args) -> int:
             return
         if msg.topic == OBD_STATUS_TOPIC:
             if isinstance(data, dict):
-                state = str(data.get("state") or "").lower()
-                if state in {"adapter_error", "bus_unreachable", "disconnected", "error"}:
-                    obd_failures.append({"offset_s": round(now - start, 3), "state": state, "data": data})
+                state = str(data.get("state") or "unknown").lower()
+                if state != "online":
+                    failure("obd_not_online", bridge_state=state)
             return
         name = topic_to_name.get(msg.topic)
-        if not name:
+        if not name or getattr(msg, "retain", False):
             return
-        value = data.get("value") if isinstance(data, dict) else data
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            return
-        if math.isfinite(value):
+        # Retained snapshots, replay/demo-labelled data and stale timestamps
+        # are not evidence of continuing live vehicle telemetry.
+        if isinstance(data, dict):
+            if data.get("simulated") or str(data.get("source")) in {"replay", "demo", "simulation", "fuzz"}:
+                failure("synthetic_telemetry", sensor=name)
+                return
+            if "ts" in data:
+                ts = _finite_number(data["ts"])
+                if ts is None or not 0 <= time.time() - ts <= DEFAULT_MAX_GAP_SECONDS:
+                    return
+        value = _finite_number(data.get("value") if isinstance(data, dict) else data)
+        if value is not None:
             samples[name].append((now, value))
 
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
     try:
+        if not _live_ok(before):
+            raise RuntimeError("Preflight failed; fix vehicle link/display/services/power before soaking")
         client.connect(MQTT_HOST, MQTT_PORT, 30)
-        for topic in TELEMETRY_TOPICS.values():
-            client.subscribe(topic)
-        client.subscribe(OBD_STATUS_TOPIC)
         client.loop_start()
         deadline = start + duration
         while time.monotonic() < deadline:
             time.sleep(min(0.5, max(0.05, deadline - time.monotonic())))
     except KeyboardInterrupt:
-        pass
+        failure("interrupted")
     except Exception as exc:
-        obd_failures.append({"offset_s": round(time.monotonic() - start, 3), "state": "mqtt_error", "error": str(exc)})
+        failure("mqtt_error", error=str(exc))
     finally:
+        stopping = True
         end = time.monotonic()
         try:
             client.loop_stop()
             client.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            failure("mqtt_cleanup_error", error=str(exc))
 
+    after = _live_checks()
+    if not _live_ok(after):
+        failure("postflight_failed")
+    if end - start < duration:
+        failure("incomplete_duration")
     report = _summarize_telemetry(samples, start, end, max_gap, obd_failures)
     report.update({
         "started_epoch": start_wall,
         "started": datetime.fromtimestamp(start_wall, UTC).isoformat(),
         "completed": _utc(),
         "required_signoff_duration_s": MIN_SOAK_SECONDS,
+        "requested_duration_s": duration,
+        "live_before": before,
+        "live_after": after,
     })
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    evidence = EVIDENCE_DIR / f"telemetry-soak-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
-    evidence.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    evidence = EVIDENCE_DIR / f"telemetry-soak-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S.%fZ')}.json"
+    _save_state(report, evidence)
     report["evidence"] = str(evidence)
 
     state = _load_state()
@@ -325,26 +422,30 @@ def _mark(args) -> int:
 def _status(args) -> int:
     state = _load_state()
     boots = state.get("cold_boots", [])
-    passed_boots = {item.get("boot_id") for item in boots if item.get("ok") and item.get("boot_id")}
+    passed_boots = _passed_boot_ids(boots)
     soak = state.get("telemetry_soak") or {}
     physical = state.get("physical") or {}
     live = _live_checks() if not args.no_live else {}
 
     boot_gate = len(passed_boots) >= MIN_COLD_BOOTS
-    soak_gate = bool(soak.get("ok")) and float(soak.get("duration_s", 0) or 0) >= MIN_SOAK_SECONDS
+    soak_duration = _finite_number(soak.get("duration_s"))
+    soak_gap = _finite_number(soak.get("max_allowed_gap_s", DEFAULT_MAX_GAP_SECONDS))
+    soak_gate = bool(
+        soak.get("ok") is True
+        and soak_duration is not None and soak_duration >= MIN_SOAK_SECONDS
+        and soak_gap is not None and 2 <= soak_gap <= DEFAULT_MAX_GAP_SECONDS
+    )
     physical_gate = all(
         bool((physical.get(name) or {}).get("ok"))
         for name in VIM_REQUIRED_PHYSICAL_GATES
     )
-    live_gate = True if args.no_live else bool(
-        live.get("obd", {}).get("ok")
-        and live.get("display", {}).get("ok")
-        and live.get("services_ok")
-        and live.get("power", {}).get("ok")
-    )
-    ready = boot_gate and soak_gate and physical_gate and live_gate
+    live_gate = not args.no_live and _live_ok(live)
+    stored_gates_ready = boot_gate and soak_gate and physical_gate
+    ready = stored_gates_ready and live_gate
     payload = {
         "signoff_ready": ready,
+        "stored_gates_ready": stored_gates_ready,
+        "live_checked": not args.no_live,
         "cold_boots": {"ok": boot_gate, "passed": len(passed_boots), "required": MIN_COLD_BOOTS},
         "telemetry_soak": {
             "ok": soak_gate,
