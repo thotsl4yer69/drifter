@@ -22,17 +22,24 @@ def test_boot_status_is_retained_qos1():
 def test_core_services_share_one_readiness_window(monkeypatch):
     checks = []
 
-    def active(service):
+    def active(service, timeout=3.0):
         checks.append(service)
         return service == 'a'
 
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(boot.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(boot.time, 'sleep', sleep)
     monkeypatch.setattr(boot, '_systemctl_active', active)
-    states = boot._wait_for_core_services(['a', 'b', 'c'], timeout=0, poll=0)
+    states = boot._wait_for_core_services(['a', 'b', 'c'], timeout=1, poll=1)
 
     assert states == {'a': True, 'b': False, 'c': False}
-    # A zero-length shared deadline performs bounded observations only; it does
-    # not sleep 20 seconds separately for every unavailable service.
-    assert set(checks) == {'a', 'b', 'c'}
+    # One shared window, declared probe order, no post-deadline sweep.
+    assert now[0] == 1
+    assert checks == ['a', 'b', 'c']
 
 
 def test_default_boot_budget_fits_systemd_timeout():

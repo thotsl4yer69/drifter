@@ -17,6 +17,7 @@ That prevents the acceptance test itself from causing adapter contention.
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 import time
@@ -104,15 +105,29 @@ def bridge_status_probe(*, now: float | None = None) -> dict[str, object] | None
     if not isinstance(status, dict):
         status = {}
 
-    now = time.time() if now is None else float(now)
+    # Retained evidence can outlive a bridge restart or a Pi clock correction.
+    # Do not clamp future timestamps to age zero or let NaN compare as fresh.
+    clock = time.time() if now is None else now
+    timestamp = status.get("ts")
+    age = None
     try:
-        ts = float(status.get("ts", 0) or 0)
-    except (TypeError, ValueError):
-        ts = 0.0
-    age = max(0.0, now - ts) if ts else None
-    adapter_ok = bool(status.get("adapter_ok"))
-    ecu_ok = bool(status.get("ecu_ok"))
-    fresh = age is not None and age <= BRIDGE_STATUS_MAX_AGE_SEC
+        if isinstance(clock, bool) or isinstance(timestamp, bool):
+            raise ValueError("boolean is not a timestamp")
+        clock = float(clock)
+        timestamp = float(timestamp)
+        if not (math.isfinite(clock) and math.isfinite(timestamp)):
+            raise ValueError("non-finite timestamp")
+        if clock <= 0 or timestamp <= 0:
+            raise ValueError("non-positive timestamp")
+        age = clock - timestamp
+        if not math.isfinite(age):
+            age = None
+    except (TypeError, ValueError, OverflowError):
+        age = None
+    # JSON strings such as "false" and nonzero numbers are not link proof.
+    adapter_ok = status.get("adapter_ok") is True
+    ecu_ok = status.get("ecu_ok") is True
+    fresh = age is not None and 0.0 <= age <= BRIDGE_STATUS_MAX_AGE_SEC
 
     result: dict[str, object] = {
         "ok": bool(fresh and adapter_ok and ecu_ok and str(status.get("state") or "") == "online"),
@@ -135,7 +150,15 @@ def bridge_status_probe(*, now: float | None = None) -> dict[str, object] | None
         result["error"] = "OBD bridge is active but no retained status was received"
     elif not fresh:
         result["ecu_ok"] = False
-        result["error"] = f"OBD bridge retained status is stale ({age:.1f}s old)" if age is not None else "OBD bridge status has no timestamp"
+        if age is None:
+            result["error"] = "OBD bridge status timestamp or Pi clock is missing/invalid"
+        elif age < 0:
+            result["error"] = (
+                "OBD bridge status timestamp is in the future; check the Pi clock "
+                "and wait for fresh bridge status"
+            )
+        else:
+            result["error"] = f"OBD bridge retained status is stale ({age:.1f}s old)"
     elif not adapter_ok:
         result["error"] = str(status.get("reason") or "running bridge cannot reach the ELM adapter")
     elif not ecu_ok:

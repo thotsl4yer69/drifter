@@ -15,9 +15,9 @@ Sequence:
   5. Ready/degraded → retain drifter/boot/status, exit 0
 
 Any failure is shown on the LCD and published, but the unit still exits 0 —
-boot must never wedge on a missing dongle. The core-service stage is bounded as
-one window rather than 20 seconds per service, keeping worst-case hand-off well
-inside the systemd unit timeout.
+boot must not depend on a missing dongle. The core-service stage uses one
+shared readiness window, including individual command timeouts. This does not
+certify whole-system boot timing or physical display readiness.
 """
 from __future__ import annotations
 
@@ -106,15 +106,16 @@ class BootScreen:
             log.warning("boot splash paint failed: %s", exc)
 
 
-def _systemctl_active(service: str) -> bool:
-    if not shutil.which('systemctl'):
+def _systemctl_active(service: str, timeout: float = 3.0) -> bool:
+    # The caller's remaining stage budget also bounds this individual probe.
+    if timeout <= 0 or not shutil.which('systemctl'):
         return False
     try:
         result = subprocess.run(
             ['systemctl', 'is-active', service],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=min(3.0, timeout),
             check=False,
         )
         return result.stdout.strip() == 'active'
@@ -163,12 +164,22 @@ def _publish(client, stage: str, detail: str, ok: bool) -> None:
 
 
 def _wait_for(predicate, timeout: float, poll: float = 1.0) -> bool:
+    """Poll only while the stage has time; never probe after expiry.
+
+    Predicate runtime itself is not pre-empted here, so blocking predicates
+    still need their own operation timeout.
+    """
     deadline = time.monotonic() + max(0.0, timeout)
-    while time.monotonic() < deadline:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
         if predicate():
             return True
-        time.sleep(poll)
-    return bool(predicate())
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(max(0.0, poll), remaining))
 
 
 def _wait_for_core_services(
@@ -176,26 +187,31 @@ def _wait_for_core_services(
     timeout: float = BOOT_CORE_WAIT_SEC,
     poll: float = BOOT_SERVICE_POLL_SEC,
 ) -> dict[str, bool]:
-    """Resolve core-service readiness within one shared deadline."""
-    ordered = list(services)
-    pending = set(ordered)
+    """Observe services without multiplying the stage budget by their count.
+
+    Each subprocess and sleep receives at most the remaining time. No new
+    observation starts after the deadline; unobserved services stay degraded.
+    Process creation/reaping and OS scheduling can still add overhead, so this
+    is a bounded software wait, not a hard-real-time or physical boot guarantee.
+    """
+    ordered = list(dict.fromkeys(services))
+    pending = list(ordered)
     ready: dict[str, bool] = {service: False for service in ordered}
     deadline = time.monotonic() + max(0.0, timeout)
 
     while pending:
         for service in list(pending):
-            if _systemctl_active(service):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return ready
+            if _systemctl_active(service, timeout=min(3.0, remaining)):
                 ready[service] = True
                 pending.remove(service)
-        if not pending or time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if not pending or remaining <= 0:
             break
-        time.sleep(poll)
+        time.sleep(min(max(0.0, poll), remaining))
 
-    # One final observation at the deadline avoids classifying a service that
-    # became active during the last sleep as failed.
-    for service in list(pending):
-        if _systemctl_active(service):
-            ready[service] = True
     return ready
 
 
