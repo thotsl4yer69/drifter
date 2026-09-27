@@ -4,9 +4,9 @@ MZ1312 DRIFTER — Vision Engine
 
 Runs optional object detection for the DRIFTER perception pipeline. The CPU
 ONNX path performs real YOLOv8 preprocessing, output decoding and class-wise
-NMS. Direct Hailo HEF execution remains fail-closed until an exact runtime/model
-output contract is validated on the physical Pi/Hailo stack; the supported
-Raspberry Pi rpicam Hailo pipeline is treated as a separate hardware path.
+NMS. Direct Hailo HEF execution uses Raspberry Pi's Picamera2 Hailo wrapper so
+model-specific post-processing stays in the supported Hailo stack. ONNX remains
+the CPU fallback.
 
 Vision is optional and never blocks the OBD/telemetry spine.
 UNCAGED TECHNOLOGY — EST 1991
@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import signal
 import threading
 import time
@@ -216,23 +217,126 @@ def _decode_yolo_output(
     return kept
 
 
-class HailoYolo:
-    """Fail-closed marker for direct HEF execution.
+def _decode_hailo_output(
+    raw,
+    *,
+    frame_w: int,
+    frame_h: int,
+    confidence: float = VISION_CONFIDENCE,
+) -> list[dict]:
+    """Decode Picamera2 Hailo.run() object-detection output.
 
-    DRIFTER's repository does not define a stable tensor/output contract for its
-    HEF. Raspberry Pi's supported rpicam Hailo pipeline performs model-specific
-    post-processing externally. Do not claim direct inference from this adapter
-    until the physical Hailo/model version is pinned and validated.
+    Raspberry Pi's Hailo helper returns one list per class. Each detection is
+    [y0, x0, y1, x1, score] in normalised coordinates after model-specific
+    post-processing/NMS.
     """
+    if raw is None:
+        return []
+    results: list[dict] = []
+    try:
+        classes = list(raw)
+    except TypeError:
+        return []
+
+    for class_id, detections in enumerate(classes):
+        try:
+            rows = list(detections)
+        except TypeError:
+            continue
+        for detection in rows:
+            try:
+                values = np.asarray(detection, dtype=np.float32).reshape(-1)
+            except (TypeError, ValueError):
+                continue
+            if values.size < 5 or not np.all(np.isfinite(values[:5])):
+                continue
+            y0, x0, y1, x1, score = map(float, values[:5])
+            if score < confidence:
+                continue
+            x1_px = max(0.0, min(float(frame_w), x0 * frame_w))
+            y1_px = max(0.0, min(float(frame_h), y0 * frame_h))
+            x2_px = max(0.0, min(float(frame_w), x1 * frame_w))
+            y2_px = max(0.0, min(float(frame_h), y1 * frame_h))
+            if x2_px <= x1_px or y2_px <= y1_px:
+                continue
+            label = COCO_LABELS[class_id] if class_id < len(COCO_LABELS) else f"class_{class_id}"
+            results.append({
+                "class": label,
+                "class_id": class_id,
+                "confidence": round(score, 6),
+                "bbox": {
+                    "x1": round(x1_px, 3),
+                    "y1": round(y1_px, 3),
+                    "x2": round(x2_px, 3),
+                    "y2": round(y2_px, 3),
+                    "width": round(x2_px - x1_px, 3),
+                    "height": round(y2_px - y1_px, 3),
+                    "cx": round((x1_px + x2_px) / 2.0, 3),
+                    "cy": round((y1_px + y2_px) / 2.0, 3),
+                },
+                "frame_width": int(frame_w),
+                "frame_height": int(frame_h),
+            })
+    return results
+
+
+def _camera_source():
+    config = _load_config()
+    raw = os.getenv("DRIFTER_DASHCAM_DEV") or str(config.get("camera_device") or "/dev/video0")
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() else raw
+
+
+class HailoYolo:
+    """Hailo detector using Raspberry Pi's supported Picamera2 device wrapper."""
 
     def __init__(self, model_path: Path) -> None:
-        raise RuntimeError(
-            f"direct Hailo HEF inference is not wired for {model_path.name}; "
-            "use the supported rpicam Hailo pipeline or the ONNX fallback"
-        )
+        from picamera2.devices import Hailo  # type: ignore[import]
+
+        self._context = Hailo(str(model_path))
+        enter = getattr(self._context, "__enter__", None)
+        self.hailo = enter() if callable(enter) else self._context
+        model_h, model_w, _channels = self.hailo.get_input_shape()
+        self.model_h = int(model_h)
+        self.model_w = int(model_w)
+        self._closed = False
+        log.info("Hailo backend active: %s (%sx%s)", model_path.name, self.model_w, self.model_h)
 
     def infer(self, frame_bgr) -> list:
-        return []
+        if self._closed or frame_bgr is None or not hasattr(frame_bgr, "shape"):
+            return []
+        try:
+            import cv2
+        except ImportError:
+            log.warning("opencv-python unavailable for Hailo preprocessing")
+            return []
+        if len(frame_bgr.shape) < 2:
+            return []
+        frame_h, frame_w = int(frame_bgr.shape[0]), int(frame_bgr.shape[1])
+        if frame_h <= 0 or frame_w <= 0:
+            return []
+
+        resized = cv2.resize(frame_bgr, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        output = self.hailo.run(np.ascontiguousarray(rgb))
+        return _decode_hailo_output(
+            output,
+            frame_w=frame_w,
+            frame_h=frame_h,
+            confidence=VISION_CONFIDENCE,
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        exit_fn = getattr(self._context, "__exit__", None)
+        if callable(exit_fn):
+            exit_fn(None, None, None)
+            return
+        close_fn = getattr(self.hailo, "close", None)
+        if callable(close_fn):
+            close_fn()
 
 
 class OnnxYolo:
@@ -289,9 +393,10 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
         log.warning("opencv-python not installed — vision capture disabled")
         return
 
-    cap = cv2.VideoCapture(0)
+    source = _camera_source()
+    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        log.warning("camera open failed — vision capture disabled")
+        log.warning("camera open failed for %r — vision capture disabled", source)
         return
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, VISION_INPUT_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VISION_INPUT_H)
@@ -378,7 +483,11 @@ def main() -> None:
     client.loop_start()
     client.publish(TOPICS["vision_status"], json.dumps({
         "state": "online" if detector else "idle",
-        "backend": "onnx" if isinstance(detector, OnnxYolo) else None,
+        "backend": (
+            "hailo" if isinstance(detector, HailoYolo)
+            else "onnx" if isinstance(detector, OnnxYolo)
+            else None
+        ),
         "classes": list(VISION_CLASSES_OF_INTEREST),
         "ts": time.time(),
     }), retain=True)
@@ -392,6 +501,14 @@ def main() -> None:
     while running[0]:
         time.sleep(1)
 
+    cap_thread.join(timeout=3)
+    if detector is not None:
+        close_fn = getattr(detector, "close", None)
+        if callable(close_fn):
+            try:
+                close_fn()
+            except Exception as exc:
+                log.warning("detector close failed: %s", exc)
     client.publish(TOPICS["vision_status"], json.dumps({
         "state": "offline", "ts": time.time(),
     }), retain=True)
