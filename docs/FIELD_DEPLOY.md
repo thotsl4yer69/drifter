@@ -81,7 +81,16 @@ If a stage fails, the script exits with a numeric code:
 | 50 | /healthz | `drifter healthz` — dashboard probably didn't bind 8080 |
 
 `sudo ./scripts/oneshot.sh --skip-apt` re-runs everything except `apt`,
-which is the right choice when you're iterating on code over SSH.
+which is the right choice when you're iterating on code over SSH. A successful
+full deploy also installs and enables `drifter-auto-update.timer`; it checks
+`origin/main` every 30 minutes and only updates when fresh RPM + speed prove
+the vehicle is stationary. Unknown telemetry defers. Check it with:
+
+```bash
+systemctl is-enabled drifter-auto-update.timer
+systemctl status drifter-auto-update.timer --no-pager
+cat /opt/drifter/data/auto-update.json 2>/dev/null || true
+```
 
 ## Step 4 — Verify with the operator CLI
 
