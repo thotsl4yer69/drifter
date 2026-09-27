@@ -288,21 +288,43 @@ def _camera_source():
     return int(raw) if raw.isdigit() else raw
 
 
+def _picamera_hailo_api():
+    """Load distro Picamera2 Hailo helpers without exposing system packages globally."""
+    try:
+        from picamera2.devices import Hailo, hailo_architecture  # type: ignore[import]
+    except ImportError:
+        system_dist = "/usr/lib/python3/dist-packages"
+        if system_dist not in sys.path:
+            sys.path.append(system_dist)
+        from picamera2.devices import Hailo, hailo_architecture  # type: ignore[import]
+    return Hailo, hailo_architecture
+
+
+def _system_hailo_model() -> Path | None:
+    """Return Raspberry Pi's packaged YOLOv8 HEF for the detected accelerator."""
+    try:
+        _Hailo, hailo_architecture = _picamera_hailo_api()
+        arch = str(hailo_architecture() or "").upper()
+    except Exception as exc:
+        log.debug("Hailo architecture unavailable: %s", exc)
+        return None
+    names = {
+        "HAILO10H": "yolov8m_h10.hef",
+        "HAILO8L": "yolov8s_h8l.hef",
+        "HAILO8": "yolov8s_h8.hef",
+    }
+    name = names.get(arch)
+    if not name:
+        return None
+    path = Path("/usr/share/hailo-models") / name
+    return path if path.exists() else None
+
+
 class HailoYolo:
     """Hailo detector using Raspberry Pi's supported Picamera2 device wrapper."""
 
     def __init__(self, model_path: Path) -> None:
-        try:
-            from picamera2.devices import Hailo  # type: ignore[import]
-        except ImportError:
-            # Picamera2/Hailo is normally installed by apt. DRIFTER's venv is
-            # deliberately isolated, so expose the distro package path only
-            # for this optional backend rather than globally to every service.
-            system_dist = "/usr/lib/python3/dist-packages"
-            if system_dist not in sys.path:
-                sys.path.append(system_dist)
-            from picamera2.devices import Hailo  # type: ignore[import]
-
+        Hailo, _hailo_architecture = _picamera_hailo_api()
         self._context = Hailo(str(model_path))
         enter = getattr(self._context, "__enter__", None)
         self.hailo = enter() if callable(enter) else self._context
@@ -449,12 +471,20 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
 
 
 def _select_detector():
-    model = VISION_MODEL_DIR / VISION_YOLO_MODEL
-    if model.exists():
+    configured = VISION_MODEL_DIR / VISION_YOLO_MODEL
+    candidates: list[Path] = []
+    if configured.exists():
+        candidates.append(configured)
+    packaged = _system_hailo_model()
+    if packaged is not None and packaged not in candidates:
+        candidates.append(packaged)
+
+    for model in candidates:
         try:
             return HailoYolo(model)
         except Exception as exc:
-            log.warning("Hailo direct path unavailable (%s) — trying ONNX fallback", exc)
+            log.warning("Hailo backend unavailable for %s (%s)", model, exc)
+
     onnx_model = VISION_MODEL_DIR / "yolov8s.onnx"
     if onnx_model.exists():
         detector = OnnxYolo(onnx_model)
