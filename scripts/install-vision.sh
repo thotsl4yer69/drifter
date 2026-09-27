@@ -36,11 +36,25 @@ fi
 ok "Vision deps installed"
 
 step 2 "Hailo runtime detection"
-if dpkg -l | grep -q hailo-rt 2>/dev/null; then
-    ok "Hailo runtime detected"
+if command -v hailortcli >/dev/null 2>&1 && hailortcli fw-control identify >/dev/null 2>&1; then
+    ok "Hailo NPU + firmware detected"
 else
-    warn "Hailo runtime not detected — vision_engine will use ONNX fallback"
-    warn "Install via Hailo official .deb when ready"
+    warn "Hailo NPU is not ready — installing the Raspberry Pi supported AI HAT stack"
+    if apt-get install -y -qq dkms hailo-all rpicam-apps 2>/dev/null; then
+        warn "Hailo packages installed; REBOOT is required before hardware inference can pass acceptance"
+    else
+        warn "hailo-all unavailable on this OS/repo — ONNX fallback remains available"
+    fi
+fi
+
+# The supported Raspberry Pi camera/Hailo path ships a YOLOv8 post-process
+# profile. Presence of this file is our software contract; actual inference is
+# proven after reboot by scripts/vision-acceptance.sh on the physical node.
+HAILO_YOLO8_PP="/usr/share/rpi-camera-assets/hailo_yolov8_inference.json"
+if [ -f "$HAILO_YOLO8_PP" ]; then
+    ok "rpicam YOLOv8 Hailo pipeline present"
+else
+    warn "rpicam YOLOv8 Hailo pipeline not present yet"
 fi
 
 step 3 "Deploying vision modules + working dirs"
