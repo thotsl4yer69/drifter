@@ -230,3 +230,18 @@ def test_diag_keeps_the_diagnostics_and_safety_core():
 
 def test_diag_is_leaner_than_drive():
     assert len(config.MODES['diag']) < len(config.MODES['drive'])
+
+
+def test_perception_runs_in_drive_and_diag_but_not_foot():
+    assert 'drifter-perception' in mode.plan('drive')['enable']
+    assert 'drifter-perception' in mode.plan('diag')['enable']
+    assert 'drifter-perception' in mode.plan('foot')['disable']
+
+
+def test_foot_keeps_pentest_stack_and_excludes_vehicle_perception():
+    p = mode.plan('foot')
+    for svc in ('drifter-kismet', 'drifter-kismet-bridge', 'drifter-wifi-audit',
+                'drifter-marauder', 'drifter-flipper', 'drifter-hid', 'drifter-opsec'):
+        assert svc in p['enable'], f"{svc} must remain available in foot mode"
+    for svc in ('drifter-canbridge', 'drifter-obdbridge', 'drifter-perception'):
+        assert svc in p['disable'], f"{svc} must not be armed in foot mode"
