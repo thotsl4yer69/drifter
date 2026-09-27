@@ -210,3 +210,25 @@ def test_hailo_backend_uses_picamera_wrapper_preprocesses_and_closes(monkeypatch
 def test_camera_source_honours_env_override(monkeypatch):
     monkeypatch.setenv("DRIFTER_DASHCAM_DEV", "/dev/video7")
     assert vision._camera_source() == "/dev/video7"
+
+
+
+@pytest.mark.parametrize(
+    "arch,filename",
+    [
+        ("HAILO8", "yolov8s_h8.hef"),
+        ("HAILO8L", "yolov8s_h8l.hef"),
+        ("HAILO10H", "yolov8m_h10.hef"),
+    ],
+)
+def test_packaged_hailo_model_tracks_detected_architecture(monkeypatch, arch, filename):
+    monkeypatch.setattr(vision, "_picamera_hailo_api", lambda: (object, lambda: arch))
+    original_exists = Path.exists
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: True if self.name == filename else original_exists(self),
+    )
+    model = vision._system_hailo_model()
+    assert model is not None
+    assert model.name == filename
