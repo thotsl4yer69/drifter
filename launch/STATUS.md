@@ -1,10 +1,10 @@
 # MAZLABZ DRIFTER VIM — Launch Authority
 
-**Last updated:** 24 September 2026  
+**Last updated:** 28 September 2026  
 **Engineering codename:** DRIFTER  
 **Public beta name:** MAZLABZ DRIFTER VIM — Vehicle Intelligence Module  
 **Current stage:** Founding beta / physical acceptance  
-**Main launch commit:** `39d9173bef924603c0ea2fdda19c6db7621e9448`
+**Current runtime hardening commit:** `3aadff4fff3bd2d74bd956f779eaa40ea778ff6b` (PR #88); later main commits are documentation/handoff sync
 
 This file is the launch authority. If older copy, mockups, posts or ideas conflict with it, this file wins until explicitly updated.
 
@@ -56,7 +56,7 @@ Vehicle reliability outranks AI/voice features.
 - drive/session logging;
 - 90 s pre-event + 45 s post-event incident evidence;
 - touchscreen field workflow;
-- conservative self-update/rollback architecture;
+- conservative self-update/rollback architecture with a scheduled 30-minute check that fails closed unless fresh RPM + speed prove the vehicle is stationary;
 - primary validation vehicle: 2004 Jaguar X-Type 2.5L V6;
 - targets standards-based OBD-II vehicles.
 
