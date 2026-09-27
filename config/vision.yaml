@@ -5,10 +5,9 @@
 # Pi5 vision node. The perception service is optional and never blocks OBD.
 
 # Model files live in /opt/drifter/vision-models/
-# CPU drifter-vision backend: yolov8s.onnx.
-# Hailo HEF files are consumed through the Raspberry Pi supported rpicam Hailo
-# post-process pipeline; direct HEF inference in vision_engine.py is fail-closed
-# until the exact physical HEF/runtime output contract is validated.
+# Preferred: yolov8s.hef through Raspberry Pi Picamera2/Hailo post-processing.
+# Fallback: yolov8s.onnx through CPU onnxruntime. Hardware model/runtime
+# compatibility must still be validated on the actual Hailo device.
 model_dir: "/opt/drifter/vision-models"
 hailo_model: "yolov8s.hef"
 onnx_fallback: "yolov8s.onnx"
