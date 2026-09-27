@@ -16,6 +16,7 @@ SPI_DEVICE_ROOT = Path(os.getenv("DRIFTER_SPI_DEVICE_ROOT", "/sys/bus/spi/device
 LCD_FB_DEVICE = Path(os.getenv("LCD_FB_DEVICE", "/dev/fb1"))
 LCD_SPI_DEVICE = os.getenv("LCD_SPI_DEVICE", "spi0.0").strip() or "spi0.0"
 LCD_SERVICE = "drifter-lcd"
+SYSTEMCTL_TIMEOUT_SEC = max(1.0, float(os.getenv("DRIFTER_SYSTEMCTL_TIMEOUT_SEC", "5")))
 
 
 def _driver() -> Path | None:
@@ -59,16 +60,32 @@ def _framebuffers() -> list[dict[str, str]]:
 def _service_state() -> dict[str, object]:
     if not shutil.which("systemctl"):
         return {"available": False, "active": False, "detail": "systemctl unavailable"}
-    result = subprocess.run(
-        [
-            "systemctl", "show", LCD_SERVICE, "--no-pager",
-            "-p", "ActiveState", "-p", "SubState", "-p", "NRestarts",
-            "-p", "ExecMainStatus", "-p", "Result",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    argv = [
+        "systemctl", "show", LCD_SERVICE, "--no-pager",
+        "-p", "ActiveState", "-p", "SubState", "-p", "NRestarts",
+        "-p", "ExecMainStatus", "-p", "Result",
+    ]
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=SYSTEMCTL_TIMEOUT_SEC,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "available": True,
+            "active": False,
+            "returncode": 124,
+            "detail": f"systemctl show timed out after {SYSTEMCTL_TIMEOUT_SEC:.1f}s",
+        }
+    except OSError as exc:
+        return {
+            "available": False,
+            "active": False,
+            "detail": f"systemctl failed: {exc}",
+        }
     values: dict[str, object] = {"available": True, "returncode": result.returncode}
     for line in result.stdout.splitlines():
         if "=" in line:
@@ -167,7 +184,21 @@ def recover() -> int:
     if not shutil.which("systemctl"):
         print("systemctl unavailable; cannot restart drifter-lcd", file=sys.stderr)
         return 2
-    restart = subprocess.run(["systemctl", "restart", LCD_SERVICE], check=False)
+    try:
+        restart = subprocess.run(
+            ["systemctl", "restart", LCD_SERVICE],
+            timeout=SYSTEMCTL_TIMEOUT_SEC,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"restart of {LCD_SERVICE} timed out after {SYSTEMCTL_TIMEOUT_SEC:.1f}s",
+            file=sys.stderr,
+        )
+        return 2
+    except OSError as exc:
+        print(f"failed to restart {LCD_SERVICE}: {exc}", file=sys.stderr)
+        return 2
     if restart.returncode != 0:
         print(f"failed to restart {LCD_SERVICE} (rc={restart.returncode})", file=sys.stderr)
         return 2

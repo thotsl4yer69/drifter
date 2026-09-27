@@ -5,7 +5,7 @@ Policy:
 - follow only origin/main (overridable through environment);
 - never rewrite a dirty checkout;
 - update only by fast-forward;
-- defer while live vehicle telemetry suggests the car is active;
+- fail closed unless fresh RPM + speed telemetry proves the vehicle is stationary;
 - preflight the candidate before moving the checkout;
 - deploy through the existing one-shot contract;
 - automatically restore the previous commit if deployment fails.
@@ -124,42 +124,49 @@ def _telemetry_values(text: str) -> dict[str, float]:
     return values
 
 
-def _vehicle_active() -> tuple[bool, dict[str, Any]]:
+def _vehicle_active() -> tuple[bool | None, dict[str, Any]]:
+    """Return True=active, False=proved stationary, None=state unknown.
+
+    Automatic updates are fail-closed: missing tools, missing topics, malformed
+    payloads, or incomplete sampling are never interpreted as a parked vehicle.
+    """
     if os.getenv("DRIFTER_AUTO_UPDATE_ALLOW_ACTIVE", "0") == "1":
-        return False, {"bypass": True}
+        return False, {"bypass": True, "safe_to_update": True}
     if not shutil.which("mosquitto_sub"):
-        return False, {"probe": "mosquitto_sub unavailable"}
+        return None, {
+            "probe": "mosquitto_sub unavailable",
+            "safe_to_update": False,
+            "reason": "vehicle state unknown",
+        }
 
     result = _run(
         [
-            "mosquitto_sub",
-            "-h",
-            "127.0.0.1",
-            "-v",
-            "-t",
-            RPM_TOPIC,
-            "-t",
-            SPEED_TOPIC,
-            "-C",
-            "2",
-            "-W",
-            str(int(TELEMETRY_PROBE_SECONDS)),
+            "mosquitto_sub", "-h", "127.0.0.1", "-v",
+            "-t", RPM_TOPIC, "-t", SPEED_TOPIC,
+            "-C", "2", "-W", str(int(TELEMETRY_PROBE_SECONDS)),
         ],
         timeout=TELEMETRY_PROBE_SECONDS + 3,
     )
     values = _telemetry_values(result.stdout)
     rpm = values.get(RPM_TOPIC)
     speed = values.get(SPEED_TOPIC)
-    active = bool(
-        (rpm is not None and rpm > RPM_ACTIVE_THRESHOLD)
-        or (speed is not None and speed > SPEED_ACTIVE_THRESHOLD)
-    )
-    return active, {
+    detail: dict[str, Any] = {
         "rpm": rpm,
         "speed": speed,
         "probe_rc": result.returncode,
         "probe_seconds": TELEMETRY_PROBE_SECONDS,
     }
+    if rpm is None or speed is None:
+        detail.update({
+            "safe_to_update": False,
+            "reason": "fresh RPM and speed were not both observed",
+        })
+        return None, detail
+
+    active = bool(rpm > RPM_ACTIVE_THRESHOLD or speed > SPEED_ACTIVE_THRESHOLD)
+    detail["safe_to_update"] = not active
+    detail["reason"] = "vehicle active" if active else "fresh telemetry proves stationary"
+    return active, detail
 
 
 def _checkout_clean() -> bool:
@@ -280,11 +287,11 @@ def run_update() -> int:
                 return 0
 
             active, telemetry = _vehicle_active()
-            if active:
+            if active is not False:
                 _save_state(
                     {
                         "status": "deferred",
-                        "reason": "vehicle active",
+                        "reason": "vehicle active" if active else "vehicle state unknown",
                         "telemetry": telemetry,
                     }
                 )
