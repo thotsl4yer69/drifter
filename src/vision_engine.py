@@ -118,8 +118,12 @@ def _decode_yolo_output(
     if arr.ndim != 2 or 0 in arr.shape:
         return []
 
-    # Exported YOLOv8 is commonly [84, 8400]; convert to rows=detections.
-    if arr.shape[0] <= 128 and arr.shape[1] > arr.shape[0]:
+    # COCO YOLO exports use 84 features (v8: xywh + 80 classes) or
+    # 85 features (v5-style: xywh + objectness + 80 classes). Prefer that
+    # explicit contract over a size heuristic so small synthetic/edge batches
+    # such as [2, 85] are not accidentally transposed.
+    feature_dims = {len(COCO_LABELS) + 4, len(COCO_LABELS) + 5}
+    if arr.shape[0] in feature_dims and arr.shape[1] not in feature_dims:
         arr = arr.T
     if arr.ndim != 2 or arr.shape[1] < 6:
         return []
