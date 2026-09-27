@@ -6,10 +6,12 @@
 // Data is the real adapter (WS+REST) or ?sim mock — same interface.
 // ════════════════════════════════════════════════════════════════
 import React from 'react';
-import { useSim, Spark, TapeGauge, ShiftLights, drFmt } from '../shared/widgets.jsx';
+import { DrivePanel, TouchHeader, TouchRail, DataSheet } from '../shared/touchscreen.jsx';
+import { readPreference, writePreference } from '../data/display-state.js';
+import { useSim, Spark } from '../shared/widgets.jsx';
 import { DrifterSim } from '../data/adapter.js';
 import { useSettings, DevPanel } from '../shared/settings.jsx';
-import { LgTile, LgRail, LgTop, LgSpeed, LgGauge, LgAlerts, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
+import { LgTile, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
 import { RfMain, FtMain, DgMain } from '../directions/modes.jsx';
 import { MpMain } from '../directions/map.jsx';
 import { SyMain, VvMain } from '../directions/system.jsx';
@@ -26,96 +28,10 @@ function useViewport() {
   return v;
 }
 
-function LinkBanner({ sim }) {
-  if (sim.link !== 'lost') return null;
-  return (
-    <div className="mono" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(var(--red-rgb),0.5)', background: 'rgba(var(--red-rgb),0.10)', color: 'var(--red)', fontSize: 10, letterSpacing: '0.12em' }}>
-      <span style={{ animation: 'drPulse 1.2s ease-in-out infinite' }}>●</span> LINK LOST — ws :8081 down · retry backoff · values frozen
-    </div>
-  );
-}
-function DemoteBanner({ sim }) {
-  if (!sim.autoDemoted) return null;
-  return (
-    <div className="mono" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--stroke-acc)', background: 'rgba(var(--acc-rgb),0.10)', color: 'var(--acc)', fontSize: 10, letterSpacing: '0.12em' }}>
-      ⚠ WATCHDOG AUTO-DEMOTED → DIAG · memory/thermal pressure · arsenal suspended
-    </div>
-  );
-}
-
-function HwStrip({ sim }) {
-  const p = sim.perception || {};
-  const items = [
-    ['OBD', sim.hw.ecu === 'ok' ? 'ok' : sim.hw.ecu],
-    ['GPS', sim.hw.gps === 'fix' ? 'ok' : sim.hw.gps],
-    ['HAILO', p.vision === 'online' ? 'ok' : p.vision],
-    ['CAM', p.vision === 'online' ? 'ok' : 'offline'],
-    ['SDR', sim.hw.sdr === 'ok' ? 'ok' : sim.hw.sdr],
-    ['REC', p.dashcam === 'online' || p.dashcam === 'recording' ? 'ok' : p.dashcam],
-    ['LINK', sim.link === 'live' ? 'ok' : sim.link],
-  ];
-  return <div className="dr-hw-strip">{items.map(([k,v]) => <span key={k} className={v === 'ok' ? 'ok' : v === 'pending' || v === 'acquiring' ? 'wait' : 'off'}><i></i>{k}<b>{String(v || '—').toUpperCase()}</b></span>)}</div>;
-}
-
-function PerceptionTile({ sim }) {
-  const p = sim.perception || {};
-  const fcw = p.fcw;
-  const evt = p.event;
-  const hazard = fcw || (evt && evt.severity === 'warn' ? evt : null);
-  const objects = Array.isArray(p.objects) ? p.objects : [];
-  const label = hazard ? (fcw ? 'COLLISION CONTEXT' : String(evt.kind || 'ROAD HAZARD').replaceAll('_',' ')) : objects.length ? (objects[0].class || 'OBJECT').toUpperCase() + ' AHEAD' : 'ROAD CLEAR';
-  return (
-    <LgTile label="perception" meta="HAILO · CAMERA · OBD FUSION" live={p.vision === 'online'}>
-      <div className={`dr-perception ${hazard ? 'hazard' : ''}`}>
-        <div className="dr-perception-state">
-          <span className="stencil">{label}</span>
-          <strong className="mono">{fcw?.ttc_s != null ? `${fcw.ttc_s}s TTC` : objects.length ? `${objects.length} TRACKED` : p.vision === 'online' ? 'MONITORING' : 'NO VISION'}</strong>
-        </div>
-        <div className="dr-perception-meta mono">
-          <span>HAILO <b>{String(p.vision || 'offline').toUpperCase()}</b></span>
-          <span>FUSION <b>{String(p.state || 'offline').toUpperCase()}</b></span>
-          <span>CAM <b>{p.vision === 'online' ? 'LIVE' : '—'}</b></span>
-          <span>REC <b>{String(p.dashcam || '—').toUpperCase()}</b></span>
-        </div>
-        <div className="dr-perception-context mono">{hazard ? `speed ${Math.round(hazard.speed_kph ?? sim.speed)} km/h · ${hazard.distance_m != null ? hazard.distance_m + ' m · ' : ''}${hazard.object_class || 'vehicle'}` : p.vision === 'online' ? 'context engine armed · alerts surface only when relevant' : 'vehicle telemetry remains independent of camera/Hailo'}</div>
-      </div>
-    </LgTile>
-  );
-}
-
-function ShDriveMain({ sim, short }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10, minHeight: 0, minWidth: 0 }}>
-      <LinkBanner sim={sim} />
-      <DemoteBanner sim={sim} />
-      <HwStrip sim={sim} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1.55fr 1fr 1fr 1fr', gap: 10, height: short ? 184 : 218, flex: 'none' }}>
-        <LgSpeed sim={sim} big={!short} />
-        <LgGauge label="rpm · crank" meta="CAN · 50ms" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
-          num={drFmt.n1(sim.rpm / 1000)} unit="×1000"
-          spark={sim.hist.rpm} sparkColor="var(--cyan)"
-          top={<ShiftLights rpm={sim.rpm} />}
-          alarm={sim.rpm > 6300}
-          tape={<TapeGauge value={sim.rpm} min={0} max={7000} band={[6500, 7000]} ghosts={[3500]} color="var(--cyan)" ladder={[{ t: '0' }, { t: '3.5' }, { t: 'redline 6.5', hot: true }]} />} />
-        <LgGauge label="coolant · prim" meta="B1 · 1s" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
-          num={drFmt.n1(sim.coolant)} unit="°C"
-          spark={sim.hist.coolant} sparkColor="var(--acc)"
-          alarm={sim.coolant > 104}
-          tape={<TapeGauge value={sim.coolant} min={40} max={120} band={[108, 120]} ghosts={[104]} color="var(--acc)" ladder={[{ t: '40' }, { t: 'amber 104', hot: true }, { t: '120' }]} />} />
-        <LgGauge label="voltage · alt" meta="power · 1s" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
-          num={drFmt.n1(sim.voltage)} unit="V"
-          spark={sim.hist.voltage} sparkColor="var(--teal)"
-          alarm={sim.voltage < 12}
-          tape={<TapeGauge value={sim.voltage} min={11} max={15} ghosts={[12, 14.4]} color="var(--teal)" ladder={[{ t: '11.0' }, { t: '12.0 crit', hot: true }, { t: '14.4' }]} />} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 10, flex: 1, minHeight: 0 }}>
-        <LgAlerts sim={sim} />
-        <PerceptionTile sim={sim} />
-      </div>
-      <LgTrip sim={sim} />
-      <LgVivi sim={sim} />
-    </div>
-  );
+function ShDriveMain({ sim, onNav }) {
+  return <DrivePanel sim={sim} demo={DrifterSim.real !== true} onDiag={() => onNav('hw')}>
+    <LgTrip sim={sim} /><LgVivi sim={sim} />
+  </DrivePanel>;
 }
 
 function ShSurface({ surf, sim, short, onNav }) {
@@ -165,7 +81,7 @@ function ShSurface({ surf, sim, short, onNav }) {
       </div>
     );
   }
-  return <ShDriveMain sim={sim} short={short} />;
+  return <ShDriveMain sim={sim} onNav={onNav} />;
 }
 
 class ShBoundary extends React.Component {
@@ -193,12 +109,12 @@ export function CockpitApp() {
   const sim = useSim();
   const { w, h } = useViewport();
   const forced = new URLSearchParams(location.search).get('layout');
-  const layout = forced || (w < 700 ? 'phone' : w < 1100 ? 'mid' : 'full');
-  const [surf, setSurfRaw] = React.useState(() => localStorage.getItem('dr-cockpit-surf') || 'cockpit');
-  const [pocket, setPocket] = React.useState(() => localStorage.getItem('dr-cockpit-pocket') || 'cock');
+  const layout = ['phone', 'mid', 'full'].includes(forced) ? forced : (w < 700 ? 'phone' : w < 1100 ? 'mid' : 'full');
+  const [surf, setSurfRaw] = React.useState(() => readPreference('dr-cockpit-surf', 'cockpit', ['cockpit', 'map', 'hw', 'rf', 'arms', 'vivi', 'set', 'trip']));
+  const [pocket, setPocket] = React.useState(() => readPreference('dr-cockpit-pocket', 'cock', ['cock', 'arms', 'rf', 'data', 'map']));
   const [sheet, setSheet] = React.useState(false);
-  const setSurf = (k) => { setSurfRaw(k); localStorage.setItem('dr-cockpit-surf', k); };
-  const onNavPocket = (k) => { setPocket(k); localStorage.setItem('dr-cockpit-pocket', k); };
+  const setSurf = (k) => { setSurfRaw(k); writePreference('dr-cockpit-surf', k); };
+  const onNavPocket = (k) => { setPocket(k); writePreference('dr-cockpit-pocket', k); };
 
   // mode is a real control — sync the persisted/desired mode to the node.
   React.useEffect(() => { DrifterSim.setMode(t.mode); }, [t.mode]);
@@ -209,7 +125,7 @@ export function CockpitApp() {
   };
 
   const short = h < 760;
-  const showDrawer = layout === 'full' && surf === 'cockpit';
+  const showDrawer = layout === 'full' && w >= 1280 && h > 600 && surf === 'cockpit';
 
   const frame = (children) => (
     <div className="dr"
@@ -241,15 +157,13 @@ export function CockpitApp() {
   }
 
   return frame(
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 1, display: 'grid',
-      gridTemplateRows: '44px 1fr',
-      gridTemplateColumns: showDrawer ? '72px 1fr 322px' : '72px 1fr',
-      gridTemplateAreas: showDrawer ? '"top top top" "rail main right"' : '"top top" "rail main"',
-    }} data-screen-label={`cockpit · ${surf}`}>
-      <div style={{ gridArea: 'top', display: 'grid' }}><LgTop sim={sim} narrow={layout === 'mid'} /></div>
-      <div style={{ gridArea: 'rail', display: 'grid' }}><LgRail active={surf} onPick={onNav} /></div>
-      <div style={{ gridArea: 'main', display: 'grid', minHeight: 0, minWidth: 0 }}>
+    <div className="dr-cockpit-grid" data-sidecar={showDrawer} data-screen-label={`cockpit · ${surf}`}>
+      <div style={{ gridArea: 'top', minWidth: 0 }}>
+        <TouchHeader sim={sim} theme={t.theme} onTheme={theme => setTweak('theme', theme)}
+          onData={() => setSheet(true)} sheet={sheet} demo={DrifterSim.real !== true} />
+      </div>
+      <div className="dr-rail-slot"><TouchRail active={surf} onPick={onNav} /></div>
+      <div className="dr-main-surface" style={{ gridArea: 'main' }}>
         <ShBoundary surfKey={surf}><ShSurface surf={surf} sim={sim} short={short} onNav={onNav} /></ShBoundary>
       </div>
       {showDrawer ? (
@@ -257,18 +171,10 @@ export function CockpitApp() {
           <LgRight sim={sim} short={short} />
         </div>
       ) : null}
-      {layout === 'mid' && surf === 'cockpit' ? (
-        <React.Fragment>
-          <button onClick={() => setSheet(!sheet)} className="mono"
-            style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 40, fontSize: 10, letterSpacing: '0.14em', padding: '10px 16px', borderRadius: 999, border: '1px solid var(--stroke-acc)', background: 'var(--glass-strong)', color: 'var(--acc)', cursor: 'pointer' }}>
-            {sheet ? 'CLOSE' : 'DATA'}</button>
-          {sheet ? (
-            <div style={{ position: 'absolute', right: 14, bottom: 60, width: 330, height: 'min(72%, 560px)', zIndex: 39, display: 'grid', boxShadow: '0 18px 50px rgba(0,0,0,0.6)' }}>
-              <LgRight sim={sim} short />
-            </div>
-          ) : null}
-        </React.Fragment>
-      ) : null}
+      {sheet ? <DataSheet onClose={() => setSheet(false)}>
+        <ShBoundary surfKey="data-sheet"><LgRight sim={sim} short /></ShBoundary>
+        <LgTrip sim={sim} /><LgVivi sim={sim} />
+      </DataSheet> : null}
     </div>
   );
 }

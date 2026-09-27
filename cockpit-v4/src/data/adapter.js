@@ -16,6 +16,7 @@
 //  · AUD currency, vivi2/query, never auto-LLM (UI-side).
 // ════════════════════════════════════════════════════════════════
 import { createSim, freshState } from './sim.js';
+import { emptyDisplayState, observeDisplayFrame, invalidateDisplay } from './display-state.js';
 
 const params = new URLSearchParams(location.search);
 const SIM = params.has('sim');
@@ -44,6 +45,7 @@ const sevForLevel = (lv) => (lv >= 3 ? 'crit' : lv >= 2 ? 'warn' : 'info');
 function liveBaseline() {
   const s = freshState();
   s.link = 'lost';
+  s.display = emptyDisplayState();
   s.hw = { ecu: 'pending', gps: 'none', bt: 'down', weatherKey: false, sdr: 'unknown' };
   s.power = { undervoltNow: false, undervoltSinceBoot: false, throttled: false };
   s.speed = 0; s.rpm = 0; s.gear = 'N'; s.coolant = 0; s.voltage = 0; s.throttle = 0;
@@ -91,9 +93,10 @@ function createRealAdapter() {
   }
 
   // ── topic → state mapping ──────────────────────────────────────
-  function applyTopic(topic, data) {
+  function applyTopic(topic, data, cached = false) {
     try {
       const d = data;
+      observeDisplayFrame(state, topic, data, Date.now(), cached);
       switch (true) {
         case topic === 'drifter/snapshot': {
           if (d && typeof d === 'object') {
@@ -315,7 +318,7 @@ function createRealAdapter() {
       let frame; try { frame = JSON.parse(ev.data); } catch { return; }
       if (frame && frame.topic) applyTopic(frame.topic, frame.data);
     };
-    ws.onclose = () => { if (state.link !== 'lost') { state.link = 'lost'; schedule(); } scheduleReconnect(); };
+    ws.onclose = () => { invalidateDisplay(state); if (state.link !== 'lost') { state.link = 'lost'; schedule(); } scheduleReconnect(); };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   function scheduleReconnect() {
@@ -337,8 +340,8 @@ function createRealAdapter() {
       const snap = await r.json();
       // latest_state keys are `topic` with drifter/ stripped and / → _
       for (const [k, v] of Object.entries(snap || {})) {
-        if (k === 'snapshot') applyTopic('drifter/snapshot', v);
-        else applyTopic('drifter/' + k.replace(/_/g, '/'), v);
+        if (k === 'snapshot') applyTopic('drifter/snapshot', v, true);
+        else applyTopic('drifter/' + k.replace(/_/g, '/'), v, true);
       }
       schedule();
     } catch (e) { /* offline cold-start is fine; WS will fill in */ }
