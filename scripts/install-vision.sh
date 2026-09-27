@@ -83,5 +83,6 @@ systemctl daemon-reload
 
 echo ""
 echo -e "${GREEN}  Vision stack installed.${NC}"
-echo -e "  Drop a yolov8s.hef (Hailo) or yolov8s.onnx into ${CYAN}${DRIFTER_DIR}/vision-models/${NC}"
-echo -e "  Start:  ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
+echo -e "  CPU backend: place ${CYAN}yolov8s.onnx${NC} in ${CYAN}${DRIFTER_DIR}/vision-models/${NC}"
+echo -e "  Hailo backend: use the Raspberry Pi rpicam Hailo post-process pipeline; direct HEF inference in drifter-vision intentionally fails closed until the exact HEF/runtime output contract is hardware-validated."
+echo -e "  Start CPU vision: ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
