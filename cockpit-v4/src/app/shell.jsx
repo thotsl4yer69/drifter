@@ -9,7 +9,7 @@ import React from 'react';
 import { useSim, Spark, TapeGauge, ShiftLights, drFmt } from '../shared/widgets.jsx';
 import { DrifterSim } from '../data/adapter.js';
 import { useSettings, DevPanel } from '../shared/settings.jsx';
-import { LgTile, LgRail, LgTop, LgSpeed, LgGauge, LgAlerts, LgRf, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
+import { LgTile, LgRail, LgTop, LgSpeed, LgGauge, LgAlerts, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
 import { RfMain, FtMain, DgMain } from '../directions/modes.jsx';
 import { MpMain } from '../directions/map.jsx';
 import { SyMain, VvMain } from '../directions/system.jsx';
@@ -43,11 +43,52 @@ function DemoteBanner({ sim }) {
   );
 }
 
+function HwStrip({ sim }) {
+  const p = sim.perception || {};
+  const items = [
+    ['OBD', sim.hw.ecu === 'ok' ? 'ok' : sim.hw.ecu],
+    ['GPS', sim.hw.gps === 'fix' ? 'ok' : sim.hw.gps],
+    ['HAILO', p.vision === 'online' ? 'ok' : p.vision],
+    ['CAM', p.vision === 'online' ? 'ok' : 'offline'],
+    ['SDR', sim.hw.sdr === 'ok' ? 'ok' : sim.hw.sdr],
+    ['REC', p.dashcam === 'online' || p.dashcam === 'recording' ? 'ok' : p.dashcam],
+    ['LINK', sim.link === 'live' ? 'ok' : sim.link],
+  ];
+  return <div className="dr-hw-strip">{items.map(([k,v]) => <span key={k} className={v === 'ok' ? 'ok' : v === 'pending' || v === 'acquiring' ? 'wait' : 'off'}><i></i>{k}<b>{String(v || '—').toUpperCase()}</b></span>)}</div>;
+}
+
+function PerceptionTile({ sim }) {
+  const p = sim.perception || {};
+  const fcw = p.fcw;
+  const evt = p.event;
+  const hazard = fcw || (evt && evt.severity === 'warn' ? evt : null);
+  const objects = Array.isArray(p.objects) ? p.objects : [];
+  const label = hazard ? (fcw ? 'COLLISION CONTEXT' : String(evt.kind || 'ROAD HAZARD').replaceAll('_',' ')) : objects.length ? (objects[0].class || 'OBJECT').toUpperCase() + ' AHEAD' : 'ROAD CLEAR';
+  return (
+    <LgTile label="perception" meta="HAILO · CAMERA · OBD FUSION" live={p.vision === 'online'}>
+      <div className={`dr-perception ${hazard ? 'hazard' : ''}`}>
+        <div className="dr-perception-state">
+          <span className="stencil">{label}</span>
+          <strong className="mono">{fcw?.ttc_s != null ? `${fcw.ttc_s}s TTC` : objects.length ? `${objects.length} TRACKED` : p.vision === 'online' ? 'MONITORING' : 'NO VISION'}</strong>
+        </div>
+        <div className="dr-perception-meta mono">
+          <span>HAILO <b>{String(p.vision || 'offline').toUpperCase()}</b></span>
+          <span>FUSION <b>{String(p.state || 'offline').toUpperCase()}</b></span>
+          <span>CAM <b>{p.vision === 'online' ? 'LIVE' : '—'}</b></span>
+          <span>REC <b>{String(p.dashcam || '—').toUpperCase()}</b></span>
+        </div>
+        <div className="dr-perception-context mono">{hazard ? `speed ${Math.round(hazard.speed_kph ?? sim.speed)} km/h · ${hazard.distance_m != null ? hazard.distance_m + ' m · ' : ''}${hazard.object_class || 'vehicle'}` : p.vision === 'online' ? 'context engine armed · alerts surface only when relevant' : 'vehicle telemetry remains independent of camera/Hailo'}</div>
+      </div>
+    </LgTile>
+  );
+}
+
 function ShDriveMain({ sim, short }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10, minHeight: 0, minWidth: 0 }}>
       <LinkBanner sim={sim} />
       <DemoteBanner sim={sim} />
+      <HwStrip sim={sim} />
       <div style={{ display: 'grid', gridTemplateColumns: '1.55fr 1fr 1fr 1fr', gap: 10, height: short ? 184 : 218, flex: 'none' }}>
         <LgSpeed sim={sim} big={!short} />
         <LgGauge label="rpm · crank" meta="CAN · 50ms" noHw={sim.hw.ecu !== 'ok'} stale={sim.link === 'lost'}
@@ -69,7 +110,7 @@ function ShDriveMain({ sim, short }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 10, flex: 1, minHeight: 0 }}>
         <LgAlerts sim={sim} />
-        <LgRf sim={sim} />
+        <PerceptionTile sim={sim} />
       </div>
       <LgTrip sim={sim} />
       <LgVivi sim={sim} />
@@ -203,7 +244,7 @@ export function CockpitApp() {
     <div style={{
       position: 'absolute', inset: 0, zIndex: 1, display: 'grid',
       gridTemplateRows: '44px 1fr',
-      gridTemplateColumns: showDrawer ? '58px 1fr 322px' : '58px 1fr',
+      gridTemplateColumns: showDrawer ? '72px 1fr 322px' : '72px 1fr',
       gridTemplateAreas: showDrawer ? '"top top top" "rail main right"' : '"top top" "rail main"',
     }} data-screen-label={`cockpit · ${surf}`}>
       <div style={{ gridArea: 'top', display: 'grid' }}><LgTop sim={sim} narrow={layout === 'mid'} /></div>
