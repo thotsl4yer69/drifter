@@ -175,3 +175,41 @@ def test_real_child_timeout_is_reaped_and_returns_degraded(monkeypatch):
     assert 0 < results[0] <= 0.15
     # Allow process creation/reaping and shared-runner scheduling overhead.
     assert elapsed < 2, f'Unexpected child timeout overrun: {elapsed:.3f}s'
+
+
+@pytest.mark.parametrize('budget', [0, -1])
+def test_generic_wait_expired_budget_never_calls_predicate(clock, budget):
+    calls = []
+
+    def probe():
+        calls.append(clock.now)
+        return True
+
+    assert boot._wait_for(probe, timeout=budget) is False
+    assert calls == []
+    assert clock.sleeps == []
+
+
+def test_generic_wait_caps_sleep_and_never_probes_after_deadline(clock):
+    calls = []
+
+    def probe():
+        calls.append(clock.now)
+        return False
+
+    assert boot._wait_for(probe, timeout=0.25, poll=30) is False
+    assert calls == [100.0]
+    assert clock.now == 100.25
+    assert clock.sleeps == [0.25]
+
+
+def test_generic_wait_can_succeed_before_deadline(clock):
+    calls = []
+
+    def probe():
+        calls.append(clock.now)
+        return len(calls) == 2
+
+    assert boot._wait_for(probe, timeout=1, poll=0.25) is True
+    assert calls == [100.0, 100.25]
+    assert clock.sleeps == [0.25]

@@ -164,12 +164,22 @@ def _publish(client, stage: str, detail: str, ok: bool) -> None:
 
 
 def _wait_for(predicate, timeout: float, poll: float = 1.0) -> bool:
+    """Poll only while the stage has time; never probe after expiry.
+
+    Predicate runtime itself is not pre-empted here, so blocking predicates
+    still need their own operation timeout.
+    """
     deadline = time.monotonic() + max(0.0, timeout)
-    while time.monotonic() < deadline:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
         if predicate():
             return True
-        time.sleep(poll)
-    return bool(predicate())
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(max(0.0, poll), remaining))
 
 
 def _wait_for_core_services(
