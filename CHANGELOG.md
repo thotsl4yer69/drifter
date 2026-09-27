@@ -9,6 +9,9 @@ ships from the default branch.
 ### Fixed
 - Core-service readiness now shares one stage deadline: individual `systemctl` probes and sleeps are capped by the remaining budget, with no post-deadline probe sweep.
 - Strict OBD retained-status proof now rejects invalid/future timestamps and non-boolean adapter/ECU flags instead of allowing malformed retained data to appear healthy.
+- Display status/recovery now bounds `systemctl` calls instead of allowing a wedged service manager to hang the recovery command.
+- Cockpit deployment stages a complete release and activates it via a release symlink instead of rsyncing directly into the live directory.
+- The self-updater is timer-driven and fails closed when fresh RPM + speed do not prove the vehicle is stationary.
 
 ### Verification
 - PR #87 merged to `main` as `e3cdcd868380a98c78f1e93cc1cfef88d6fdb68e`.
