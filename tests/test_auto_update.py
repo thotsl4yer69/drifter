@@ -99,3 +99,34 @@ def test_systemd_timer_is_installed_by_existing_installer_contract():
 def test_updater_source_is_deployed_by_existing_installer_contract():
     install_text = open("install.sh", encoding="utf-8").read()
     assert 'src/*.py' in install_text
+
+
+def test_vehicle_state_is_unknown_without_mosquitto_sub(monkeypatch):
+    monkeypatch.setattr(updater.shutil, "which", lambda _name: None)
+    active, detail = updater._vehicle_active()
+    assert active is None
+    assert detail["safe_to_update"] is False
+
+
+def test_vehicle_state_is_unknown_when_only_one_required_topic_arrives(monkeypatch):
+    monkeypatch.setattr(updater.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        updater,
+        "_run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 27, 'drifter/engine/rpm {"value": 0}\n', "Timed out"
+        ),
+    )
+    active, detail = updater._vehicle_active()
+    assert active is None
+    assert detail["rpm"] == 0.0
+    assert detail["speed"] is None
+    assert detail["safe_to_update"] is False
+
+
+def test_auto_update_units_exist_and_are_timer_driven():
+    service = open("services/drifter-auto-update.service", encoding="utf-8").read()
+    timer = open("services/drifter-auto-update.timer", encoding="utf-8").read()
+    assert "ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_update.py" in service
+    assert "OnUnitActiveSec=30min" in timer
+    assert "WantedBy=timers.target" in timer
