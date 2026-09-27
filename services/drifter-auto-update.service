@@ -1,0 +1,15 @@
+[Unit]
+Description=DRIFTER safe main-branch updater
+Documentation=https://github.com/thotsl4yer69/drifter
+Wants=network-online.target drifter-broker.target
+After=network-online.target drifter-broker.target
+ConditionPathIsDirectory=/home/kali/drifter/.git
+
+[Service]
+Type=oneshot
+User=root
+Environment=DRIFTER_AUTO_UPDATE=1
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_update.py
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=25min
