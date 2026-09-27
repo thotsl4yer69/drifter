@@ -2,7 +2,7 @@
 
 Node: **drifter** — Raspberry Pi 5 (8 GB) telemetry node in a 2004 Jaguar X-Type 2.5 V6 (AJ-V6).
 Brand: MZ1312 UNCAGED TECHNOLOGY — EST 1991.
-Status: **yellow** — bench-green and canbridge `_consecutive_failures` global fix landed (2026-05-08); awaiting in-vehicle smoke (OBD-II + RTL-SDR + mic).
+Status: **yellow** — current `main` includes the Sep 28 boot/OBD and deployment-reliability hardening; awaiting deployment of the exact merged revision and the issue #67 physical acceptance campaign.
 
 This file is the operator-facing handoff per the fleet `DEPLOY_CONTRACT.md`. For
 agent-facing architecture details see [`AGENTS.md`](AGENTS.md). For wiring see
