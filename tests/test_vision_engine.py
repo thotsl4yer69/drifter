@@ -58,6 +58,18 @@ def test_yolov5_row_major_output_combines_objectness_and_class_score():
     assert det["bbox"]["height"] == pytest.approx(90.0)
 
 
+def test_single_detection_channel_first_tensor_keeps_feature_axis():
+    raw = np.zeros((1, 84, 1), dtype=np.float32)
+    raw[0, 0:4, 0] = [320, 320, 100, 50]
+    raw[0, 4 + 2, 0] = 0.88
+
+    detections = _decode_yolo_output(raw, frame_w=640, frame_h=640)
+
+    assert len(detections) == 1
+    assert detections[0]["class"] == "car"
+    assert detections[0]["confidence"] == pytest.approx(0.88)
+
+
 def test_normalised_coordinates_are_scaled_to_original_frame():
     raw = np.zeros((1, 84, 10), dtype=np.float32)
     raw[0, 0:4, 0] = [0.5, 0.5, 0.25, 0.5]
