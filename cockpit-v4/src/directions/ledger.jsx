@@ -23,27 +23,23 @@ export function LgTile({ label, meta, children, style, bracketed = true, pad = t
 
 export function LgRail({ active, onPick }) {
   const items = [
-    { k: 'cockpit', g: '⊞', l: 'cock' }, { k: 'map', g: '⌖', l: 'map' },
-    { k: 'hw', g: '▤', l: 'hw' }, { k: 'trip', g: '∿', l: 'trip' },
-    { k: 'rf', g: '⊚', l: 'rf' }, { k: 'set', g: '◌', l: 'set' }, { k: 'arms', g: '⊗', l: 'arms' },
+    { k: 'cockpit', g: '◈', l: 'drive' },
+    { k: 'map', g: '⌖', l: 'map' },
+    { k: 'hw', g: '▤', l: 'diag' },
+    { k: 'rf', g: '⊚', l: 'rf' },
+    { k: 'arms', g: '⊗', l: 'foot' },
+    { k: 'vivi', g: '●', l: 'vivi' },
+    { k: 'set', g: '◌', l: 'system' },
   ];
   return (
-    <nav style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '10px 0', borderRight: '1px solid var(--stroke)', background: 'var(--inset-bg)' }}>
+    <nav className="dr-touch-rail">
       {items.map((it) => (
-        <button type="button" key={it.k} onClick={() => onPick(it.k)} title={it.k}
-          style={{
-            width: 44, height: 44, borderRadius: 8, display: 'grid', placeItems: 'center', gap: 0, cursor: 'pointer',
-            color: active === it.k ? 'var(--acc)' : 'var(--fg-dim)',
-            border: `1px solid ${active === it.k ? 'var(--stroke-acc)' : 'transparent'}`,
-            background: active === it.k ? 'rgba(var(--acc-rgb),0.08)' : 'transparent',
-            textShadow: active === it.k ? 'var(--acc-glow)' : 'none',
-          }}>
-          <div style={{ fontSize: 16, lineHeight: 1 }}>{it.g}</div>
-          <div className="stencil" style={{ fontSize: 6.5, letterSpacing: '0.14em' }}>{it.l}</div>
+        <button type="button" key={it.k} onClick={() => onPick(it.k)} title={it.l}
+          className={active === it.k ? 'active' : ''}>
+          <div style={{ fontSize: 17, lineHeight: 1 }}>{it.g}</div>
+          <div className="stencil" style={{ fontSize: 7, letterSpacing: '0.10em' }}>{it.l}</div>
         </button>
       ))}
-      <div style={{ flex: 1 }}></div>
-      <button type="button" title="Talk to Vivi" onClick={() => onPick('vivi')} style={{ width: 34, height: 34, borderRadius: '50%', cursor: 'pointer', background: 'radial-gradient(circle at 32% 30%, var(--teal), rgba(94,234,212,0.08) 65%)', boxShadow: '0 0 16px rgba(94,234,212,0.4)', border: '1px solid var(--stroke-2)' }}></button>
     </nav>
   );
 }

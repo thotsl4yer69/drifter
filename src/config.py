@@ -785,6 +785,7 @@ SERVICES = [
     "drifter-ghost-voice",   # speaks drifter/ghost/alert via alert_message
     # Multi-vehicle — VIN detect → active profile (drives per-car thresholds)
     "drifter-vehicleid",     # vehicle_id.py — publishes drifter/vehicle/profile
+    "drifter-perception",    # optional Hailo vision + OBD/GPS context fusion
 ]
 
 # ── Modes ──
@@ -811,6 +812,7 @@ DRIVE_ONLY_SERVICES = [
     "drifter-reporter",    # post-drive markdown report via LLM
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge — CAN-only
+    "drifter-perception",    # Hailo/vision context; degrades cleanly without camera
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon
@@ -870,6 +872,7 @@ DIAG_SERVICES = [
     "drifter-weather",     # OpenWeatherMap poller (network-only, light)
     "drifter-location",    # Elevation + Places (network-only, light)
     "drifter-vehicleid",   # VIN → active profile (lightweight; drives per-car thresholds)
+    "drifter-perception",  # lightweight fusion; vision source itself is optional
 ]
 
 MODES = {

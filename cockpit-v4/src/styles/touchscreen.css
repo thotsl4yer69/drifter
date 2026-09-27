@@ -1,0 +1,75 @@
+/* LEDGER touchscreen continuation. Pixel dimensions are browser CSS pixels;
+   physical target size and sunlight readability still require the actual LCD. */
+.dr .dr-cockpit-grid { position:absolute; inset:0; z-index:1; display:grid; grid-template-rows:66px minmax(0,1fr); grid-template-columns:72px minmax(0,1fr); grid-template-areas:"top top" "rail main"; }
+.dr .dr-cockpit-grid[data-sidecar="true"] { grid-template-columns:72px minmax(0,1fr) 322px; grid-template-areas:"top top top" "rail main right"; }
+.dr .dr-main-surface { min-width:0; min-height:0; display:grid; overflow:auto; overscroll-behavior:contain; }
+.dr .dr-rail-slot { grid-area:rail; display:grid; min-height:0; min-width:0; overflow:auto; }
+.dr .dr-cockpit-grid .dr-touch-rail { overflow:auto; min-height:0; }
+.dr .dr-cockpit-grid .dr-touch-rail button { min-height:58px; height:58px; color:var(--fg-mute); flex-shrink:0; touch-action:manipulation; }
+.dr .dr-cockpit-grid .dr-touch-rail button > .stencil { font-family:var(--f-mono) !important; font-size:12px !important; letter-spacing:.04em !important; }
+.dr .dr-cockpit-grid .dr-touch-rail button.active { color:var(--acc); }
+.dr .dr-touch-header { display:flex; align-items:center; gap:10px; padding:4px 10px; min-width:0; border-bottom:1px solid var(--stroke); }
+.dr .dr-touch-brand { display:flex; flex-direction:column; margin-right:auto; min-width:0; }
+.dr .dr-touch-brand strong { font-size:21px; letter-spacing:.12em; line-height:1.1; }
+.dr .dr-touch-brand span { color:var(--fg-mute); font-size:9px; letter-spacing:.07em; }
+.dr .dr-touch-link, .dr-touch-mode { font-size:11px; color:var(--fg-mute); white-space:nowrap; }
+.dr .dr-touch-link.lost { color:var(--acc); }
+.dr .dr-touch-action { display:inline-flex; align-items:center; justify-content:center; min-width:70px; min-height:58px; box-sizing:border-box; padding:8px 12px; border:1px solid var(--stroke-acc); border-radius:8px; background:var(--bg-2); color:var(--fg); font-size:12px; cursor:pointer; touch-action:manipulation; }
+.dr button:focus-visible, .dr dialog:focus-visible { outline:3px solid var(--cyan); outline-offset:-3px; }
+.dr .dr-touch-action:active, .dr .dr-alert-summary:active { background:var(--bg-3); }
+.dr .dr-drive-screen { min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; padding:10px; box-sizing:border-box; }
+.dr .dr-drive-screen .dr-hw-strip { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; flex:none; min-height:36px; padding:0; }
+.dr .dr-drive-screen .dr-hw-strip > span { display:grid; grid-template-columns:6px 1fr; column-gap:4px; align-content:center; padding:3px 5px; border:1px solid var(--stroke); border-radius:5px; background:var(--bg-1); color:var(--fg-mute); font-family:var(--f-mono); font-size:9px; line-height:1.3; min-width:0; }
+.dr .dr-drive-screen .dr-hw-strip b { grid-column:2; font-size:9px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dr .dr-drive-screen .dr-hw-strip i { width:4px; height:4px; margin-top:3px; border-radius:50%; background:var(--fg-dim); }
+.dr .dr-drive-screen .dr-hw-strip .ok i { background:var(--teal); }
+.dr .dr-drive-warning { flex:none; color:var(--acc); font-size:11px; padding:7px; border:1px solid var(--stroke-acc); }
+.dr .dr-primary-gauges { display:grid; grid-template-columns:1.45fr repeat(3,minmax(0,1fr)); gap:10px; min-height:180px; flex:1.1; }
+.dr .dr-metric { padding:12px; display:flex; flex-direction:column; min-width:0; box-sizing:border-box; }
+.dr .dr-metric-label { font-size:11px; color:var(--fg-mute); letter-spacing:.06em; }
+.dr .dr-metric-value { font-size:clamp(36px,4.5vw,64px); line-height:1; margin:auto 0 2px; font-weight:600; white-space:nowrap; }
+.dr .dr-metric.speed .dr-metric-value { font-size:clamp(62px,7vw,96px); }
+.dr .dr-metric-value.empty { color:var(--fg-mute); }
+.dr .dr-metric-unit { font-size:13px; color:var(--fg-mute); }
+.dr .dr-metric-spark { height:22px; width:100%; color:var(--cyan); margin:6px 0; flex:none; }
+.dr .dr-metric[data-metric="coolant"] .dr-metric-spark { color:var(--acc); }
+.dr .dr-metric[data-metric="voltage"] .dr-metric-spark { color:var(--teal); }
+.dr .dr-metric-state { font-size:10px; color:var(--teal); }
+.dr .dr-metric-state.waiting { color:var(--acc); }
+.dr .dr-drive-context { display:grid; grid-template-columns:1.15fr 1fr; gap:10px; min-height:154px; flex:1; }
+.dr .dr-touch-perception, .dr .dr-alert-summary { padding:12px; min-width:0; display:flex; flex-direction:column; gap:8px; text-align:left; color:var(--fg); font-family:var(--f-sans); box-sizing:border-box; }
+.dr .dr-alert-summary { cursor:pointer; touch-action:manipulation; }
+.dr .dr-touch-card-head { display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--fg-mute); }
+.dr .dr-touch-card-head b { font-weight:500; text-align:right; }
+.dr .dr-touch-card-title { font-size:clamp(16px,1.6vw,23px); line-height:1.15; overflow-wrap:anywhere; }
+.dr .dr-touch-perception p, .dr .dr-alert-message { font-size:12px; line-height:1.35; color:var(--fg-mute); margin:0; }
+.dr .dr-alert-message { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.dr .dr-alert-cta { margin-top:auto; font-size:10px; color:var(--cyan); }
+.dr .dr-touch-perception.hazard, .dr .dr-alert-summary.critical { border-color:var(--red); }
+.dr .dr-touch-perception.hazard .dr-touch-card-title, .dr .dr-alert-summary.critical .dr-touch-card-title { color:var(--red); }
+.dr .dr-drive-extras { display:flex; flex-direction:column; gap:10px; }
+.dr .dr-data-sheet { width:min(900px,calc(100vw - 32px)); max-width:none; height:min(700px,calc(100dvh - 32px)); max-height:calc(100dvh - 32px); margin:auto; padding:0; border:1px solid var(--stroke-acc); border-radius:12px; color:var(--fg); background:var(--bg-1); font-family:var(--f-sans); box-sizing:border-box; }
+.dr .dr-data-sheet[open] { display:flex; flex-direction:column; }
+.dr .dr-data-sheet::backdrop { background:rgba(0,0,0,.7); }
+.dr .dr-data-sheet-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 10px; border-bottom:1px solid var(--stroke); }
+.dr .dr-data-sheet-head h2 { font-size:14px; margin:0; }
+.dr .dr-data-sheet-body { flex:1; min-height:0; padding:10px; display:flex; flex-direction:column; gap:10px; overflow:auto; overscroll-behavior:contain; }
+.dr .dr-data-sheet-body > * { flex-shrink:0; }
+.dr .dr-data-sheet-body button, .dr .dr-main-surface button.dr-ghost { min-height:58px; min-width:58px; white-space:normal; touch-action:manipulation; }
+@media (min-width:700px) and (max-height:600px) {
+  .dr .dr-cockpit-grid, .dr .dr-cockpit-grid[data-sidecar="true"] { grid-template-rows:66px minmax(0,1fr) 66px; grid-template-columns:minmax(0,1fr); grid-template-areas:"top" "main" "rail"; }
+  .dr .dr-rail-slot { border-top:1px solid var(--stroke); }
+  .dr .dr-cockpit-grid .dr-touch-rail { display:grid; grid-template-columns:repeat(7,minmax(58px,1fr)); align-content:center; gap:4px; padding:4px; border:0; }
+  .dr .dr-cockpit-grid .dr-touch-rail button { width:100%; min-height:58px; height:58px; }
+  .dr .dr-drive-screen { padding:8px; gap:8px; }
+  .dr .dr-primary-gauges { min-height:144px; gap:8px; }
+  .dr .dr-metric { padding:9px 12px; }
+  .dr .dr-metric-spark { height:14px; margin:3px 0; }
+  .dr .dr-drive-context { min-height:132px; gap:8px; }
+  .dr .dr-touch-perception, .dr .dr-alert-summary { padding:9px 12px; gap:5px; }
+  .dr .dr-drive-extras { display:none; }
+}
+@media (max-width:850px) { .dr .dr-touch-mode { display:none; } }
+@media (prefers-reduced-motion:reduce) {
+  .dr *, .dr *::before, .dr *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}

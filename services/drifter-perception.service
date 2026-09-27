@@ -1,0 +1,15 @@
+[Unit]
+Description=MZ1312 DRIFTER Perception Fusion
+After=drifter-broker.target drifter-dashboard.service
+Wants=drifter-broker.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/perception_fusion.py
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

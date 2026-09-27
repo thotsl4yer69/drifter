@@ -209,6 +209,8 @@ TOPICS = {
     'vehicle_profile': 'drifter/vehicle/profile',
     'vision_object': 'drifter/vision/object',
     'vision_status': 'drifter/vision/status',
+    'perception_event': 'drifter/vision/perception/event',
+    'perception_status': 'drifter/vision/perception/status',
     'vivi2_memory': 'drifter/vivi2/memory',
     'vivi2_proactive': 'drifter/vivi2/proactive',
     'vivi2_query': 'drifter/vivi2/query',

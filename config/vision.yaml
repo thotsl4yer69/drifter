@@ -1,8 +1,8 @@
 # MZ1312 DRIFTER — Vision Engine Configuration
 # UNCAGED TECHNOLOGY — EST 1991
 #
-# Lives on the secondary Pi5 + Hailo node. Override defaults from
-# src/config.py VISION_* here.
+# Runs on the DRIFTER Pi5 with an AI HAT+ / Hailo-8/8L, or on a secondary
+# Pi5 vision node. The perception service is optional and never blocks OBD.
 
 # Model files live in /opt/drifter/vision-models/
 # Preferred: yolov8s.hef (Hailo compiled). Fallback: yolov8s.onnx (CPU/ONNX).

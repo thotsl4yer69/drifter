@@ -241,3 +241,53 @@
 .dr ::-webkit-scrollbar { width: 4px; height: 4px; }
 .dr ::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 2px; }
 .dr ::-webkit-scrollbar-track { background: transparent; }
+
+
+/* ── In-car touch cockpit ─────────────────────────────────── */
+.dr .dr-touch-rail {
+  display:flex; flex-direction:column; align-items:center; gap:7px;
+  padding:8px 6px; border-right:1px solid var(--stroke); background:var(--inset-bg);
+}
+.dr .dr-touch-rail button {
+  width:58px; min-height:58px; border-radius:9px; display:grid; place-items:center;
+  cursor:pointer; color:var(--fg-dim); border:1px solid transparent; background:transparent;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+.dr .dr-touch-rail button.active {
+  color:var(--acc); border-color:var(--stroke-acc);
+  background:rgba(var(--acc-rgb),0.08); text-shadow:var(--acc-glow);
+}
+.dr .dr-touch-rail button:active { transform:scale(.97); }
+
+.dr .dr-hw-strip {
+  min-height:30px; display:flex; align-items:center; gap:6px; overflow:hidden;
+  padding:3px 7px; border:1px solid var(--stroke); border-radius:7px;
+  background:var(--inset-bg); flex:none;
+}
+.dr .dr-hw-strip span {
+  display:inline-flex; align-items:center; gap:4px; min-width:0;
+  font-family:var(--f-mono); font-size:7.5px; letter-spacing:.08em; color:var(--fg-dim);
+}
+.dr .dr-hw-strip span i { width:5px; height:5px; border-radius:50%; background:var(--fg-deep); flex:none; }
+.dr .dr-hw-strip span b { font-weight:500; color:var(--fg-mute); }
+.dr .dr-hw-strip span.ok i { background:var(--teal); box-shadow:0 0 7px var(--teal); }
+.dr .dr-hw-strip span.ok b { color:var(--teal); }
+.dr .dr-hw-strip span.wait i { background:var(--acc); box-shadow:0 0 7px var(--acc); }
+.dr .dr-hw-strip span.wait b { color:var(--acc); }
+
+.dr .dr-perception { flex:1; display:flex; flex-direction:column; min-height:0; padding:8px 2px 1px; }
+.dr .dr-perception-state { flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:4px 2px; }
+.dr .dr-perception-state .stencil { font-size:14px; color:var(--teal); letter-spacing:.11em; }
+.dr .dr-perception-state strong { font-size:18px; color:var(--fg); font-weight:500; }
+.dr .dr-perception.hazard .dr-perception-state .stencil,
+.dr .dr-perception.hazard .dr-perception-state strong { color:var(--red); text-shadow:0 0 16px rgba(var(--red-rgb),.25); }
+.dr .dr-perception-meta { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:3px; }
+.dr .dr-perception-meta span { border:1px solid var(--stroke); border-radius:5px; padding:5px 6px; font-size:7.5px; color:var(--fg-dim); }
+.dr .dr-perception-meta b { display:block; margin-top:2px; color:var(--fg-mute); font-size:9px; font-weight:500; }
+.dr .dr-perception-context { margin-top:6px; padding-top:6px; border-top:1px dotted var(--edge); font-size:8.5px; color:var(--fg-dim); }
+
+@media (max-height: 650px) {
+  .dr .dr-touch-rail { gap:3px; padding-top:4px; }
+  .dr .dr-touch-rail button { min-height:48px; height:48px; }
+  .dr .dr-hw-strip { min-height:26px; }
+}

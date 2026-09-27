@@ -16,6 +16,7 @@
 //  · AUD currency, vivi2/query, never auto-LLM (UI-side).
 // ════════════════════════════════════════════════════════════════
 import { createSim, freshState } from './sim.js';
+import { emptyDisplayState, observeDisplayFrame, invalidateDisplay } from './display-state.js';
 
 const params = new URLSearchParams(location.search);
 const SIM = params.has('sim');
@@ -44,6 +45,7 @@ const sevForLevel = (lv) => (lv >= 3 ? 'crit' : lv >= 2 ? 'warn' : 'info');
 function liveBaseline() {
   const s = freshState();
   s.link = 'lost';
+  s.display = emptyDisplayState();
   s.hw = { ecu: 'pending', gps: 'none', bt: 'down', weatherKey: false, sdr: 'unknown' };
   s.power = { undervoltNow: false, undervoltSinceBoot: false, throttled: false };
   s.speed = 0; s.rpm = 0; s.gear = 'N'; s.coolant = 0; s.voltage = 0; s.throttle = 0;
@@ -60,6 +62,7 @@ function liveBaseline() {
   s.rf.hits = 0; s.rf.adsb = 0; s.rf.tpmsSeen = 0;
   s.gps = { lat: null, lon: null, hdg: 0, fix: 'none', sats: 0, acc: null };
   s.vivi = { status: 'awaiting link', lastSaid: '' };
+  s.perception = { state: 'offline', vision: 'offline', objects: [], event: null, fcw: null, dashcam: 'unknown' };
   s.recon.wardrive = [];
   s.recon.blePersist = null;
   s.recon.hidPayloads = [];
@@ -90,9 +93,10 @@ function createRealAdapter() {
   }
 
   // ── topic → state mapping ──────────────────────────────────────
-  function applyTopic(topic, data) {
+  function applyTopic(topic, data, cached = false) {
     try {
       const d = data;
+      observeDisplayFrame(state, topic, data, Date.now(), cached);
       switch (true) {
         case topic === 'drifter/snapshot': {
           if (d && typeof d === 'object') {
@@ -160,6 +164,31 @@ function createRealAdapter() {
             if (d.acc != null) state.gps.acc = num(d.acc);
             if (d.track_deg != null) state.heading = num(d.track_deg);
           }
+          break;
+        }
+        case topic === 'drifter/vision/status': {
+          state.perception.vision = String(d?.state || 'unknown');
+          break;
+        }
+        case topic === 'drifter/vision/perception/status': {
+          state.perception.state = String(d?.state || 'unknown');
+          if (d?.vision) state.perception.vision = String(d.vision);
+          break;
+        }
+        case topic === 'drifter/vision/perception/event': {
+          state.perception.event = d && typeof d === 'object' ? d : null;
+          break;
+        }
+        case topic === 'drifter/vision/object': {
+          state.perception.objects = Array.isArray(d?.objects) ? d.objects.slice(0, 12) : [];
+          break;
+        }
+        case topic === 'drifter/vision/fcw/warning': {
+          state.perception.fcw = d && typeof d === 'object' && d.active !== false ? d : null;
+          break;
+        }
+        case topic === 'drifter/vision/dashcam/status': {
+          state.perception.dashcam = String(d?.state || 'unknown');
           break;
         }
         case topic === 'drifter/rf/spectrum/summary':
@@ -289,7 +318,7 @@ function createRealAdapter() {
       let frame; try { frame = JSON.parse(ev.data); } catch { return; }
       if (frame && frame.topic) applyTopic(frame.topic, frame.data);
     };
-    ws.onclose = () => { if (state.link !== 'lost') { state.link = 'lost'; schedule(); } scheduleReconnect(); };
+    ws.onclose = () => { invalidateDisplay(state); if (state.link !== 'lost') { state.link = 'lost'; schedule(); } scheduleReconnect(); };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   function scheduleReconnect() {
@@ -311,8 +340,8 @@ function createRealAdapter() {
       const snap = await r.json();
       // latest_state keys are `topic` with drifter/ stripped and / → _
       for (const [k, v] of Object.entries(snap || {})) {
-        if (k === 'snapshot') applyTopic('drifter/snapshot', v);
-        else applyTopic('drifter/' + k.replace(/_/g, '/'), v);
+        if (k === 'snapshot') applyTopic('drifter/snapshot', v, true);
+        else applyTopic('drifter/' + k.replace(/_/g, '/'), v, true);
       }
       schedule();
     } catch (e) { /* offline cold-start is fine; WS will fill in */ }
