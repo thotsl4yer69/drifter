@@ -114,7 +114,10 @@ def _decode_yolo_output(
     except (TypeError, ValueError):
         return []
 
-    arr = np.squeeze(arr)
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    elif arr.ndim != 2:
+        return []
     if arr.ndim != 2 or 0 in arr.shape:
         return []
 
