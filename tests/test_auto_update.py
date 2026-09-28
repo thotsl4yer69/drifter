@@ -93,7 +93,7 @@ def test_rollback_restores_exact_previous_tree_before_redeploy(monkeypatch):
 def test_systemd_timer_is_installed_by_existing_installer_contract():
     install_text = open("install.sh", encoding="utf-8").read()
     assert "services/drifter-*.timer" in install_text
-    assert 'systemctl enable "$tmr_name"' in install_text
+    assert 'systemctl enable --now "$tmr_name"' in install_text
 
 
 def test_updater_source_is_deployed_by_existing_installer_contract():
@@ -125,8 +125,8 @@ def test_vehicle_state_is_unknown_when_only_one_required_topic_arrives(monkeypat
 
 
 def test_auto_update_units_exist_and_are_timer_driven():
-    service = open("services/drifter-auto-update.service", encoding="utf-8").read()
-    timer = open("services/drifter-auto-update.timer", encoding="utf-8").read()
+    service = open("services/drifter-update.service", encoding="utf-8").read()
+    timer = open("services/drifter-update.timer", encoding="utf-8").read()
     assert "ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_update.py" in service
-    assert "OnUnitActiveSec=30min" in timer
+    assert "OnUnitActiveSec=30min" in timer\n    assert "RandomizedDelaySec=2min" in timer
     assert "WantedBy=timers.target" in timer
