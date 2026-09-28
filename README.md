@@ -10,7 +10,7 @@
 
 > **Maturity: Hardware-integrated prototype / active hardening.** DRIFTER is running as a real Raspberry Pi vehicle-node project, but it is not represented as production-ready or universally compatible. Validation depends on the vehicle, OBD transport and attached hardware. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
-> **Current hardening state (28 Sep 2026):** PR #87 is merged to `main` with boot-deadline and OBD-proof fixes. Targeted software checks passed; full hosted CI did not receive a runner, and Pi/vehicle acceptance is still outstanding. See [the evidence audit](docs/AUDIT_2026-09-28.md).
+> **Current hardening state (28 Sep 2026):** PR #87 fixed boot-deadline/OBD proof, PR #88 hardened deployment/self-update/display recovery, and PR #89 replaced no-op vision inference with ONNX + Picamera2/Hailo backends and Pi-camera fallback. Targeted software checks passed; hosted CI still fails before runner allocation, and Pi/vehicle acceptance remains outstanding. See [the evidence audit](docs/AUDIT_2026-09-28.md).
 
 ## The wedge
 
