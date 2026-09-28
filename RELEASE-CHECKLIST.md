@@ -133,7 +133,7 @@ the merged head; current exact-head evidence is listed below.
 
 ## Current merged-head verification gate
 
-PR #87 is merged to `main` as `e3cdcd868380a98c78f1e93cc1cfef88d6fdb68e`. The audit's exact targeted evidence is **21 boot checks + 46 OBD checks passed**, plus compilation of the changed runtime/test files. The GitHub-hosted PR jobs failed before receiving a runner (`steps=[]`, `runner_id=0`), so they provide no full-suite result.
+PR #87 merged the boot/OBD fixes, PR #88 merged deployment/display/self-update hardening, and PR #89 merged functional ONNX + Picamera2/Hailo vision inference. Targeted evidence is **21 boot + 46 OBD checks**, **10 deployment/display checks**, and **12 focused vision scenarios** passed in software harnesses. GitHub-hosted jobs still fail before receiving a runner (`steps=[]`, `runner_id=0`), so they provide no full-suite result.
 
 Before yellow → green, the following software checks still need a real full checkout/run:
 - [ ] **SW** `pytest -q tests/` passes on the exact merged main revision.
