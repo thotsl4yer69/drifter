@@ -4,7 +4,7 @@
 **Engineering codename:** DRIFTER  
 **Public beta name:** MAZLABZ DRIFTER VIM — Vehicle Intelligence Module  
 **Current stage:** Founding beta / physical acceptance  
-**Current runtime hardening commit:** `3aadff4fff3bd2d74bd956f779eaa40ea778ff6b` (PR #88); later main commits are documentation/handoff sync
+**Current runtime hardening commit:** `8e4a85444d7d40c65694eb0c9f9212dbb8ecae52` (PR #89); later main commits may be documentation/handoff sync
 
 This file is the launch authority. If older copy, mockups, posts or ideas conflict with it, this file wins until explicitly updated.
 
