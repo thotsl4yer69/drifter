@@ -189,6 +189,7 @@ class _FakeHailoRuntime:
 def test_hailo_backend_uses_picamera_wrapper_preprocesses_and_closes(monkeypatch):
     devices = types.ModuleType("picamera2.devices")
     devices.Hailo = _FakeHailoRuntime
+    devices.hailo_architecture = lambda: "HAILO8L"
     picamera2 = types.ModuleType("picamera2")
     picamera2.devices = devices
     monkeypatch.setitem(sys.modules, "picamera2", picamera2)
