@@ -173,6 +173,7 @@ Run on the physical node and confirm before declaring green:
 - [ ] **HW / optional** Second-vehicle smoke: a non-Jaguar OBD-II car identifies
       by VIN, resolves a generic/authored profile, and telemetry + generic DTC
       descriptions flow (no Jaguar-specific advice).
+- [ ] **HW / optional** Vision: camera opens through V4L2 or Picamera2; if Hailo is fitted, the detected architecture selects a compatible packaged/local HEF; real detections publish with measured FPS/latency and are checked against controlled scenes. ONNX fallback must also produce a real detection when its model is installed.
 - [ ] **HW** RTL-SDR tunes; USB audio dongle plays; USB mic enumerates.
 - [ ] **HW** GPS produces a fix; SPI LCD paints; hotspot up on 10.42.0.1.
 - [ ] **HW** Power-cut test: pull power mid-drive, reboot, confirm no service
