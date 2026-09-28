@@ -25,7 +25,7 @@ The strongest currently defensible wording is: **targets standards-based OBD-II 
 
 ## Current release state — 28 September 2026
 
-PR #87 is merged with the boot-readiness deadline and strict OBD retained-status fixes. PR #88 is also merged with deployment hardening: fail-closed vehicle-state guarding for self-update, a 30-minute updater timer, bounded display `systemctl` calls, staged cockpit release activation, and `sudo drifter update`. The exact targeted audit evidence remains **21 boot + 46 OBD checks passed**; the deployment-hardening follow-up added **10 targeted regression checks passed** plus Python compilation and shell syntax.
+PR #87 is merged with the boot-readiness deadline and strict OBD retained-status fixes. PR #88 adds deployment hardening: fail-closed vehicle-state guarding for self-update, a 30-minute updater timer, bounded display `systemctl` calls, staged cockpit release activation, and `sudo drifter update`. PR #89 replaces the vision no-op with CPU ONNX YOLO decode/NMS plus Raspberry Pi Picamera2/Hailo inference, packaged HEF auto-selection and Picamera2 camera fallback. Exact targeted evidence: **21 boot + 46 OBD checks**, **10 deployment/display checks**, and **12 focused vision scenarios** passed in software harnesses; hosted CI still fails before runner allocation.
 
 These merges are **software promotion only**. The Pi has not been observed running the current merged revision, and GitHub-hosted jobs still fail before runner allocation. The physical release gate remains open: ten consecutive cold boots, blank-config touchscreen OBD onboarding, parked recovery/display tests, and an uninterrupted 1,800-second live telemetry run.
 
