@@ -232,3 +232,73 @@ def test_packaged_hailo_model_tracks_detected_architecture(monkeypatch, arch, fi
     model = vision._system_hailo_model()
     assert model is not None
     assert model.name == filename
+
+
+
+def test_capture_loop_falls_back_to_picamera2_and_publishes(monkeypatch):
+    running = [True]
+    published = []
+
+    class Client:
+        def publish(self, topic, payload):
+            published.append((topic, payload))
+
+    class Detector:
+        def infer(self, _frame):
+            return [{"class": "car", "confidence": 0.9, "bbox": {}}]
+
+    class ClosedCapture:
+        def isOpened(self):
+            return False
+
+        def release(self):
+            pass
+
+    class CaptureCv2:
+        COLOR_RGB2BGR = 3
+
+        @staticmethod
+        def VideoCapture(_source):
+            return ClosedCapture()
+
+        @staticmethod
+        def cvtColor(frame, _code):
+            return frame
+
+    class FakePicamera2:
+        instance = None
+
+        def __init__(self):
+            self.stopped = False
+            self.closed = False
+            self.__class__.instance = self
+
+        def create_preview_configuration(self, **kwargs):
+            return kwargs
+
+        def configure(self, _config):
+            pass
+
+        def start(self):
+            pass
+
+        def capture_array(self, _stream):
+            running[0] = False
+            return np.zeros((640, 640, 3), dtype=np.uint8)
+
+        def stop(self):
+            self.stopped = True
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setitem(sys.modules, "cv2", CaptureCv2)
+    monkeypatch.setattr(vision, "_picamera2_class", lambda: FakePicamera2)
+    monkeypatch.setattr(vision.time, "sleep", lambda _seconds: None)
+
+    vision._capture_loop(Client(), running, Detector())
+
+    assert len(published) == 1
+    assert published[0][0] == vision.TOPICS["vision_object"]
+    assert FakePicamera2.instance.stopped is True
+    assert FakePicamera2.instance.closed is True
