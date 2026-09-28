@@ -288,16 +288,32 @@ def _camera_source():
     return int(raw) if raw.isdigit() else raw
 
 
+def _ensure_system_dist_packages() -> None:
+    # Picamera2/libcamera/Hailo are normally installed by apt, while DRIFTER's
+    # application dependencies live in an isolated venv. Add the distro path
+    # only when an optional camera/Hailo import needs it.
+    system_dist = "/usr/lib/python3/dist-packages"
+    if system_dist not in sys.path:
+        sys.path.append(system_dist)
+
+
 def _picamera_hailo_api():
-    """Load distro Picamera2 Hailo helpers without exposing system packages globally."""
+    """Load distro Picamera2 Hailo helpers."""
     try:
         from picamera2.devices import Hailo, hailo_architecture  # type: ignore[import]
     except ImportError:
-        system_dist = "/usr/lib/python3/dist-packages"
-        if system_dist not in sys.path:
-            sys.path.append(system_dist)
+        _ensure_system_dist_packages()
         from picamera2.devices import Hailo, hailo_architecture  # type: ignore[import]
     return Hailo, hailo_architecture
+
+
+def _picamera2_class():
+    try:
+        from picamera2 import Picamera2  # type: ignore[import]
+    except ImportError:
+        _ensure_system_dist_packages()
+        from picamera2 import Picamera2  # type: ignore[import]
+    return Picamera2
 
 
 def _system_hailo_model() -> Path | None:
@@ -427,47 +443,99 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
 
     source = _camera_source()
     cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        log.warning("camera open failed for %r — vision capture disabled", source)
-        return
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, VISION_INPUT_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VISION_INPUT_H)
-    log.info("Camera active %sx%s", VISION_INPUT_W, VISION_INPUT_H)
+    picam2 = None
+    use_picamera2 = False
 
-    while running_ref[0]:
-        ok, frame = cap.read()
-        if not ok:
-            time.sleep(0.1)
-            continue
-        detections = []
-        if detector is not None:
-            try:
-                detections = detector.infer(frame)
-            except Exception as exc:
-                log.debug("infer: %s", exc)
-        objects = []
-        for det in detections or []:
-            if not isinstance(det, dict):
-                continue
-            cls = det.get("class")
-            conf = det.get("confidence", 0)
-            if conf < VISION_CONFIDENCE:
-                continue
-            if cls and cls not in VISION_CLASSES_OF_INTEREST:
-                continue
-            objects.append(det)
-        if objects:
-            client.publish(TOPICS["vision_object"], json.dumps({
-                "objects": objects,
-                "count": len(objects),
-                "ts": time.time(),
-            }))
-        time.sleep(0.05)
+    if cap.isOpened():
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, VISION_INPUT_W)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VISION_INPUT_H)
+        log.info("Camera active via OpenCV source %r at %sx%s", source, VISION_INPUT_W, VISION_INPUT_H)
+    else:
+        try:
+            cap.release()
+        except Exception:
+            pass
+        try:
+            Picamera2 = _picamera2_class()
+            picam2 = Picamera2()
+            config = picam2.create_preview_configuration(
+                main={"size": (VISION_INPUT_W, VISION_INPUT_H), "format": "RGB888"},
+                controls={"FrameRate": 20},
+            )
+            picam2.configure(config)
+            picam2.start()
+            use_picamera2 = True
+            log.info("Camera active via Picamera2 at %sx%s", VISION_INPUT_W, VISION_INPUT_H)
+        except Exception as exc:
+            log.warning(
+                "camera unavailable: OpenCV source %r failed and Picamera2 could not start (%s)",
+                source,
+                exc,
+            )
+            if picam2 is not None:
+                try:
+                    picam2.close()
+                except Exception:
+                    pass
+            return
 
     try:
-        cap.release()
-    except Exception:
-        pass
+        while running_ref[0]:
+            if use_picamera2:
+                try:
+                    frame_rgb = picam2.capture_array("main")
+                    frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                    ok = frame is not None
+                except Exception as exc:
+                    log.debug("Picamera2 capture: %s", exc)
+                    ok, frame = False, None
+            else:
+                ok, frame = cap.read()
+
+            if not ok:
+                time.sleep(0.1)
+                continue
+
+            detections = []
+            if detector is not None:
+                try:
+                    detections = detector.infer(frame)
+                except Exception as exc:
+                    log.debug("infer: %s", exc)
+
+            objects = []
+            for det in detections or []:
+                if not isinstance(det, dict):
+                    continue
+                cls = det.get("class")
+                conf = det.get("confidence", 0)
+                if conf < VISION_CONFIDENCE:
+                    continue
+                if cls and cls not in VISION_CLASSES_OF_INTEREST:
+                    continue
+                objects.append(det)
+            if objects:
+                client.publish(TOPICS["vision_object"], json.dumps({
+                    "objects": objects,
+                    "count": len(objects),
+                    "ts": time.time(),
+                }))
+            time.sleep(0.05)
+    finally:
+        if use_picamera2 and picam2 is not None:
+            try:
+                picam2.stop()
+            except Exception:
+                pass
+            try:
+                picam2.close()
+            except Exception:
+                pass
+        else:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
 
 def _select_detector():
