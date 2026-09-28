@@ -141,7 +141,7 @@ Before yellow → green, the following software checks still need a real full ch
 - [ ] **SW** `node --test cockpit-v4/tests/*.test.mjs` and `(cd cockpit-v4 && npm ci --no-audit --no-fund && npm run build)` pass.
 - [x] **SW** Safe self-update/rollback is timer-wired in the repository; unknown vehicle telemetry defers rather than updating.
 - [x] **SW** Cockpit deployment stages a complete release before activation; display recovery/status bounds `systemctl` calls.
-- [ ] **SW/HW** Deploy current `main` to the Pi with `scripts/oneshot.sh`, verify `drifter-auto-update.timer` is enabled, then record `drifter version` and the installed revision/hash evidence.
+- [ ] **SW/HW** Deploy current `main` to the Pi with `scripts/oneshot.sh`, verify `drifter-update.timer` is enabled, then record `drifter version` and the installed revision/hash evidence.
 
 Operator/provider action also remains open: rotate the historically committed OWM / Google Maps keys provider-side.
 
