@@ -651,7 +651,12 @@ elif command -v nanomq &>/dev/null; then
     cp "${REPO_DIR}/config/nanomq.conf" /etc/nanomq.conf
 fi
 
-# Deploy all service + timer + target files
+# Deploy all service + timer + target files.
+# Clean up the short-lived duplicate updater unit names from the Sep-28
+# hardening pass; the canonical updater is drifter-update.{service,timer}.
+systemctl disable --now drifter-auto-update.timer >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/drifter-auto-update.timer /etc/systemd/system/drifter-auto-update.service
+
 for svc in ${REPO_DIR}/services/*.service; do
     cp "$svc" /etc/systemd/system/
 done
@@ -734,13 +739,17 @@ for svc in $SERVICES; do
     ok "Enabled: $svc"
 done
 
-# Enable any drifter-*.timer units we shipped. Timer enables go via
-# timers.target, so they need separate `systemctl enable` calls.
+# Enable + start any drifter-*.timer units we shipped. Starting them here
+# avoids a deploy appearing complete while scheduled maintenance waits for the
+# next reboot before becoming active.
 shopt -s nullglob
 for tmr_file in ${REPO_DIR}/services/drifter-*.timer; do
     tmr_name="$(basename "$tmr_file")"
-    systemctl enable "$tmr_name" 2>/dev/null
-    ok "Enabled: $tmr_name"
+    if systemctl enable --now "$tmr_name" >/dev/null 2>&1; then
+        ok "Enabled + started: $tmr_name"
+    else
+        warn "Could not enable/start timer: $tmr_name"
+    fi
 done
 shopt -u nullglob
 

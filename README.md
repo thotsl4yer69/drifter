@@ -124,7 +124,7 @@ drifter healthz
 drifter diagnose
 ```
 
-After one successful full deployment, `drifter-auto-update.timer` checks `origin/main` every 30 minutes. It updates only from a clean `main` checkout, only by fast-forward, and only when fresh RPM **and** speed samples prove the vehicle is stationary; unknown telemetry defers the update. Failed deployments automatically restore and redeploy the previous commit. Use `sudo drifter update` for an immediate safe check.
+After one successful full deployment, `drifter-update.timer` checks `origin/main` every 30 minutes. It updates only from a clean `main` checkout, only by fast-forward, and only when fresh RPM **and** speed samples prove the vehicle is stationary; unknown telemetry defers the update. Failed deployments automatically restore and redeploy the previous commit. Use `sudo drifter update` for an immediate safe check.
 
 Use `sudo ./scripts/oneshot.sh` without `--skip-apt` for a fresh/full install. A successful software deploy is not the physical acceptance gate; record the installed revision and complete the cold-boot, OBD onboarding, recovery/display and 30-minute telemetry checks in [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md). The detailed field sequence is in [docs/FIELD_DEPLOY.md](docs/FIELD_DEPLOY.md).
 
