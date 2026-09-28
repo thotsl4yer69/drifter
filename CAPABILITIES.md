@@ -61,6 +61,7 @@ default and the in-car `drive` persona never load them.
 - Passive BLE presence/awareness (e.g. surfacing nearby trackers) and passive
   Wi-Fi/Bluetooth survey.
 - GPS position for the cockpit map and geo-tagging.
+- Optional camera object-detection pipeline: YOLO through CPU ONNX or Raspberry Pi Picamera2/Hailo, publishing structured detections into perception fusion. This is an implemented software capability, not a claim of physically validated driver-assistance performance.
 - On-demand listening to public/emergency RF bands you are permitted to monitor.
 - Optional weather and points-of-interest enrichment (needs your own API keys).
 

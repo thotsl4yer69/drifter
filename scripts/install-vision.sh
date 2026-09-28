@@ -27,6 +27,8 @@ if [ "$EUID" -ne 0 ]; then fail "Run as root: sudo ./scripts/install-vision.sh";
 
 step 1 "Installing video + python deps"
 apt-get install -y -qq v4l-utils ffmpeg libgl1 libglib2.0-0 2>/dev/null
+apt-get install -y -qq python3-picamera2 --no-install-recommends 2>/dev/null || \
+    warn "python3-picamera2 unavailable — Hailo Python backend may be unavailable; ONNX remains usable"
 source "${DRIFTER_DIR}/venv/bin/activate"
 pip install --quiet opencv-python numpy pyyaml onnxruntime
 if [ "$1" = "--with-ocr" ]; then
@@ -83,5 +85,7 @@ systemctl daemon-reload
 
 echo ""
 echo -e "${GREEN}  Vision stack installed.${NC}"
-echo -e "  Drop a yolov8s.hef (Hailo) or yolov8s.onnx into ${CYAN}${DRIFTER_DIR}/vision-models/${NC}"
-echo -e "  Start:  ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
+echo -e "  Preferred backend: Picamera2/Hailo with the packaged YOLOv8 HEF auto-selected for Hailo-8/8L/10H."
+echo -e "  Optional override: place ${CYAN}yolov8s.hef${NC} in ${CYAN}${DRIFTER_DIR}/vision-models/${NC}."
+echo -e "  CPU fallback: place ${CYAN}yolov8s.onnx${NC} in the same directory."
+echo -e "  Start vision: ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"

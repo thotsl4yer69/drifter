@@ -5,7 +5,10 @@
 # Pi5 vision node. The perception service is optional and never blocks OBD.
 
 # Model files live in /opt/drifter/vision-models/
-# Preferred: yolov8s.hef (Hailo compiled). Fallback: yolov8s.onnx (CPU/ONNX).
+# Preferred: a local yolov8s.hef override, otherwise the Raspberry Pi packaged
+# YOLOv8 HEF selected automatically for Hailo-8/8L/10H through Picamera2/Hailo.
+# Fallback: yolov8s.onnx through CPU onnxruntime. Hardware model/runtime
+# compatibility must still be validated on the actual Hailo device.
 model_dir: "/opt/drifter/vision-models"
 hailo_model: "yolov8s.hef"
 onnx_fallback: "yolov8s.onnx"

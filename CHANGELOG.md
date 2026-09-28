@@ -12,6 +12,7 @@ ships from the default branch.
 - Display status/recovery now bounds `systemctl` calls instead of allowing a wedged service manager to hang the recovery command.
 - Cockpit deployment stages a complete release and activates it via a release symlink instead of rsyncing directly into the live directory.
 - The self-updater is timer-driven and fails closed when fresh RPM + speed do not prove the vehicle is stationary.
+- Vision inference is no longer a no-op: ONNX YOLOv8/v5 preprocessing/decoding/NMS is implemented; Hailo uses Raspberry Pi's Picamera2/Hailo post-processed API with packaged HEF auto-selection; capture falls back from V4L2/OpenCV to native Picamera2.
 
 ### Verification
 - PR #87 merged to `main` as `e3cdcd868380a98c78f1e93cc1cfef88d6fdb68e`.
