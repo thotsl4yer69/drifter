@@ -143,6 +143,7 @@ class ReconVideoRecorder:
         self.segment_started = 0.0
         self.path: Path | None = None
         self.retry_after = 0.0
+        self._finalized: list[Path] = []
 
     @property
     def active(self) -> bool:
@@ -152,9 +153,17 @@ class ReconVideoRecorder:
         if now < self.retry_after:
             return False
         RECON_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+        # Prune only completed segments; do it before creating the new output so
+        # the active writer can never be unlinked by quota enforcement.
+        _prune_media(
+            RECON_VIDEO_DIR,
+            "*.mp4",
+            int(DASHCAM_MAX_GB * 1024 ** 3),
+        )
         frame_h, frame_w = int(frame.shape[0]), int(frame.shape[1])
         stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
-        self.path = RECON_VIDEO_DIR / f"{CAMERA_ID}_{stamp}.mp4"
+        millis = int((now % 1.0) * 1000)
+        self.path = RECON_VIDEO_DIR / f"{CAMERA_ID}_{stamp}-{millis:03d}.mp4"
         try:
             fourcc = self.cv2.VideoWriter_fourcc(*"mp4v")
             writer = self.cv2.VideoWriter(
@@ -165,11 +174,6 @@ class ReconVideoRecorder:
                 raise RuntimeError("VideoWriter did not open")
             self.writer = writer
             self.segment_started = now
-            _prune_media(
-                RECON_VIDEO_DIR,
-                "*.mp4",
-                int(DASHCAM_MAX_GB * 1024 ** 3),
-            )
             return True
         except Exception as exc:
             log.warning("RECON video writer unavailable: %s", exc)
@@ -191,13 +195,22 @@ class ReconVideoRecorder:
             self.retry_after = now + 30.0
             return False
 
-    def close(self) -> None:
+    def close(self) -> Path | None:
+        completed = self.path if self.writer is not None else None
         if self.writer is not None:
             try:
                 self.writer.release()
             except Exception:
-                pass
+                completed = None
         self.writer = None
+        self.path = None
+        if completed is not None:
+            self._finalized.append(completed)
+        return completed
+
+    def take_finalized(self) -> list[Path]:
+        completed, self._finalized = self._finalized, []
+        return completed
 
 
 def _bbox_crop(frame, detection: dict):
@@ -568,6 +581,7 @@ class HailoYolo:
     """Hailo detector using Raspberry Pi's supported Picamera2 device wrapper."""
 
     def __init__(self, model_path: Path) -> None:
+        self.backend = "hailo"
         Hailo, _hailo_architecture = _picamera_hailo_api()
         self._context = Hailo(str(model_path))
         enter = getattr(self._context, "__enter__", None)
@@ -619,6 +633,7 @@ class OnnxYolo:
     """CPU fallback for exported YOLOv8/v5-style ONNX models."""
 
     def __init__(self, model_path: Path) -> None:
+        self.backend = "onnx"
         try:
             import onnxruntime as ort
             self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
@@ -731,6 +746,15 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
     last_prune = 0.0
     last_record_state: str | None = None
 
+    def publish_clip(path: Path, now: float, reason: str) -> None:
+        client.publish(TOPICS["dashcam_clip"], json.dumps({
+            "path": str(path),
+            "reason": reason,
+            "camera_id": CAMERA_ID,
+            "mode": mode,
+            "ts": now,
+        }))
+
     def publish_record_state(state: str, now: float, path: Path | None = None) -> None:
         nonlocal last_record_state
         if state == last_record_state:
@@ -775,6 +799,8 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                 if recorder is None:
                     recorder = ReconVideoRecorder(cv2)
                 recording = recorder.write(frame, now)
+                for completed in recorder.take_finalized():
+                    publish_clip(completed, now, "segment")
                 publish_record_state(
                     "recording" if recording else "monitoring",
                     now,
@@ -782,7 +808,9 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                 )
             else:
                 if recorder is not None:
-                    recorder.close()
+                    completed = recorder.close()
+                    if completed is not None:
+                        publish_clip(completed, now, "mode_change")
                     recorder = None
                 publish_record_state("ready" if mode == "drive" else "offline", now)
 
@@ -839,7 +867,9 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
             time.sleep(0.05)
     finally:
         if recorder is not None:
-            recorder.close()
+            completed = recorder.close()
+            if completed is not None:
+                publish_clip(completed, time.time(), "service_stop")
         client.publish(TOPICS["dashcam_status"], json.dumps({
             "state": "offline",
             "owner": "drifter-vision",
@@ -914,12 +944,9 @@ def main() -> None:
 
     client.loop_start()
     client.publish(TOPICS["vision_status"], json.dumps({
-        "state": "online" if detector else "idle",
-        "backend": (
-            "hailo" if isinstance(detector, HailoYolo)
-            else "onnx" if isinstance(detector, OnnxYolo)
-            else None
-        ),
+        "state": "starting" if detector else "idle",
+        "backend": getattr(detector, "backend", None),
+        "camera": "unknown",
         "classes": list(VISION_CLASSES_OF_INTEREST),
         "camera_id": CAMERA_ID,
         "mode": _current_mode(),
