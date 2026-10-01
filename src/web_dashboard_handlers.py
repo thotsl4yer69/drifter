@@ -607,7 +607,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             'sections': SETTINGS_SECTIONS,
             'fields': SETTINGS_SCHEMA,
         })
-    def _get_state(self, parsed):             self._serve_json(state.latest_state)
+    def _get_state(self, parsed):
+        # Include the persisted operator persona in the cold-start snapshot.
+        # Build a copy: latest_state is also the live WS fan-out source.
+        payload = dict(state.latest_state)
+        try:
+            payload['mode'] = (
+                Path(MODE_STATE_PATH).read_text(encoding='utf-8').strip()
+                or DEFAULT_MODE
+            )
+        except OSError:
+            payload['mode'] = DEFAULT_MODE
+        self._serve_json(payload)
     def _get_hardware(self, parsed):          self._serve_json(check_hardware())
     def _get_rfaudio_status(self, parsed):
         """rfaudio status + live hardware-presence echo (BE-2).
