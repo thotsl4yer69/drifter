@@ -58,9 +58,10 @@ test('disconnect clears receipt evidence and reconnect cannot resurrect it',asyn
 process.on('exit',()=>{Date.now=oldNow;globalThis.setTimeout=oldTimeout;globalThis.setInterval=oldInterval;});
 
 test('adapter records authoritative recon status and ALPR events',()=>{
-  send('drifter/recon/status',{state:'online',session_id:'recon-1',event_count:4,chain_head:'abc'});
+  send('drifter/recon/status',{state:'online',session_id:'recon-1',event_count:5,evidence_count:4,chain_head:'abc'});
   send('drifter/vision/alpr/plate',{plate:'ABC123',confidence:0.9,ts:now/1000,camera_id:'front'});
   assert.equal(s.recon.status.sessionId,'recon-1');
-  assert.equal(s.recon.status.eventCount,4);
+  assert.equal(s.recon.status.eventCount,5);
+  assert.equal(s.recon.status.evidenceCount,4);
   assert.equal(s.recon.recentPlates[0].plate,'ABC123');
 });
