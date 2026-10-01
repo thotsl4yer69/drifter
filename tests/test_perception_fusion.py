@@ -52,3 +52,25 @@ def test_pixel_space_central_box_supported():
         "bbox": {"x1": 220, "x2": 420, "height": 180},
     }
     assert derive_events([obj], state, now=100.0)[0]["kind"] == "vehicle_ahead"
+
+
+def test_pixel_space_cx_from_vision_engine_is_normalised():
+    state = FusionState(speed_kph=50)
+    obj = {
+        "class": "car",
+        "confidence": 0.9,
+        "frame_width": 1280,
+        "bbox": {"cx": 640, "height": 220},
+    }
+    assert derive_events([obj], state, now=100.0)[0]["kind"] == "vehicle_ahead"
+
+
+def test_pixel_space_off_axis_cx_is_rejected():
+    state = FusionState(speed_kph=50)
+    obj = {
+        "class": "car",
+        "confidence": 0.9,
+        "frame_width": 1280,
+        "bbox": {"cx": 1150, "height": 220},
+    }
+    assert derive_events([obj], state, now=100.0) == []
