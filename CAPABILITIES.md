@@ -23,8 +23,9 @@ lean, defensive floor — and stays there until an operator deliberately switche
 | Mode | What runs | Default? |
 |---|---|---|
 | `diag` | Vehicle telemetry + driver-safety only. No LLM, no STT, no ML, **no recon/offsec.** | **Yes** (`DEFAULT_MODE`) |
-| `drive` | Telemetry stack **+** assistant/LLM/voice. Still no recon/offsec. | opt-in |
-| `foot` | Recon / situational-awareness persona (Wi-Fi/BLE survey, RF). | opt-in |
+| `drive` | Telemetry + assistant/LLM/voice + lightweight Hailo road perception. | opt-in |
+| `recon` | Lean Hailo camera monitoring, local recording, GPS, ALPR and hash-chained evidence index. | opt-in |
+| `foot` | Legacy field/offsec toolkit (Wi-Fi/BLE survey, audit tools). | opt-in |
 | `both` | Everything (bench/lab only; will not fit 8 GB comfortably). | opt-in |
 
 The advanced network-testing tools live **only** in `foot`/`both`, so the
