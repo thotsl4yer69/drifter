@@ -36,9 +36,9 @@ CRITICAL_SERVICES = (
     "drifter-obdbridge",
     "drifter-lcd",
 )
-PHYSICAL_GATES = ("elm_recovery", "display_recovery", "hailo_vision", "rf_sequence")
+PHYSICAL_GATES = ("elm_recovery", "display_recovery", "hailo_vision", "recon_evidence", "rf_sequence")
 VIM_REQUIRED_PHYSICAL_GATES = ("elm_recovery", "display_recovery")
-VIM_OPTIONAL_PHYSICAL_GATES = ("hailo_vision", "rf_sequence")
+VIM_OPTIONAL_PHYSICAL_GATES = ("hailo_vision", "recon_evidence", "rf_sequence")
 TELEMETRY_TOPICS = {
     "rpm": TOPICS["rpm"],
     "coolant": TOPICS["coolant"],

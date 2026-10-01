@@ -73,23 +73,28 @@ test('offline vision never implies a clear road', () => {
   const s=state(); s.perception.vision='offline';
   assert.equal(perceptionView(s,NOW).headline,'VISION UNAVAILABLE');
 });
-test('online service does not prove Hailo, camera or clear road', () => {
+test('online service alone still does not prove Hailo or camera availability', () => {
   const view=perceptionView(state(),NOW);
-  assert.equal(view.headline,'VISION UNVERIFIED');
+  assert.equal(view.headline,'VISION ACTIVE');
   assert.equal(view.hailo,'UNVERIFIED'); assert.equal(view.camera,'UNKNOWN');
+});
+test('reported Hailo backend and camera availability stay distinct', () => {
+  const s=state(); s.perception.backend='hailo'; s.perception.camera='online';
+  const view=perceptionView(s,NOW);
+  assert.equal(view.hailo,'ACTIVE'); assert.equal(view.camera,'STREAM');
 });
 test('empty detections do not prove a clear road', () => {
   const s=state(); event(s,'object',{objects:[],ts:NOW/1000});
-  assert.equal(perceptionView(s,NOW).headline,'VISION UNVERIFIED');
+  assert.equal(perceptionView(s,NOW).headline,'VISION ACTIVE');
 });
 test('fresh detections are reported and then expire', () => {
   const s=state(); event(s,'object',{objects:[null,{class:'car'}],ts:NOW/1000});
   assert.equal(perceptionView(s,NOW).badge,'1 OBJECT');
-  assert.equal(perceptionView(s,NOW+2501).headline,'VISION UNVERIFIED');
+  assert.equal(perceptionView(s,NOW+2501).headline,'VISION ACTIVE');
 });
 test('old source ts cannot be revived by receiving a retained detection', () => {
   const s=state(); event(s,'object',{objects:[{class:'car'}],ts:(NOW-9000)/1000});
-  assert.equal(perceptionView(s,NOW).headline,'VISION UNVERIFIED');
+  assert.equal(perceptionView(s,NOW).headline,'VISION ACTIVE');
 });
 for(const ts of [null,0,'bad',(NOW+2000)/1000]) {
   test(`invalid/future source timestamp ${ts} cannot activate FCW`, () => {

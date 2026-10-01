@@ -137,7 +137,7 @@ private fun HealthyView(h: Healthz, choices: List<String>, vm: DrifterViewModel,
         )
         Spacer(Modifier.height(8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            choices.ifEmpty { listOf("diag", "drive", "foot", "both") }.forEach { c ->
+            choices.ifEmpty { listOf("diag", "drive", "recon", "foot", "both") }.forEach { c ->
                 FilterChip(
                     selected = c == h.mode,
                     onClick = { if (c != h.mode) vm.setMode(c) },

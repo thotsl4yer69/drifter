@@ -70,7 +70,7 @@ fun ArsenalScreen(vm: DrifterViewModel) {
             )
             Spacer(Modifier.height(10.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("diag", "drive", "foot", "both").forEach { c ->
+                listOf("diag", "drive", "recon", "foot", "both").forEach { c ->
                     FilterChip(
                         selected = c == currentMode,
                         onClick = { if (c != currentMode) vm.setMode(c) },

@@ -68,7 +68,22 @@ export function freshState() {
     ],
     dtcs: [{ code: 'P0171', desc: 'System too lean · bank 1', state: 'stored' }],
     vivi: { status: 'link ok · listening for wake', lastSaid: 'Coolant trending normal. RR tire is 6% under — worth a look at the next stop.' },
+    perception: {
+      state: 'online', vision: 'online', backend: 'hailo', camera: 'online', cameraId: 'front',
+      objects: [{ class: 'car', confidence: 0.91, bbox: { x1: 182, y1: 190, x2: 462, y2: 520, cx: 322, height: 330 } }],
+      event: null, fcw: null, dashcam: 'ready',
+    },
     recon: {
+      status: {
+        state: 'online', sessionId: 'recon-demo', eventCount: 19, evidenceCount: 18,
+        chainHead: '5c48d906cdab2f3a79db8ca3a79ac7b1461f95ccf76ec45049e3b9315028be7d',
+        ledgerPath: '/opt/drifter/recon/sessions/recon-demo.jsonl',
+      },
+      lastEvent: { kind: 'vision', seq: 18, hash: '5c48d906cdab2f3a', ts: Date.now() / 1000 },
+      recentPlates: [
+        { plate: 'ABC123', confidence: 0.92, ts: Date.now() / 1000, cameraId: 'front' },
+        { plate: 'XYZ789', confidence: 0.87, ts: Date.now() / 1000 - 42, cameraId: 'front' },
+      ],
       sentry: { armed: false, pendingConfirm: false },
       wardrive: [
         { ssid: 'MZ1312_DRIFTER', bssid: 'A2:5F:…:31', ch: 6, rssi: -28, enc: 'WPA2', own: true },

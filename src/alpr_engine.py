@@ -34,6 +34,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = DRIFTER_DIR / "alpr.yaml"
+RECON_DIR = DRIFTER_DIR / "recon"
 _seen: deque = deque(maxlen=200)
 _seen_lock = threading.Lock()
 
@@ -99,6 +100,53 @@ def _record(plate: str) -> bool:
             return False
         _seen.append(plate)
         return True
+
+
+def _safe_recon_crop(raw: object) -> Path | None:
+    """Resolve only crop files produced inside DRIFTER's local RECON tree."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        root = RECON_DIR.resolve()
+        path = Path(raw).resolve(strict=False)
+        path.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return path if path.is_file() else None
+
+
+def _handle_crop_payload(client: mqtt.Client, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    crop_path = _safe_recon_crop(payload.get("crop_path"))
+    if crop_path is None:
+        return
+    try:
+        import cv2
+        img = cv2.imread(str(crop_path), cv2.IMREAD_COLOR)
+    except Exception:
+        img = None
+    if img is None:
+        return
+
+    plates = _read_plate_easyocr(img)
+    if not plates:
+        plates = _read_plate_openalpr(crop_path)
+
+    for plate in plates:
+        if not _record(plate["plate"]):
+            continue
+        client.publish(TOPICS["alpr_plate"], json.dumps({
+            "plate": plate["plate"],
+            "confidence": plate["confidence"],
+            "context": payload.get("class"),
+            "bbox": payload.get("bbox"),
+            "camera_id": payload.get("camera_id"),
+            "crop_path": str(crop_path),
+            "evidence_path": payload.get("evidence_path"),
+            "ts": time.time(),
+        }))
+        log.info("PLATE: %s (%.2f)", plate["plate"], plate["confidence"])
 
 
 def _handle_object_payload(client: mqtt.Client, payload: dict) -> None:
@@ -168,7 +216,10 @@ def main() -> None:
             data = json.loads(msg.payload)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
-        if msg.topic == TOPICS['vision_object']:
+        if msg.topic == TOPICS['vision_alpr_crop']:
+            _handle_crop_payload(client, data)
+        elif msg.topic == TOPICS['vision_object']:
+            # Backward compatibility for older producers that embedded image_b64.
             _handle_object_payload(client, data)
 
     client.on_message = on_message
@@ -185,7 +236,10 @@ def main() -> None:
     if not running:
         return
 
-    client.subscribe(TOPICS['vision_object'], 0)
+    client.subscribe([
+        (TOPICS['vision_alpr_crop'], 0),
+        (TOPICS['vision_object'], 0),
+    ])
     client.loop_start()
     log.info("ALPR Engine LIVE")
 

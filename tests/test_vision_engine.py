@@ -241,8 +241,8 @@ def test_capture_loop_falls_back_to_picamera2_and_publishes(monkeypatch):
     published = []
 
     class Client:
-        def publish(self, topic, payload):
-            published.append((topic, payload))
+        def publish(self, topic, payload, **kwargs):
+            published.append((topic, payload, kwargs))
 
     class Detector:
         def infer(self, _frame):
@@ -299,7 +299,144 @@ def test_capture_loop_falls_back_to_picamera2_and_publishes(monkeypatch):
 
     vision._capture_loop(Client(), running, Detector())
 
-    assert len(published) == 1
-    assert published[0][0] == vision.TOPICS["vision_object"]
+    topics = [entry[0] for entry in published]
+    assert vision.TOPICS["vision_status"] in topics
+    assert vision.TOPICS["vision_object"] in topics
+    assert vision.TOPICS["dashcam_status"] in topics
     assert FakePicamera2.instance.stopped is True
     assert FakePicamera2.instance.closed is True
+
+
+
+def test_current_mode_reads_canonical_mode_state(monkeypatch, tmp_path):
+    path = tmp_path / "mode.state"
+    path.write_text("recon\n")
+    monkeypatch.setattr(vision, "MODE_STATE_PATH", path)
+    monkeypatch.setattr(vision, "DEFAULT_MODE", "diag")
+    assert vision._current_mode() == "recon"
+
+
+def test_current_mode_falls_back_when_state_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(vision, "MODE_STATE_PATH", tmp_path / "missing")
+    monkeypatch.setattr(vision, "DEFAULT_MODE", "diag")
+    assert vision._current_mode() == "diag"
+
+
+def test_bbox_crop_uses_pixel_space_detection_contract():
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    obj = {"bbox": {"x1": 20, "y1": 10, "x2": 120, "y2": 70}}
+    crop = vision._bbox_crop(frame, obj)
+    assert crop.shape == (60, 100, 3)
+
+
+def test_alpr_crop_transport_publishes_local_path_not_image_blob(monkeypatch, tmp_path):
+    crop_dir = tmp_path / "crops"
+    monkeypatch.setattr(vision, "RECON_CROP_DIR", crop_dir)
+
+    class Cv:
+        IMWRITE_JPEG_QUALITY = 1
+        INTER_AREA = 2
+
+        @staticmethod
+        def imwrite(path, _image, _params):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_bytes(b"jpeg")
+            return True
+
+        @staticmethod
+        def resize(image, _size, interpolation=None):
+            return image
+
+    published = []
+    class Client:
+        def publish(self, topic, payload, **_kwargs):
+            published.append((topic, payload))
+
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    objects = [{
+        "class": "car", "confidence": 0.9,
+        "bbox": {"x1": 20, "y1": 10, "x2": 120, "y2": 70},
+    }]
+    evidence = tmp_path / "frame.jpg"
+    evidence.write_bytes(b"frame")
+    vision._publish_alpr_crops(
+        Client(), Cv, frame, objects, evidence_path=evidence, now=100.0
+    )
+
+    assert len(published) == 1
+    topic, payload = published[0]
+    assert topic == vision.TOPICS["vision_alpr_crop"]
+    data = __import__("json").loads(payload)
+    assert Path(data["crop_path"]).exists()
+    assert data["evidence_path"] == str(evidence)
+    assert "image_b64" not in data
+
+
+
+def test_recon_recorder_finalizes_segments_for_indexing(monkeypatch, tmp_path):
+    monkeypatch.setattr(vision, "RECON_VIDEO_DIR", tmp_path / "video")
+    monkeypatch.setattr(vision, "DASHCAM_SEGMENT_SECONDS", 1)
+
+    class Writer:
+        def __init__(self, path):
+            self.path = Path(path)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_bytes(b"mp4")
+            self.open = True
+
+        def isOpened(self):
+            return self.open
+
+        def write(self, _frame):
+            pass
+
+        def release(self):
+            self.open = False
+
+    class Cv:
+        @staticmethod
+        def VideoWriter_fourcc(*_args):
+            return 1
+
+        @staticmethod
+        def VideoWriter(path, _fourcc, _fps, _size):
+            return Writer(path)
+
+    recorder = vision.ReconVideoRecorder(Cv)
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    assert recorder.write(frame, 100.0) is True
+    first = recorder.path
+    assert first is not None
+    assert recorder.write(frame, 102.0) is True
+    finalized = recorder.take_finalized()
+    assert finalized == [first]
+    assert recorder.path != first
+    final = recorder.close()
+    assert final is not None
+    assert recorder.take_finalized() == [final]
+
+
+def test_recon_recorder_failed_open_does_not_report_phantom_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(vision, "RECON_VIDEO_DIR", tmp_path / "video")
+
+    class Writer:
+        def isOpened(self):
+            return False
+
+        def release(self):
+            pass
+
+    class Cv:
+        @staticmethod
+        def VideoWriter_fourcc(*_args):
+            return 1
+
+        @staticmethod
+        def VideoWriter(*_args):
+            return Writer()
+
+    recorder = vision.ReconVideoRecorder(Cv)
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    assert recorder.write(frame, 100.0) is False
+    assert recorder.path is None
+    assert recorder.take_finalized() == []

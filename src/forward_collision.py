@@ -44,6 +44,24 @@ def _estimate_distance_m(bbox: dict) -> float | None:
     return REF_VEHICLE_HEIGHT_M * FOCAL_PX / float(height_px)
 
 
+def _central_detection(obj: dict) -> bool:
+    """Accept normalised or vision_engine pixel-space bbox centres."""
+    bbox = obj.get('bbox') or {}
+    cx = bbox.get('cx')
+    if cx is None:
+        return True
+    try:
+        cx = float(cx)
+        if cx > 1.0:
+            width = float(obj.get('frame_width') or 0.0)
+            if width <= 0:
+                return False
+            cx /= width
+    except (TypeError, ValueError):
+        return False
+    return 0.3 <= cx <= 0.7
+
+
 class FCWState:
     def __init__(self) -> None:
         self.speed_kph: float = 0.0
@@ -100,10 +118,10 @@ def main() -> None:
             for obj in data.get('objects', []):
                 if obj.get('class') not in ('car', 'truck', 'bus'):
                     continue
-                # Prefer central detections (y-axis low half = ahead)
+                # Prefer central detections. Handles normalised and the current
+                # vision_engine pixel-space bbox contract.
                 bbox = obj.get('bbox') or {}
-                cx = bbox.get('cx')
-                if cx is not None and not (0.3 <= cx <= 0.7):
+                if not _central_detection(obj):
                     continue
                 d = _estimate_distance_m(bbox)
                 if d is None:

@@ -28,7 +28,11 @@ import numpy as np
 import paho.mqtt.client as mqtt
 
 from config import (
+    DASHCAM_MAX_GB,
+    DASHCAM_SEGMENT_SECONDS,
+    DEFAULT_MODE,
     DRIFTER_DIR,
+    MODE_STATE_PATH,
     MQTT_HOST,
     MQTT_PORT,
     TOPICS,
@@ -63,6 +67,244 @@ COCO_LABELS = (
     "scissors", "teddy bear", "hair drier", "toothbrush",
 )
 NMS_IOU = 0.45
+
+RECON_DIR = DRIFTER_DIR / "recon"
+RECON_MEDIA_DIR = RECON_DIR / "media"
+RECON_CROP_DIR = RECON_DIR / "crops"
+RECON_VIDEO_DIR = RECON_DIR / "video"
+RECON_EVIDENCE_INTERVAL_S = max(
+    0.25, float(os.getenv("DRIFTER_RECON_EVIDENCE_INTERVAL_SEC", "2.0"))
+)
+RECON_JPEG_QUALITY = max(
+    40, min(95, int(os.getenv("DRIFTER_RECON_JPEG_QUALITY", "82")))
+)
+RECON_CROP_QUALITY = max(
+    40, min(90, int(os.getenv("DRIFTER_RECON_CROP_QUALITY", "72")))
+)
+RECON_RECORD_VIDEO = os.getenv("DRIFTER_RECON_RECORD_VIDEO", "1").strip().lower() not in {
+    "0", "false", "no", "off",
+}
+RECON_VIDEO_FPS = max(1.0, float(os.getenv("DRIFTER_RECON_VIDEO_FPS", "15")))
+RECON_STILL_MAX_GB = max(0.25, float(os.getenv("DRIFTER_RECON_STILL_MAX_GB", "4")))
+CAMERA_ID = os.getenv("DRIFTER_CAMERA_ID", "front").strip() or "front"
+VEHICLE_CLASSES = {"car", "truck", "bus", "motorcycle"}
+
+
+def _current_mode() -> str:
+    try:
+        mode = Path(MODE_STATE_PATH).read_text(encoding="utf-8").strip()
+    except OSError:
+        return DEFAULT_MODE
+    return mode or DEFAULT_MODE
+
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _prune_media(path: Path, pattern: str, max_bytes: int) -> None:
+    """Bound a RECON media class without touching the active output handle."""
+    try:
+        files = sorted(path.rglob(pattern), key=_safe_mtime)
+    except OSError:
+        return
+    sizes: list[tuple[Path, int]] = []
+    used = 0
+    for item in files:
+        try:
+            size = item.stat().st_size
+        except OSError:
+            continue
+        sizes.append((item, size))
+        used += size
+    target = int(max_bytes * 0.90)
+    for item, size in sizes:
+        if used <= target:
+            break
+        try:
+            item.unlink()
+            used -= size
+        except OSError:
+            continue
+
+
+class ReconVideoRecorder:
+    """Segmented video writer fed from the already-open vision camera.
+
+    This avoids the old dashcam/vision double-open race on /dev/video0.
+    """
+
+    def __init__(self, cv2_module) -> None:
+        self.cv2 = cv2_module
+        self.writer = None
+        self.segment_started = 0.0
+        self.path: Path | None = None
+        self.retry_after = 0.0
+        self._finalized: list[Path] = []
+
+    @property
+    def active(self) -> bool:
+        return self.writer is not None
+
+    def _open(self, frame, now: float) -> bool:
+        if now < self.retry_after:
+            return False
+        RECON_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+        # Prune only completed segments; do it before creating the new output so
+        # the active writer can never be unlinked by quota enforcement.
+        _prune_media(
+            RECON_VIDEO_DIR,
+            "*.mp4",
+            int(DASHCAM_MAX_GB * 1024 ** 3),
+        )
+        frame_h, frame_w = int(frame.shape[0]), int(frame.shape[1])
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+        millis = int((now % 1.0) * 1000)
+        self.path = RECON_VIDEO_DIR / f"{CAMERA_ID}_{stamp}-{millis:03d}.mp4"
+        try:
+            fourcc = self.cv2.VideoWriter_fourcc(*"mp4v")
+            writer = self.cv2.VideoWriter(
+                str(self.path), fourcc, RECON_VIDEO_FPS, (frame_w, frame_h)
+            )
+            if not writer.isOpened():
+                writer.release()
+                raise RuntimeError("VideoWriter did not open")
+            self.writer = writer
+            self.segment_started = now
+            return True
+        except Exception as exc:
+            log.warning("RECON video writer unavailable: %s", exc)
+            self.writer = None
+            self.path = None
+            self.retry_after = now + 30.0
+            return False
+
+    def write(self, frame, now: float) -> bool:
+        if self.writer is not None and now - self.segment_started >= DASHCAM_SEGMENT_SECONDS:
+            self.close()
+        if self.writer is None and not self._open(frame, now):
+            return False
+        try:
+            self.writer.write(frame)
+            return True
+        except Exception as exc:
+            log.warning("RECON video write failed: %s", exc)
+            self.close()
+            self.retry_after = now + 30.0
+            return False
+
+    def close(self) -> Path | None:
+        completed = self.path if self.writer is not None else None
+        if self.writer is not None:
+            try:
+                self.writer.release()
+            except Exception:
+                completed = None
+        self.writer = None
+        self.path = None
+        if completed is not None:
+            self._finalized.append(completed)
+        return completed
+
+    def take_finalized(self) -> list[Path]:
+        completed, self._finalized = self._finalized, []
+        return completed
+
+
+def _bbox_crop(frame, detection: dict):
+    bbox = detection.get("bbox") if isinstance(detection.get("bbox"), dict) else {}
+    try:
+        h, w = int(frame.shape[0]), int(frame.shape[1])
+        x1 = max(0, min(w, int(float(bbox.get("x1", 0)))))
+        y1 = max(0, min(h, int(float(bbox.get("y1", 0)))))
+        x2 = max(0, min(w, int(float(bbox.get("x2", 0)))))
+        y2 = max(0, min(h, int(float(bbox.get("y2", 0)))))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if x2 <= x1 or y2 <= y1:
+        return None
+    crop = frame[y1:y2, x1:x2]
+    return crop if getattr(crop, "size", 0) else None
+
+
+def _save_recon_frame(cv2_module, frame, now: float) -> Path | None:
+    day = time.strftime("%Y%m%d", time.localtime(now))
+    folder = RECON_MEDIA_DIR / day
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+    millis = int((now % 1.0) * 1000)
+    path = folder / f"{CAMERA_ID}_{stamp}-{millis:03d}.jpg"
+    try:
+        ok = cv2_module.imwrite(
+            str(path),
+            frame,
+            [int(cv2_module.IMWRITE_JPEG_QUALITY), RECON_JPEG_QUALITY],
+        )
+    except Exception as exc:
+        log.warning("RECON evidence write failed: %s", exc)
+        return None
+    return path if ok else None
+
+
+def _publish_alpr_crops(
+    client: mqtt.Client,
+    cv2_module,
+    frame,
+    objects: list[dict],
+    *,
+    evidence_path: Path,
+    now: float,
+) -> None:
+    """Persist bounded vehicle crops and publish file pointers for ALPR."""
+    day = time.strftime("%Y%m%d", time.localtime(now))
+    folder = RECON_CROP_DIR / day
+    folder.mkdir(parents=True, exist_ok=True)
+    emitted = 0
+    for index, obj in enumerate(objects):
+        if obj.get("class") not in VEHICLE_CLASSES:
+            continue
+        crop = _bbox_crop(frame, obj)
+        if crop is None:
+            continue
+        # OCR does not need a huge source image; cap width to bound storage/CPU.
+        try:
+            if crop.shape[1] > 640:
+                scale = 640.0 / float(crop.shape[1])
+                crop = cv2_module.resize(
+                    crop,
+                    (640, max(1, int(crop.shape[0] * scale))),
+                    interpolation=cv2_module.INTER_AREA,
+                )
+        except Exception:
+            pass
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+        millis = int((now % 1.0) * 1000)
+        crop_path = folder / f"{CAMERA_ID}_{stamp}-{millis:03d}_v{index}.jpg"
+        try:
+            ok = cv2_module.imwrite(
+                str(crop_path),
+                crop,
+                [int(cv2_module.IMWRITE_JPEG_QUALITY), RECON_CROP_QUALITY],
+            )
+        except Exception:
+            ok = False
+        if not ok:
+            continue
+        client.publish(TOPICS["vision_alpr_crop"], json.dumps({
+            "crop_path": str(crop_path),
+            "evidence_path": str(evidence_path),
+            "camera_id": CAMERA_ID,
+            "class": obj.get("class"),
+            "confidence": obj.get("confidence"),
+            "bbox": obj.get("bbox"),
+            "ts": now,
+        }))
+        emitted += 1
+        if emitted >= 3:
+            break
 
 
 def _load_config() -> dict:
@@ -340,6 +582,7 @@ class HailoYolo:
     """Hailo detector using Raspberry Pi's supported Picamera2 device wrapper."""
 
     def __init__(self, model_path: Path) -> None:
+        self.backend = "hailo"
         Hailo, _hailo_architecture = _picamera_hailo_api()
         self._context = Hailo(str(model_path))
         enter = getattr(self._context, "__enter__", None)
@@ -391,6 +634,7 @@ class OnnxYolo:
     """CPU fallback for exported YOLOv8/v5-style ONNX models."""
 
     def __init__(self, model_path: Path) -> None:
+        self.backend = "onnx"
         try:
             import onnxruntime as ort
             self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
@@ -458,11 +702,11 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
         try:
             Picamera2 = _picamera2_class()
             picam2 = Picamera2()
-            config = picam2.create_preview_configuration(
+            camera_config = picam2.create_preview_configuration(
                 main={"size": (VISION_INPUT_W, VISION_INPUT_H), "format": "RGB888"},
                 controls={"FrameRate": 20},
             )
-            picam2.configure(config)
+            picam2.configure(camera_config)
             picam2.start()
             use_picamera2 = True
             log.info("Camera active via Picamera2 at %sx%s", VISION_INPUT_W, VISION_INPUT_H)
@@ -477,10 +721,67 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                     picam2.close()
                 except Exception:
                     pass
+            client.publish(TOPICS["vision_status"], json.dumps({
+                "state": "degraded",
+                "backend": getattr(detector, "backend", "none") if detector is not None else "none",
+                "camera": "offline",
+                "camera_id": CAMERA_ID,
+                "mode": _current_mode(),
+                "ts": time.time(),
+            }), retain=True)
             return
+
+    client.publish(TOPICS["vision_status"], json.dumps({
+        "state": "online",
+        "backend": getattr(detector, "backend", "none") if detector is not None else "none",
+        "camera": "online",
+        "camera_id": CAMERA_ID,
+        "mode": _current_mode(),
+        "ts": time.time(),
+    }), retain=True)
+
+    recorder: ReconVideoRecorder | None = None
+    mode = _current_mode()
+    last_mode_check = 0.0
+    last_evidence = 0.0
+    last_prune = 0.0
+    last_record_state: tuple[str, str | None] | None = None
+
+    def publish_clip(path: Path, now: float, reason: str) -> None:
+        client.publish(TOPICS["dashcam_clip"], json.dumps({
+            "path": str(path),
+            "reason": reason,
+            "camera_id": CAMERA_ID,
+            "mode": mode,
+            "ts": now,
+        }))
+
+    def publish_record_state(state: str, now: float, path: Path | None = None) -> None:
+        nonlocal last_record_state
+        key = (state, str(path) if path else None)
+        if key == last_record_state:
+            return
+        last_record_state = key
+        client.publish(TOPICS["dashcam_status"], json.dumps({
+            "state": state,
+            "owner": "drifter-vision",
+            "mode": mode,
+            "camera_id": CAMERA_ID,
+            "path": str(path) if path else None,
+            "ts": now,
+        }), retain=True)
 
     try:
         while running_ref[0]:
+            now = time.time()
+            if now - last_mode_check >= 0.5:
+                next_mode = _current_mode()
+                if next_mode != mode:
+                    log.info("Vision persona %s -> %s", mode, next_mode)
+                    mode = next_mode
+                last_mode_check = now
+            recon = mode == "recon"
+
             if use_picamera2:
                 try:
                     frame_rgb = picam2.capture_array("main")
@@ -496,6 +797,25 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                 time.sleep(0.1)
                 continue
 
+            if recon and RECON_RECORD_VIDEO:
+                if recorder is None:
+                    recorder = ReconVideoRecorder(cv2)
+                recording = recorder.write(frame, now)
+                for completed in recorder.take_finalized():
+                    publish_clip(completed, now, "segment")
+                publish_record_state(
+                    "recording" if recording else "monitoring",
+                    now,
+                    recorder.path if recorder else None,
+                )
+            else:
+                if recorder is not None:
+                    completed = recorder.close()
+                    if completed is not None:
+                        publish_clip(completed, now, "mode_change")
+                    recorder = None
+                publish_record_state("ready" if mode == "drive" else "offline", now)
+
             detections = []
             if detector is not None:
                 try:
@@ -503,7 +823,7 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                 except Exception as exc:
                     log.debug("infer: %s", exc)
 
-            objects = []
+            objects: list[dict] = []
             for det in detections or []:
                 if not isinstance(det, dict):
                     continue
@@ -513,15 +833,51 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                     continue
                 if cls and cls not in VISION_CLASSES_OF_INTEREST:
                     continue
-                objects.append(det)
+                objects.append(dict(det))
+
+            evidence_path: Path | None = None
+            if recon and objects and now - last_evidence >= RECON_EVIDENCE_INTERVAL_S:
+                evidence_path = _save_recon_frame(cv2, frame, now)
+                if evidence_path is not None:
+                    last_evidence = now
+                    _publish_alpr_crops(
+                        client,
+                        cv2,
+                        frame,
+                        objects,
+                        evidence_path=evidence_path,
+                        now=now,
+                    )
+                    if now - last_prune >= 60.0:
+                        max_still = int(RECON_STILL_MAX_GB * 1024 ** 3)
+                        _prune_media(RECON_MEDIA_DIR, "*.jpg", max_still)
+                        _prune_media(RECON_CROP_DIR, "*.jpg", max_still)
+                        last_prune = now
+
             if objects:
-                client.publish(TOPICS["vision_object"], json.dumps({
+                payload = {
                     "objects": objects,
                     "count": len(objects),
-                    "ts": time.time(),
-                }))
+                    "camera_id": CAMERA_ID,
+                    "mode": mode,
+                    "ts": now,
+                }
+                if evidence_path is not None:
+                    payload["evidence_path"] = str(evidence_path)
+                client.publish(TOPICS["vision_object"], json.dumps(payload))
+
             time.sleep(0.05)
     finally:
+        if recorder is not None:
+            completed = recorder.close()
+            if completed is not None:
+                publish_clip(completed, time.time(), "service_stop")
+        client.publish(TOPICS["dashcam_status"], json.dumps({
+            "state": "offline",
+            "owner": "drifter-vision",
+            "camera_id": CAMERA_ID,
+            "ts": time.time(),
+        }), retain=True)
         if use_picamera2 and picam2 is not None:
             try:
                 picam2.stop()
@@ -590,13 +946,12 @@ def main() -> None:
 
     client.loop_start()
     client.publish(TOPICS["vision_status"], json.dumps({
-        "state": "online" if detector else "idle",
-        "backend": (
-            "hailo" if isinstance(detector, HailoYolo)
-            else "onnx" if isinstance(detector, OnnxYolo)
-            else None
-        ),
+        "state": "starting" if detector else "idle",
+        "backend": getattr(detector, "backend", None),
+        "camera": "unknown",
         "classes": list(VISION_CLASSES_OF_INTEREST),
+        "camera_id": CAMERA_ID,
+        "mode": _current_mode(),
         "ts": time.time(),
     }), retain=True)
     log.info("Vision Engine LIVE (%s)" % type(detector).__name__ if detector else "Vision Engine idle (no usable model)")

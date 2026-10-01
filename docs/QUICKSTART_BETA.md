@@ -67,7 +67,7 @@ A fresh node resolves to the lean `diag` mode. That is the recommended founding-
 sudo drifter mode diag
 ```
 
-The broader research `foot` / `both` personas are not part of the DRIFTER VIM product beta.
+The broader research `recon` / `foot` / `both` personas are not part of the DRIFTER VIM product beta.
 
 ## 5. Connect the OBD adapter
 
