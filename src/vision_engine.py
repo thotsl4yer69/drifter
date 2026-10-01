@@ -178,6 +178,7 @@ class ReconVideoRecorder:
         except Exception as exc:
             log.warning("RECON video writer unavailable: %s", exc)
             self.writer = None
+            self.path = None
             self.retry_after = now + 30.0
             return False
 
@@ -744,7 +745,7 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
     last_mode_check = 0.0
     last_evidence = 0.0
     last_prune = 0.0
-    last_record_state: str | None = None
+    last_record_state: tuple[str, str | None] | None = None
 
     def publish_clip(path: Path, now: float, reason: str) -> None:
         client.publish(TOPICS["dashcam_clip"], json.dumps({
@@ -757,9 +758,10 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
 
     def publish_record_state(state: str, now: float, path: Path | None = None) -> None:
         nonlocal last_record_state
-        if state == last_record_state:
+        key = (state, str(path) if path else None)
+        if key == last_record_state:
             return
-        last_record_state = state
+        last_record_state = key
         client.publish(TOPICS["dashcam_status"], json.dumps({
             "state": state,
             "owner": "drifter-vision",
