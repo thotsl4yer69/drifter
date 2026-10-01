@@ -810,6 +810,7 @@ DRIVE_ONLY_SERVICES = [
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
     "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
     "drifter-fcw",         # forward-collision context from live detections
+    "drifter-perception",  # road-context fusion for DRIVE
     # v2 drive services
     "drifter-batcher",     # rolling telemetry window aggregator
     "drifter-trip",        # per-trip distance + fuel computer
@@ -821,7 +822,6 @@ DRIVE_ONLY_SERVICES = [
 DRIVE_RECON_SERVICES = [
     "drifter-gps",         # location source for road context + evidence geo-tagging
     "drifter-vision",      # one camera owner; Hailo inference in both personas
-    "drifter-perception",  # structured context derived from vision + GPS/vehicle state
 ]
 RECON_ONLY_SERVICES = [
     "drifter-alpr",        # OCR only receives bounded vehicle crops in RECON
@@ -870,7 +870,6 @@ RECON_SERVICES = [
     "drifter-lcd",          # local touch display
     "drifter-gps",          # evidence geo-tagging
     "drifter-vision",       # sole camera owner + Hailo inference + recording
-    "drifter-perception",   # structured scene events
     "drifter-alpr",         # bounded vehicle-crop OCR
     "drifter-recon-index",  # hash-chained evidence ledger
 ]
