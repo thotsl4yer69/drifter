@@ -75,7 +75,7 @@ export function freshState() {
     },
     recon: {
       status: {
-        state: 'online', sessionId: 'recon-demo', eventCount: 18,
+        state: 'online', sessionId: 'recon-demo', eventCount: 19, evidenceCount: 18,
         chainHead: '5c48d906cdab2f3a79db8ca3a79ac7b1461f95ccf76ec45049e3b9315028be7d',
         ledgerPath: '/opt/drifter/recon/sessions/recon-demo.jsonl',
       },
