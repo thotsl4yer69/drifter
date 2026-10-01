@@ -38,9 +38,9 @@ def test_plan_both_includes_all():
 
 
 def test_plan_shared_services_in_every_mode():
-    """Shared services must appear in DRIVE, RECON, FOOT, and BOTH."""
+    """Legacy shared services remain in DRIVE, FOOT, and BOTH."""
     for svc in config.SHARED_SERVICES:
-        for m in ('drive', 'recon', 'foot', 'both'):
+        for m in ('drive', 'foot', 'both'):
             assert svc in mode.plan(m)['enable'], f"{svc} missing from {m}"
 
 
@@ -245,7 +245,8 @@ def test_recon_is_camera_evidence_not_vehicle_or_foot_tooling():
                 'drifter-recon-index', 'drifter-gps'):
         assert svc in p['enable'], f"{svc} must run in recon mode"
     for svc in ('drifter-canbridge', 'drifter-obdbridge', 'drifter-fcw',
-                'drifter-kismet', 'drifter-marauder', 'drifter-hid'):
+                'drifter-kismet', 'drifter-marauder', 'drifter-hid',
+                'drifter-vivi', 'drifter-voicein', 'drifter-analyst'):
         assert svc in p['disable'], f"{svc} must stay out of recon mode"
 
 
@@ -264,3 +265,8 @@ def test_foot_keeps_pentest_stack_and_excludes_vehicle_perception():
         assert svc in p['enable'], f"{svc} must remain available in foot mode"
     for svc in ('drifter-canbridge', 'drifter-obdbridge', 'drifter-perception'):
         assert svc in p['disable'], f"{svc} must not be armed in foot mode"
+
+
+def test_recon_is_curated_for_camera_headroom():
+    assert set(config.MODES['recon']) == set(config.RECON_SERVICES)
+    assert len(config.MODES['recon']) < len(config.MODES['drive'])
