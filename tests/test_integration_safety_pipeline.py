@@ -610,3 +610,12 @@ def test_bus_wildcard_routing_matches_paho_semantics():
     assert not _topic_matches('drifter/engine/#', 'drifter/vehicle/speed')
     assert not _topic_matches('drifter/+/rpm', 'drifter/engine/sub/rpm')
     assert _topic_matches('drifter/snapshot', 'drifter/snapshot')
+
+
+# Regression: PR #89 vision_engine emits pixel-space cx values. FCW must
+# normalize them instead of treating every real detection as off-axis.
+def test_fcw_pixel_space_center_contract():
+    from forward_collision import _central_detection
+    assert _central_detection({"frame_width": 1280, "bbox": {"cx": 640}}) is True
+    assert _central_detection({"frame_width": 1280, "bbox": {"cx": 1200}}) is False
+    assert _central_detection({"bbox": {"cx": 0.5}}) is True
