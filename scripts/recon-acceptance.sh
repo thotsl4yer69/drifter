@@ -44,6 +44,7 @@ if not path.is_file(): raise SystemExit(f"RECON: FAIL — ledger missing {path}"
 
 prev = '0' * 64
 count = 0
+saw_vision = False
 for raw in path.read_text(encoding='utf-8').splitlines():
     if not raw.strip(): continue
     row = json.loads(raw)
@@ -56,10 +57,12 @@ for raw in path.read_text(encoding='utf-8').splitlines():
         raise SystemExit(f"RECON: FAIL — hash mismatch at seq {row.get('seq')}")
     prev = digest
     count += 1
+    if row.get('kind') == 'vision':
+        saw_vision = True
 
 if not count: raise SystemExit('RECON: FAIL — empty ledger')
 if recon.get('chain_head') != prev: raise SystemExit('RECON: FAIL — retained chain head does not match ledger')
-if require_event and count < 2: raise SystemExit('RECON: FAIL — no evidence event yet; put a detectable object in view and retry')
+if require_event and not saw_vision: raise SystemExit('RECON: FAIL — no indexed vision evidence yet; put a detectable object in view and retry')
 print(f"RECON: OK — Hailo camera + recorder + ledger chain ({count} records, head {prev[:12]})")
 PY
 
