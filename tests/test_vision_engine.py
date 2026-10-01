@@ -370,3 +370,73 @@ def test_alpr_crop_transport_publishes_local_path_not_image_blob(monkeypatch, tm
     assert Path(data["crop_path"]).exists()
     assert data["evidence_path"] == str(evidence)
     assert "image_b64" not in data
+
+
+
+def test_recon_recorder_finalizes_segments_for_indexing(monkeypatch, tmp_path):
+    monkeypatch.setattr(vision, "RECON_VIDEO_DIR", tmp_path / "video")
+    monkeypatch.setattr(vision, "DASHCAM_SEGMENT_SECONDS", 1)
+
+    class Writer:
+        def __init__(self, path):
+            self.path = Path(path)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_bytes(b"mp4")
+            self.open = True
+
+        def isOpened(self):
+            return self.open
+
+        def write(self, _frame):
+            pass
+
+        def release(self):
+            self.open = False
+
+    class Cv:
+        @staticmethod
+        def VideoWriter_fourcc(*_args):
+            return 1
+
+        @staticmethod
+        def VideoWriter(path, _fourcc, _fps, _size):
+            return Writer(path)
+
+    recorder = vision.ReconVideoRecorder(Cv)
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    assert recorder.write(frame, 100.0) is True
+    first = recorder.path
+    assert first is not None
+    assert recorder.write(frame, 102.0) is True
+    finalized = recorder.take_finalized()
+    assert finalized == [first]
+    assert recorder.path != first
+    final = recorder.close()
+    assert final is not None
+    assert recorder.take_finalized() == [final]
+
+
+def test_recon_recorder_failed_open_does_not_report_phantom_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(vision, "RECON_VIDEO_DIR", tmp_path / "video")
+
+    class Writer:
+        def isOpened(self):
+            return False
+
+        def release(self):
+            pass
+
+    class Cv:
+        @staticmethod
+        def VideoWriter_fourcc(*_args):
+            return 1
+
+        @staticmethod
+        def VideoWriter(*_args):
+            return Writer()
+
+    recorder = vision.ReconVideoRecorder(Cv)
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    assert recorder.write(frame, 100.0) is False
+    assert recorder.path is None
+    assert recorder.take_finalized() == []
