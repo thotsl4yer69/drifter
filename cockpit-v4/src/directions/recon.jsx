@@ -50,7 +50,8 @@ export function ReconMain({ sim, onMode }) {
 
       <LgTile label="evidence ledger" meta="append-only · SHA-256 chain" live={active && status.state === 'online'}>
         <Value label="session" value={status.sessionId || 'waiting'} />
-        <Value label="events" value={status.eventCount ?? 0} />
+        <Value label="evidence events" value={status.evidenceCount ?? 0} />
+        <Value label="ledger records" value={status.eventCount ?? 0} />
         <Value label="chain head" value={chain} />
         <Value label="last kind" value={last?.kind || '—'} />
         <Value label="last seq" value={last?.seq ?? '—'} />
