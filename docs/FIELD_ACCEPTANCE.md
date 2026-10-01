@@ -46,13 +46,32 @@ drifter acceptance mark display-recovery --pass --note "display recovered withou
 After installing the AI HAT and Camera Module 3, reboot the Pi and run:
 
 ```bash
-sudo ./scripts/vision-acceptance.sh
-drifter acceptance mark hailo-vision --pass --note "Hailo NPU, camera and 5s YOLOv8 pipeline smoke passed"
+sudo drifter mode drive
+sudo bash ./scripts/vision-acceptance.sh
+drifter acceptance mark hailo-vision --pass --note "Actual DRIFTER vision service reported Hailo backend + online camera"
 ```
 
 Do not mark this pass unless the script ends with `VISION: PASS`. This records Hailo as a separate capability gate without blocking the core VIM if the optional AI HAT is removed.
 
-## 5. Optional broader-platform RF sequence
+## 5. RECON evidence acceptance
+
+Run this only with the AI HAT and camera physically attached. The first pass proves the
+Hailo camera service, recorder/indexer services and the on-disk SHA-256 ledger chain.
+The second pass requires at least one evidence-bearing scene event.
+
+```bash
+sudo drifter mode recon
+sudo bash ./scripts/recon-acceptance.sh
+# Put a detectable person/vehicle in view, wait for an event, then:
+sudo bash ./scripts/recon-acceptance.sh --require-event
+drifter acceptance mark recon-evidence --pass --note "RECON Hailo camera, recording and hash-chained evidence event physically verified"
+```
+
+Do not mark `recon-evidence` passed unless the second command ends with
+`RECON: PASS`. This gate is optional for the narrower VIM vehicle release; it
+exists to prevent software-only RECON work being mistaken for physical field proof.
+
+## 6. Optional broader-platform RF sequence
 
 The RTL-SDR sequence belongs to the broader DRIFTER R&D platform and is **not required for DRIFTER VIM vehicle sign-off**.
 
@@ -64,7 +83,7 @@ drifter acceptance mark rf-sequence --pass --note "optional R&D RF sequence pass
 
 A missing or failed RF sequence does not block VIM vehicle acceptance.
 
-## 6. Thirty-minute Jaguar telemetry soak
+## 7. Thirty-minute Jaguar telemetry soak
 
 ```bash
 drifter acceptance soak
