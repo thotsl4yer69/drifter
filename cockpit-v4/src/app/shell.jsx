@@ -13,6 +13,7 @@ import { DrifterSim } from '../data/adapter.js';
 import { useSettings, DevPanel } from '../shared/settings.jsx';
 import { LgTile, LgTrip, LgVivi, LgRight } from '../directions/ledger.jsx';
 import { RfMain, FtMain, DgMain } from '../directions/modes.jsx';
+import { ReconMain } from '../directions/recon.jsx';
 import { MpMain } from '../directions/map.jsx';
 import { SyMain, VvMain } from '../directions/system.jsx';
 import { DirPhone } from '../directions/phone.jsx';
@@ -36,6 +37,7 @@ function ShDriveMain({ sim, onNav }) {
 
 function ShSurface({ surf, sim, short, onNav }) {
   const armed = sim.mode === 'foot' || sim.mode === 'both';
+  if (surf === 'recon') return <ReconMain sim={sim} onMode={(mode) => DrifterSim.setMode(mode)} />;
   if (surf === 'map') return <MpMain sim={sim} />;
   if (surf === 'hw') return <DgMain sim={sim} showBanner={sim.autoDemoted} />;
   if (surf === 'set') return <SyMain sim={sim} />;
@@ -110,17 +112,17 @@ export function CockpitApp() {
   const { w, h } = useViewport();
   const forced = new URLSearchParams(location.search).get('layout');
   const layout = ['phone', 'mid', 'full'].includes(forced) ? forced : (w < 700 ? 'phone' : w < 1100 ? 'mid' : 'full');
-  const [surf, setSurfRaw] = React.useState(() => readPreference('dr-cockpit-surf', 'cockpit', ['cockpit', 'map', 'hw', 'rf', 'arms', 'vivi', 'set', 'trip']));
+  const [surf, setSurfRaw] = React.useState(() => readPreference('dr-cockpit-surf', 'cockpit', ['cockpit', 'recon', 'map', 'hw', 'rf', 'arms', 'vivi', 'set', 'trip']));
   const [pocket, setPocket] = React.useState(() => readPreference('dr-cockpit-pocket', 'cock', ['cock', 'arms', 'rf', 'data', 'map']));
   const [sheet, setSheet] = React.useState(false);
   const setSurf = (k) => { setSurfRaw(k); writePreference('dr-cockpit-surf', k); };
   const onNavPocket = (k) => { setPocket(k); writePreference('dr-cockpit-pocket', k); };
 
-  // mode is a real control — sync the persisted/desired mode to the node.
-  React.useEffect(() => { DrifterSim.setMode(t.mode); }, [t.mode]);
-
+  // Operating mode is authoritative on the Pi. Merely opening the cockpit or
+  // restoring a browser preference must never switch services.
   const onNav = (k) => {
-    if (k === 'mode-foot') { setTweak('mode', 'foot'); return; }
+    if (k === 'mode-foot') { DrifterSim.setMode('foot'); return; }
+    if (k === 'mode-recon') { DrifterSim.setMode('recon'); return; }
     setSurf(k);
   };
 
@@ -160,6 +162,7 @@ export function CockpitApp() {
     <div className="dr-cockpit-grid" data-sidecar={showDrawer} data-screen-label={`cockpit · ${surf}`}>
       <div style={{ gridArea: 'top', minWidth: 0 }}>
         <TouchHeader sim={sim} theme={t.theme} onTheme={theme => setTweak('theme', theme)}
+          onMode={mode => DrifterSim.setMode(mode)}
           onData={() => setSheet(true)} sheet={sheet} demo={DrifterSim.real !== true} />
       </div>
       <div className="dr-rail-slot"><TouchRail active={surf} onPick={onNav} /></div>
