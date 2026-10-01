@@ -208,6 +208,7 @@ TOPICS = {
     'vehicle_id': 'drifter/vehicle/id',
     'vehicle_profile': 'drifter/vehicle/profile',
     'vision_object': 'drifter/vision/object',
+    'vision_alpr_crop': 'drifter/vision/alpr/crop',
     'vision_status': 'drifter/vision/status',
     'recon_event': 'drifter/recon/event',
     'recon_status': 'drifter/recon/status',
