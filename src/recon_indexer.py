@@ -81,8 +81,10 @@ def _sha256_file(path: Path | None) -> str | None:
 class ReconLedger:
     def __init__(self, now: float | None = None) -> None:
         now = time.time() if now is None else float(now)
-        stamp = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        self.session_id = f"recon-{stamp}"
+        stamp = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        # Microseconds + PID prevents two rapid service restarts from appending a
+        # new zero-based hash chain into the same ledger filename.
+        self.session_id = f"recon-{stamp}-{os.getpid()}"
         self.started_at = now
         self.sequence = 0
         self.chain_head = "0" * 64
