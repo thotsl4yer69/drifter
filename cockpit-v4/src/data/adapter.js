@@ -63,7 +63,7 @@ function liveBaseline() {
   s.rf.hits = 0; s.rf.adsb = 0; s.rf.tpmsSeen = 0;
   s.gps = { lat: null, lon: null, hdg: 0, fix: 'none', sats: 0, acc: null };
   s.vivi = { status: 'awaiting link', lastSaid: '' };
-  s.perception = { state: 'offline', vision: 'offline', backend: null, cameraId: null, objects: [], event: null, fcw: null, dashcam: 'unknown' };
+  s.perception = { state: 'offline', vision: 'offline', backend: null, camera: 'unknown', cameraId: null, objects: [], event: null, fcw: null, dashcam: 'unknown' };
   s.recon.status = { state: 'offline', sessionId: null, eventCount: 0, chainHead: null, ledgerPath: null };
   s.recon.lastEvent = null;
   s.recon.recentPlates = [];
@@ -173,6 +173,7 @@ function createRealAdapter() {
         case topic === 'drifter/vision/status': {
           state.perception.vision = String(d?.state || 'unknown');
           state.perception.backend = d?.backend ? String(d.backend) : state.perception.backend;
+          state.perception.camera = d?.camera ? String(d.camera) : state.perception.camera;
           state.perception.cameraId = d?.camera_id ? String(d.camera_id) : state.perception.cameraId;
           break;
         }
