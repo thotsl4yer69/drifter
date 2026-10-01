@@ -69,7 +69,7 @@ export function freshState() {
     dtcs: [{ code: 'P0171', desc: 'System too lean · bank 1', state: 'stored' }],
     vivi: { status: 'link ok · listening for wake', lastSaid: 'Coolant trending normal. RR tire is 6% under — worth a look at the next stop.' },
     perception: {
-      state: 'online', vision: 'online', backend: 'hailo', cameraId: 'front',
+      state: 'online', vision: 'online', backend: 'hailo', camera: 'online', cameraId: 'front',
       objects: [{ class: 'car', confidence: 0.91, bbox: { x1: 182, y1: 190, x2: 462, y2: 520, cx: 322, height: 330 } }],
       event: null, fcw: null, dashcam: 'ready',
     },
