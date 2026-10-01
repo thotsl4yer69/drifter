@@ -64,7 +64,7 @@ function liveBaseline() {
   s.gps = { lat: null, lon: null, hdg: 0, fix: 'none', sats: 0, acc: null };
   s.vivi = { status: 'awaiting link', lastSaid: '' };
   s.perception = { state: 'offline', vision: 'offline', backend: null, camera: 'unknown', cameraId: null, objects: [], event: null, fcw: null, dashcam: 'unknown' };
-  s.recon.status = { state: 'offline', sessionId: null, eventCount: 0, chainHead: null, ledgerPath: null };
+  s.recon.status = { state: 'offline', sessionId: null, eventCount: 0, evidenceCount: 0, chainHead: null, ledgerPath: null };
   s.recon.lastEvent = null;
   s.recon.recentPlates = [];
   s.recon.wardrive = [];
@@ -205,6 +205,7 @@ function createRealAdapter() {
               state: String(d.state || 'unknown'),
               sessionId: d.session_id || null,
               eventCount: num(d.event_count) ?? 0,
+              evidenceCount: num(d.evidence_count) ?? 0,
               chainHead: d.chain_head || null,
               ledgerPath: d.ledger_path || null,
               startedAt: num(d.started_at),
