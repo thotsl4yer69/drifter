@@ -76,7 +76,7 @@ export function perceptionView(state, now = Date.now()) {
     detail: 'Vehicle telemetry does not depend on vision.',
     badge: 'NO VISION',
     hailo: backend === 'hailo' ? 'ACTIVE' : backend === 'onnx' ? 'CPU' : 'UNVERIFIED',
-    camera: p.vision === 'online' ? 'STREAM' : 'UNKNOWN',
+    camera: p.camera === 'online' ? 'STREAM' : 'UNKNOWN',
   };
   if (state?.link !== 'live') return { ...base, headline: 'VISION LINK LOST', badge: 'NO LIVE DATA' };
   if (p.vision !== 'online') return base;
