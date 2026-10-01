@@ -713,6 +713,11 @@ systemctl enable --now drifter-zram 2>/dev/null || true
 systemctl disable --now drifter-llm 2>/dev/null || true
 rm -f /etc/systemd/system/drifter-llm.service
 
+# Older vision installs enabled a standalone ffmpeg dashcam that competes with
+# drifter-vision for the same camera device. The canonical vision service now
+# owns capture and RECON recording, so retire the legacy unit during migration.
+systemctl disable --now drifter-dashcam 2>/dev/null || true
+
 # Pre-2026-05 deploys wrote the persona to /opt/drifter/state/mode; the
 # canonical path is /opt/drifter/mode.state (config.py MODE_STATE_PATH).
 # Drop the stale file so it can't drift out of sync with mode.state.
