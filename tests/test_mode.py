@@ -270,3 +270,16 @@ def test_foot_keeps_pentest_stack_and_excludes_vehicle_perception():
 def test_recon_is_curated_for_camera_headroom():
     assert set(config.MODES['recon']) == set(config.RECON_SERVICES)
     assert len(config.MODES['recon']) < len(config.MODES['drive'])
+
+
+
+def test_mode_sudoers_covers_every_switchable_persona():
+    text = (_REPO_ROOT / 'services' / 'drifter-mode.sudoers').read_text()
+    for name in config.MODES:
+        direct = f"/usr/local/bin/drifter mode {name}"
+        transient = (
+            "/usr/bin/systemd-run --no-block --unit=drifter-mode-switch "
+            f"/usr/local/bin/drifter mode {name}"
+        )
+        assert direct in text, f"sudoers missing direct {name} mode switch"
+        assert transient in text, f"sudoers missing transient {name} mode switch"
