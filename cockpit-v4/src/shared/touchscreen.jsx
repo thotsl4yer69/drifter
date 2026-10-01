@@ -4,9 +4,9 @@ import '../styles/touchscreen.css';
 
 export function TouchRail({ active, onPick }) {
   const items = [
-    { k: 'cockpit', g: '◈', l: 'drive' }, { k: 'map', g: '⌖', l: 'map' },
-    { k: 'hw', g: '▤', l: 'diag' }, { k: 'rf', g: '⊚', l: 'rf' },
-    { k: 'arms', g: '⊗', l: 'foot' }, { k: 'vivi', g: '●', l: 'vivi' },
+    { k: 'cockpit', g: '◈', l: 'drive' }, { k: 'recon', g: '◎', l: 'recon' },
+    { k: 'map', g: '⌖', l: 'map' }, { k: 'hw', g: '▤', l: 'diag' },
+    { k: 'rf', g: '⊚', l: 'rf' }, { k: 'vivi', g: '●', l: 'vivi' },
     { k: 'set', g: '◌', l: 'system' },
   ];
   return <nav className="dr-touch-rail" aria-label="DRIFTER workspaces">
@@ -17,7 +17,7 @@ export function TouchRail({ active, onPick }) {
   </nav>;
 }
 
-export function TouchHeader({ sim, theme, onTheme, onData, sheet, demo }) {
+export function TouchHeader({ sim, theme, onTheme, onData, onMode, sheet, demo }) {
   const nextTheme = theme === 'daylight' ? 'nightrun' : theme === 'nightrun' ? 'uncaged' : 'daylight';
   const nextLabel = nextTheme === 'daylight' ? 'DAY' : nextTheme === 'nightrun' ? 'NIGHT' : 'AMBER';
   return <header className="dr-touch-header">
@@ -25,7 +25,12 @@ export function TouchHeader({ sim, theme, onTheme, onData, sheet, demo }) {
     <span className={`dr-touch-link mono ${sim.link === 'live' ? '' : 'lost'}`} role="status">
       {demo ? 'TEST DATA' : sim.link === 'live' ? 'NODE CONNECTED' : 'RECONNECTING'}
     </span>
-    <span className="dr-touch-mode mono">{String(sim.mode || 'unknown').toUpperCase()}</span>
+    <div className="dr-mode-switch" aria-label="Operating mode">
+      {['drive', 'recon'].map(mode => <button type="button" key={mode}
+        className={`dr-touch-action mono ${sim.mode === mode ? 'active-mode' : ''}`}
+        disabled={sim.mode === mode}
+        onClick={() => onMode?.(mode)}>{mode.toUpperCase()}</button>)}
+    </div>
     <button type="button" className="dr-touch-action mono" onClick={() => onTheme(nextTheme)} aria-label={`Switch display to ${nextLabel.toLowerCase()} theme`}>{nextLabel}</button>
     <button type="button" className="dr-touch-action mono" onClick={onData} aria-haspopup="dialog" aria-controls="dr-data-sheet" aria-expanded={sheet}>DATA</button>
   </header>;
@@ -34,7 +39,7 @@ export function TouchHeader({ sim, theme, onTheme, onData, sheet, demo }) {
 export function HwStrip({ sim, now, demo }) {
   return <div className="dr-hw-strip" aria-label="Reported hardware status">
     {hardwareView(sim, now, demo).map(([label, value]) => <span key={label}
-      className={['DATA', 'FIX', 'LIVE', 'RECORDING'].includes(value) ? 'ok' : 'off'}>
+      className={['DATA', 'FIX', 'LIVE', 'RECORDING', 'ACTIVE', 'STREAM', 'READY', 'MONITORING'].includes(value) ? 'ok' : 'off'}>
       <i aria-hidden="true" />{label}<b>{value}</b>
     </span>)}
   </div>;
