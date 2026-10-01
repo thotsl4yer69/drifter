@@ -89,6 +89,7 @@ class ReconLedger:
         self.sequence = 0
         self.chain_head = "0" * 64
         self.event_count = 0
+        self.evidence_count = 0
         self.gps: dict = {}
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,6 +140,8 @@ class ReconLedger:
             os.fsync(handle.fileno())
         self.chain_head = digest
         self.event_count += 1
+        if kind not in {"session_start", "session_end"}:
+            self.evidence_count += 1
         return record
 
     def status(self, *, state: str = "online") -> dict:
@@ -147,6 +150,7 @@ class ReconLedger:
             "session_id": self.session_id,
             "started_at": self.started_at,
             "event_count": self.event_count,
+            "evidence_count": self.evidence_count,
             "chain_head": self.chain_head,
             "ledger_path": str(self.path),
             "ts": time.time(),
