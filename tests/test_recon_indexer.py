@@ -54,5 +54,25 @@ def test_status_exposes_session_chain_head_and_count(monkeypatch, tmp_path):
     assert status["state"] == "online"
     assert status["session_id"].startswith("recon-")
     assert status["event_count"] == 1
+    assert status["evidence_count"] == 0
     assert status["chain_head"] == ledger.chain_head
     assert status["chain_head"] != "0" * 64
+
+
+
+def test_session_ids_do_not_collide_for_rapid_restarts(monkeypatch, tmp_path):
+    _configure_tmp(monkeypatch, tmp_path)
+    monkeypatch.setattr(recon.os, "getpid", lambda: 1234)
+    first = recon.ReconLedger(now=100.000001)
+    second = recon.ReconLedger(now=100.000002)
+    assert first.session_id != second.session_id
+    assert first.path != second.path
+
+
+def test_evidence_count_excludes_session_anchors(monkeypatch, tmp_path):
+    _configure_tmp(monkeypatch, tmp_path)
+    ledger = recon.ReconLedger(now=100.0)
+    ledger.append("session_start", {"mode": "recon"}, now=100.1)
+    ledger.append("vision", {"objects": [{"class": "person"}]}, now=100.2)
+    assert ledger.event_count == 2
+    assert ledger.evidence_count == 1
