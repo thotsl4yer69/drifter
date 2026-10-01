@@ -785,15 +785,20 @@ SERVICES = [
     "drifter-ghost-voice",   # speaks drifter/ghost/alert via alert_message
     # Multi-vehicle — VIN detect → active profile (drives per-car thresholds)
     "drifter-vehicleid",     # vehicle_id.py — publishes drifter/vehicle/profile
-    "drifter-perception",    # optional Hailo vision + OBD/GPS context fusion
+    "drifter-perception",    # Hailo detections + vehicle/GPS context fusion
+    "drifter-vision",        # Hailo/Picamera2 inference (DRIVE + RECON)
+    "drifter-fcw",           # forward-collision context (DRIVE only)
+    "drifter-alpr",          # bounded plate OCR from RECON vehicle crops
+    "drifter-recon-index",   # hash-chained RECON evidence ledger
 ]
 
 # ── Modes ──
-# Same hardware, two operator personas:
-#   DRIVE — in the vehicle, CAN connected, telemetry meaningful.
-#   FOOT  — battery-pack mobile, recon/opsec console.
-# Services classified into three buckets; each list is mutually exclusive,
-# and the union must equal SERVICES (validated below).
+# Same hardware, distinct operator personas:
+#   DRIVE — vehicle telemetry + assistant + lightweight Hailo road perception.
+#   RECON — camera/Hailo surveillance + local evidence ledger; vehicle bus off.
+#   FOOT  — legacy battery-pack recon/opsec toolkit (kept separate from cameras).
+# Services are classified by the personas that own them. DIAG remains a curated
+# safety subset and BOTH is the bench-only superset.
 DRIVE_ONLY_SERVICES = [
     "drifter-canbridge",   # CAN bus needs vehicle ECUs present
     "drifter-obdbridge",   # ELM327/K-line transport (idles unless auto-selected)
@@ -804,7 +809,7 @@ DRIVE_ONLY_SERVICES = [
     "drifter-realdash",    # RealDash app feed
     "drifter-rf",          # RTL-SDR TPMS — passive vehicle telemetry
     "drifter-bleconv",     # passive BLE awareness (axon/tile/airtag)
-    "drifter-gps",         # GPS feed for the cockpit map + drive_id geo-tagging
+    "drifter-fcw",         # forward-collision context from live detections
     # v2 drive services
     "drifter-batcher",     # rolling telemetry window aggregator
     "drifter-trip",        # per-trip distance + fuel computer
@@ -812,7 +817,15 @@ DRIVE_ONLY_SERVICES = [
     "drifter-reporter",    # post-drive markdown report via LLM
     # RF/CAN expansion (Agent A)
     "drifter-can-discovery",  # CaringCaribou UDS / fuzz bridge — CAN-only
-    "drifter-perception",    # Hailo/vision context; degrades cleanly without camera
+]
+DRIVE_RECON_SERVICES = [
+    "drifter-gps",         # location source for road context + evidence geo-tagging
+    "drifter-vision",      # one camera owner; Hailo inference in both personas
+    "drifter-perception",  # structured context derived from vision + GPS/vehicle state
+]
+RECON_ONLY_SERVICES = [
+    "drifter-alpr",        # OCR only receives bounded vehicle crops in RECON
+    "drifter-recon-index", # append-only, hash-chained evidence session ledger
 ]
 FOOT_ONLY_SERVICES = [
     "drifter-wardrive",    # active Wi-Fi/BT recon
@@ -881,18 +894,33 @@ MODES = {
     # This is the RAM safety valve: `sudo drifter mode diag` stops the heavy
     # services so diagnostics keep working when fuller modes drown the Pi.
     "diag":  set(DIAG_SERVICES),
-    "drive": set(DRIVE_ONLY_SERVICES) | set(SHARED_SERVICES),
+    "drive": set(DRIVE_ONLY_SERVICES) | set(DRIVE_RECON_SERVICES) | set(SHARED_SERVICES),
+    "recon": set(RECON_ONLY_SERVICES) | set(DRIVE_RECON_SERVICES) | set(SHARED_SERVICES),
     "foot":  set(FOOT_ONLY_SERVICES)  | set(SHARED_SERVICES),
     "both":  set(SERVICES),
 }
 # Sanity: every service must land in exactly one bucket.
-_classified = set(DRIVE_ONLY_SERVICES) | set(FOOT_ONLY_SERVICES) | set(SHARED_SERVICES)
+_classified = (
+    set(DRIVE_ONLY_SERVICES)
+    | set(DRIVE_RECON_SERVICES)
+    | set(RECON_ONLY_SERVICES)
+    | set(FOOT_ONLY_SERVICES)
+    | set(SHARED_SERVICES)
+)
 assert _classified == set(SERVICES), (
     f"MODES classification drift: missing={set(SERVICES) - _classified}, "
     f"extra={_classified - set(SERVICES)}"
 )
-assert not (set(DRIVE_ONLY_SERVICES) & set(FOOT_ONLY_SERVICES)), \
-    "service cannot be both DRIVE_ONLY and FOOT_ONLY"
+_buckets = [
+    set(DRIVE_ONLY_SERVICES),
+    set(DRIVE_RECON_SERVICES),
+    set(RECON_ONLY_SERVICES),
+    set(FOOT_ONLY_SERVICES),
+    set(SHARED_SERVICES),
+]
+for _i, _left in enumerate(_buckets):
+    for _right in _buckets[_i + 1:]:
+        assert not (_left & _right), f"mode service buckets overlap: {_left & _right}"
 # The lean diag mode must be a strict subset of real services.
 assert set(DIAG_SERVICES) <= set(SERVICES), \
     f"DIAG_SERVICES not in SERVICES: {set(DIAG_SERVICES) - set(SERVICES)}"
