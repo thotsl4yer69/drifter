@@ -67,7 +67,7 @@ unit launches), then **settles into the lean `diag` persona** — telemetry +
 driver-safety only, no LLM/voice/recon. So `/healthz` reports `"mode":"diag"`
 and the heavy services are *intentionally* inactive at first. Once the node is
 stable, bring the assistant stack up with `sudo drifter mode drive` (or
-`sudo drifter mode foot` for recon). A re-run of `oneshot.sh` respects
+`sudo drifter mode recon` for Hailo camera/evidence work, or `sudo drifter mode foot` for the legacy field toolkit). A re-run of `oneshot.sh` respects
 whatever mode you last set.
 
 If a stage fails, the script exits with a numeric code:
