@@ -38,9 +38,9 @@ def test_plan_both_includes_all():
 
 
 def test_plan_shared_services_in_every_mode():
-    """Shared services must appear in DRIVE, FOOT, and BOTH."""
+    """Shared services must appear in DRIVE, RECON, FOOT, and BOTH."""
     for svc in config.SHARED_SERVICES:
-        for m in ('drive', 'foot', 'both'):
+        for m in ('drive', 'recon', 'foot', 'both'):
             assert svc in mode.plan(m)['enable'], f"{svc} missing from {m}"
 
 
@@ -232,10 +232,29 @@ def test_diag_is_leaner_than_drive():
     assert len(config.MODES['diag']) < len(config.MODES['drive'])
 
 
-def test_perception_runs_in_drive_and_diag_but_not_foot():
+def test_perception_runs_in_drive_recon_and_diag_but_not_foot():
     assert 'drifter-perception' in mode.plan('drive')['enable']
+    assert 'drifter-perception' in mode.plan('recon')['enable']
     assert 'drifter-perception' in mode.plan('diag')['enable']
     assert 'drifter-perception' in mode.plan('foot')['disable']
+
+
+def test_recon_is_camera_evidence_not_vehicle_or_foot_tooling():
+    p = mode.plan('recon')
+    for svc in ('drifter-vision', 'drifter-perception', 'drifter-alpr',
+                'drifter-recon-index', 'drifter-gps'):
+        assert svc in p['enable'], f"{svc} must run in recon mode"
+    for svc in ('drifter-canbridge', 'drifter-obdbridge', 'drifter-fcw',
+                'drifter-kismet', 'drifter-marauder', 'drifter-hid'):
+        assert svc in p['disable'], f"{svc} must stay out of recon mode"
+
+
+def test_drive_keeps_hailo_perception_but_not_recon_evidence_services():
+    p = mode.plan('drive')
+    for svc in ('drifter-vision', 'drifter-perception', 'drifter-fcw'):
+        assert svc in p['enable']
+    for svc in ('drifter-alpr', 'drifter-recon-index'):
+        assert svc in p['disable']
 
 
 def test_foot_keeps_pentest_stack_and_excludes_vehicle_perception():
