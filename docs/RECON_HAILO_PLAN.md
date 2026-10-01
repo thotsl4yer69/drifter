@@ -44,7 +44,7 @@ Every indexed event carries the session ID, sequence number, timestamp, current 
 Runs the existing vehicle stack plus `drifter-vision`, `drifter-perception` and `drifter-fcw`. Recon-only evidence capture and ALPR remain off.
 
 ### RECON
-Runs a deliberately lean infrastructure set: dashboard, hotspot/uplink, watchdog, logger, home sync, local display and GPS, plus `drifter-vision`, `drifter-perception`, `drifter-alpr` and `drifter-recon-index`. Vehicle CAN/OBD, collision warning, LLM/STT and active FOOT/offsec services remain off so surveillance has predictable resource headroom.
+Runs a deliberately lean infrastructure set: dashboard, hotspot/uplink, watchdog, logger, home sync, local display and GPS, plus `drifter-vision`, `drifter-alpr` and `drifter-recon-index`. Vehicle CAN/OBD, collision warning, LLM/STT and active FOOT/offsec services remain off so surveillance has predictable resource headroom.
 
 ### FOOT
 Preserved unchanged for the existing field toolkit. Camera surveillance is not coupled to FOOT.
