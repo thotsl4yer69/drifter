@@ -173,6 +173,9 @@ SERVICES=(
     drifter-weather drifter-wifi-audit drifter-vehicleid
 )
 systemctl daemon-reload
+# Migration guard: the legacy standalone dashcam opens the same camera as
+# drifter-vision. RECON recording is now performed inside the vision process.
+systemctl disable --now drifter-dashcam >/dev/null 2>&1 || true
 for svc in "${SERVICES[@]}"; do
     if ! systemctl enable "$svc" >/dev/null 2>&1; then
         stage_fail 40 "systemctl enable $svc failed"
