@@ -45,6 +45,7 @@ const sevForLevel = (lv) => (lv >= 3 ? 'crit' : lv >= 2 ? 'warn' : 'info');
 function liveBaseline() {
   const s = freshState();
   s.link = 'lost';
+  s.mode = 'unknown';
   s.display = emptyDisplayState();
   s.hw = { ecu: 'pending', gps: 'none', bt: 'down', weatherKey: false, sdr: 'unknown' };
   s.power = { undervoltNow: false, undervoltSinceBoot: false, throttled: false };
@@ -62,7 +63,10 @@ function liveBaseline() {
   s.rf.hits = 0; s.rf.adsb = 0; s.rf.tpmsSeen = 0;
   s.gps = { lat: null, lon: null, hdg: 0, fix: 'none', sats: 0, acc: null };
   s.vivi = { status: 'awaiting link', lastSaid: '' };
-  s.perception = { state: 'offline', vision: 'offline', objects: [], event: null, fcw: null, dashcam: 'unknown' };
+  s.perception = { state: 'offline', vision: 'offline', backend: null, cameraId: null, objects: [], event: null, fcw: null, dashcam: 'unknown' };
+  s.recon.status = { state: 'offline', sessionId: null, eventCount: 0, chainHead: null, ledgerPath: null };
+  s.recon.lastEvent = null;
+  s.recon.recentPlates = [];
   s.recon.wardrive = [];
   s.recon.blePersist = null;
   s.recon.hidPayloads = [];
@@ -168,6 +172,8 @@ function createRealAdapter() {
         }
         case topic === 'drifter/vision/status': {
           state.perception.vision = String(d?.state || 'unknown');
+          state.perception.backend = d?.backend ? String(d.backend) : state.perception.backend;
+          state.perception.cameraId = d?.camera_id ? String(d.camera_id) : state.perception.cameraId;
           break;
         }
         case topic === 'drifter/vision/perception/status': {
@@ -189,6 +195,33 @@ function createRealAdapter() {
         }
         case topic === 'drifter/vision/dashcam/status': {
           state.perception.dashcam = String(d?.state || 'unknown');
+          if (d?.camera_id) state.perception.cameraId = String(d.camera_id);
+          break;
+        }
+        case topic === 'drifter/recon/status': {
+          if (d && typeof d === 'object') {
+            state.recon.status = {
+              state: String(d.state || 'unknown'),
+              sessionId: d.session_id || null,
+              eventCount: num(d.event_count) ?? 0,
+              chainHead: d.chain_head || null,
+              ledgerPath: d.ledger_path || null,
+              startedAt: num(d.started_at),
+            };
+          }
+          break;
+        }
+        case topic === 'drifter/recon/event': {
+          state.recon.lastEvent = d && typeof d === 'object' ? d : null;
+          break;
+        }
+        case topic === 'drifter/vision/alpr/plate': {
+          if (d && typeof d === 'object' && d.plate) {
+            state.recon.recentPlates = [
+              { plate: String(d.plate), confidence: num(d.confidence), ts: num(d.ts), cameraId: d.camera_id || null },
+              ...state.recon.recentPlates.filter(p => p.plate !== String(d.plate)),
+            ].slice(0, 8);
+          }
           break;
         }
         case topic === 'drifter/rf/spectrum/summary':
@@ -340,7 +373,9 @@ function createRealAdapter() {
       const snap = await r.json();
       // latest_state keys are `topic` with drifter/ stripped and / → _
       for (const [k, v] of Object.entries(snap || {})) {
-        if (k === 'snapshot') applyTopic('drifter/snapshot', v, true);
+        if (k === 'mode') {
+          state.mode = typeof v === 'string' && v ? v : state.mode;
+        } else if (k === 'snapshot') applyTopic('drifter/snapshot', v, true);
         else applyTopic('drifter/' + k.replace(/_/g, '/'), v, true);
       }
       schedule();
@@ -354,15 +389,45 @@ function createRealAdapter() {
   // ── command surface ────────────────────────────────────────────
   async function post(path, body) {
     try {
-      await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-    } catch (e) { /* surfaced via lack of state change; honest */ }
+      const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+      let data = null;
+      try { data = await response.json(); } catch {}
+      return { ok: response.ok, data };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  async function confirmMode(target) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const response = await fetch('/api/mode', { headers: { accept: 'application/json' } });
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.mode) {
+            state.mode = String(payload.mode);
+            schedule();
+            if (state.mode === target) return true;
+          }
+        }
+      } catch {}
+      await delay(250);
+    }
+    return false;
   }
 
   return {
     real: true,
     subscribe(fn) { subs.add(fn); fn(state); return () => subs.delete(fn); },
     getState: () => state,
-    setMode(m) { state.mode = m; state.autoDemoted = false; schedule(); post(`/api/mode/${m}`); },
+    async setMode(m) {
+      const requested = String(m || '');
+      const result = await post(`/api/mode/${requested}`);
+      if (!result?.ok || result?.data?.status === 'failed') return false;
+      const confirmed = await confirmMode(requested);
+      if (confirmed) state.autoDemoted = false;
+      return confirmed;
+    },
     setScenario() { /* sim-only */ },
     setHw(k, v) { state.hw[k] = v; schedule(); },
     setLink(v) { state.link = v; schedule(); },
