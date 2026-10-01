@@ -857,6 +857,24 @@ SHARED_SERVICES = [
     "drifter-ghost-voice", # speaks ghost alerts (runs in both modes)
     "drifter-vehicleid",   # VIN → active vehicle profile (runs in all modes)
 ]
+# RECON is intentionally curated rather than inheriting the full SHARED set.
+# Switching from DRIVE stops the LLM/STT and unrelated field tooling so camera,
+# Hailo, recording and evidence I/O get predictable CPU/RAM/storage headroom.
+RECON_SERVICES = [
+    "drifter-dashboard",    # operator HUD + /healthz
+    "drifter-hotspot",      # direct phone/tablet access
+    "drifter-homesync",     # opportunistic evidence sync when home is reachable
+    "drifter-watchdog",     # service health monitor
+    "drifter-logger",       # raw MQTT timeline alongside the evidence ledger
+    "drifter-autoconnect",  # uplink/AP fallback
+    "drifter-lcd",          # local touch display
+    "drifter-gps",          # evidence geo-tagging
+    "drifter-vision",       # sole camera owner + Hailo inference + recording
+    "drifter-perception",   # structured scene events
+    "drifter-alpr",         # bounded vehicle-crop OCR
+    "drifter-recon-index",  # hash-chained evidence ledger
+]
+
 # Lean diagnostics floor (RAM safety valve). A curated SUBSET of SERVICES —
 # vehicle telemetry + driver-safety only, deliberately excluding every heavy
 # RAM consumer (LLM via vivi/analyst/reporter, whisper STT via voicein, the
@@ -895,7 +913,7 @@ MODES = {
     # services so diagnostics keep working when fuller modes drown the Pi.
     "diag":  set(DIAG_SERVICES),
     "drive": set(DRIVE_ONLY_SERVICES) | set(DRIVE_RECON_SERVICES) | set(SHARED_SERVICES),
-    "recon": set(RECON_ONLY_SERVICES) | set(DRIVE_RECON_SERVICES) | set(SHARED_SERVICES),
+    "recon": set(RECON_SERVICES),
     "foot":  set(FOOT_ONLY_SERVICES)  | set(SHARED_SERVICES),
     "both":  set(SERVICES),
 }
@@ -930,7 +948,8 @@ assert set(DIAG_SERVICES) <= set(SERVICES), \
 MODE_STATE_PATH = DRIFTER_DIR / "mode.state"
 # Lean by default: a node with no persisted mode comes up in the guaranteed-
 # light diag floor (telemetry + safety only). Switch up with `drifter mode
-# drive` (assistant/LLM/voice) or `foot` (recon) once it's stable. oneshot.sh
+# drive` (assistant/LLM/voice), `recon` (Hailo surveillance), or `foot`
+# (legacy field toolkit) once it's stable. oneshot.sh
 # settles into the resolved mode after the /healthz gate.
 DEFAULT_MODE = "diag"
 
