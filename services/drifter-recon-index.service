@@ -1,0 +1,16 @@
+[Unit]
+Description=MZ1312 DRIFTER RECON Evidence Indexer
+After=drifter-broker.target drifter-vision.service
+Wants=drifter-broker.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drifter
+ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/recon_indexer.py
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/drifter/.env
+
+[Install]
+WantedBy=multi-user.target
