@@ -10,6 +10,7 @@ drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode drive
 drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode recon
 drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode foot
 drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode both
+drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode diag
 drifter ALL=(root) NOPASSWD: /usr/local/bin/drifter mode status
 
 # systemd-run launches the switch as a transient unit OUTSIDE the calling
@@ -21,3 +22,4 @@ drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode
 drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode recon
 drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode foot
 drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode both
+drifter ALL=(root) NOPASSWD: /usr/bin/systemd-run --no-block --unit=drifter-mode-switch /usr/local/bin/drifter mode diag
