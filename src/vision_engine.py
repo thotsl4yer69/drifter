@@ -705,7 +705,24 @@ def _capture_loop(client: mqtt.Client, running_ref: list, detector) -> None:
                     picam2.close()
                 except Exception:
                     pass
+            client.publish(TOPICS["vision_status"], json.dumps({
+                "state": "degraded",
+                "backend": getattr(detector, "backend", "none") if detector is not None else "none",
+                "camera": "offline",
+                "camera_id": CAMERA_ID,
+                "mode": _current_mode(),
+                "ts": time.time(),
+            }), retain=True)
             return
+
+    client.publish(TOPICS["vision_status"], json.dumps({
+        "state": "online",
+        "backend": getattr(detector, "backend", "none") if detector is not None else "none",
+        "camera": "online",
+        "camera_id": CAMERA_ID,
+        "mode": _current_mode(),
+        "ts": time.time(),
+    }), retain=True)
 
     recorder: ReconVideoRecorder | None = None
     mode = _current_mode()
