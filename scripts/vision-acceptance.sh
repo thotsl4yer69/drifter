@@ -30,27 +30,28 @@ systemctl restart drifter-vision || fail "could not restart drifter-vision"
 systemctl is-active --quiet drifter-vision || fail "drifter-vision inactive"
 
 command -v mosquitto_sub >/dev/null || fail "mosquitto_sub missing"
-STATUS="$(timeout 12 mosquitto_sub -h 127.0.0.1 -t drifter/vision/status -C 1 -W 10 2>/dev/null || true)"
-[ -n "$STATUS" ] || fail "no retained drifter/vision/status received"
-
-python3 - "$STATUS" <<'PY' || exit 1
+STATUS=""
+for _ in $(seq 1 30); do
+    CANDIDATE="$(timeout 2 mosquitto_sub -h 127.0.0.1 -t drifter/vision/status -C 1 -W 1 2>/dev/null || true)"
+    if python3 - "$CANDIDATE" <<'PY' >/dev/null 2>&1
 import json, sys
 try:
     d = json.loads(sys.argv[1])
-except Exception as exc:
-    print(f"VISION: FAIL — invalid status JSON: {exc}", file=sys.stderr)
+except Exception:
     raise SystemExit(1)
+raise SystemExit(0 if d.get("state") == "online" and d.get("backend") == "hailo" and d.get("camera") == "online" else 1)
+PY
+    then
+        STATUS="$CANDIDATE"
+        break
+    fi
+    sleep 0.5
+done
+[ -n "$STATUS" ] || fail "actual Hailo + camera pipeline did not report online within 15s"
 
-if d.get("state") != "online":
-    print(f"VISION: FAIL — service state is {d.get('state')!r}", file=sys.stderr)
-    raise SystemExit(1)
-if d.get("backend") != "hailo":
-    print(f"VISION: FAIL — backend is {d.get('backend')!r}, expected 'hailo'", file=sys.stderr)
-    raise SystemExit(1)
-if d.get("camera") != "online":
-    print(f"VISION: FAIL — camera is {d.get('camera')!r}", file=sys.stderr)
-    raise SystemExit(1)
-
+python3 - "$STATUS" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
 print(f"VISION: OK — actual DRIFTER pipeline online (backend=hailo camera={d.get('camera_id','unknown')})")
 PY
 
