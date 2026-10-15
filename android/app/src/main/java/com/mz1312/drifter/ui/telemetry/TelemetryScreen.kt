@@ -32,6 +32,7 @@ import com.mz1312.drifter.ui.common.StatusPill
 @Composable
 fun TelemetryScreen(vm: DrifterViewModel) {
     val state by vm.telemetry.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
 
     // Own the socket lifecycle to this screen — opening it is itself a probe
     // of the 8081 fan-out; leaving releases the connection.
@@ -62,7 +63,7 @@ fun TelemetryScreen(vm: DrifterViewModel) {
     ) {
         item {
             SectionCard(title = "Live telemetry", trailing = { StatusPill(label, sev) }) {
-                Mono(vm.settings.value.telemetryWsUrl)
+                Mono(settings.telemetryWsUrl)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Frames received: ${state.frameCount}",

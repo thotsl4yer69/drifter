@@ -89,26 +89,28 @@ fun MapScreen(vm: DrifterViewModel) {
     val fixColor = MaterialTheme.colorScheme.secondary
 
     Box(Modifier.fillMaxSize()) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = camera,
-            properties = MapProperties(
-                mapType = if (satellite) MapType.SATELLITE else MapType.NORMAL,
-                mapStyleOptions = if (satellite) null else darkStyle,
-            ),
-            uiSettings = MapUiSettings(zoomControlsEnabled = false, compassEnabled = true),
-        ) {
-            gps.current?.let { c ->
-                Circle(
-                    center = LatLng(c.lat, c.lng),
-                    radius = 16.0,
-                    fillColor = fixColor.copy(alpha = 0.45f),
-                    strokeColor = fixColor,
-                    strokeWidth = 4f,
-                )
-            }
-            if (gps.path.size >= 2) {
-                Polyline(points = gps.path.map { LatLng(it.lat, it.lng) }, color = pathColor, width = 9f)
+        if (com.mz1312.drifter.BuildConfig.MAPS_KEY_PRESENT) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = camera,
+                properties = MapProperties(
+                    mapType = if (satellite) MapType.SATELLITE else MapType.NORMAL,
+                    mapStyleOptions = if (satellite) null else darkStyle,
+                ),
+                uiSettings = MapUiSettings(zoomControlsEnabled = false, compassEnabled = true),
+            ) {
+                gps.current?.let { c ->
+                    Circle(
+                        center = LatLng(c.lat, c.lng),
+                        radius = 16.0,
+                        fillColor = fixColor.copy(alpha = 0.45f),
+                        strokeColor = fixColor,
+                        strokeWidth = 4f,
+                    )
+                }
+                if (gps.path.size >= 2) {
+                    Polyline(points = gps.path.map { LatLng(it.lat, it.lng) }, color = pathColor, width = 9f)
+                }
             }
         }
 

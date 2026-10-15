@@ -1,5 +1,6 @@
 package com.mz1312.drifter
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,11 +37,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.mz1312.drifter.jaguar.JaguarMedicActivity
 import com.mz1312.drifter.data.model.Healthz
 import com.mz1312.drifter.ui.DrifterViewModel
 import com.mz1312.drifter.ui.DrifterViewModelFactory
@@ -73,7 +77,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             DrifterTheme {
                 DrifterBackground {
-                    DrifterApp(viewModel)
+                    DrifterApp(viewModel, onOpenMedic = {
+                        startActivity(Intent(this, JaguarMedicActivity::class.java))
+                    })
                 }
             }
         }
@@ -92,7 +98,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DrifterApp(vm: DrifterViewModel) {
+private fun DrifterApp(vm: DrifterViewModel, onOpenMedic: () -> Unit) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -123,6 +129,7 @@ private fun DrifterApp(vm: DrifterViewModel) {
 
     Scaffold(
         containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
                 title = {
@@ -180,7 +187,14 @@ private fun DrifterApp(vm: DrifterViewModel) {
                             }
                         },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
-                        label = { Text(dest.label, style = MaterialTheme.typography.labelSmall) },
+                        label = {
+                            Text(
+                                dest.label,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.sp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -203,7 +217,7 @@ private fun DrifterApp(vm: DrifterViewModel) {
             popEnterTransition = { fadeIn(tween(220)) },
             popExitTransition = { fadeOut(tween(160)) },
         ) {
-            composable(Destination.Overview.route) { OverviewScreen(vm, navController) }
+            composable(Destination.Overview.route) { OverviewScreen(vm, navController, onOpenMedic) }
             composable(Destination.Doctor.route) { DoctorScreen(vm) }
             composable(Destination.Assistant.route) { AssistantScreen(vm) }
             composable(Destination.Services.route) { ServicesScreen(vm) }
