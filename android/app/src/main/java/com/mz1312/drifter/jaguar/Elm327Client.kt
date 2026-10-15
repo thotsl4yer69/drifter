@@ -5,6 +5,10 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -14,9 +18,9 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.UUID
-import kotlin.math.roundToInt
 
 class Elm327Client(private val context: Context) : Closeable {
+    private val commandLock = Mutex()
     private var input: InputStream? = null
     private var output: OutputStream? = null
     private var closeable: Closeable? = null
@@ -40,7 +44,9 @@ class Elm327Client(private val context: Context) : Closeable {
             ?: error("Bluetooth is not available on this phone")
         val device = adapter.getRemoteDevice(address)
         val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+        closeable = socket
         socket.connect()
+        currentCoroutineContext().ensureActive()
         input = BufferedInputStream(socket.inputStream)
         output = BufferedOutputStream(socket.outputStream)
         closeable = socket
@@ -50,7 +56,9 @@ class Elm327Client(private val context: Context) : Closeable {
     suspend fun connectWifi(host: String, port: Int) = withContext(Dispatchers.IO) {
         close()
         val socket = Socket()
+        closeable = socket
         socket.connect(InetSocketAddress(host, port), 4000)
+        currentCoroutineContext().ensureActive()
         socket.soTimeout = 3500
         input = BufferedInputStream(socket.getInputStream())
         output = BufferedOutputStream(socket.getOutputStream())
@@ -69,7 +77,7 @@ class Elm327Client(private val context: Context) : Closeable {
     }
 
     suspend fun poll(): LiveSnapshot = withContext(Dispatchers.IO) {
-        fun v(pid: String) = runCatching { readPid(pid) }.getOrNull()
+        suspend fun v(pid: String): List<Int>? = readPid(pid)
         val rpm = v("0C")?.let { bytes -> if (bytes.size >= 2) ((bytes[0] * 256 + bytes[1]) / 4.0) else null }
         val speed = v("0D")?.firstOrNull()?.toDouble()
         val coolant = v("05")?.firstOrNull()?.minus(40)?.toDouble()
@@ -95,8 +103,9 @@ class Elm327Client(private val context: Context) : Closeable {
     suspend fun readDtcs(): List<String> = withContext(Dispatchers.IO) {
         val raw = command("03", 5000)
         val hex = raw.uppercase().replace(Regex("[^0-9A-F]"), "")
+        if (raw.contains("NO DATA", true)) return@withContext emptyList()
         val idx = hex.indexOf("43")
-        if (idx < 0) return@withContext emptyList()
+        check(idx >= 0) { "Invalid Mode-03 response: $raw" }
         val payload = hex.substring(idx + 2)
         payload.chunked(4).mapNotNull { word ->
             if (word.length < 4 || word == "0000") null else decodeDtc(word)
@@ -114,28 +123,41 @@ class Elm327Client(private val context: Context) : Closeable {
         return payload.chunked(2).takeWhile { it.length == 2 }.mapNotNull { it.toIntOrNull(16) }
     }
 
-    private suspend fun command(cmd: String, timeoutMs: Long = 3000): String = withContext(Dispatchers.IO) {
-        val out = output ?: error("ELM327 is not connected")
-        val inp = input ?: error("ELM327 is not connected")
-        while (inp.available() > 0) inp.read()
-        out.write((cmd.trim() + "\r").toByteArray(Charsets.US_ASCII))
-        out.flush()
-        val end = System.currentTimeMillis() + timeoutMs
-        val b = StringBuilder()
-        while (System.currentTimeMillis() < end) {
-            if (inp.available() > 0) {
-                val c = inp.read()
-                if (c < 0) break
-                val ch = c.toChar()
-                if (ch == '>') break
-                b.append(ch)
-            } else {
-                Thread.sleep(12)
+    // A scan and the live poller share one ELM command/response channel.
+    private suspend fun command(cmd: String, timeoutMs: Long = 3000): String =
+        commandLock.withLock {
+            withContext(Dispatchers.IO) {
+                val out = output ?: error("ELM327 is not connected")
+                val inp = input ?: error("ELM327 is not connected")
+                while (inp.available() > 0) inp.read()
+                out.write((cmd.trim() + "\r").toByteArray(Charsets.US_ASCII))
+                out.flush()
+                val deadline = System.nanoTime() + timeoutMs * 1_000_000
+                val response = StringBuilder()
+                var complete = false
+                while (System.nanoTime() < deadline) {
+                    currentCoroutineContext().ensureActive()
+                    if (inp.available() > 0) {
+                        val c = inp.read()
+                        check(c >= 0) { "ELM327 disconnected" }
+                        if (c.toChar() == '>') {
+                            complete = true
+                            break
+                        }
+                        response.append(c.toChar())
+                    } else {
+                        delay(12)
+                    }
+                }
+                check(complete) { "Timed out waiting for ELM327 prompt for $cmd" }
+                // Remove only an echoed command line, never matching bytes in a PID/DTC.
+                response.toString().split('\r', '\n')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && !it.equals(cmd, ignoreCase = true) }
+                    .joinToString("\n")
+                    .also { check(it.isNotBlank()) { "Empty ELM327 response for $cmd" } }
             }
         }
-        if (b.isEmpty()) error("No response from ELM327 for $cmd")
-        b.toString().replace(cmd, "", ignoreCase = true).trim()
-    }
 
     private fun trimPct(b: Int): Double = (b - 128) * 100.0 / 128.0
 

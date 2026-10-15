@@ -3,6 +3,7 @@ package com.mz1312.drifter.jaguar
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -37,7 +38,7 @@ import kotlin.math.abs
 class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = false }
     private val prefs = app.getSharedPreferences("jaguar_medic", 0)
-    private val elm = Elm327Client(app)
+    private var elm = Elm327Client(app)
     private val http = OkHttpClient.Builder().connectTimeout(4, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build()
 
     private val _link = MutableStateFlow(LinkUiState())
@@ -59,6 +60,9 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     private val _message = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages = _message
 
+    private var connectionJob: Job? = null
+    private var scanJob: Job? = null
+    private var session = 0
     private var pollJob: Job? = null
     private var nodeSocket: WebSocket? = null
     private val ring = ArrayDeque<LiveSnapshot>()
@@ -89,16 +93,14 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun connectBluetooth(address: String) = connect(LinkMode.BLUETOOTH_ELM, "Bluetooth ELM327") {
-        elm.connectBluetooth(address)
-        startElmPolling()
+    fun connectBluetooth(address: String) = connect(LinkMode.BLUETOOTH_ELM, "Bluetooth ELM327") { client ->
+        client.connectBluetooth(address)
     }
 
     fun connectWifi(host: String, port: Int) {
         wifiHost = host; wifiPort = port
-        connect(LinkMode.WIFI_ELM, "$host:$port") {
-            elm.connectWifi(host, port)
-            startElmPolling()
+        connect(LinkMode.WIFI_ELM, "$host:$port") { client ->
+            client.connectWifi(host, port)
         }
     }
 
@@ -106,69 +108,119 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         drifterHost = host
         disconnect()
         _link.value = LinkUiState(LinkMode.DRIFTER, host, busy = true)
-        val req = Request.Builder().url("ws://$host:8081").build()
+        val activeSession = session
+        val req = runCatching { Request.Builder().url("ws://$host:8081").build() }
+            .getOrElse {
+                _link.value = LinkUiState(LinkMode.DRIFTER, host, error = "Invalid DRIFTER host")
+                return
+            }
         nodeSocket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                _link.value = LinkUiState(LinkMode.DRIFTER, host, connected = true)
+                viewModelScope.launch { if (session == activeSession) _link.value = LinkUiState(LinkMode.DRIFTER, host, connected = true) }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 runCatching {
                     val obj = json.parseToJsonElement(text).jsonObject
                     val topic = obj["topic"]?.jsonPrimitive?.content ?: return
                     val data = obj["data"] ?: return
-                    ingestNodeTopic(topic, data)
+                    viewModelScope.launch { if (session == activeSession) ingestNodeTopic(topic, data) }
                 }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _link.value = LinkUiState(LinkMode.DRIFTER, host, error = t.message ?: "DRIFTER socket failed")
+                viewModelScope.launch { if (session == activeSession) _link.value = LinkUiState(LinkMode.DRIFTER, host, error = t.message ?: "DRIFTER socket failed") }
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                _link.value = LinkUiState(LinkMode.DRIFTER, host, error = reason.ifBlank { "Disconnected" })
+                viewModelScope.launch { if (session == activeSession) _link.value = LinkUiState(LinkMode.DRIFTER, host, error = reason.ifBlank { "Disconnected" }) }
             }
         })
     }
 
-    private fun connect(mode: LinkMode, label: String, block: suspend () -> Unit) {
+    private fun connect(mode: LinkMode, label: String, block: suspend (Elm327Client) -> Unit) {
         disconnect()
+        val activeSession = session
+        // A cancelled connection must never install its socket into a newer session.
+        val client = Elm327Client(getApplication())
+        elm = client
         _link.value = LinkUiState(mode, label, busy = true)
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { block() }
-                .onSuccess { _link.value = LinkUiState(mode, label, connected = true) }
-                .onFailure { _link.value = LinkUiState(mode, label, error = it.message ?: "Connection failed") }
+        connectionJob = viewModelScope.launch {
+            try {
+                block(client)
+                if (session == activeSession) {
+                    _link.value = LinkUiState(mode, label, connected = true)
+                    startElmPolling(client, activeSession)
+                } else client.close()
+            } catch (cancelled: CancellationException) {
+                client.close()
+                throw cancelled
+            } catch (error: Exception) {
+                client.close()
+                if (session == activeSession) {
+                    _link.value = LinkUiState(mode, label, error = error.message ?: "Connection failed")
+                }
+            }
         }
     }
 
-    private fun startElmPolling() {
+    private fun startElmPolling(client: Elm327Client, activeSession: Int) {
         pollJob?.cancel()
-        pollJob = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive) {
-                runCatching { elm.poll() }
-                    .onSuccess { updateSnapshot(it) }
-                    .onFailure {
-                        _link.value = _link.value.copy(connected = false, busy = false, error = it.message ?: "OBD read failed")
-                        return@launch
+        pollJob = viewModelScope.launch {
+            while (isActive && session == activeSession) {
+                try {
+                    val snapshot = client.poll()
+                    if (session == activeSession) updateSnapshot(snapshot)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    client.close()
+                    if (session == activeSession) {
+                        _link.value = _link.value.copy(connected = false, busy = false, error = error.message ?: "OBD read failed")
                     }
+                    return@launch
+                }
                 delay(350)
             }
         }
     }
 
     fun disconnect() {
+        session++
+        connectionJob?.cancel(); connectionJob = null
+        scanJob?.cancel(); scanJob = null
         pollJob?.cancel(); pollJob = null
         nodeSocket?.cancel(); nodeSocket = null
         elm.close()
+        // Returning to DRIFTER preserves the samples already collected.
+        activeIncident?.let { finalizeIncident(it) }
+        ring.clear()
+        _snapshot.value = LiveSnapshot()
+        _dtcs.value = emptyList()
         _link.value = LinkUiState()
     }
 
     fun scanDtcs() {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (_link.value.mode == LinkMode.DRIFTER) {
-                _message.tryEmit("Direct DTC scan currently uses the ELM327 link; DRIFTER telemetry can still feed diagnosis")
-                return@launch
+        if (!_link.value.connected) {
+            _message.tryEmit("Connect an ELM327 adapter before scanning")
+            return
+        }
+        if (_link.value.mode == LinkMode.DRIFTER) {
+            _message.tryEmit("Direct DTC scan currently uses the ELM327 link; DRIFTER telemetry can still feed diagnosis")
+            return
+        }
+        if (scanJob?.isActive == true) return
+        val client = elm
+        val activeSession = session
+        scanJob = viewModelScope.launch {
+            try {
+                val codes = client.readDtcs()
+                if (session == activeSession) {
+                    _dtcs.value = codes
+                    _message.tryEmit(if (codes.isEmpty()) "No Mode-03 DTCs returned" else "${codes.size} DTC(s) captured")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (session == activeSession) _message.tryEmit("DTC scan failed: ${error.message}")
             }
-            runCatching { elm.readDtcs() }
-                .onSuccess { _dtcs.value = it; _message.tryEmit(if (it.isEmpty()) "No Mode-03 DTCs returned" else "${it.size} DTC(s) captured") }
-                .onFailure { _message.tryEmit("DTC scan failed: ${it.message}") }
         }
     }
 
@@ -235,7 +287,12 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         val name = "incident_${a.triggerTs}.json"
         val file = File(dir, name)
         val payload = json.encodeToString(a.samples)
-        runCatching { file.writeText(payload) }
+        try {
+            file.writeText(payload)
+        } catch (error: Exception) {
+            _message.tryEmit("Incident could not be saved: ${error.message}")
+            return
+        }
         val before = a.samples.filter { it.ts < a.triggerTs }
         val after = a.samples.filter { it.ts >= a.triggerTs }
         val first = firstMeaningfulChange(before, after)

@@ -52,13 +52,22 @@ jobs:
       - name: unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
+      - name: upload unit and interface regression reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-regression-reports
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/test-results/testDebugUnitTest/
+            android/app/build/reports/ui/
+          if-no-files-found: warn
+
       - name: assemble debug apk
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: android lint
-        # Non-blocking: surfaces lint findings without failing the build on
-        # style/baseline nits. assembleDebug above is the hard compile gate.
-        continue-on-error: true
+        # Errors block compatibility; advisory warnings remain in the report.
         run: ./gradlew lintDebug --no-daemon
 
       - name: upload debug apk

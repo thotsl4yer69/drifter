@@ -152,3 +152,41 @@ The DRIFTER Android companion is part of an authored MAZLABZ project developed w
 ## Portfolio value
 
 The app demonstrates the ability to build a **native mobile operator interface around a real edge system**: Android networking, WebSockets, background work, secure local secret handling, service diagnostics and live telemetry UI all connected to a Raspberry Pi deployment.
+
+## X-Type Medic workspace
+
+DRIFTER remains the default launcher and keeps the existing application ID,
+settings, assistant, health alerts and all eight destinations: Overview, Doctor,
+Assistant, Services, Arsenal, Telemetry, Map and Settings.
+
+From **Overview → Open X-Type Medic**, open the Jaguar diagnostic workspace in
+the same Android task. Its CAR, LIVE, DIAG, MANUAL and LOG tabs retain direct
+paired Bluetooth/Wi-Fi ELM327, live readings, Mode-03 scans, incident recording,
+offline reference, workshop API integration and the car history. The **Back to
+DRIFTER** arrow or system Back closes Medic and returns to the existing companion.
+The diagnostic connection closes on exit; a capture already in progress saves
+the samples collected so far. Full 90-second pre-event / 45-second post-event
+windows require enough live recording time. Selected Medic tab and current form
+draft survive activity recreation. Saved car history and incident files remain
+in their original storage locations.
+
+Bluetooth permission is requested in Medic's LIVE tab, not when launching
+DRIFTER. Medic is a non-exported activity, not a second APK or a replacement
+launcher. This keeps existing installs, notification intents and DRIFTER state
+compatible without adding build variants or duplicating the data layer.
+
+### Regression checks
+
+`./gradlew testDebugUnitTest assembleDebug lintDebug` runs the diagnostic engine,
+scripted TCP ELM327 tests, workshop/persistence checks and native-rendered
+Robolectric Compose tests for both interfaces. These tests do not require a
+phone, Bluetooth adapter or vehicle. UI captures are written to
+`app/build/reports/ui/`; CI retains the test reports and captures.
+
+Tests cover all original destinations, the default launcher, the explicit Medic
+intent, both return controls, activity recreation, Medic tabs and adapter
+controls, command serialization during polling/scanning, fault-code integrity,
+missing/invalid responses, workshop fallback, repair-log persistence and saving
+a partial incident on exit. A scripted adapter and simulated Android runtime
+are software tests; physical Bluetooth pairing, the real Jaguar ECU, live map
+tiles and the deployed workshop API still require device verification.
