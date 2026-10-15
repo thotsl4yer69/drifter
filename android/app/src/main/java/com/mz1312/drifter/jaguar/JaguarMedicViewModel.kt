@@ -1,6 +1,8 @@
 package com.mz1312.drifter.jaguar
 
 import android.app.Application
+import android.os.SystemClock
+import android.util.AtomicFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,7 +33,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.File
 import java.time.LocalDate
-import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -58,15 +60,19 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     private val _incidents = MutableStateFlow(loadIncidents())
     val incidents: StateFlow<List<IncidentSummary>> = _incidents.asStateFlow()
     private val _message = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val messages = _message
+    val messages = _message.asSharedFlow()
 
     private var connectionJob: Job? = null
     private var scanJob: Job? = null
     private var session = 0
     private var pollJob: Job? = null
     private var nodeSocket: WebSocket? = null
-    private val ring = ArrayDeque<LiveSnapshot>()
-    private var activeIncident: ActiveIncident? = null
+    private val recorder = IncidentRecorder(SystemClock::elapsedRealtime)
+    private var captureJob: Job? = null
+    private var searchJob: Job? = null
+    private var diagnosisJob: Job? = null
+    private var searchRequest = 0
+    private var diagnosisRequest = 0
 
     var wifiHost: String
         get() = prefs.getString("wifi_host", "192.168.0.10") ?: "192.168.0.10"
@@ -98,9 +104,13 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connectWifi(host: String, port: Int) {
+        if (host.isBlank() || port !in 1..65535) {
+            _message.tryEmit("Enter an ELM host and a port from 1 to 65535")
+            return
+        }
         wifiHost = host; wifiPort = port
-        connect(LinkMode.WIFI_ELM, "$host:$port") { client ->
-            client.connectWifi(host, port)
+        connect(LinkMode.WIFI_ELM, "${host.trim()}:$port") { client ->
+            client.connectWifi(host.trim(), port)
         }
     }
 
@@ -127,10 +137,14 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                viewModelScope.launch { if (session == activeSession) _link.value = LinkUiState(LinkMode.DRIFTER, host, error = t.message ?: "DRIFTER socket failed") }
+                viewModelScope.launch { if (session == activeSession) connectionLost(t.message ?: "DRIFTER socket failed") }
+            }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+                viewModelScope.launch { if (session == activeSession) connectionLost(reason.ifBlank { "Disconnected" }) }
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                viewModelScope.launch { if (session == activeSession) _link.value = LinkUiState(LinkMode.DRIFTER, host, error = reason.ifBlank { "Disconnected" }) }
+                viewModelScope.launch { if (session == activeSession) connectionLost(reason.ifBlank { "Disconnected" }) }
             }
         })
     }
@@ -173,7 +187,7 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (error: Exception) {
                     client.close()
                     if (session == activeSession) {
-                        _link.value = _link.value.copy(connected = false, busy = false, error = error.message ?: "OBD read failed")
+                        connectionLost(error.message ?: "OBD read failed")
                     }
                     return@launch
                 }
@@ -190,11 +204,17 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         nodeSocket?.cancel(); nodeSocket = null
         elm.close()
         // Returning to DRIFTER preserves the samples already collected.
-        activeIncident?.let { finalizeIncident(it) }
-        ring.clear()
+        finishIncident()
+        recorder.clearHistory()
         _snapshot.value = LiveSnapshot()
         _dtcs.value = emptyList()
         _link.value = LinkUiState()
+    }
+
+    private fun connectionLost(message: String) {
+        val previous = _link.value
+        disconnect()
+        _link.value = previous.copy(connected = false, busy = false, error = message)
     }
 
     fun scanDtcs() {
@@ -225,27 +245,52 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun diagnose(query: String) {
-        _diagnosis.value = DiagnosticEngine.diagnose(query, _snapshot.value, _dtcs.value)
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { remoteDiagnosis(query) }.onSuccess { remote ->
-                if (remote.isNotEmpty()) _diagnosis.value = mergeDiagnosis(_diagnosis.value, remote)
+        diagnosisJob?.cancel()
+        val request = ++diagnosisRequest
+        val base = workshopBase
+        val local = DiagnosticEngine.diagnose(query, _snapshot.value, _dtcs.value)
+        _diagnosis.value = local
+        diagnosisJob = viewModelScope.launch {
+            try {
+                val remote = remoteDiagnosis(query, base)
+                if (request == diagnosisRequest && base == workshopBase && remote.isNotEmpty()) {
+                    _diagnosis.value = mergeDiagnosis(local, remote)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The current local diagnosis remains available offline.
             }
         }
     }
 
     fun searchWorkshop(query: String) {
+        searchJob?.cancel()
+        val request = ++searchRequest
+        val base = workshopBase
         _evidence.value = OfflineKnowledge.search(query)
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { remoteSearch(query) }.onSuccess { if (it.isNotEmpty()) _evidence.value = it }
+        searchJob = viewModelScope.launch {
+            try {
+                val remote = remoteSearch(query, base)
+                if (request == searchRequest && base == workshopBase && remote.isNotEmpty()) _evidence.value = remote
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Keep this query's offline results if the workshop service is unavailable.
+            }
         }
     }
 
     fun captureIncident(note: String = "manual capture") {
-        val now = System.currentTimeMillis()
-        if (activeIncident == null) {
-            activeIncident = ActiveIncident(now, note, ring.toList().toMutableList())
-            _message.tryEmit("Incident capture armed: preserving 90s before + 45s after")
-        } else _message.tryEmit("Incident capture is already active")
+        if (recorder.isCapturing) {
+            _message.tryEmit("Incident capture is already active")
+        } else if (_link.value.connected && recorder.start(System.currentTimeMillis(), note)) {
+            captureJob = viewModelScope.launch {
+                delay(IncidentRecorder.AFTER_MS)
+                finishIncident()
+            }
+            _message.tryEmit("Incident capture armed: up to 90s before + 45s after")
+        } else _message.tryEmit("Connect telemetry and wait for a reading before capturing")
     }
 
     fun addEvent(kind: String, subsystem: String, summary: String, details: String) {
@@ -262,14 +307,8 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun updateSnapshot(s: LiveSnapshot) {
         _snapshot.value = s
-        ring.addLast(s)
-        val cutoff = s.ts - 90_000
-        while (ring.isNotEmpty() && ring.first().ts < cutoff) ring.removeFirst()
-        val incident = activeIncident
-        if (incident != null) {
-            incident.samples += s
-            if (s.ts - incident.triggerTs >= 45_000) finalizeIncident(incident)
-        } else autoTrigger(s)
+        recorder.record(s)
+        if (!recorder.isCapturing) autoTrigger(s)
     }
 
     private fun autoTrigger(s: LiveSnapshot) {
@@ -282,33 +321,42 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         if (reason != null) captureIncident(reason)
     }
 
-    private fun finalizeIncident(a: ActiveIncident) {
+    private fun finishIncident() {
+        captureJob?.cancel(); captureJob = null
+        val a = recorder.finish() ?: return
         val dir = File(getApplication<Application>().filesDir, "incidents").apply { mkdirs() }
         val name = "incident_${a.triggerTs}.json"
-        val file = File(dir, name)
+        val file = AtomicFile(File(dir, name))
         val payload = json.encodeToString(a.samples)
         try {
-            file.writeText(payload)
+            val stream = file.startWrite()
+            try {
+                stream.write(payload.toByteArray(Charsets.UTF_8))
+                file.finishWrite(stream)
+            } catch (error: Exception) {
+                file.failWrite(stream)
+                throw error
+            }
         } catch (error: Exception) {
             _message.tryEmit("Incident could not be saved: ${error.message}")
             return
         }
         val before = a.samples.filter { it.ts < a.triggerTs }
         val after = a.samples.filter { it.ts >= a.triggerTs }
-        val first = firstMeaningfulChange(before, after)
+        val first = changeAtTrigger(before, after)
         val summary = IncidentSummary(a.triggerTs.toString(), a.triggerTs, a.reason, name, a.samples.size, first)
         _incidents.value = listOf(summary) + _incidents.value
         saveIncidents()
-        activeIncident = null
         _message.tryEmit("Incident saved: ${a.samples.size} samples")
     }
 
-    private fun firstMeaningfulChange(before: List<LiveSnapshot>, after: List<LiveSnapshot>): String? {
+    private fun changeAtTrigger(before: List<LiveSnapshot>, after: List<LiveSnapshot>): String? {
         if (before.isEmpty() || after.isEmpty()) return null
         val base = before.takeLast(12)
         fun avg(f: (LiveSnapshot) -> Double?) = base.mapNotNull(f).takeIf { it.isNotEmpty() }?.average()
         val latest = after.firstOrNull() ?: return null
-        val candidates = listOf(
+        // Report each observed difference, without ranking unlike units or claiming causality.
+        val changes = listOf(
             "RPM" to (avg { it.rpm } to latest.rpm),
             "MAF" to (avg { it.mafGps } to latest.mafGps),
             "STFT B1" to (avg { it.stftB1 } to latest.stftB1),
@@ -317,9 +365,9 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         ).mapNotNull { (name, pair) ->
             val a = pair.first ?: return@mapNotNull null
             val b = pair.second ?: return@mapNotNull null
-            Triple(name, a, b)
-        }.maxByOrNull { (_, a, b) -> abs(b - a) }
-        return candidates?.let { (n, a, b) -> "$n ${"%.2f".format(a)} → ${"%.2f".format(b)}" }
+            if (abs(b - a) < 0.01) null else "$name ${"%.2f".format(a)} → ${"%.2f".format(b)}"
+        }
+        return changes.takeIf { it.isNotEmpty() }?.joinToString(prefix = "At trigger: ", separator = "; ")
     }
 
     private fun ingestNodeTopic(topic: String, data: JsonElement) {
@@ -329,7 +377,7 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
                 else -> data.jsonPrimitive.doubleOrNull
             }
         }.getOrNull()
-        val v = num() ?: return
+        val v = num()?.takeIf { it.isFinite() } ?: return
         val old = _snapshot.value
         val s = when (topic.removePrefix("drifter/")) {
             "engine/rpm" -> old.copy(ts = System.currentTimeMillis(), rpm = v)
@@ -349,8 +397,7 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         updateSnapshot(s)
     }
 
-    private suspend fun remoteSearch(q: String): List<EvidenceHit> = withContext(Dispatchers.IO) {
-        val base = workshopBase.trimEnd('/')
+    private suspend fun remoteSearch(q: String, base: String): List<EvidenceHit> = withContext(Dispatchers.IO) {
         val url = "$base/api/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}&n=10"
         http.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) return@withContext emptyList()
@@ -368,8 +415,7 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun remoteDiagnosis(q: String): List<DiagnosisLane> = withContext(Dispatchers.IO) {
-        val base = workshopBase.trimEnd('/')
+    private suspend fun remoteDiagnosis(q: String, base: String): List<DiagnosisLane> = withContext(Dispatchers.IO) {
         val url = "$base/api/diagnose?q=${java.net.URLEncoder.encode(q, "UTF-8")}" 
         http.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) return@withContext emptyList()
@@ -417,8 +463,6 @@ class JaguarMedicViewModel(app: Application) : AndroidViewModel(app) {
     private fun saveIncidents() = prefs.edit().putString("incidents", json.encodeToString(ListSerializer(IncidentSummary.serializer()), _incidents.value)).apply()
 
     override fun onCleared() {
-        disconnect(); http.dispatcher.executorService.shutdown(); super.onCleared()
+        disconnect(); http.dispatcher.cancelAll(); http.dispatcher.executorService.shutdown(); super.onCleared()
     }
-
-    private data class ActiveIncident(val triggerTs: Long, val reason: String, val samples: MutableList<LiveSnapshot>)
 }

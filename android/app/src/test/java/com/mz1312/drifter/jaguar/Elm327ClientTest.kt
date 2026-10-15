@@ -59,14 +59,23 @@ class Elm327ClientTest {
                 assertNull(snapshot.rpm)
                 assertNull(snapshot.mafGps)
                 assertEquals(12.4, snapshot.voltage!!, 0.001)
-                assertTrue(client.readDtcs().isEmpty())
+                assertTrue(runCatching { client.readDtcs() }.exceptionOrNull()!!.message!!.contains("unknown"))
                 client.close()
                 assertTrue(runCatching { client.poll() }.isFailure)
             }
         }
     }
 
-    private class Adapter(val noData: Boolean = false, val dtcResponse: String = "430301131316460000") : Closeable {
+    @Test fun canProtocolAndNumberedDtcFramesWorkOverTheWifiConnection() = runBlocking {
+        Adapter(protocol = "A6", dtcResponse = "00A\r0:430403011313\r1:1646D016").use { adapter ->
+            client().use { client ->
+                client.connectWifi("127.0.0.1", adapter.port)
+                assertEquals(listOf("P0301", "P1313", "P1646", "U1016"), client.readDtcs())
+            }
+        }
+    }
+
+    private class Adapter(val noData: Boolean = false, val protocol: String = "A3", val dtcResponse: String = "43030100000000\r43131316460000") : Closeable {
         private val server = ServerSocket(0)
         val port = server.localPort
         val commands = CopyOnWriteArrayList<String>()
@@ -86,6 +95,7 @@ class Elm327ClientTest {
                         val result = when {
                             cmd == "ATZ" -> "ELM327 v1.5"
                             cmd == "ATRV" -> "12.4V"
+                            cmd == "ATDPN" -> protocol
                             cmd.startsWith("AT") -> "OK"
                             cmd == "0100" -> "4100FFFFFFFF"
                             cmd == "03" -> dtcResponse

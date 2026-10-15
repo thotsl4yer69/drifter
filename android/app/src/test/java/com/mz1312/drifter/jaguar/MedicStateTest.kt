@@ -19,6 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -74,6 +75,119 @@ class MedicStateTest {
         vm.disconnect()
         assertEquals(LinkMode.NONE, vm.link.value.mode)
         store.clear()
+    }
+
+    @Test fun invalidWifiAddressDoesNotReplaceSavedSettingsOrOpenConnection() {
+        val store = ViewModelStore()
+        val vm = model(store)
+        val host = vm.wifiHost
+        val port = vm.wifiPort
+        vm.connectWifi("", 35000)
+        vm.connectWifi("127.0.0.1", 70000)
+        assertEquals(host, vm.wifiHost)
+        assertEquals(port, vm.wifiPort)
+        assertEquals(LinkMode.NONE, vm.link.value.mode)
+        store.clear()
+    }
+
+    @Test fun lateWorkshopSearchCannotOverwriteNewerResults() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"results":[{"title":"Old search"}]}""").setBodyDelay(1, TimeUnit.SECONDS))
+            server.enqueue(MockResponse().setBody("""{"results":[{"title":"Current search"}]}"""))
+            val store = ViewModelStore()
+            val vm = model(store)
+            vm.workshopBase = server.url("/").toString()
+            vm.searchWorkshop("oxygen")
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            vm.searchWorkshop("fuel gauge")
+            await { vm.evidence.value.firstOrNull()?.title == "Current search" }
+            allowDelayedResponse()
+            assertEquals("Current search", vm.evidence.value.first().title)
+            store.clear()
+        }
+    }
+
+    @Test fun lateWorkshopDiagnosisCannotMergeIntoNewerSymptoms() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"priority_lanes":[{"title":"Old diagnosis"}]}""").setBodyDelay(1, TimeUnit.SECONDS))
+            server.enqueue(MockResponse().setBody("""{"priority_lanes":[{"title":"Current diagnosis"}]}"""))
+            val store = ViewModelStore()
+            val vm = model(store)
+            vm.workshopBase = server.url("/").toString()
+            vm.diagnose("oxygen")
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            vm.diagnose("fuel gauge")
+            await { vm.diagnosis.value.firstOrNull()?.title == "Current diagnosis" }
+            allowDelayedResponse()
+            assertEquals("Current diagnosis", vm.diagnosis.value.first().title)
+            assertFalse(vm.diagnosis.value.any { it.title == "Old diagnosis" })
+            store.clear()
+        }
+    }
+
+    @Test fun captureTimerSavesAfterFortyFiveSecondsEvenIfTelemetryStops() {
+        MockWebServer().use { node ->
+            node.start(8081)
+            node.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    webSocket.send("""{"topic":"drifter/engine/rpm","data":"NaN"}""")
+                    webSocket.send("""{"topic":"drifter/engine/rpm","data":720}""")
+                }
+            }))
+            val store = ViewModelStore()
+            val vm = model(store)
+            vm.connectDrifter("127.0.0.1")
+            await { vm.snapshot.value.rpm == 720.0 }
+            vm.captureIncident("timer test")
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(44))
+            assertTrue(vm.incidents.value.isEmpty())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            assertEquals("timer test", vm.incidents.value.single().reason)
+            assertEquals(1, vm.incidents.value.single().sampleCount)
+            store.clear()
+            assertEquals(1, vm.incidents.value.size)
+        }
+    }
+
+    @Test fun captureWithoutTelemetryDoesNotCreateAnEmptyIncident() {
+        val store = ViewModelStore()
+        val vm = model(store)
+        vm.captureIncident()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(46))
+        assertTrue(vm.incidents.value.isEmpty())
+        store.clear()
+    }
+
+    @Test fun remoteDisconnectSavesPartialCaptureAndClearsStaleReadings() {
+        MockWebServer().use { node ->
+            lateinit var socket: WebSocket
+            node.start(8081)
+            node.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    socket = webSocket
+                    webSocket.send("""{"topic":"drifter/engine/rpm","data":720}""")
+                }
+            }))
+            val store = ViewModelStore()
+            val vm = model(store)
+            vm.connectDrifter("127.0.0.1")
+            await { vm.snapshot.value.rpm == 720.0 }
+            vm.captureIncident("connection lost")
+            socket.close(1000, "Test server disconnected")
+            await { !vm.link.value.connected }
+            assertNull(vm.snapshot.value.rpm)
+            assertEquals("connection lost", vm.incidents.value.single().reason)
+            assertEquals("Test server disconnected", vm.link.value.error)
+            store.clear()
+        }
+    }
+
+    private fun allowDelayedResponse() {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1200)
+        while (System.nanoTime() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
     }
 
     @Test fun leavingMedicSavesPartialCaptureAndReleasesConnectionState() {

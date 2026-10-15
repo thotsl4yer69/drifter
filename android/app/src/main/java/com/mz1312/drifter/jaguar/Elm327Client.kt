@@ -90,7 +90,7 @@ class Elm327Client(private val context: Context) : Closeable {
         val throttle = v("11")?.firstOrNull()?.let { it * 100.0 / 255.0 }
         val iat = v("0F")?.firstOrNull()?.minus(40)?.toDouble()
         val voltage = v("42")?.let { if (it.size >= 2) (it[0] * 256 + it[1]) / 1000.0 else null }
-            ?: runCatching { parseAdapterVoltage(command("ATRV")) }.getOrNull()
+            ?: parseAdapterVoltage(command("ATRV"))
         val o2 = v("14")?.firstOrNull()?.let { it / 200.0 }
         LiveSnapshot(
             rpm = rpm, speedKph = speed, coolantC = coolant, mafGps = maf,
@@ -101,15 +101,11 @@ class Elm327Client(private val context: Context) : Closeable {
     }
 
     suspend fun readDtcs(): List<String> = withContext(Dispatchers.IO) {
+        // The active protocol determines whether byte 2 is a DTC count (CAN).
+        val protocol = command("ATDPN").trim().uppercase().removePrefix("A").toIntOrNull(16)
+        check(protocol != null && protocol in 1..9) { "Cannot identify the active OBD protocol" }
         val raw = command("03", 5000)
-        val hex = raw.uppercase().replace(Regex("[^0-9A-F]"), "")
-        if (raw.contains("NO DATA", true)) return@withContext emptyList()
-        val idx = hex.indexOf("43")
-        check(idx >= 0) { "Invalid Mode-03 response: $raw" }
-        val payload = hex.substring(idx + 2)
-        payload.chunked(4).mapNotNull { word ->
-            if (word.length < 4 || word == "0000") null else decodeDtc(word)
-        }.distinct()
+        ElmDtcParser.parse(raw, can = protocol in 6..9)
     }
 
     private suspend fun readPid(pid: String): List<Int>? {
@@ -163,17 +159,6 @@ class Elm327Client(private val context: Context) : Closeable {
 
     private fun parseAdapterVoltage(raw: String): Double? = Regex("(\\d{1,2}(?:\\.\\d+)?)\\s*V", RegexOption.IGNORE_CASE)
         .find(raw)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-
-    private fun decodeDtc(word: String): String? {
-        val a = word.substring(0, 2).toIntOrNull(16) ?: return null
-        val b = word.substring(2, 4).toIntOrNull(16) ?: return null
-        val letter = when ((a shr 6) and 0x3) { 0 -> 'P'; 1 -> 'C'; 2 -> 'B'; else -> 'U' }
-        val d1 = (a shr 4) and 0x3
-        val d2 = a and 0xF
-        val d3 = (b shr 4) and 0xF
-        val d4 = b and 0xF
-        return "$letter$d1${d2.toString(16)}${d3.toString(16)}${d4.toString(16)}".uppercase()
-    }
 
     override fun close() {
         runCatching { input?.close() }

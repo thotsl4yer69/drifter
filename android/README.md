@@ -170,6 +170,17 @@ windows require enough live recording time. Selected Medic tab and current form
 draft survive activity recreation. Saved car history and incident files remain
 in their original storage locations.
 
+Capture windows use elapsed time and close after 45 seconds even if samples
+stop arriving. Disconnecting saves the partial window and clears stale live
+readings. Empty/offline captures are rejected. The incident comparison lists
+changes observed at the trigger; it does not identify which fault caused them.
+
+Mode-03 scans decode separate K-line ECU replies and CAN DTC counts/numbered
+frames. Missing, truncated, ambiguous interleaved or invalid responses report
+an error; `NO DATA` means unknown DTC status. Pending codes (Mode 07) still need
+a scanner that supports them. A newer workshop search or diagnosis takes
+precedence over a delayed response to an earlier query.
+
 Bluetooth permission is requested in Medic's LIVE tab, not when launching
 DRIFTER. Medic is a non-exported activity, not a second APK or a replacement
 launcher. This keeps existing installs, notification intents and DRIFTER state
@@ -177,11 +188,12 @@ compatible without adding build variants or duplicating the data layer.
 
 ### Regression checks
 
-`./gradlew testDebugUnitTest assembleDebug lintDebug` runs the diagnostic engine,
+`./gradlew testDebugUnitTest assembleDebug assembleRelease lintDebug` runs the diagnostic engine,
 scripted TCP ELM327 tests, workshop/persistence checks and native-rendered
 Robolectric Compose tests for both interfaces. These tests do not require a
 phone, Bluetooth adapter or vehicle. UI captures are written to
-`app/build/reports/ui/`; CI retains the test reports and captures.
+`app/build/reports/ui/`; CI retains the test reports, captures and lint reports.
+The release APK is unsigned; the debug APK is intended for device testing.
 
 Tests cover all original destinations, the default launcher, the explicit Medic
 intent, both return controls, activity recreation, Medic tabs and adapter
@@ -190,3 +202,9 @@ missing/invalid responses, workshop fallback, repair-log persistence and saving
 a partial incident on exit. A scripted adapter and simulated Android runtime
 are software tests; physical Bluetooth pairing, the real Jaguar ECU, live map
 tiles and the deployed workshop API still require device verification.
+
+Lint keeps dependency-update advisories visible. AndroidX and Compose versions
+remain on the verified SDK 35 / AGP 8.7 toolchain; moving to current Compose
+requires a coordinated SDK/Gradle migration. The cleartext-network warning is
+also retained: configurable LAN HTTP/WebSocket endpoints and ELM adapters need
+it. Use those links only on the trusted vehicle network. Cloud assistant requests use TLS.

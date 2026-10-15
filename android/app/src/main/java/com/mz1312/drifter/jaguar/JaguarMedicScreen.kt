@@ -15,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,7 +30,7 @@ import kotlin.math.abs
 
 enum class MedicTab(val label: String, val icon: ImageVector) {
     CAR("CAR", Icons.Filled.DirectionsCar), LIVE("LIVE", Icons.Filled.Speed),
-    DIAG("DIAG", Icons.Filled.Build), MANUAL("MANUAL", Icons.Filled.MenuBook), LOG("LOG", Icons.Filled.List)
+    DIAG("DIAG", Icons.Filled.Build), MANUAL("MANUAL", Icons.AutoMirrored.Filled.MenuBook), LOG("LOG", Icons.AutoMirrored.Filled.List)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,7 +90,9 @@ fun JaguarMedicApp(vm: JaguarMedicViewModel, onBackToDrifter: () -> Unit) {
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)){ OutlinedTextField(host,{host=it},Modifier.weight(1f),label={Text("Wi-Fi ELM host")},singleLine=true); OutlinedTextField(port,{port=it},Modifier.width(105.dp),label={Text("Port")},singleLine=true) }
-            Button({vm.connectWifi(host,port.toIntOrNull()?:35000)},Modifier.fillMaxWidth()){Icon(Icons.Filled.Wifi,null);Spacer(Modifier.width(6.dp));Text("CONNECT WI-FI ELM")}
+            val validPort = port.toIntOrNull()?.takeIf { it in 1..65535 }
+            if (validPort == null) Text("Enter a port from 1 to 65535", color = MaterialTheme.colorScheme.error)
+            Button(onClick = { validPort?.let { vm.connectWifi(host, it) } }, modifier = Modifier.fillMaxWidth(), enabled = host.isNotBlank() && validPort != null){Icon(Icons.Filled.Wifi,null);Spacer(Modifier.width(6.dp));Text("CONNECT WI-FI ELM")}
             OutlinedTextField(drifter,{drifter=it},Modifier.fillMaxWidth(),label={Text("DRIFTER host")},singleLine=true); OutlinedButton({vm.connectDrifter(drifter)},Modifier.fillMaxWidth()){Text("USE DRIFTER TELEMETRY")}
             if(link.connected) TextButton({vm.disconnect()},Modifier.fillMaxWidth()){Text("DISCONNECT")}
         } }

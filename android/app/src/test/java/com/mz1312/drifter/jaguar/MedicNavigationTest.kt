@@ -45,6 +45,17 @@ class MedicNavigationTest {
         compose.onNodeWithText("Test symptom draft").assertExists()
     }
 
+    @Test fun invalidWifiPortCannotSilentlyUseTheDefault() {
+        tab("LIVE")
+        compose.onNodeWithText("Port").performTextReplacement("not a port")
+        compose.onNodeWithText("CONNECT WI-FI ELM").assertIsNotEnabled()
+        compose.onNodeWithText("Enter a port from 1 to 65535").assertExists()
+        compose.onNodeWithText("Port").performTextReplacement("70000")
+        compose.onNodeWithText("CONNECT WI-FI ELM").assertIsNotEnabled()
+        compose.onNodeWithText("Port").performTextReplacement("35000")
+        compose.onNodeWithText("CONNECT WI-FI ELM").assertIsEnabled()
+    }
+
     @Test fun explicitReturnFinishesMedicInsteadOfReplacingDrifter() {
         val activity = compose.activity
         tab("MANUAL")
