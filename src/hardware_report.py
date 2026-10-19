@@ -13,7 +13,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
