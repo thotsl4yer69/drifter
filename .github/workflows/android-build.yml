@@ -40,8 +40,16 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: set up android sdk
-        uses: android-actions/setup-android@v3
+      # Modern ubuntu runners already carry the SDK command-line tools.
+      # setup-android@v3 tries to install the removed legacy "tools" package.
+      - name: install android sdk packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?Runner Android SDK missing}"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: make gradlew executable
         run: chmod +x ./gradlew
