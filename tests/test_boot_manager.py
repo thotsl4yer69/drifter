@@ -73,7 +73,7 @@ def test_degraded_core_state_never_blocks_boot_handoff(monkeypatch):
     monkeypatch.setattr(
         boot,
         '_wait_for_core_services',
-        lambda services: {service: False for service in services},
+        lambda services: dict.fromkeys(services, False),
     )
     monkeypatch.setattr(boot.time, 'sleep', lambda _seconds: None)
 
