@@ -1,4 +1,3 @@
-import time
 
 from perception_fusion import FusionState, derive_events
 
