@@ -599,7 +599,7 @@ def main() -> None:
         "classes": list(VISION_CLASSES_OF_INTEREST),
         "ts": time.time(),
     }), retain=True)
-    log.info("Vision Engine LIVE (%s)" % type(detector).__name__ if detector else "Vision Engine idle (no usable model)")
+    log.info(f"Vision Engine LIVE ({type(detector).__name__})" if detector else "Vision Engine idle (no usable model)")
 
     cap_thread = threading.Thread(
         target=_capture_loop, args=(client, running, detector), daemon=True,
