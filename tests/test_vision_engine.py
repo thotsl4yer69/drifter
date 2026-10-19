@@ -5,9 +5,10 @@ camera, Hailo hardware, Pi, road-scene, latency, or safety performance.
 """
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import types
+from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -162,7 +163,7 @@ def test_onnx_infer_runs_preprocessing_session_and_decoder(monkeypatch):
 
 
 class _FakeHailoRuntime:
-    instances = []
+    instances: ClassVar[list] = []
 
     def __init__(self, path):
         self.path = path
