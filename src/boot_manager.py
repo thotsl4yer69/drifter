@@ -196,7 +196,7 @@ def _wait_for_core_services(
     """
     ordered = list(dict.fromkeys(services))
     pending = list(ordered)
-    ready: dict[str, bool] = {service: False for service in ordered}
+    ready: dict[str, bool] = dict.fromkeys(ordered, False)
     deadline = time.monotonic() + max(0.0, timeout)
 
     while pending:
