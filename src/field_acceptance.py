@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -243,7 +244,7 @@ def _summarize_telemetry(
         points = samples.get(name, [])
         times = [point[0] for point in points]
         values = [point[1] for point in points]
-        gaps = [b - a for a, b in zip(times, times[1:])]
+        gaps = [b - a for a, b in pairwise(times)]
         first_delay = times[0] - start if times else math.inf
         tail_delay = end - times[-1] if times else math.inf
         worst_gap = max(gaps, default=0.0) if times else math.inf
