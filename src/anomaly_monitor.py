@@ -11,9 +11,18 @@ from collections import deque
 
 import db
 from config import (
-    ANOMALY_CRITICAL_Z, ANOMALY_HIGH_Z, ANOMALY_IDLE_RPM_STDDEV,
-    ANOMALY_ROLLING_WINDOW, ANOMALY_WARN_Z, LEVEL_AMBER, LEVEL_NAMES,
-    MQTT_HOST, MQTT_PORT, TOPICS, WARMUP_COOLANT_THRESHOLD, make_mqtt_client,
+    ANOMALY_CRITICAL_Z,
+    ANOMALY_HIGH_Z,
+    ANOMALY_IDLE_RPM_STDDEV,
+    ANOMALY_ROLLING_WINDOW,
+    ANOMALY_WARN_Z,
+    LEVEL_AMBER,
+    LEVEL_NAMES,
+    MQTT_HOST,
+    MQTT_PORT,
+    TOPICS,
+    WARMUP_COOLANT_THRESHOLD,
+    make_mqtt_client,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [ANOMALY] %(message)s',
