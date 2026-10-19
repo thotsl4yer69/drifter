@@ -1,9 +1,6 @@
 name: android-build
 
-# Builds the Drifter Diagnostics Android app. Doubles as the compile gate for
-# the Kotlin/Compose code (CI here has the Android SDK this dev environment
-# doesn't) and publishes a downloadable debug APK as a build artifact, so the
-# app can be installed without Android Studio.
+# Verifies both Android interfaces and publishes a debug APK for device testing.
 on:
   push:
     branches: [main]
@@ -21,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    name: build debug apk
+    name: verify DRIFTER and Medic
     runs-on: ubuntu-latest
     # Google Maps key is injected from a repo secret, never committed. Gradle
     # maps ORG_GRADLE_PROJECT_<name> env vars to the MAPS_API_KEY project
@@ -52,14 +49,31 @@ jobs:
       - name: unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
-      - name: assemble debug apk
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: upload unit and interface regression reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-regression-reports
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/test-results/testDebugUnitTest/
+            android/app/build/reports/ui/
+          if-no-files-found: warn
+
+      - name: assemble debug and unsigned release apk
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
 
       - name: android lint
-        # Non-blocking: surfaces lint findings without failing the build on
-        # style/baseline nits. assembleDebug above is the hard compile gate.
-        continue-on-error: true
+        # Errors block compatibility; advisory warnings remain in the report.
         run: ./gradlew lintDebug --no-daemon
+
+      - name: upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-reports
+          path: android/app/build/reports/lint-results-*
+          if-no-files-found: warn
 
       - name: upload debug apk
         uses: actions/upload-artifact@v4

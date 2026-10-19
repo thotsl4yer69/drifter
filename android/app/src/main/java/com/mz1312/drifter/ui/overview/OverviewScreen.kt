@@ -37,7 +37,7 @@ import com.mz1312.drifter.ui.common.color
 import com.mz1312.drifter.ui.nav.Destination
 
 @Composable
-fun OverviewScreen(vm: DrifterViewModel, nav: NavController) {
+fun OverviewScreen(vm: DrifterViewModel, nav: NavController, onOpenMedic: () -> Unit) {
     val health by vm.health.collectAsStateWithLifecycle()
     val mode by vm.mode.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -50,6 +50,13 @@ fun OverviewScreen(vm: DrifterViewModel, nav: NavController) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        SectionCard("X-Type Medic") {
+            Text("Jaguar diagnostics · Bluetooth or Wi-Fi ELM327 · offline workshop reference")
+            Button(onClick = onOpenMedic, modifier = Modifier.fillMaxWidth()) {
+                Text("Open X-Type Medic")
+            }
+        }
+
         when (val h = health) {
             is Loadable.Success -> HealthyView(h.value, mode?.choices ?: emptyList(), vm, nav)
             is Loadable.Error -> UnreachableView(h, nav, vm)
