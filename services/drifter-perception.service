@@ -10,6 +10,8 @@ ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/perception_fusion.py
 Restart=on-failure
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
+# Diagnostics/safety core: keep fusion service alive under memory pressure.
+OOMScoreAdjust=-800
 
 [Install]
 WantedBy=multi-user.target
