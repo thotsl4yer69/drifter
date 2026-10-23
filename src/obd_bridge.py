@@ -6,6 +6,11 @@ Transport-neutral ELM327 telemetry path for serial, Bluetooth and Wi-Fi links.
 The bridge deliberately treats adapter reachability, ECU reachability and live
 PID flow as separate states. It is hardened for slow ISO 9141/KWP2000 init,
 while remaining compatible with CAN-speaking ELM adapters.
+
+For a K-line vehicle, use the drifter-obdbridge systemd unit for the ELM327
+path and stop drifter-canbridge first; only one bridge should publish active
+OBD telemetry. Switch the bridge owner back only after the replacement is
+configured and responding. This prevents duplicate or stale measurements.
 """
 from __future__ import annotations
 
