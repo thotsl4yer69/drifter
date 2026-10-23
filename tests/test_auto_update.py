@@ -128,5 +128,6 @@ def test_auto_update_units_exist_and_are_timer_driven():
     service = open("services/drifter-update.service", encoding="utf-8").read()
     timer = open("services/drifter-update.timer", encoding="utf-8").read()
     assert "ExecStart=/opt/drifter/venv/bin/python3 /opt/drifter/auto_update.py" in service
-    assert "OnUnitActiveSec=30min" in timer\n    assert "RandomizedDelaySec=2min" in timer
+    assert "OnUnitActiveSec=30min" in timer
+    assert "RandomizedDelaySec=2min" in timer
     assert "WantedBy=timers.target" in timer
