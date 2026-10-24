@@ -24,10 +24,10 @@ export function LgTile({ label, meta, children, style, bracketed = true, pad = t
 export function LgRail({ active, onPick }) {
   const items = [
     { k: 'cockpit', g: '◈', l: 'drive' },
+    { k: 'recon', g: '◎', l: 'recon' },
     { k: 'map', g: '⌖', l: 'map' },
     { k: 'hw', g: '▤', l: 'diag' },
     { k: 'rf', g: '⊚', l: 'rf' },
-    { k: 'arms', g: '⊗', l: 'foot' },
     { k: 'vivi', g: '●', l: 'vivi' },
     { k: 'set', g: '◌', l: 'system' },
   ];

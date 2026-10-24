@@ -152,3 +152,11 @@ def test_install_deploys_all_python_modules_including_release_gate():
     assert 'cp "${REPO_DIR}"/src/*.py "${DRIFTER_DIR}/"' in text
     assert Path("src/field_acceptance.py").exists()
     assert Path("src/obd_setup_strict.py").exists()
+
+
+
+def test_recon_evidence_gate_is_registered_but_not_vim_required():
+    import field_acceptance as a
+    assert "recon_evidence" in a.PHYSICAL_GATES
+    assert "recon_evidence" in a.VIM_OPTIONAL_PHYSICAL_GATES
+    assert "recon_evidence" not in a.VIM_REQUIRED_PHYSICAL_GATES

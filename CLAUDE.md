@@ -115,7 +115,9 @@ probing is cheap. Modes:
   safety pipeline run on a fraction of the RAM.
 - `drive` — telemetry stack **+** the assistant/LLM/voice features (heavier).
   Switch up once the node is stable: `sudo drifter mode drive`.
-- `foot` — recon/offsec persona.
+- `recon` — lean Hailo camera/evidence persona: vision, GPS, local recording,
+  ALPR and hash-chained evidence index; LLM/STT and vehicle bus services are off.
+- `foot` — legacy field/offsec toolkit (Wi-Fi/BLE audit, Marauder, HID).
 - `both` — every service (bench/lab only; will not fit comfortably in 8 GB).
 
 ## `drifter` operator CLI

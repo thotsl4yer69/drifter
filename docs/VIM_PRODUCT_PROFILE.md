@@ -18,7 +18,7 @@ DRIFTER's repository contains a wider R&D platform. **DRIFTER VIM** is the focus
 
 ## Not part of the commercial VIM story
 
-The repository's `foot` / `both` research personas, Wi-Fi auditing, HID tooling, recon features and unrelated RF experiments are **lab capabilities**, not VIM product features.
+The repository's `recon` / `foot` / `both` research personas, camera evidence tooling, Wi-Fi auditing, HID tooling and unrelated RF experiments are **lab capabilities**, not VIM product features.
 
 They should not appear in:
 - consumer landing pages;

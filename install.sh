@@ -713,6 +713,11 @@ systemctl enable --now drifter-zram 2>/dev/null || true
 systemctl disable --now drifter-llm 2>/dev/null || true
 rm -f /etc/systemd/system/drifter-llm.service
 
+# Older vision installs enabled a standalone ffmpeg dashcam that competes with
+# drifter-vision for the same camera device. The canonical vision service now
+# owns capture and RECON recording, so retire the legacy unit during migration.
+systemctl disable --now drifter-dashcam 2>/dev/null || true
+
 # Pre-2026-05 deploys wrote the persona to /opt/drifter/state/mode; the
 # canonical path is /opt/drifter/mode.state (config.py MODE_STATE_PATH).
 # Drop the stale file so it can't drift out of sync with mode.state.
@@ -723,7 +728,7 @@ rm -f "${DRIFTER_DIR}/state/mode"
 # health-checked. tests/test_deploy_service_lists.py enforces that this list is
 # a superset of config.SERVICES so the deploy always enables what /healthz
 # expects.
-SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-obdbridge drifter-dashboard drifter-flipper drifter-fly-catcher drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-perception drifter-realdash drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-vehicleid drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
+SERVICES="drifter-alerts drifter-alpr drifter-analyst drifter-anomaly drifter-autoconnect drifter-batcher drifter-bleconv drifter-can-discovery drifter-canbridge drifter-obdbridge drifter-dashboard drifter-fcw drifter-flipper drifter-fly-catcher drifter-feeds drifter-ghost drifter-ghost-voice drifter-gps drifter-hid drifter-homesync drifter-hotspot drifter-kismet drifter-kismet-bridge drifter-lcd drifter-location drifter-logger drifter-marauder drifter-opsec drifter-perception drifter-realdash drifter-recon-index drifter-reporter drifter-rf drifter-rfaudio drifter-thresholds drifter-trip drifter-vivi drifter-vision drifter-voice drifter-voicein drifter-wardrive drifter-watchdog drifter-weather drifter-wifi-audit drifter-vehicleid drifter-boot-manager drifter-boot-reason drifter-db-checkpoint"
 # NOTE: drifter-fbmirror (fb0→fb1 mirror) and drifter-lcd (standalone fb1 menu)
 # both drive the SPI LCD and are mutually exclusive. The deploy enables ONLY
 # drifter-lcd (it is in config.SERVICES; fbmirror is not). To use the plain

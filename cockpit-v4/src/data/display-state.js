@@ -68,7 +68,16 @@ function recentEvent(state, key, now) {
 }
 export function perceptionView(state, now = Date.now()) {
   const p = state?.perception || {};
-  const base = { tone: 'off', headline: 'VISION UNAVAILABLE', detail: 'Vehicle telemetry does not depend on vision.', badge: 'NO VISION', hailo: 'UNVERIFIED', camera: 'UNKNOWN' };
+  const backend = String(p.backend || '').toLowerCase();
+  const backendLabel = backend === 'hailo' ? 'HAILO' : backend === 'onnx' ? 'CPU ONNX' : backend ? backend.toUpperCase() : 'UNVERIFIED';
+  const base = {
+    tone: 'off',
+    headline: 'VISION UNAVAILABLE',
+    detail: 'Vehicle telemetry does not depend on vision.',
+    badge: 'NO VISION',
+    hailo: backend === 'hailo' ? 'ACTIVE' : backend === 'onnx' ? 'CPU' : 'UNVERIFIED',
+    camera: p.camera === 'online' ? 'STREAM' : 'UNKNOWN',
+  };
   if (state?.link !== 'live') return { ...base, headline: 'VISION LINK LOST', badge: 'NO LIVE DATA' };
   if (p.vision !== 'online') return base;
   const fcw = recentEvent(state, 'fcw', now);
@@ -85,12 +94,12 @@ export function perceptionView(state, now = Date.now()) {
   const frame = recentEvent(state, 'objects', now);
   const objects = Array.isArray(frame?.objects) ? frame.objects.filter(o => o && typeof o === 'object' && typeof o.class === 'string').slice(0, 12) : [];
   if (objects.length) return { ...base, tone: 'reported', headline: 'DETECTIONS REPORTED',
-    badge: `${objects.length} OBJECT${objects.length === 1 ? '' : 'S'}`, camera: 'DATA',
-    detail: `${objects[0].class.slice(0, 40)} · Inference still requires bench verification.` };
-  // Existing vision_engine.py has placeholder inference paths. 'online' is only
-  // a service status; neither it nor an empty object list proves a clear road.
-  return { ...base, headline: 'VISION UNVERIFIED', badge: 'NO RECENT DETECTIONS',
-    detail: 'Service online is not proof of working camera inference.' };
+    badge: `${objects.length} OBJECT${objects.length === 1 ? '' : 'S'}`, camera: 'STREAM',
+    detail: `${objects[0].class.slice(0, 40)} · ${backendLabel} inference report.` };
+  // An online backend means the service/model initialised; an empty recent
+  // detection window still never means the road/scene is clear.
+  return { ...base, headline: 'VISION ACTIVE', badge: 'MONITORING',
+    detail: `${backendLabel} backend online · no recent detections.` };
 }
 export function hardwareView(state, now = Date.now(), demo = false) {
   const linked = state?.link === 'live';
@@ -102,7 +111,9 @@ export function hardwareView(state, now = Date.now(), demo = false) {
     ['GPS', status(state?.hw?.gps === 'fix' ? 'FIX' : 'NO FIX')],
     ['HAILO', status(p.hailo)], ['CAM', status(p.camera)],
     ['SDR', status(state?.hw?.sdr === 'ok' ? 'DETECTED' : 'NO DEVICE')],
-    ['REC', status(state?.perception?.dashcam === 'recording' ? 'RECORDING' : state?.perception?.dashcam === 'online' ? 'READY' : 'UNKNOWN')],
+    ['REC', status(state?.perception?.dashcam === 'recording' ? 'RECORDING' :
+      state?.perception?.dashcam === 'monitoring' ? 'MONITORING' :
+      state?.perception?.dashcam === 'ready' || state?.perception?.dashcam === 'online' ? 'READY' : 'UNKNOWN')],
     ['LINK', linked ? 'LIVE' : 'LOST'],
   ];
 }

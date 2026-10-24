@@ -2091,3 +2091,34 @@ def test_logs_handles_missing_journalctl(monkeypatch):
     payload = handler._serve_json.call_args[0][0]
     assert payload['ok'] is False
     assert 'journalctl' in payload['error']
+
+
+
+def test_state_snapshot_includes_authoritative_mode(monkeypatch, tmp_path):
+    mode_path = tmp_path / "mode.state"
+    mode_path.write_text("recon\n")
+    monkeypatch.setattr(h, "MODE_STATE_PATH", mode_path)
+    state.latest_state.clear()
+    state.latest_state["vision_status"] = {"state": "online"}
+
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler._serve_json = MagicMock()
+    handler._get_state(None)
+
+    payload = handler._serve_json.call_args[0][0]
+    assert payload["mode"] == "recon"
+    assert payload["vision_status"]["state"] == "online"
+    assert "mode" not in state.latest_state  # GET must not mutate the WS source
+
+
+def test_mode_endpoint_advertises_recon(monkeypatch, tmp_path):
+    mode_path = tmp_path / "mode.state"
+    mode_path.write_text("drive\n")
+    monkeypatch.setattr(h, "MODE_STATE_PATH", mode_path)
+
+    handler = h.DashboardHandler.__new__(h.DashboardHandler)
+    handler._serve_json = MagicMock()
+    handler._get_mode(None)
+
+    payload = handler._serve_json.call_args[0][0]
+    assert "recon" in payload["choices"]

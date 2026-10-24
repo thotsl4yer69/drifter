@@ -1,7 +1,8 @@
 // ════════════════════════════════════════════════════════════════
 // SETTINGS + DEV PANEL — production replacement for the design-canvas
-// tweaks protocol. Persists user prefs (theme/density/scanlines/mode)
-// to localStorage. The honest-state toggles (ecu/gps/link/scenario)
+// tweaks protocol. Persists visual prefs (theme/density/scanlines) to
+// localStorage. Operating mode is NEVER a browser preference; the Pi is the
+// authority and mode changes are explicit backend actions. The honest-state toggles (ecu/gps/link/scenario)
 // are BENCH overrides — only shown with ?dev=1 or ?sim, never applied
 // over live data automatically.
 // ════════════════════════════════════════════════════════════════
@@ -9,12 +10,15 @@ import React from 'react';
 import { DrifterSim } from '../data/adapter.js';
 
 const KEY = 'dr-cockpit-settings';
-const DEFAULTS = { theme: 'uncaged', density: 'regular', scanlines: true, mode: 'drive' };
+const DEFAULTS = { theme: 'uncaged', density: 'regular', scanlines: true };
 
 export function useSettings() {
   const [t, setT] = React.useState(() => {
-    try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
-    catch { return { ...DEFAULTS }; }
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+      delete saved.mode; // migrate the old unsafe persisted operating-mode key
+      return { ...DEFAULTS, ...saved };
+    } catch { return { ...DEFAULTS }; }
   });
   const setTweak = React.useCallback((keyOrEdits, val) => {
     const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null ? keyOrEdits : { [keyOrEdits]: val };
@@ -56,11 +60,12 @@ function Row({ label, children }) {
 
 export function DevPanel({ t, setTweak }) {
   const [open, setOpen] = React.useState(false);
-  const [dev, setDev] = React.useState({ scenario: 'drive', ecu: true, gps: 'fix', linkLost: false });
+  const [dev, setDev] = React.useState({ scenario: 'drive', mode: 'drive', ecu: true, gps: 'fix', linkLost: false });
   const sim = !DrifterSim.real;
   const setD = (k, v) => {
     setDev((p) => ({ ...p, [k]: v }));
     if (k === 'scenario') DrifterSim.setScenario(v);
+    if (k === 'mode') DrifterSim.setMode(v);
     if (k === 'ecu') DrifterSim.setHw('ecu', v ? 'ok' : 'pending');
     if (k === 'gps') DrifterSim.setHw('gps', v);
     if (k === 'linkLost') DrifterSim.setLink(v ? 'lost' : 'live');
@@ -80,8 +85,10 @@ export function DevPanel({ t, setTweak }) {
           <Row label="theme"><Seg value={t.theme} options={['uncaged', 'nightrun', 'mapline', 'daylight']} onChange={(v) => setTweak('theme', v)} /></Row>
           <Row label="density"><Seg value={t.density} options={['regular', 'compact']} onChange={(v) => setTweak('density', v)} /></Row>
           <Row label="scanlines"><Seg value={t.scanlines ? 'on' : 'off'} options={['on', 'off']} onChange={(v) => setTweak('scanlines', v === 'on')} /></Row>
-          <Section label="Mode" />
-          <Row label="operating"><Seg value={t.mode} options={['drive', 'foot', 'both', 'diag']} onChange={(v) => setTweak('mode', v)} /></Row>
+          {sim ? <React.Fragment>
+            <Section label="Sim mode" />
+            <Row label="operating"><Seg value={dev.mode} options={['drive', 'recon', 'diag', 'foot', 'both']} onChange={(v) => setD('mode', v)} /></Row>
+          </React.Fragment> : null}
           <Section label="Honest states (bench override)" />
           <Row label="ecu"><Seg value={dev.ecu ? 'connected' : 'pending'} options={['connected', 'pending']} onChange={(v) => setD('ecu', v === 'connected')} /></Row>
           <Row label="gps"><Seg value={dev.gps} options={['fix', 'acquiring', 'none']} onChange={(v) => setD('gps', v)} /></Row>

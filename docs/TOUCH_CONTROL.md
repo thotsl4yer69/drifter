@@ -50,7 +50,7 @@ The direct SPI framebuffer vehicle screen remains a fallback/triage surface. Its
 
 The ARSENAL / FOOT surface uses real dashboard APIs and displays backend state. It includes:
 
-- DIAG, DRIVE and FOOT mode switches through `POST /api/mode/<mode>`.
+- explicit DIAG, DRIVE, RECON and FOOT mode switches through `POST /api/mode/<mode>`; the primary cockpit header exposes DRIVE/RECON.
 - Expand / close full-screen touch-console mode.
 - Start / restart / stop for the fail-closed arsenal service allowlist.
 - Flipper bridge quick actions that are already accepted by the backend allowlist.

@@ -200,7 +200,7 @@ object AssistantEngine {
                                         put(
                                             "description",
                                             "service unit (e.g. drifter-canbridge) or mode " +
-                                                "(diag/drive/foot/both)",
+                                                "(diag/drive/recon/foot/both)",
                                         )
                                     },
                                 )

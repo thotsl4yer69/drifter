@@ -39,14 +39,28 @@ def _bbox(obj: dict) -> dict:
 
 
 def _central(obj: dict) -> bool:
+    """Return whether a detection is in the central half of the frame.
+
+    vision_engine publishes pixel-space bbox coordinates (including cx) after
+    inference. Older fixtures/other producers may publish normalised 0..1
+    coordinates, so normalize either representation before comparing.
+    """
     box = _bbox(obj)
     cx = box.get("cx")
-    if cx is None and box.get("x1") is not None and box.get("x2") is not None:
-        cx = (float(box["x1"]) + float(box["x2"])) / 2.0
+    try:
+        if cx is None and box.get("x1") is not None and box.get("x2") is not None:
+            cx = (float(box["x1"]) + float(box["x2"])) / 2.0
+        if cx is None:
+            return True
+        cx = float(cx)
         if cx > 1.0:
-            width = float(obj.get("frame_width") or 640)
-            cx /= max(width, 1.0)
-    return cx is None or 0.25 <= float(cx) <= 0.75
+            width = float(obj.get("frame_width") or 0.0)
+            if width <= 0:
+                return False
+            cx /= width
+        return 0.25 <= cx <= 0.75
+    except (TypeError, ValueError):
+        return False
 
 
 def _event(kind: str, severity: str, obj: dict, state: FusionState, now: float) -> dict:

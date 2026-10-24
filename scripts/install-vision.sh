@@ -61,7 +61,7 @@ fi
 
 step 3 "Deploying vision modules + working dirs"
 mkdir -p "${DRIFTER_DIR}/dashcam" "${DRIFTER_DIR}/vision-models"
-for f in vision_engine.py alpr_engine.py dashcam.py forward_collision.py perception_fusion.py; do
+for f in vision_engine.py alpr_engine.py dashcam.py forward_collision.py perception_fusion.py recon_indexer.py; do
     cp "${REPO_DIR}/src/${f}" "${DRIFTER_DIR}/"
     chmod +x "${DRIFTER_DIR}/${f}"
 done
@@ -75,17 +75,32 @@ else
     warn "vision.yaml already present — not overwriting"
 fi
 
-step 5 "Installing systemd services"
-for svc in vision dashcam alpr fcw perception; do
+step 5 "Installing mode-controlled systemd services"
+for svc in vision alpr fcw perception recon-index; do
     cp "${REPO_DIR}/services/drifter-${svc}.service" /etc/systemd/system/
-    systemctl enable "drifter-${svc}"
-    ok "drifter-${svc} enabled"
+    ok "drifter-${svc} unit installed"
 done
+# dashcam.py is retained as a legacy standalone recorder, but must not own the
+# same camera beside drifter-vision. RECON recording is now fed from the
+# already-open vision camera, eliminating the /dev/video0 double-open race.
+cp "${REPO_DIR}/services/drifter-dashcam.service" /etc/systemd/system/
 systemctl daemon-reload
+systemctl disable --now drifter-dashcam >/dev/null 2>&1 || true
+
+CURRENT_MODE="$(cat "${DRIFTER_DIR}/mode.state" 2>/dev/null || echo diag)"
+if command -v drifter >/dev/null 2>&1; then
+    if drifter mode "${CURRENT_MODE}" >/dev/null; then
+        ok "re-applied ${CURRENT_MODE} mode after vision install"
+    else
+        warn "could not re-apply ${CURRENT_MODE}; run: sudo drifter mode ${CURRENT_MODE}"
+    fi
+else
+    warn "drifter CLI unavailable — switch mode after the main install"
+fi
 
 echo ""
-echo -e "${GREEN}  Vision stack installed.${NC}"
+echo -e "${GREEN}  Vision/RECON stack installed.${NC}"
 echo -e "  Preferred backend: Picamera2/Hailo with the packaged YOLOv8 HEF auto-selected for Hailo-8/8L/10H."
 echo -e "  Optional override: place ${CYAN}yolov8s.hef${NC} in ${CYAN}${DRIFTER_DIR}/vision-models/${NC}."
 echo -e "  CPU fallback: place ${CYAN}yolov8s.onnx${NC} in the same directory."
-echo -e "  Start vision: ${CYAN}sudo systemctl start drifter-vision drifter-dashcam drifter-fcw drifter-perception${NC}"
+echo -e "  DRIVE: ${CYAN}sudo drifter mode drive${NC}  ·  RECON: ${CYAN}sudo drifter mode recon${NC}"

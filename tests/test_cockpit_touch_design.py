@@ -13,9 +13,10 @@ CSS = (ROOT / "cockpit-v4/src/styles/touchscreen.css").read_text()
 
 
 def test_touch_navigation_exposes_operator_surfaces():
-    for label in ("drive", "map", "diag", "rf", "foot", "vivi", "system"):
+    for label in ("drive", "recon", "map", "diag", "rf", "vivi", "system"):
         assert f"l: '{label}'" in UI
     assert "aria-current" in UI
+    assert "l: 'foot'" not in UI  # FOOT remains a backend persona, not a primary surveillance tab
 
 
 def test_drive_uses_contextual_perception_not_rf_tile():
@@ -39,7 +40,9 @@ def test_adapter_maps_perception_topics_without_fake_live_defaults():
     assert "applyTopic('drifter/snapshot', v, true)" in ADAPTER
     for topic in ("drifter/vision/status", "drifter/vision/perception/status",
                   "drifter/vision/perception/event", "drifter/vision/object",
-                  "drifter/vision/fcw/warning", "drifter/vision/dashcam/status"):
+                  "drifter/vision/fcw/warning", "drifter/vision/dashcam/status",
+                  "drifter/recon/status", "drifter/recon/event",
+                  "drifter/vision/alpr/plate"):
         assert topic in ADAPTER
 
 
@@ -70,3 +73,17 @@ def test_display_logic_and_adapter_contract_in_node():
     completed = subprocess.run([node, "--test", *map(str, suites)], cwd=ROOT,
                                capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_cockpit_never_pushes_a_persisted_mode_on_mount():
+    assert "DrifterSim.setMode(t.mode)" not in SHELL
+    assert "onMode={mode => DrifterSim.setMode(mode)}" in SHELL
+    assert "['drive', 'recon'].map" in UI
+
+
+def test_recon_surface_is_integrated():
+    assert "ReconMain" in SHELL
+    assert "surf === 'recon'" in SHELL
+    recon = (ROOT / "cockpit-v4/src/directions/recon.jsx").read_text()
+    for term in ("RECON / HAILO SURVEILLANCE", "evidence ledger", "recent plates", "ENTER RECON"):
+        assert term in recon

@@ -1,7 +1,9 @@
-"""Operator-mode CLI — flip the Pi between DRIVE and FOOT personas.
+"""Operator-mode CLI — flip the Pi between DRIFTER operating personas.
 
-DRIVE  — vehicle telemetry stack (CAN, RealDash, fbmirror, alerts, …)
-FOOT   — battery-pack mobile recon (Flipper, wardrive, …)
+DRIVE  — vehicle telemetry + assistant + lightweight Hailo perception
+RECON  — Hailo camera surveillance + local evidence indexing
+FOOT   — battery-pack legacy field toolkit (Flipper, wardrive, …)
+DIAG   — lean vehicle diagnostics and recovery floor
 BOTH   — every service active (lab / bench)
 
 Mode is persisted in /opt/drifter/mode.state so that after a reboot the same
