@@ -124,9 +124,9 @@ drifter healthz
 drifter diagnose
 ```
 
-After one successful full deployment, `drifter-update.timer` checks `origin/main` every 30 minutes. It updates only from a clean `main` checkout, only by fast-forward, and only when fresh RPM **and** speed samples prove the vehicle is stationary; unknown telemetry defers the update. Failed deployments automatically restore and redeploy the previous commit. Use `sudo drifter update` for an immediate safe check.
+After deployment, `drifter-update.timer` checks on a 30-minute schedule but **automatic deployment is disabled by default** (`DRIFTER_AUTO_UPDATE=0`). This deliberately prevents unexpected code replacement during the Jaguar field-acceptance campaign. `sudo drifter update` makes an explicit manual update request; it still requires live, non-retained RPM **and** speed evidence proving the vehicle stationary, a clean `main` checkout and a fast-forward candidate. Failed deployments attempt a rollback to the previous commit. To opt in to unattended updates later, set `DRIFTER_AUTO_UPDATE=1` in `/opt/drifter/.env` after physical acceptance. An unknown or active vehicle always defers the update.
 
-Use `sudo ./scripts/oneshot.sh` without `--skip-apt` for a fresh/full install. A successful software deploy is not the physical acceptance gate; record the installed revision and complete the cold-boot, OBD onboarding, recovery/display and 30-minute telemetry checks in [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md). The detailed field sequence is in [docs/FIELD_DEPLOY.md](docs/FIELD_DEPLOY.md).
+Use `sudo ./scripts/oneshot.sh` without `--skip-apt` for a fresh/full install. The installer enables only the selected persona (default: lightweight `diag`), rather than momentarily starting the entire recon/LLM service set. A successful software deploy is not the physical acceptance gate; record the installed revision and complete the cold-boot, OBD onboarding, recovery/display and 30-minute telemetry checks in [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md). The detailed field sequence is in [docs/FIELD_DEPLOY.md](docs/FIELD_DEPLOY.md).
 
 ## Documentation map
 
