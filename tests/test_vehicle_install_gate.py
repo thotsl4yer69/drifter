@@ -1,7 +1,9 @@
 """Regression gates for DRIFTER's pre-vehicle deployment and updater."""
 from __future__ import annotations
 
+import json
 import subprocess
+import time
 from pathlib import Path
 
 import auto_update as updater
@@ -22,6 +24,18 @@ def test_telemetry_cannot_authorize_with_invalid_or_simulated_zeroes():
     assert values == {updater.RPM_TOPIC: 0.0, updater.SPEED_TOPIC: 0.0}
     assert updater._telemetry_values('drifter/vehicle/speed {"value": false}') == {}
     assert updater._telemetry_values('drifter/engine/rpm -1') == {}
+
+
+
+def test_timestamped_probe_rejects_old_and_future_frames():
+    now = time.time()
+    cases = [
+        (now - 90, False), (now + 90, False),
+        (float("nan"), False), (now - 1, True),
+    ]
+    for ts, expected in cases:
+        packet = updater.RPM_TOPIC + " " + json.dumps({"value": 0, "ts": ts})
+        assert (updater.RPM_TOPIC in updater._telemetry_values(packet)) is expected
 
 
 def test_probe_ignores_broker_retained_values(monkeypatch):
