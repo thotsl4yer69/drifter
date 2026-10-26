@@ -62,13 +62,12 @@ STAGE FINAL OK
 DEPLOY: ok
 ```
 
-A fresh deploy enables + starts the whole service set (so the run proves every
-unit launches), then **settles into the lean `diag` persona** — telemetry +
-driver-safety only, no LLM/voice/recon. So `/healthz` reports `"mode":"diag"`
-and the heavy services are *intentionally* inactive at first. Once the node is
-stable, bring the assistant stack up with `sudo drifter mode drive` (or
-`sudo drifter mode foot` for recon). A re-run of `oneshot.sh` respects
-whatever mode you last set.
+A fresh deploy now enables and starts **only the lean `diag` persona**,
+rather than momentarily launching the entire service fleet. The installer
+also disables out-of-mode services for the next reboot. `/healthz` should
+report `"mode":"diag"`. Once stable, use `sudo drifter mode drive` to opt
+into the richer vehicle assistant or `sudo drifter mode foot` for the
+separate recon persona. A re-run of `oneshot.sh` respects the saved mode.
 
 If a stage fails, the script exits with a numeric code:
 
@@ -82,9 +81,12 @@ If a stage fails, the script exits with a numeric code:
 
 `sudo ./scripts/oneshot.sh --skip-apt` re-runs everything except `apt`,
 which is the right choice when you're iterating on code over SSH. A successful
-full deploy also installs and enables `drifter-update.timer`; it checks
-`origin/main` every 30 minutes and only updates when fresh RPM + speed prove
-the vehicle is stationary. Unknown telemetry defers. Check it with:
+full deploy installs `drifter-update.timer`, but **unattended updates are
+off by default** (`DRIFTER_AUTO_UPDATE=0`). Its 30-minute checks record the
+disabled state without replacing code. `sudo drifter update` explicitly
+requests an update while parked; fresh non-retained RPM and speed data
+must still prove stationary state. Updates from a non-`main` test branch
+defer rather than silently replacing your candidate. Check it with:
 
 ```bash
 systemctl is-enabled drifter-update.timer

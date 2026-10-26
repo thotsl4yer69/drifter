@@ -734,9 +734,44 @@ SERVICES="drifter-alerts drifter-analyst drifter-anomaly drifter-autoconnect dri
 # the concrete broker).
 systemctl enable drifter-broker.target 2>/dev/null || true
 
+# Persisted mode controls which monitored services are enabled on boot.
+# Enabling the full service set here used to re-arm the off-mode recon/LLM
+# stack during a partial install or reboot. Default to the lean vehicle
+# diagnostics persona for first installation.
+INSTALL_MODE="$(tr -d '[:space:]' < "${DRIFTER_DIR}/mode.state" 2>/dev/null || true)"
+INSTALL_MODE="${INSTALL_MODE:-diag}"
+INSTALL_MODE_SERVICES="$("${DRIFTER_DIR}/venv/bin/python3" - "$INSTALL_MODE" <<'PY'
+import sys
+sys.path.insert(0, "/opt/drifter")
+from config import MODES, SERVICES
+mode = sys.argv[1]
+if mode not in MODES:
+    raise SystemExit("Invalid saved DRIFTER mode: " + mode)
+if not MODES[mode] or not set(MODES[mode]) <= set(SERVICES):
+    raise SystemExit("Invalid service plan for DRIFTER mode: " + mode)
+print(" ".join(sorted(MODES[mode])))
+PY
+)" || { echo "Failed to resolve DRIFTER startup persona" >&2; exit 40; }
+
 for svc in $SERVICES; do
-    systemctl enable "$svc" 2>/dev/null
-    ok "Enabled: $svc"
+    case "$svc" in
+        drifter-boot-manager|drifter-boot-reason|drifter-db-checkpoint)
+            systemctl enable "$svc" >/dev/null
+            ok "Enabled infrastructure: $svc"
+            ;;
+        *)
+            case " $INSTALL_MODE_SERVICES " in
+                *" $svc "*)
+                    systemctl enable "$svc" >/dev/null
+                    ok "Enabled ($INSTALL_MODE): $svc"
+                    ;;
+                *)
+                    systemctl disable --now "$svc" >/dev/null 2>&1
+                    ok "Disabled (out-of-mode): $svc"
+                    ;;
+            esac
+            ;;
+    esac
 done
 
 # Enable + start any drifter-*.timer units we shipped. Starting them here
