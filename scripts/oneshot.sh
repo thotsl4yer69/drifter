@@ -9,7 +9,7 @@
 #   stage 10 — apt + venv      (idempotent system bring-up)
 #   stage 20 — diagnose         (drifter diagnose pre-flight)
 #   stage 30 — smoke            (post-deploy verification)
-#   stage 40 — enable services  (systemctl enable + start)
+#   stage 40 — activate the saved vehicle persona (no all-service storm)
 #   final    — dashboard health + cockpit control contract
 #
 # Each stage emits "STAGE <n> START / OK / FAIL" lines so the
@@ -155,7 +155,7 @@ stage_ok 30
 # ════════════════════════════════════════════════════════════════
 # STAGE 40 — enable services
 # ════════════════════════════════════════════════════════════════
-stage_start 40 "systemctl enable + start"
+stage_start 40 "activate selected vehicle persona"
 # Source of truth for the monitored service set is config.py SERVICES (the
 # same list /healthz checks). Keep this array in sync — tests/test_deploy_
 # service_lists.py enforces oneshot == config.SERVICES so the final /healthz
@@ -173,36 +173,54 @@ SERVICES=(
     drifter-weather drifter-wifi-audit drifter-vehicleid
 )
 systemctl daemon-reload
-for svc in "${SERVICES[@]}"; do
-    if ! systemctl enable "$svc" >/dev/null 2>&1; then
-        stage_fail 40 "systemctl enable $svc failed"
-    fi
-    # Use restart so re-runs of oneshot.sh pick up new code without
-    # leaving a stale process around.
-    if ! systemctl restart "$svc"; then
-        stage_fail 40 "systemctl restart $svc failed"
-    fi
-    ok "$svc"
+# On a fresh installation there is no persisted mode, so install only the
+# vehicle-first DIAG persona. Never start 41 unrelated services merely to
+# stop them again: this previously caused an avoidable RAM/CPU boot surge.
+TARGET_MODE="$(tr -d '[:space:]' < "$DRIFTER_DIR/mode.state" 2>/dev/null || true)"
+TARGET_MODE="${TARGET_MODE:-diag}"
+MODE_SERVICES="$("$DRIFTER_DIR/venv/bin/python3" - "$TARGET_MODE" <<'PY'
+import sys
+sys.path.insert(0, "/opt/drifter")
+from config import MODES
+mode = sys.argv[1]
+if mode not in MODES:
+    raise SystemExit("Invalid saved DRIFTER mode: " + mode)
+print(" ".join(sorted(MODES[mode])))
+PY
+)" || stage_fail 40 "invalid persisted mode; refusing unrestricted service start"
+read -r -a ACTIVE_SERVICES <<< "$MODE_SERVICES"
+if [ "${#ACTIVE_SERVICES[@]}" -eq 0 ]; then
+    stage_fail 40 "mode $TARGET_MODE has no configured services"
+fi
+for svc in "${ACTIVE_SERVICES[@]}"; do
+    case " ${SERVICES[*]} " in
+        *" $svc "*) ;;
+        *) stage_fail 40 "unexpected service in $TARGET_MODE: $svc" ;;
+    esac
 done
+
+# The mode command disables/stops every out-of-mode unit FIRST, then starts
+# only selected services, and writes the persisted persona only on success.
+if ! /usr/local/bin/drifter mode "$TARGET_MODE"; then
+    stage_fail 40 "failed to activate persona $TARGET_MODE"
+fi
+# Restart only the intended services so a deploy replaces existing processes
+# with the new source; enable --now alone does not restart running daemons.
+if ! systemctl restart "${ACTIVE_SERVICES[@]}"; then
+    stage_fail 40 "could not restart the $TARGET_MODE service set"
+fi
+ok "activated $TARGET_MODE: ${#ACTIVE_SERVICES[@]} monitored services (others stopped)"
 stage_ok 40
 
 # ════════════════════════════════════════════════════════════════
-# STAGE 45 — settle into the resolved persona
+# STAGE 45 — validate persisted persona
 # ════════════════════════════════════════════════════════════════
-# Stage 40 enabled+started the whole monitored set so this run proves every
-# unit installs and launches. Now settle into the persona: a first deploy
-# (no mode.state) drops to the lean `diag` floor (config DEFAULT_MODE) so the
-# node comes up guaranteed-light — switch up with `sudo drifter mode drive`
-# once it's stable. A re-run respects whatever mode the operator last set.
-# Non-fatal: a mode-settle hiccup must not fail the deploy.
-stage_start 45 "settle into persona"
-TARGET_MODE="$(tr -d '[:space:]' < "$DRIFTER_DIR/mode.state" 2>/dev/null || true)"
-TARGET_MODE="${TARGET_MODE:-diag}"
-if /usr/local/bin/drifter mode "$TARGET_MODE" >/dev/null 2>&1; then
-    ok "persona: $TARGET_MODE"
-else
-    note "mode settle skipped (drifter mode unavailable) — staying full"
+stage_start 45 "verify persona"
+RECORDED_MODE="$(tr -d '[:space:]' < "$DRIFTER_DIR/mode.state" 2>/dev/null || true)"
+if [ "$RECORDED_MODE" != "$TARGET_MODE" ]; then
+    stage_fail 40 "persona not persisted; expected $TARGET_MODE, found $RECORDED_MODE"
 fi
+ok "persona: $RECORDED_MODE"
 stage_ok 45
 
 # ════════════════════════════════════════════════════════════════
