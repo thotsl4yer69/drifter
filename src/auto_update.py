@@ -15,6 +15,7 @@ updates defaults to /home/kali/drifter and can be overridden with DRIFTER_REPO.
 """
 from __future__ import annotations
 
+import argparse
 import fcntl
 import json
 import math
@@ -114,12 +115,21 @@ def _telemetry_values(text: str) -> dict[str, float]:
             data = json.loads(payload)
         except json.JSONDecodeError:
             continue
-        value = data.get("value") if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            if data.get("simulated") or str(data.get("source", "")).lower() in {"replay", "demo", "simulation", "fuzz"}:
+                continue
+            value = data.get("value")
+        else:
+            value = data
+        # A boolean or a negative fault sentinel is not an actual measured
+        # RPM/speed. False and -1 must never unlock an in-vehicle update.
+        if isinstance(value, bool):
+            continue
         try:
             numeric = float(value)
         except (TypeError, ValueError):
             continue
-        if math.isfinite(numeric):
+        if math.isfinite(numeric) and numeric >= 0:
             values[topic] = numeric
     return values
 
@@ -141,7 +151,9 @@ def _vehicle_active() -> tuple[bool | None, dict[str, Any]]:
 
     result = _run(
         [
-            "mosquitto_sub", "-h", "127.0.0.1", "-v",
+            # Ignore retained broker snapshots: only newly published vehicle
+            # data may authorize an update after this subscription begins.
+            "mosquitto_sub", "-R", "-h", "127.0.0.1", "-v",
             "-t", RPM_TOPIC, "-t", SPEED_TOPIC,
             "-C", "2", "-W", str(int(TELEMETRY_PROBE_SECONDS)),
         ],
@@ -255,9 +267,11 @@ def _rollback(previous: str) -> tuple[bool, str]:
     return True, "previous commit restored, new files removed, and previous release redeployed"
 
 
-def run_update() -> int:
-    if os.getenv("DRIFTER_AUTO_UPDATE", "1") != "1":
-        _save_state({"status": "disabled"})
+def run_update(*, manual: bool = False) -> int:
+    # On-car unattended code replacement is opt-in, not the installation
+    # default. Manual operator updates still require stationary telemetry.
+    if not manual and os.getenv("DRIFTER_AUTO_UPDATE", "0") != "1":
+        _save_state({"status": "disabled", "reason": "automatic updates require DRIFTER_AUTO_UPDATE=1"})
         return 0
     if not (REPO / ".git").exists():
         _save_state({"status": "error", "error": f"repo missing: {REPO}"})
@@ -388,8 +402,11 @@ def run_update() -> int:
             return 1
 
 
-def main() -> int:
-    return run_update()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="DRIFTER vehicle-safe updater")
+    parser.add_argument("--manual", action="store_true", help="explicit operator update; still requires stationary telemetry")
+    args = parser.parse_args(argv)
+    return run_update(manual=args.manual)
 
 
 if __name__ == "__main__":
