@@ -24,6 +24,7 @@ import pwd
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -118,6 +119,20 @@ def _telemetry_values(text: str) -> dict[str, float]:
         if isinstance(data, dict):
             if data.get("simulated") or str(data.get("source", "")).lower() in {"replay", "demo", "simulation", "fuzz"}:
                 continue
+            if "ts" in data:
+                # Production CAN and ELM publishers stamp values using the
+                # Pi's wall clock. Newly delivered but stale/future/replayed
+                # timestamped messages must not prove that the car is parked.
+                stamp = data["ts"]
+                if isinstance(stamp, bool):
+                    continue
+                try:
+                    sample_time = float(stamp)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                age = time.time() - sample_time
+                if not math.isfinite(sample_time) or not 0 <= age <= TELEMETRY_PROBE_SECONDS + 2:
+                    continue
             value = data.get("value")
         else:
             value = data
