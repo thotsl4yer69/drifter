@@ -82,3 +82,19 @@ def test_installer_starts_only_saved_persona():
     assert 'systemctl restart "$svc"' not in stage
     assert 'systemctl enable "$svc"' not in stage
     subprocess.run(["bash", "-n", str(ROOT / "scripts" / "oneshot.sh")], check=True)
+
+
+def test_direct_installer_does_not_enable_every_monitored_service():
+    script = (ROOT / "install.sh").read_text(encoding="utf-8")
+    assert 'INSTALL_MODE="${INSTALL_MODE:-diag}"' in script
+    assert 'INSTALL_MODE_SERVICES=' in script
+    assert 'systemctl disable --now "$svc"' in script
+    subprocess.run(["bash", "-n", str(ROOT / "install.sh")], check=True)
+
+
+def test_updater_cli_manual_and_timer_are_distinct(monkeypatch):
+    observed = []
+    monkeypatch.setattr(updater, "run_update", lambda *, manual=False: (observed.append(manual), 0)[1])
+    assert updater.main(["--manual"]) == 0
+    assert updater.main([]) == 0
+    assert observed == [True, False]
