@@ -21,7 +21,7 @@
 
 ## Still required before approving installation or driving use
 
-**Software checks:** run `pytest -q tests/`, `ruff check src tests`, `bash -n install.sh scripts/oneshot.sh`, `node --test cockpit-v4/tests/*.test.mjs` and the production Vite build on the **candidate head**. This review environment has no connected Pi/Athena runner or full repository checkout, so these exact-head commands have **not been executed here**. Static checks of edited paths passed, but are not substitutes for interpreter/build tests.
+**Software CI on candidate `c8a0c35b1cef35332d65d03ca9cf8b353482f011`:** GitHub Actions [field-readiness run 40412778992](https://github.com/thotsl4yer69/drifter/actions/runs/40412778992) **passed**, including Python and shell syntax, Ruff and **1,562 pytest tests**. [deploy-drifter run 40412779002](https://github.com/thotsl4yer69/drifter/actions/runs/40412779002) **passed** with Ruff, another 1,562-test pytest run and production Vite build (53 modules). These ran on a hosted Linux runner, **not** the ARM64 Pi or the car. Standalone `node --test cockpit-v4/tests/*.test.mjs` and Android compilation were not part of this recorded check.
 
 **Pi acceptance:** record exact installed revision, intended 5 V power path, adapter and display; prove 10/10 vehicle-power cold starts; blank-config ELM pairing **and ECU response**; recovery from unplug and white/blank display; uninterrupted 1,800-second RPM/coolant/speed/voltage capture; incident evidence export. Use `sudo drifter acceptance status` and preserve failure evidence. Issue #67 stays open until measured, physical evidence passes.
 
