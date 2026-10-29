@@ -103,7 +103,7 @@ async def _run_client(client, running: asyncio.Event) -> None:
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
-    async with streamable_http_client(MCP_URL) as (reader, writer, _):
+    async with streamable_http_client(MCP_URL) as (reader, writer):
         async with ClientSession(reader, writer) as session:
             await session.initialize()
             log.info("Peykan MCP session established (%s)", MODE)
