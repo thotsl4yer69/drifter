@@ -14,6 +14,7 @@ import time
 
 _SAFE_SIGNAL = re.compile(r"^[a-zA-Z][a-zA-Z0-9_ .:/()-]{0,63}$")
 _SAFE_TEXT = re.compile(r"^[a-zA-Z0-9_ ./:%°-]{1,24}$")
+_SAFE_ENUM = re.compile(r"^[A-Z][A-Z0-9_/-]{0,23}$")
 
 
 def normalize_snapshot(raw: object, *, mode: str, now: float | None = None,
@@ -46,7 +47,7 @@ def normalize_snapshot(raw: object, *, mode: str, now: float | None = None,
             if not math.isfinite(value):
                 continue
         elif isinstance(value, str):
-            if not _SAFE_TEXT.fullmatch(value):
+            if not _SAFE_ENUM.fullmatch(value):
                 continue
         else:
             continue
@@ -88,7 +89,13 @@ def vivi_context(snapshot: object, *, now: float | None = None,
         val = value.get("value")
         if not isinstance(val, (str, bool, int, float)):
             continue
+        if isinstance(val, str) and not _SAFE_ENUM.fullmatch(val):
+            continue
+        if isinstance(val, (int, float)) and not math.isfinite(val):
+            continue
         unit = str(value.get("unit") or "")[:16]
+        if unit and not _SAFE_TEXT.fullmatch(unit):
+            unit = ""
         age = value.get("age_s")
         if not isinstance(age, (int, float)) or not 0 <= age <= 5:
             continue
