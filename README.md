@@ -163,3 +163,14 @@ DRIFTER is a strong example of the core MAZLABZ skill set because it crosses phy
 ---
 
 **MAZLABZ DRIFTER VIM — prototype, measure, harden.**
+
+## Optional Peykan MCP CAN intelligence
+
+DRIFTER supports the Peykan 0.2.1 MCP server as an opt-in, read-only CAN
+signal source and recorded-CAN-log analyser. Fresh decoded CAN evidence can
+inform Vivi without replacing ELM327/K-line OBD or existing diagnostic rules.
+This is deliberately **not** started in a normal DRIFTER deployment; the
+virtual ECU simulator is clearly labelled and never passed off as live
+telemetry. See [the Peykan integration guide](docs/PEYKAN.md) for the
+isolated installer, SocketCAN + real DBC requirements, MQTT topics, safety
+settings, and verification commands.
