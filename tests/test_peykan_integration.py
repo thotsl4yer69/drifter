@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import ast
-import importlib.util
-import os
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from peykan_context import normalize_snapshot, vivi_context
@@ -86,7 +86,6 @@ def test_optional_units_are_not_monitored_core_services():
 
 def test_launcher_refuses_implicit_real_connection():
     from peykan_server import command
-    import pytest
     env = {"DRIFTER_PEYKAN_MODE": "socketcan",
            "PEYKAN_CAN_INTERFACE": "socketcan",
            "PEYKAN_CAN_CHANNEL": "can0",
