@@ -27,7 +27,6 @@ import vehicle_profile
 import vivi_memory
 import vivi_rf_intent
 import vivi_sentinel
-from peykan_context import vivi_context
 from config import (
     LEVEL_AMBER,
     LEVEL_RED,
@@ -41,6 +40,7 @@ from config import (
     VIVI2_PROACTIVE_COOLDOWN_S,
     VIVI2_STREAMING,
 )
+from peykan_context import vivi_context
 
 logging.basicConfig(
     level=logging.INFO,
