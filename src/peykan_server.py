@@ -40,9 +40,8 @@ def command(env: dict[str, str]) -> list[str]:
 
 if __name__ == "__main__":
     try:
-        os.execv(sys.executable, [sys.executable, "-c",
-                  "import os,sys;os.execv(sys.argv[1],sys.argv[1:])",
-                  *command(dict(os.environ))])
+        cmd = command(dict(os.environ))
+        os.execv(cmd[0], cmd)
     except (OSError, ValueError) as exc:
         print(f"Peykan startup blocked: {exc}", file=sys.stderr)
         sys.exit(2)
