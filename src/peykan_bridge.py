@@ -74,6 +74,11 @@ def _publish(client, key: str, content: dict, *, retain: bool = False) -> None:
     client.publish(TOPICS[key], json.dumps(content, allow_nan=False), qos=0, retain=retain)
 
 
+def _on_connect(client, _userdata, _flags, reason_code, _properties=None) -> None:
+    if reason_code == 0:
+        client.subscribe(TOPICS["peykan_analysis_request"], qos=0)
+
+
 def _on_message(_client, _userdata, message) -> None:
     if message.topic != TOPICS["peykan_analysis_request"] or message.retain:
         return
@@ -142,12 +147,12 @@ async def run() -> None:
     validate_config(MCP_URL, MODE)
     client = make_mqtt_client("drifter-peykan-bridge")
     client.on_message = _on_message
+    client.on_connect = _on_connect
     client.will_set(TOPICS["peykan_status"],
                     json.dumps({"status": "offline", "source": "peykan", "ts": 0}),
                     retain=True)
     client.reconnect_delay_set(min_delay=1, max_delay=30)
     client.connect(MQTT_HOST, MQTT_PORT, 60)
-    client.subscribe(TOPICS["peykan_analysis_request"], qos=0)
     client.loop_start()
     stopping = asyncio.Event()
     loop = asyncio.get_running_loop()
