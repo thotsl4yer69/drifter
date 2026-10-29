@@ -166,7 +166,7 @@ async def run() -> None:
             try:
                 await _run_client(client, stopping)
             except (Exception, ExceptionGroup) as exc:
-                log.warning("Peykan unavailable: %s", exc)
+                log.exception("Peykan unavailable (full MCP transport traceback)")
                 _publish(client, "peykan_status", {
                     "status": "unavailable", "source": "peykan", "mode": MODE,
                     "ts": time.time(),
