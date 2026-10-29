@@ -83,3 +83,30 @@ def test_optional_units_are_not_monitored_core_services():
     root = Path(__file__).resolve().parents[1]
     for name in ("drifter-peykan-mcp", "drifter-peykan-bridge"):
         assert (root / "services" / (name + ".service")).is_file()
+
+def test_launcher_refuses_implicit_real_connection():
+    from peykan_server import command
+    import pytest
+    env = {"DRIFTER_PEYKAN_MODE": "socketcan",
+           "PEYKAN_CAN_INTERFACE": "socketcan",
+           "PEYKAN_CAN_CHANNEL": "can0",
+           "PEYKAN_MCP_HOST": "127.0.0.1",
+           "PEYKAN_ALLOW_TRANSMIT": "false",
+           "PEYKAN_ALLOW_WRITE_SERVICES": "false"}
+    with pytest.raises(ValueError, match="DBC"):
+        command(env)
+    env["PEYKAN_ALLOW_TRANSMIT"] = "true"
+    with pytest.raises(ValueError, match="read-only"):
+        command(env)
+
+
+def test_launcher_allows_only_explicit_demo_on_virtual_bus():
+    from peykan_server import command
+    env = {"DRIFTER_PEYKAN_MODE": "demo",
+           "PEYKAN_CAN_INTERFACE": "virtual",
+           "PEYKAN_MCP_HOST": "127.0.0.1",
+           "PEYKAN_ALLOW_TRANSMIT": "false",
+           "PEYKAN_ALLOW_WRITE_SERVICES": "false"}
+    result = command(env)
+    assert result[-2:] == ["--transport", "streamable-http"]
+    assert result[1] == "demo"
