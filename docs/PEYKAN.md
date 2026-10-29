@@ -10,6 +10,7 @@ and the Jaguar's ELM327/K-line path remains the primary validated target.
 
 First deploy DRIFTER main as normal; then from the DRIFTER checkout:
 
+    sudo bash scripts/install-peykan.sh --demo --check
     sudo bash scripts/install-peykan.sh --demo
 
 This starts Peykan's virtual ECU simulator, the MCP server bound to loopback
@@ -26,8 +27,8 @@ other real car. A 2004 X-Type's OBD connector may use K-line, which Peykan's
 SocketCAN backend cannot read. Do not plug into a vehicle expecting this
 integration to replace DRIFTER's ELM327 diagnostics.
 
-The Peykan deployment is separately installed in
-/opt/drifter/peykan-venv (pinned at 0.2.1). No Peykan dependency changes
+The installer preflights the Pi and, after installing, **restarts both services** and\nrequires a real MCP and MQTT acceptance test to pass before reporting success.\nIf it fails, it prints journal diagnostics and returns nonzero. The same\nacceptance check is available as:\n\n    sudo /opt/drifter/peykan-venv/bin/python3 /opt/drifter/peykan_verify.py --mode demo\n\nThe Peykan deployment is separately installed in
+/opt/drifter/peykan-venv (pinned at 0.2.1 with MCP SDK 2.3.0 and Paho MQTT 2.1.0). No Peykan dependency changes
 the primary DRIFTER venv. Both optional services run as the 'drifter' user,
 are memory-capped, and stay outside config.SERVICES and DRIFTER mode/health
 requirements, so first boot and diag mode are unchanged.
@@ -58,11 +59,11 @@ never be reported as live readings.
     mosquitto_pub -t drifter/peykan/analysis/request -m '{"id":"bench","path":"sample"}'
     mosquitto_sub -C 1 -t drifter/peykan/analysis/result
 
-Logs: journalctl -u drifter-peykan-mcp -u drifter-peykan-bridge -n 80
+For a live CAN installation, use `--mode socketcan` with the acceptance check.\nA quiet CAN bus may validly report `no-data`; that is not evidence of real ECU\ntelemetry. The MCP service has CAP_NET_RAW for SocketCAN as the unprivileged\n`drifter` user; the MQTT bridge does not.\n\nLogs: journalctl -u drifter-peykan-mcp -u drifter-peykan-bridge -n 80
 
 Disable without affecting DRIFTER's main vehicle services:
 
     sudo systemctl disable --now drifter-peykan-bridge drifter-peykan-mcp
 
 The integration requires Pi deployment and real vehicle field acceptance
-before live CAN functionality can be claimed as tested.
+before live CAN functionality can be claimed as tested.\n\nSoftware smoke CI runs on **x86-64 and ARM64** against the exact pinned\nPeykan SDK, simulator, a real Mosquitto broker, and the same post-install\nverification program used on the Pi.

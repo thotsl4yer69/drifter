@@ -118,6 +118,12 @@ def main():
         ), timeout=40)
         assert result["status"] == "ok", result
         assert isinstance(result.get("data"), dict)
+        # Same acceptance probe run by the Raspberry Pi installer.
+        subprocess.run(
+            [sys.executable, str(SRC.parents[0] / "scripts" / "peykan-verify.py"),
+             "--mode", "demo", "--timeout", "30"],
+            check=True, env=ENV, timeout=60,
+        )
         print("PASS: Peykan virtual ECU → MCP server → MQTT → Vivi guard + CAN log analysis")
     finally:
         for p in reversed(processes):
