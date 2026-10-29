@@ -101,9 +101,9 @@ def _on_message(_client, _userdata, message) -> None:
 async def _run_client(client, running: asyncio.Event) -> None:
     # Optional dependency: install in isolated Peykan venv via scripts/install-peykan.sh.
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
-    async with streamablehttp_client(MCP_URL) as (reader, writer, _):
+    async with streamable_http_client(MCP_URL) as (reader, writer, _):
         async with ClientSession(reader, writer) as session:
             await session.initialize()
             log.info("Peykan MCP session established (%s)", MODE)
