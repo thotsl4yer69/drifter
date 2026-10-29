@@ -27,6 +27,7 @@ import vehicle_profile
 import vivi_memory
 import vivi_rf_intent
 import vivi_sentinel
+from peykan_context import vivi_context
 from config import (
     LEVEL_AMBER,
     LEVEL_RED,
@@ -91,6 +92,7 @@ _session_id = uuid.uuid4().hex[:12]
 _telemetry: dict = {}
 _safety_alert: dict = {}
 _active_dtcs: list = []
+_peykan_snapshot: dict = {}
 _weather: dict = {}            # latest drifter/weather/current
 _weather_alerts: list = []     # latest drifter/weather/alerts list
 _nearby: dict = {}             # POI results by Google Places type
@@ -269,6 +271,10 @@ def _build_prompt(user_text: str) -> tuple[str, dict]:
     nearby_ctx = _nearby_context()
     if nearby_ctx:
         parts.append(nearby_ctx)
+    with _state_lock:
+        can_context = vivi_context(dict(_peykan_snapshot))
+    if can_context:
+        parts.append(can_context)
     facts = _facts_context()
     if facts:
         parts.append(facts)
@@ -753,6 +759,11 @@ def on_message(client, userdata, msg) -> None:
             if isinstance(payload, dict):
                 with _state_lock:
                     _telemetry.update(payload)
+        elif topic == TOPICS['peykan_snapshot']:
+            if isinstance(payload, dict):
+                with _state_lock:
+                    _peykan_snapshot.clear()
+                    _peykan_snapshot.update(payload)
         elif topic == TOPICS['safety_alert']:
             if isinstance(payload, dict):
                 _handle_safety_alert(payload)
@@ -799,7 +810,7 @@ def on_message(client, userdata, msg) -> None:
 
 def _subscribe_topics(client: mqtt.Client) -> None:
     wanted = [
-        'vivi2_query', 'snapshot', 'safety_alert', 'dtc', 'vivi2_memory',
+        'vivi2_query', 'snapshot', 'peykan_snapshot', 'safety_alert', 'dtc', 'vivi2_memory',
         'crash_event', 'trip_event', 'nav_alert',
         'weather_current', 'weather_alerts', 'location_nearby',
         # Proactive counter-surveillance sentinel feeds (see vivi_sentinel).

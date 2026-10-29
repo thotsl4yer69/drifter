@@ -38,6 +38,11 @@ TOPICS = {
     'alert_level': 'drifter/alert/level',
     'alert_message': 'drifter/alert/message',
     'snapshot': 'drifter/snapshot',
+    # Optional read-only Peykan CAN intelligence extension
+    'peykan_snapshot': 'drifter/peykan/snapshot',
+    'peykan_status': 'drifter/peykan/status',
+    'peykan_analysis_request': 'drifter/peykan/analysis/request',
+    'peykan_analysis_result': 'drifter/peykan/analysis/result',
     'system_status': 'drifter/system/status',
     'dtc': 'drifter/diag/dtc',
     'calibration': 'drifter/diag/calibration',
