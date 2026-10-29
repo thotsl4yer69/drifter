@@ -1,0 +1,39 @@
+name: peykan-live-smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/peykan*"
+      - "src/vivi_v2.py"
+      - "scripts/peykan-smoke.py"
+      - "scripts/install-peykan.sh"
+      - "services/drifter-peykan*"
+      - ".github/workflows/peykan-live-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/peykan*"
+      - "scripts/peykan-smoke.py"
+      - ".github/workflows/peykan-live-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-simulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install real Peykan and DRIFTER MQTT dependency
+        run: |
+          python -m pip install "peykan==0.2.1" "paho-mqtt>=2,<3"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mosquitto
+          sudo systemctl start mosquitto
+      - name: Test real simulator, MCP, MQTT and Vivi evidence
+        run: python scripts/peykan-smoke.py
