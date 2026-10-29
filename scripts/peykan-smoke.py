@@ -89,10 +89,19 @@ def main():
             stderr=subprocess.PIPE, text=True,
         )
         processes.append(bridge)
-        snap = wait_for(lambda: next(
-            (p for t, p in messages
-             if t == TOPICS["peykan_snapshot"] and p.get("signals")), None
-        ), timeout=35)
+        try:
+            snap = wait_for(lambda: next(
+                (p for t, p in messages
+                 if t == TOPICS["peykan_snapshot"] and p.get("signals")), None
+            ), timeout=35)
+        except TimeoutError:
+            print("MQTT messages:", messages[-12:], file=sys.stderr)
+            for process in processes:
+                process.terminate()
+            for process in processes:
+                _, stderr = process.communicate(timeout=5)
+                print("Process stderr:", stderr[-10000:], file=sys.stderr)
+            raise
         assert snap["source"] == "peykan"
         assert snap["mode"] == "demo"
         assert snap["status"] == "simulated"
