@@ -109,3 +109,24 @@ def test_launcher_allows_only_explicit_demo_on_virtual_bus():
     result = command(env)
     assert result[-2:] == ["--transport", "streamable-http"]
     assert result[1] == "demo"
+
+
+def test_installer_restarts_both_services_and_checks_live_acceptance():
+    script = (Path(__file__).resolve().parents[1] / "scripts" /
+              "install-peykan.sh").read_text()
+    assert '"mcp==2.3.0"' in script
+    assert '"paho-mqtt==2.1.0"' in script
+    assert 'systemctl restart drifter-peykan-mcp.service' in script
+    assert 'systemctl restart drifter-peykan-bridge.service' in script
+    assert '"$DEST/peykan_verify.py" --mode "$MODE"' in script
+    assert '--check)' in script
+
+
+def test_on_device_acceptance_uses_real_mcp_and_mqtt_not_mocked_data():
+    script = (Path(__file__).resolve().parents[1] / "scripts" /
+              "peykan-verify.py").read_text()
+    assert 'from mcp.client.streamable_http import streamable_http_client' in script
+    assert 'session.call_tool("get_vehicle_snapshot")' in script
+    assert 'session.call_tool("analyze_can_log"' in script
+    assert 'TOPICS["peykan_analysis_request"]' in script
+    assert 'TOPICS["peykan_analysis_result"]' in script

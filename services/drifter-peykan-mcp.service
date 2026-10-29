@@ -14,6 +14,10 @@ ExecStart=/opt/drifter/peykan-venv/bin/python3 /opt/drifter/peykan_server.py
 Restart=on-failure
 RestartSec=15
 NoNewPrivileges=true
+# PF_CAN/SOCK_RAW may require CAP_NET_RAW for a non-root service user.
+# Keep this capability in the Peykan server only (never in the MQTT bridge).
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 ProtectHome=true
 PrivateTmp=true
 ProtectSystem=strict
