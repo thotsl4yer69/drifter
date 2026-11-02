@@ -46,3 +46,7 @@ Authored MAZLABZ project developed with AI coding agents as part of the engineer
 ## Portfolio takeaway
 
 DRIFTER demonstrates cross-domain integration: **automotive data + Raspberry Pi/Linux + services + telemetry + diagnostics + physical deployment**.
+
+## Fleet reconciliation — 2 November 2026
+
+**Current evidence boundary:** October 29 Peykan hardening PR #97 was merged with host/ARM64 software validation, not verified on the Jaguar. Earlier fleet record `192.168.1.112` is historical; on 2 October the vehicle Pi was intentionally offline. No proof establishes the installed November commit. Issue #67 physical gate is still outstanding despite historical closure: 10/10 cold boots, actual ELM→ECU→fresh supported PID readings, touchscreen and reconnect recovery, and 1,800s continuous real telemetry. RECON/Hailo PR #91 remains open and is not part of the accepted field baseline. The `fleet/mesh` generic deploy path was DRIFTER-specific; it is now gated until identity/deploy flags are verified. See [fleet work queue](https://github.com/thotsl4yer69/fleet/blob/main/WORK_QUEUE.md).
