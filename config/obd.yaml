@@ -5,6 +5,9 @@
 # is a compatibility path for non-Jaguar vehicles after vehicle_id resolves
 # a different profile.
 
+# NOTE: nothing under src/ loads this file (see deploy/OBRIDGE-README.md).
+# The live device path comes from config.OBD_SERIAL_DEV, which prefers the
+# /dev/drifter-obd udev symlink and honours the OBD_SERIAL_DEV env override.
 serial_device: "/dev/ttyUSB0"
 serial_baud: 38400
 
