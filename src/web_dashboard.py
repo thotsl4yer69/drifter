@@ -156,11 +156,11 @@ def run_https_server() -> None:
     except (ssl.SSLError, OSError) as e:
         log.warning("HTTPS: load_cert_chain failed: %s", e)
         return
-    server = ThreadingHTTPServer(('0.0.0.0', HTTPS_PORT), DashboardHandler)
+    server = ThreadingHTTPServer((BIND_HOST, HTTPS_PORT), DashboardHandler)
     server.daemon_threads = True
     server.timeout = 2
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
-    log.info("HTTPS dashboard on https://0.0.0.0:%d (self-signed)", HTTPS_PORT)
+    log.info("HTTPS dashboard on https://%s:%d (self-signed)", BIND_HOST, HTTPS_PORT)
     while state.running:
         try:
             server.handle_request()

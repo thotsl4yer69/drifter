@@ -57,6 +57,15 @@
   <h1><span class="brand">MZ1312</span> DRIFTER — FLEET</h1>
   <span class="badge" id="status">offline</span>
 </header>
+<div id="loginOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <form id="loginForm" class="panel" style="min-width:280px;display:flex;flex-direction:column;gap:8px">
+    <h3 style="margin:0">Fleet login</h3>
+    <input id="loginUser" autocomplete="username" placeholder="username" required>
+    <input id="loginPass" type="password" autocomplete="current-password" placeholder="password" required>
+    <button type="submit">Sign in</button>
+    <div id="loginError" style="color:#ff6b6b;font-size:12px;min-height:1em"></div>
+  </form>
+</div>
 <main>
   <aside id="vehicleList"></aside>
   <section class="panel" id="detail">
@@ -71,31 +80,62 @@ let selected = null;
 let map = null;
 let markers = {};
 
-async function login() {
+// Vehicle fields arrive from nodes over MQTT; never trust them as HTML.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// Credentials come from the operator (fleet_server.py set-password). A
+// rejected login shows an error and waits; it never retries on its own.
+function showLogin(message) {
+  token = '';
+  localStorage.removeItem('drifter_token');
+  document.getElementById('status').textContent = 'signed out';
+  document.getElementById('loginError').textContent = message || '';
+  document.getElementById('loginOverlay').style.display = 'flex';
+}
+
+async function login(username, password) {
   const r = await fetch(`${API}/api/auth/login`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username: 'fleet', password: 'admin'}),
+    body: JSON.stringify({username, password}),
   });
+  if (!r.ok) return false;
   const j = await r.json();
+  if (!j.token) return false;
   token = j.token;
   localStorage.setItem('drifter_token', token);
+  return true;
 }
 
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ok = await login(document.getElementById('loginUser').value,
+                         document.getElementById('loginPass').value);
+  document.getElementById('loginPass').value = '';
+  if (!ok) { document.getElementById('loginError').textContent = 'Login failed'; return; }
+  document.getElementById('loginOverlay').style.display = 'none';
+  start();
+});
+
 async function fetchVehicles() {
+  if (!token) return null;
   const r = await fetch(`${API}/api/vehicles`, {
     headers: {'Authorization': `Bearer ${token}`},
   });
-  if (r.status === 401) { await login(); return fetchVehicles(); }
+  if (r.status === 401) { stop(); showLogin('Session expired — sign in again'); return null; }
   return (await r.json()).vehicles || [];
 }
 
 function renderList(vehicles) {
   const el = document.getElementById('vehicleList');
   el.innerHTML = vehicles.map(v => `
-    <div class="vehicle ${selected === v.vin ? 'active' : ''}" data-vin="${v.vin}">
-      <div class="vin">${v.vin}</div>
-      <div class="label">${v.label || v.vin}</div>
+    <div class="vehicle ${selected === v.vin ? 'active' : ''}" data-vin="${esc(v.vin)}">
+      <div class="vin">${esc(v.vin)}</div>
+      <div class="label">${esc(v.label || v.vin)}</div>
       <div class="meta">
         <span class="dot ${v.online ? 'online' : 'offline'}"></span>
         ${v.online ? 'online' : 'offline'} · last seen ${new Date((v.last_seen||0)*1000).toLocaleTimeString()}
@@ -114,7 +154,7 @@ function selectVehicle(vin, vehicles) {
   const t = v.telemetry || {};
   const alerts = (v.alerts || []).slice(-10).reverse();
   document.getElementById('detail').innerHTML = `
-    <h2 style="margin-top:0">${v.label || v.vin}</h2>
+    <h2 style="margin-top:0">${esc(v.label || v.vin)}</h2>
     <div id="map"></div>
     <div class="row">
       <div class="card"><div class="k">Speed</div><div class="v">${t.speed?.toFixed?.(0) ?? '—'} <span style="font-size:12px">km/h</span></div></div>
@@ -126,7 +166,7 @@ function selectVehicle(vin, vehicles) {
       <h3 style="font-size:12px;color:var(--muted);text-transform:uppercase">Recent Alerts</h3>
       ${alerts.length ? alerts.map(a => `
         <div class="alert ${a.level >= 3 ? 'red' : a.level === 2 ? '' : 'info'}">
-          <strong>${new Date(a.ts*1000).toLocaleTimeString()}</strong> · ${a.message}
+          <strong>${new Date(a.ts*1000).toLocaleTimeString()}</strong> · ${esc(a.message)}
         </div>`).join('') : '<div class="empty">No alerts</div>'}
     </div>`;
   initMap(v);
@@ -138,37 +178,51 @@ function initMap(v) {
   const lat = t.lat ?? -37.8136, lng = t.lng ?? 144.9631;
   map = L.map('map', { zoomControl: true }).setView([lat, lng], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
-  L.marker([lat, lng]).addTo(map).bindPopup(v.label || v.vin);
+  L.marker([lat, lng]).addTo(map).bindPopup(esc(v.label || v.vin));
 }
 
 function updateMap(vehicles) { /* placeholder for multi-vehicle map */ }
 
+let ws = null;
+let pollTimer = null;
+
 function openWS() {
+  if (!token) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws/fleet`);
+  ws = new WebSocket(`${proto}://${location.host}/ws/fleet?token=${encodeURIComponent(token)}`);
   ws.onopen = () => document.getElementById('status').textContent = 'live';
   ws.onclose = () => {
+    ws = null;
+    if (!token) return;  // signed out: don't loop
     document.getElementById('status').textContent = 'reconnect…';
     setTimeout(openWS, 3000);
   };
   ws.onmessage = async () => {
     const vs = await fetchVehicles();
+    if (!vs) return;
     renderList(vs);
     if (selected) selectVehicle(selected, vs);
   };
 }
 
-async function boot() {
-  if (!token) await login();
+function stop() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  const w = ws; ws = null;
+  if (w) { w.onclose = null; w.close(); }
+}
+
+async function start() {
   const vs = await fetchVehicles();
+  if (!vs) return;
   renderList(vs);
   openWS();
-  setInterval(async () => {
+  pollTimer = setInterval(async () => {
     const vs2 = await fetchVehicles();
-    renderList(vs2);
+    if (vs2) renderList(vs2);
   }, 10000);
 }
-boot();
+
+if (token) start(); else showLogin();
 </script>
 </body>
 </html>

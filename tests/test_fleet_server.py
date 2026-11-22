@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, 'src')
 
@@ -127,3 +128,30 @@ def test_login_accepts_valid_user_and_token_works():
 def test_login_with_no_users_configured_is_refused():
     c = _client(_users_db())
     assert c.post('/api/auth/login', json={'username': 'admin', 'password': 'x'}).status_code == 401
+
+
+# ── Bundled dashboard must match the fail-closed server ──
+
+_DASH = (Path(__file__).resolve().parent.parent / 'src' / 'fleet_dashboard.html').read_text()
+
+
+def test_dashboard_has_no_hardcoded_credentials():
+    assert "password: 'admin'" not in _DASH
+    assert "username: 'fleet'" not in _DASH
+
+
+def test_dashboard_websocket_carries_token():
+    assert '/ws/fleet?token=${encodeURIComponent(token)}' in _DASH
+
+
+def test_dashboard_does_not_retry_login_on_401():
+    assert 'await login(); return fetchVehicles()' not in _DASH
+
+
+def test_ws_query_token_authenticates():
+    db = _users_db()
+    fleet_server.set_user(db, 'admin', 'a-long-password', 'admin')
+    c = _client(db)
+    tok = c.post('/api/auth/login', json={'username': 'admin', 'password': 'a-long-password'}).get_json()['token']
+    assert c.get(f'/api/vehicles?token={tok}').status_code == 200
+    assert c.get('/api/vehicles?token=garbage').status_code == 401

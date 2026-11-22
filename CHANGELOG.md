@@ -10,7 +10,7 @@ ships from the default branch.
 - Fleet API login now fails closed. It previously issued a token to any caller; it now verifies an scrypt password from the fleet DB `users` table (`fleet_server.py set-password <user> [role]`). `/ws/fleet` now requires a token.
 - One shared hotspot ACL (`config.is_local_peer`) now also guards the telemetry and audio WebSockets (8081/8082, previously unchecked) and the RealDash TCP bridge (35000). IPv4-mapped IPv6 peers are unwrapped.
 - Listener bind address is configurable (`DRIFTER_BIND_HOST`); trusted prefixes via `DRIFTER_TRUSTED_PREFIXES`. Defaults unchanged.
-- New opt-in host firewall (`scripts/install-firewall.sh`, `config/drifter-nftables.conf`) restricting service ports to loopback + the `wlan0` hotspot. Not enabled by `install.sh`.
+- New opt-in host firewall (`scripts/install-firewall.sh`, `config/drifter-nftables.conf`) (8080/8443/8081/8082/8090/35000/1883) restricting service ports to loopback + the `wlan0` hotspot. Not enabled by `install.sh`.
 - Scratch audio/ALPR files no longer use fixed `/tmp/drifter-*` names; they use a private 0700 runtime directory (symlinks and foreign owners refused) or `mkstemp`.
 
 ### Fixed
