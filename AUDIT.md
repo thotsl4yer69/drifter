@@ -1,5 +1,7 @@
 # DRIFTER — Release-Readiness Audit (Phase 0: Ground Truth)
 
+> **Historical snapshot (2026-07-01).** Most findings below have since been fixed (broker target, WAL, stable device symlinks, env-driven PSKs). Credential values were redacted on 2026-11-23, but the old values remain in git history and must be treated as compromised — rotate them provider-side.
+
 **Node:** drifter — Raspberry Pi 5 (8 GB), Kali ARM64, in a 2004 Jaguar X-Type 2.5 V6.
 **Audit date:** 2026-07-01 · **Scope:** read-only inventory of the repo as it stands on
 branch `claude/drifter-release-audit-jjf3sk`. No code was changed to produce this report.
@@ -17,7 +19,7 @@ gap to a *reliable, reproducible, respectable public release* is concentrated in
 2. **Reproducibility is not "one command"** — the repo has *three disagreeing service lists*,
    *three LLM model tags*, a Docker-vs-Pi dependency contradiction, unpinned installs, and a
    documented `.env.example` that the installer never actually installs.
-3. **Secrets are committed** — two real Wi-Fi PSKs (`54232105`, `uncaged1312`) live in source
+3. **Secrets are committed** — two real Wi-Fi PSKs (`<REDACTED>`, `<REDACTED>`) live in source
    and docs; historical API keys are in git history; a real VIN is a committed filename.
 4. **Power-cut safety is partial** — several state writers are non-atomic, and the central
    `drifter.db` is opened without WAL/`busy_timeout` even though a shutdown WAL-checkpoint
@@ -253,8 +255,8 @@ probes** anywhere to compensate.
 
 | Value | Location | Severity |
 |---|---|---|
-| `PHONE_HOTSPOT_PSK` default `"54232105"` | `src/config.py` (autoconnect block) | **CRITICAL** — real phone-hotspot password as env default in tracked source. Rotate provider-side. |
-| AP PSK `wifi-sec.psk "uncaged1312"` | `install.sh:583` | **CRITICAL** — real WPA2 PSK for MZ1312_DRIFTER, hardcoded. **Not env-overridable** (see below). Rotate. |
+| `PHONE_HOTSPOT_PSK` default `"<REDACTED>"` | `src/config.py` (autoconnect block) | **CRITICAL** — real phone-hotspot password as env default in tracked source. Rotate provider-side. |
+| AP PSK `wifi-sec.psk "<REDACTED>"` | `install.sh:583` | **CRITICAL** — real WPA2 PSK for MZ1312_DRIFTER, hardcoded. **Not env-overridable** (see below). Rotate. |
 | Same PSK echoed to operator | `install.sh:704` | CRITICAL (same secret) |
 | Same PSK in docs | `docs/FIELD_DEPLOY.md:136`, `docs/fleet-inventory-drifter.yaml:24`, `README.md:103` | CRITICAL (same secret in 3 docs; CLAUDE/AGENTS claim it was already rotated out of docs — it wasn't) |
 | Historical live OWM + Google Maps keys | git history (per `CLAUDE.md:275`, `config/.env.example:51`) | CRITICAL (historical) — recoverable from history; rotate provider-side |
@@ -262,7 +264,7 @@ probes** anywhere to compensate.
 | Real-format VIN | `config/home.yaml:5` (`SAJDA01N04FK00000` — looks placeholder) | Low |
 
 **Config trap:** `config/.env.example:61` documents `DRIFTER_HOTSPOT_PSK` as "consumed by
-install.sh", but `install.sh` never reads it — it hardcodes `"uncaged1312"` at line 583. The env
+install.sh", but `install.sh` never reads it — it hardcodes `"<REDACTED>"` at line 583. The env
 override is a **no-op**; the only way to change the AP PSK today is editing source or `nmcli`
 post-install. (Env defaults that are the empty string — `GROQ_API_KEY`, `ANTHROPIC_API_KEY`,
 `NANOB_PASS`, the api_keys.py OWM/Google keys — are fine. `FLEET_JWT_SECRET` is auto-generated

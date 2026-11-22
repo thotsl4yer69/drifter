@@ -153,7 +153,7 @@ The canonical monitored list lives in [`src/config.py`](src/config.py) — `SERV
 for the live count). `/healthz` checks exactly this set; `scripts/oneshot.sh`
 starts exactly it; [`install.sh`](install.sh) enables it plus a few boot/aux
 units (`boot-manager`, `boot-reason`, `db-checkpoint`).
-[`services/`](services/) holds **all** unit files (67), a superset that
+[`services/`](services/) holds **all** unit files (74), a superset that
 includes mode-specific and mutually-exclusive alternatives (e.g.
 `fbmirror` vs `lcd`) — so the unit-file count is intentionally larger than
 `SERVICES`. `tests/test_deploy_service_lists.py` enforces that every `SERVICES`
