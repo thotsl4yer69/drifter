@@ -64,3 +64,4 @@ android/**/build/
 .DS_Store
 Thumbs.db
 *.bak-*
+.coverage
