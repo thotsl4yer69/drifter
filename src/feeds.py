@@ -662,8 +662,12 @@ def make_mqtt() -> mqtt.Client:
     try:
         c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                         client_id='drifter-feeds')
+        c.suppress_exceptions = True  # log, don't kill the MQTT loop
+        c.enable_logger()
     except AttributeError:
         c = mqtt.Client(client_id='drifter-feeds')
+        c.suppress_exceptions = True  # log, don't kill the MQTT loop
+        c.enable_logger()
     if MQTT_USER:
         c.username_pw_set(MQTT_USER, MQTT_PASS or '')
     c.connect(MQTT_HOST, MQTT_PORT, keepalive=30)

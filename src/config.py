@@ -49,14 +49,22 @@ def make_mqtt_client(client_id: str, **kwargs):
     Extra keyword args are forwarded to paho.mqtt.client.Client().
     """
     if hasattr(_mqtt, 'CallbackAPIVersion'):
-        return _mqtt.Client(
+        client = _mqtt.Client(
             callback_api_version=_mqtt.CallbackAPIVersion.VERSION2,
             client_id=client_id,
             **kwargs,
         )
-    # paho-mqtt < 2.0 — the old API is the only option. Keep the fleet
-    # running on older installs (e.g. before install.sh is re-run).
-    return _mqtt.Client(client_id=client_id, **kwargs)
+    else:
+        # paho-mqtt < 2.0 — the old API is the only option. Keep the fleet
+        # running on older installs (e.g. before install.sh is re-run).
+        client = _mqtt.Client(client_id=client_id, **kwargs)
+    # paho re-raises exceptions from on_message/on_connect by default. Under
+    # loop_start() that kills the network thread while the process (and its
+    # systemd unit) stays "active" — a deaf service /healthz can't see.
+    # Suppress + route to logging so a bad payload is logged and skipped.
+    client.suppress_exceptions = True
+    client.enable_logger()
+    return client
 
 # ── Paths ──
 DRIFTER_DIR = Path("/opt/drifter")
@@ -315,6 +323,67 @@ def resolve_device(env_var: str, stable: str, default: str) -> str:
     except OSError:  # pragma: no cover - defensive
         pass
     return default
+
+# ── Private runtime scratch dirs ──
+# Fixed names under world-writable /tmp (e.g. /tmp/drifter-audio) let another
+# local user pre-create the path or plant a symlink. Scratch files go in a
+# per-user 0700 directory instead: systemd's $RUNTIME_DIRECTORY when the unit
+# sets RuntimeDirectory=, else $XDG_RUNTIME_DIR, else /tmp/<name>-<uid>.
+def runtime_dir(name: str) -> Path:
+    import tempfile
+    base = (os.environ.get("RUNTIME_DIRECTORY", "").split(":")[0]
+            or os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
+    return Path(base) / f"{name}-{os.getuid()}"
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """Create `path` 0700 and refuse it if it is a symlink or owned by someone
+    else. Returns the path."""
+    path = Path(path)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    st = os.lstat(path)
+    import stat as _stat
+    if _stat.S_ISLNK(st.st_mode) or not _stat.S_ISDIR(st.st_mode):
+        raise PermissionError(f"{path} is not a real directory")
+    if st.st_uid != os.getuid():
+        raise PermissionError(f"{path} is owned by uid {st.st_uid}, not us")
+    if st.st_mode & 0o077:
+        os.chmod(path, 0o700)
+    return path
+
+
+# ── Network exposure ──
+# Address the node's HTTP/WS/TCP servers bind to. Default stays 0.0.0.0 so the
+# hotspot keeps working; set DRIFTER_BIND_HOST=10.42.0.1 to listen only on the
+# hotspot. Every listener also checks the caller against TRUSTED_PEER_PREFIXES,
+# so a second network (home Wi-Fi, Ethernet) cannot reach the cockpit APIs.
+BIND_HOST = os.getenv("DRIFTER_BIND_HOST", "0.0.0.0")
+TRUSTED_PEER_PREFIXES = tuple(
+    p.strip() for p in os.getenv(
+        "DRIFTER_TRUSTED_PREFIXES", "127.0.0.1,10.42.0.").split(",") if p.strip()
+)
+
+
+def is_local_peer(peer) -> bool:
+    """True when `peer` (an IP string, or an (ip, port, ...) tuple) is loopback
+    or on the trusted hotspot subnet. IPv4-mapped IPv6 (::ffff:a.b.c.d) is
+    unwrapped; anything unparseable is rejected."""
+    if isinstance(peer, (tuple, list)):
+        peer = peer[0] if peer else ""
+    if not isinstance(peer, str) or not peer:
+        return False
+    if peer.startswith("::ffff:"):
+        peer = peer[7:]
+    if peer == "::1":
+        return True
+    for prefix in TRUSTED_PEER_PREFIXES:
+        if prefix.endswith("."):
+            if peer.startswith(prefix):
+                return True
+        elif peer == prefix:
+            return True
+    return False
+
 
 # ── MQTT ──
 MQTT_HOST = "localhost"
@@ -998,7 +1067,7 @@ FATIGUE_NIGHT_HOURS = 1.5           # tighter at night
 FCW_TTC_CRIT = 1.2                  # time-to-collision critical (s)
 FCW_TTC_WARN = 2.5                  # time-to-collision warn (s)
 FIRING_ORDER = [1, 4, 2, 5, 3, 6]
-FLEET_API_HOST = "0.0.0.0"
+FLEET_API_HOST = os.getenv("FLEET_API_HOST", "0.0.0.0")
 FLEET_API_PORT = 8420
 FLEET_DB_PATH = DRIFTER_DIR / "data" / "fleet.db"
 FLEET_HEARTBEAT_TIMEOUT = 90       # seconds — node considered offline

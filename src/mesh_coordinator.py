@@ -109,6 +109,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-mesh-coordinator")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
     client.on_message = _on_message
     # Last-will: if the coordinator dies unexpectedly, the broker clears the
     # retained 'up' with 'down' so subscribers don't see a stale online state.

@@ -53,7 +53,7 @@ from http.server import ThreadingHTTPServer
 os.environ.setdefault("DRIFTER_CORPUS_NO_EMBED", "1")
 
 import web_dashboard_state as state
-from config import MQTT_HOST, MQTT_PORT, make_mqtt_client
+from config import BIND_HOST, MQTT_HOST, MQTT_PORT, is_local_peer, make_mqtt_client
 from web_dashboard_audio import generate_audio_wav
 from web_dashboard_handlers import DashboardHandler
 
@@ -94,10 +94,10 @@ def run_http_server() -> None:
     # streaming /api/query/stream call can't block /healthz, the BLE
     # tile poll, hardware checks, etc. Long Vivi LLM streams used to
     # wedge the entire dashboard until the stream finished.
-    server = ThreadingHTTPServer(('0.0.0.0', WEB_PORT), DashboardHandler)
+    server = ThreadingHTTPServer((BIND_HOST, WEB_PORT), DashboardHandler)
     server.daemon_threads = True
     server.timeout = 2
-    log.info("HTTP dashboard on http://0.0.0.0:%d", WEB_PORT)
+    log.info("HTTP dashboard on http://%s:%d", BIND_HOST, WEB_PORT)
     while state.running:
         server.handle_request()
     server.server_close()
@@ -173,8 +173,20 @@ def run_https_server() -> None:
 #  WebSocket servers (telemetry + audio)
 # ═══════════════════════════════════════════════════════════════════
 
+def _ws_peer_allowed(websocket) -> bool:
+    """Same hotspot-only ACL the HTTP /api routes use. Returning from the
+    handler closes the connection (websockets sends a normal close)."""
+    peer = getattr(websocket, 'remote_address', None)
+    if is_local_peer(peer):
+        return True
+    log.warning("WS connection from untrusted peer %s refused", peer)
+    return False
+
+
 async def ws_handler(websocket):
     """Stream MQTT data to a browser client."""
+    if not _ws_peer_allowed(websocket):
+        return
     queue: asyncio.Queue = asyncio.Queue(maxsize=200)
     state.ws_clients.add(queue)
     log.info("Dashboard client connected (%d total)", len(state.ws_clients))
@@ -209,6 +221,8 @@ async def ws_handler(websocket):
 
 async def audio_ws_handler(websocket):
     """Hold the socket open; audio frames are pushed by broadcast_audio."""
+    if not _ws_peer_allowed(websocket):
+        return
     state.audio_ws_clients.add(websocket)
     log.info("Audio client connected (%d total)", len(state.audio_ws_clients))
     try:
@@ -337,11 +351,11 @@ def _connect_mqtt(client_id: str, on_message, topics: list[str]):
 
 async def _run_ws_servers():
     """Run telemetry + audio WebSocket servers concurrently."""
-    async with websockets.serve(ws_handler, '0.0.0.0', WS_PORT):
-        log.info("WebSocket telemetry on ws://0.0.0.0:%d", WS_PORT)
-        async with websockets.serve(audio_ws_handler, '0.0.0.0',
+    async with websockets.serve(ws_handler, BIND_HOST, WS_PORT):
+        log.info("WebSocket telemetry on ws://%s:%d", BIND_HOST, WS_PORT)
+        async with websockets.serve(audio_ws_handler, BIND_HOST,
                                     AUDIO_WS_PORT):
-            log.info("WebSocket audio on ws://0.0.0.0:%d", AUDIO_WS_PORT)
+            log.info("WebSocket audio on ws://%s:%d", BIND_HOST, AUDIO_WS_PORT)
             log.info("")
             log.info("=== DRIFTER DASHBOARD LIVE ===")
             log.info("  Open on phone: https://10.42.0.1:%d  (geolocation)", HTTPS_PORT)

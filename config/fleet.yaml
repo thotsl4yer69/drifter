@@ -14,9 +14,10 @@ jwt_ttl: 86400
 # Vehicle considered offline if heartbeat older than this (seconds)
 heartbeat_timeout: 90
 
-# Auth: list of users with bcrypt'd password hashes. MVP also allows
-# the dev-only /api/auth/login that issues tokens to any caller — wire
-# this up before exposing to the network.
+# Auth: /api/auth/login only issues a token for a user in the fleet DB's
+# users table whose password verifies (scrypt). Create users with:
+#   python3 /opt/drifter/fleet_server.py set-password <username> [admin|viewer]
+# With no users configured, nobody can log in. The list below is not read.
 users:
   - username: admin
     role: admin

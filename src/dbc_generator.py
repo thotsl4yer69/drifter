@@ -142,6 +142,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-dbc-gen")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
 
     def cb(c, u, msg):
         _on_message(client, u, msg)

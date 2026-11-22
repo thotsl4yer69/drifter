@@ -322,6 +322,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-spotify")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
 
     def on_message(_c, _u, msg) -> None:
         try:

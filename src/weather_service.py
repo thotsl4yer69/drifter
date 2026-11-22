@@ -410,6 +410,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-weather")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
     client.on_message = on_message
 
     connected = False

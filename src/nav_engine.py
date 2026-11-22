@@ -489,6 +489,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-nav")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
 
     def on_message(_c, _u, msg) -> None:
         if msg.topic == TOPICS['nav_route']:
