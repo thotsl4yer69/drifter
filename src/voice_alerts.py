@@ -24,7 +24,9 @@ from config import (
     VEHICLE_MODEL,
     VEHICLE_YEAR,
     VOICE_COOLDOWN,
+    ensure_private_dir,
     make_mqtt_client,
+    runtime_dir,
 )
 
 logging.basicConfig(
@@ -36,7 +38,7 @@ log = logging.getLogger(__name__)
 
 # ── Config ──
 PIPER_MODEL_PATH = DRIFTER_DIR / "piper-models" / f"{PIPER_MODEL}.onnx"
-AUDIO_DIR = Path("/tmp/drifter-audio")
+AUDIO_DIR = runtime_dir("drifter-audio")
 
 # speak() is called from the paho MQTT callback thread. Two critical alerts
 # arriving together would otherwise race — both passing the cooldown, both
@@ -192,7 +194,7 @@ def speak(text):
         if text == last_spoken_msg and now - last_voice_time < 60:
             return
 
-        AUDIO_DIR.mkdir(exist_ok=True)
+        ensure_private_dir(AUDIO_DIR)
         wav_path = AUDIO_DIR / "alert.wav"
         spoke = False
         try:

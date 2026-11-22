@@ -18,6 +18,7 @@ import struct
 import threading
 import time
 
+import config
 from config import MQTT_HOST, MQTT_PORT, REALDASH_TCP_PORT, make_mqtt_client
 
 logging.basicConfig(
@@ -274,6 +275,8 @@ def on_mqtt_message(client, userdata, msg):
     global alert_message, _has_real_data
     try:
         data = json.loads(msg.payload)
+        if not isinstance(data, dict):
+            return  # bare numbers/lists aren't sensor envelopes — ignore
         topic = msg.topic
 
         def _update(key, value):
@@ -337,7 +340,7 @@ def on_mqtt_message(client, userdata, msg):
                 _update(f'tpms_{pos}_psi', psi)
                 _update(f'tpms_{pos}_temp', temp)
 
-    except (json.JSONDecodeError, KeyError):
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
         pass
 
 
@@ -403,13 +406,17 @@ def tcp_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.settimeout(2.0)
-    server.bind(('0.0.0.0', REALDASH_TCP_PORT))
+    server.bind((config.BIND_HOST, REALDASH_TCP_PORT))
     server.listen(3)
     log.info(f"RealDash TCP server listening on port {REALDASH_TCP_PORT}")
 
     while running:
         try:
             conn, addr = server.accept()
+            if not config.is_local_peer(addr):
+                log.warning("RealDash connection from untrusted peer %s refused", addr)
+                conn.close()
+                continue
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             t = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
             t.start()

@@ -340,8 +340,9 @@ _DRIVER_YAML_PATH = Path('/opt/drifter/driver.yaml')
 def _is_local_peer(peer: str) -> bool:
     """Hotspot-only ACL — same gate Phase 4.5 used for /api/ble/recent.
     BLE detection data shouldn't leak past 127.0.0.1 + the 10.42.0.0/24
-    Wi-Fi hotspot."""
-    return peer == '127.0.0.1' or peer.startswith('10.42.0.')
+    Wi-Fi hotspot. Delegates to config.is_local_peer (single source)."""
+    import config as _cfg
+    return _cfg.is_local_peer(peer)
 
 
 # ─── /api/arsenal aggregate (BE-3) ────────────────────────────────────

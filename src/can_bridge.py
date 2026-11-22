@@ -154,7 +154,10 @@ def find_can_interface():
             bus.shutdown()
             log.info(f"Created slcan interface from {dev}")
             return 'slcan0'
-        except Exception:
+        except Exception as e:
+            # Was a silent `continue`: an allowlisted adapter that failed
+            # slcand/ip-link/bus-open looked identical to "no adapter".
+            log.warning(f"slcan setup failed on {dev}: {type(e).__name__}: {e}")
             continue
 
     return None

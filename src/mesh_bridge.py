@@ -52,6 +52,8 @@ class Bridge:
         self.name = remote_cfg.get('name', remote_cfg.get('host', 'remote'))
         self.forward_topics = forward_topics
         self.remote = mqtt.Client(client_id=f"drifter-bridge-{self.name}")
+        self.remote.suppress_exceptions = True  # log, don't kill the MQTT loop
+        self.remote.enable_logger()
         self.connected = False
         if remote_cfg.get('username'):
             self.remote.username_pw_set(remote_cfg['username'], remote_cfg.get('password', ''))
@@ -131,6 +133,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     local = mqtt.Client(client_id="drifter-mesh-bridge-local")
+    local.suppress_exceptions = True  # log, don't kill the MQTT loop
+    local.enable_logger()
     bridges: list[Bridge] = []
 
     def on_local_msg(_c, _u, msg) -> None:

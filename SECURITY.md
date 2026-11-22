@@ -44,6 +44,20 @@ OpenWeatherMap / Google Maps keys — treat them as compromised).
   shipped `config/nanomq.conf`); phones/clients reach the node over HTTP/WS on
   the `10.42.0.0/24` hotspot subnet, never MQTT directly.
 - The `/api` control surface is ACL-scoped to the hotspot subnet and localhost.
+- That ACL is one shared check, `config.is_local_peer`, used by the dashboard
+  `/api`, the OPSEC dashboard, the telemetry/audio WebSockets (ports 8081/8082)
+  and the RealDash TCP bridge (35000). Trusted prefixes default to
+  `127.0.0.1,10.42.0.` and can be changed with `DRIFTER_TRUSTED_PREFIXES`.
+- Listeners bind `0.0.0.0` by default so the hotspot keeps working. Set
+  `DRIFTER_BIND_HOST=10.42.0.1` to listen on the hotspot only.
+- Optional host firewall: `sudo ./scripts/install-firewall.sh` drops the node's
+  service ports (8080/8443/8081/8082/8090/35000/1883) on every interface except
+  loopback and the `wlan0` hotspot. SSH and other ports are untouched.
+  `--dry-run` checks the ruleset; `--remove` undoes it.
+- The fleet API (8420) requires a real login. Create users on the server with
+  `python3 /opt/drifter/fleet_server.py set-password <user> [admin|viewer]`;
+  with no users configured nobody can log in. `/ws/fleet` needs a token too
+  (`?token=` or `Authorization: Bearer`).
 - Service-control and OPSEC actions are gated by narrowly-enumerated `sudoers`
   drop-ins (the arsenal set deliberately excludes drive-only units).
 

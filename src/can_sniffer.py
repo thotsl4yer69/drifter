@@ -119,6 +119,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-can-sniffer")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
     connected = False
     while not connected and running[0]:
         try:

@@ -509,8 +509,12 @@ def main() -> None:
             mqtt.CallbackAPIVersion.VERSION1,  # type: ignore[attr-defined]
             client_id=_make_client_id(),
         )
+        client.suppress_exceptions = True  # log, don't kill the MQTT loop
+        client.enable_logger()
     except AttributeError:
         client = mqtt.Client(client_id=_make_client_id())
+        client.suppress_exceptions = True  # log, don't kill the MQTT loop
+        client.enable_logger()
 
     client.on_message = on_message
     client.on_connect = on_connect

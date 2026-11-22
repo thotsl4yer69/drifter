@@ -242,7 +242,8 @@ _MQTT_CLIENT = None  # set on connect; used to publish flipper commands
 
 def _is_local_peer(peer: str) -> bool:
     """Hotspot-only ACL — 127.0.0.1 + 10.42.0.0/24 Wi-Fi hotspot."""
-    return peer == '127.0.0.1' or peer.startswith('10.42.0.')
+    import config as _cfg
+    return _cfg.is_local_peer(peer)
 
 
 def _start_mqtt() -> None:
@@ -282,6 +283,8 @@ def _start_mqtt() -> None:
             CACHE.push_capture(payload)
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id='opsec-dash')
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
     client.on_connect = on_connect
     client.on_message = on_message
 
@@ -1205,7 +1208,8 @@ class OpsecHandler(BaseHTTPRequestHandler):
 
 def main() -> int:
     _start_mqtt()
-    addr = ('0.0.0.0', OPSEC_PORT)
+    import config as _cfg
+    addr = (_cfg.BIND_HOST, OPSEC_PORT)
     httpd = ThreadingHTTPServer(addr, OpsecHandler)
     log.info(f'OPSEC dashboard listening on http://{addr[0]}:{addr[1]}')
     log.info(f'probes={len(PROBES)} tools={len(TOOLS)}')

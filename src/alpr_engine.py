@@ -10,6 +10,7 @@ UNCAGED TECHNOLOGY — EST 1991
 
 import json
 import logging
+import os
 import signal
 import threading
 import time
@@ -131,12 +132,20 @@ def _handle_object_payload(client: mqtt.Client, payload: dict) -> None:
         plates = _read_plate_easyocr(img)
         if not plates:
             # Fallback to OpenALPR via temp file
+            tmp = None
             try:
-                tmp = Path('/tmp/drifter-alpr.jpg')
+                import tempfile
+                fd, name = tempfile.mkstemp(prefix='drifter-alpr-', suffix='.jpg')
+                os.close(fd)
+                tmp = Path(name)
                 cv2.imwrite(str(tmp), img)
                 plates = _read_plate_openalpr(tmp)
-            except Exception:
+            except Exception as e:
+                log.debug("OpenALPR fallback failed: %s", e)
                 plates = []
+            finally:
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
         for p in plates:
             if _record(p['plate']):
                 client.publish(TOPICS['alpr_plate'], json.dumps({
@@ -162,6 +171,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     client = mqtt.Client(client_id="drifter-alpr")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
 
     def on_message(_c, _u, msg) -> None:
         try:

@@ -57,6 +57,7 @@ OBD_REPROBE_AFTER_EMPTY_CYCLES = int(os.getenv("OBD_REPROBE_AFTER_EMPTY_CYCLES",
 OBD_SERIAL_BAUD_EFFECTIVE = int(os.getenv("OBD_SERIAL_BAUD", str(OBD_SERIAL_BAUD)))
 
 _last_elm_meta: dict = {}
+_decode_warned: set = set()  # PIDs whose decode error was already logged
 
 _ELM_PROTO_NAMES = {
     '0': 'auto (not yet determined)',
@@ -567,7 +568,14 @@ def main() -> None:
                 continue
             try:
                 value = info["decode"](data)
-            except Exception:
+            except Exception as exc:
+                # Was a silent `continue` every cycle: a decoder bug or odd
+                # ECU reply dropped the PID forever with nothing in the log.
+                # Warn once per PID per process so the journal shows it.
+                if pid not in _decode_warned:
+                    _decode_warned.add(pid)
+                    log.warning("PID %s (%s) decode failed on %r: %s: %s",
+                                pid, info.get("name"), data, type(exc).__name__, exc)
                 continue
             cycle_success += 1
             snapshot[info["name"]] = value

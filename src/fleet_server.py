@@ -7,6 +7,8 @@ exposes a JWT-authenticated REST API plus a live WS feed.
 UNCAGED TECHNOLOGY — EST 1991
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -52,6 +54,51 @@ def _load_secret() -> str:
     p.write_text(secret)
     p.chmod(0o600)
     return secret
+
+
+# ── Password hashing (stdlib scrypt; no bcrypt dependency) ──
+# Stored format: scrypt$<n>$<r>$<p>$<salt_hex>$<hash_hex>
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 14, 8, 1
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode(), salt=salt, n=_SCRYPT_N,
+                        r=_SCRYPT_R, p=_SCRYPT_P, dklen=32)
+    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${salt.hex()}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str | None) -> bool:
+    if not stored or not isinstance(password, str):
+        return False
+    try:
+        algo, n, r, p_, salt_hex, hash_hex = stored.split('$')
+        if algo != 'scrypt':
+            return False
+        dk = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex),
+                            n=int(n), r=int(r), p=int(p_), dklen=32)
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(dk.hex(), hash_hex)
+
+
+def lookup_user(conn: sqlite3.Connection, username: str) -> tuple[str, str] | None:
+    """Return (password_hash, role) for a user, or None."""
+    row = conn.execute(
+        "SELECT password_hash, role FROM users WHERE username=?", (username,)
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def set_user(conn: sqlite3.Connection, username: str, password: str,
+             role: str = 'viewer') -> None:
+    conn.execute(
+        "INSERT INTO users(username, password_hash, role) VALUES(?,?,?) "
+        "ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, "
+        "role=excluded.role",
+        (username, hash_password(password), role),
+    )
+    conn.commit()
 
 
 def _init_db() -> sqlite3.Connection:
@@ -197,6 +244,8 @@ def on_mqtt_message(client, _u, msg) -> None:
 
 def start_mqtt() -> mqtt.Client:
     client = mqtt.Client(client_id="drifter-fleet-server")
+    client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    client.enable_logger()
     client.on_message = on_mqtt_message
     connected = False
     while not connected:
@@ -217,7 +266,8 @@ def start_mqtt() -> mqtt.Client:
     return client
 
 
-def build_app(secret: str, mqtt_client: mqtt.Client):
+def build_app(secret: str, mqtt_client: mqtt.Client,
+              db: sqlite3.Connection | None = None):
     """Build a Flask app — Flask is optional dependency, falls back to stub."""
     try:
         from flask import Flask, jsonify, request
@@ -235,20 +285,29 @@ def build_app(secret: str, mqtt_client: mqtt.Client):
 
     @app.route('/api/auth/login', methods=['POST'])
     def login():
+        # Fail closed: a token is issued only for a user in the users table
+        # whose scrypt hash verifies. No users configured → nobody logs in.
         body = request.get_json(silent=True) or {}
-        # MVP: any username/password issues a token; replace with real auth
-        username = body.get('username', 'anon')
+        username = body.get('username')
+        password = body.get('password')
+        if db is None or not isinstance(username, str) or not isinstance(password, str):
+            return jsonify({'error': 'unauthorized'}), 401
+        with _state_lock:
+            user = lookup_user(db, username)
+        if user is None or not verify_password(password, user[0]):
+            return jsonify({'error': 'unauthorized'}), 401
         token = _jwt_encode(
-            {'sub': username, 'exp': time.time() + FLEET_JWT_TTL},
+            {'sub': username, 'role': user[1], 'exp': time.time() + FLEET_JWT_TTL},
             secret,
         )
         return jsonify({'token': token, 'expires_in': FLEET_JWT_TTL})
 
     def _auth() -> bool:
         h = request.headers.get('Authorization', '')
-        if not h.startswith('Bearer '):
+        token = h[7:] if h.startswith('Bearer ') else request.args.get('token', '')
+        if not token:
             return False
-        return _jwt_decode(h[7:], secret) is not None
+        return _jwt_decode(token, secret) is not None
 
     @app.route('/api/vehicles')
     def vehicles():
@@ -287,6 +346,9 @@ def build_app(secret: str, mqtt_client: mqtt.Client):
 
     @sock.route('/ws/fleet')
     def fleet_ws(ws):
+        if not _auth():
+            ws.close(reason=1008, message='unauthorized')
+            return
         _ws_clients.add(ws)
         try:
             while True:
@@ -304,7 +366,7 @@ def build_app(secret: str, mqtt_client: mqtt.Client):
 def main() -> None:
     log.info("DRIFTER Fleet Server starting...")
     secret = _load_secret()
-    _init_db()
+    db = _init_db()
 
     running = [True]
 
@@ -315,7 +377,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     mqtt_client = start_mqtt()
-    app = build_app(secret, mqtt_client)
+    app = build_app(secret, mqtt_client, db)
 
     if app is None:
         log.error("Flask app unavailable, idle-loop only")
@@ -340,5 +402,27 @@ def main() -> None:
     log.info("Fleet Server stopped")
 
 
+def _cli_set_password(argv: list[str]) -> int:
+    """`fleet_server.py set-password <username> [role]` — prompts for the password."""
+    import getpass
+    if len(argv) < 1:
+        print("usage: fleet_server.py set-password <username> [admin|viewer]")
+        return 2
+    username, role = argv[0], (argv[1] if len(argv) > 1 else 'viewer')
+    if role not in ('admin', 'viewer'):
+        print("role must be admin or viewer")
+        return 2
+    pw = getpass.getpass(f"Password for {username}: ")
+    if len(pw) < 12 or pw != getpass.getpass("Repeat: "):
+        print("passwords must match and be at least 12 characters")
+        return 2
+    set_user(_init_db(), username, pw, role)
+    print(f"user {username} ({role}) saved")
+    return 0
+
+
 if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'set-password':
+        sys.exit(_cli_set_password(sys.argv[2:]))
     main()

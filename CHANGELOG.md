@@ -4,6 +4,24 @@ All notable changes to DRIFTER are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); the project is pre-1.0 and
 ships from the default branch.
 
+## [Unreleased] — 2026-11-23 security and reliability pass
+
+### Security
+- Fleet API login now fails closed. It previously issued a token to any caller; it now verifies an scrypt password from the fleet DB `users` table (`fleet_server.py set-password <user> [role]`). `/ws/fleet` now requires a token.
+- One shared hotspot ACL (`config.is_local_peer`) now also guards the telemetry and audio WebSockets (8081/8082, previously unchecked) and the RealDash TCP bridge (35000). IPv4-mapped IPv6 peers are unwrapped.
+- Listener bind address is configurable (`DRIFTER_BIND_HOST`); trusted prefixes via `DRIFTER_TRUSTED_PREFIXES`. Defaults unchanged.
+- New opt-in host firewall (`scripts/install-firewall.sh`, `config/drifter-nftables.conf`) (8080/8443/8081/8082/8090/35000/1883) restricting service ports to loopback + the `wlan0` hotspot. Not enabled by `install.sh`.
+- Scratch audio/ALPR files no longer use fixed `/tmp/drifter-*` names; they use a private 0700 runtime directory (symlinks and foreign owners refused) or `mkstemp`.
+
+### Fixed
+- Every MQTT client now sets `suppress_exceptions` and routes paho errors to logging. paho re-raises callback exceptions by default, which under `loop_start()` killed the network thread while the systemd unit stayed active (a deaf service `/healthz` could not see). A regression test fails if a new `mqtt.Client(...)` is added without it.
+- RealDash bridge ignores JSON payloads that are not objects (e.g. a bare `42`) instead of raising inside the MQTT callback.
+- `can_bridge` logs why an allowlisted adapter's slcan setup failed instead of silently skipping it; `obd_bridge` logs a PID decode failure once per PID instead of silently dropping that PID every cycle.
+- pytest `asyncio_default_fixture_loop_scope` set (removes the deprecation warning).
+
+### Tests
+- New: `test_network_acl.py`, `test_mqtt_hardening.py`, `test_realdash_server.py`, `test_elm_link_transport.py` (fake ELM327 over a real TCP socket), fleet login tests in `test_fleet_server.py`. `elm_link` coverage 42% → 87%.
+
 ## [Unreleased] — 2026-09-28 boot / OBD proof hardening
 
 ### Fixed

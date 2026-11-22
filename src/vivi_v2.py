@@ -18,7 +18,6 @@ import subprocess
 import threading
 import time
 import uuid
-from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
@@ -39,6 +38,8 @@ from config import (
     VIVI2_PERSONALITY_FILE,
     VIVI2_PROACTIVE_COOLDOWN_S,
     VIVI2_STREAMING,
+    ensure_private_dir,
+    runtime_dir,
 )
 from peykan_context import vivi_context
 
@@ -49,7 +50,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-AUDIO_DIR = Path("/tmp/drifter-vivi2")
+AUDIO_DIR = runtime_dir("drifter-vivi2")
 PIPER_MODEL_PATH = PIPER_MODEL_DIR / f"{PIPER_MODEL}.onnx"
 
 # ── Sentence buffering ──
@@ -490,7 +491,7 @@ def speak(text: str) -> None:
     if not text:
         return
     try:
-        AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(AUDIO_DIR)
     except OSError as e:
         log.debug(f"audio dir mkdir: {e}")
         return
@@ -841,6 +842,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     _mqtt_client = mqtt.Client(client_id="drifter-vivi2")
+    _mqtt_client.suppress_exceptions = True  # log, don't kill the MQTT loop
+    _mqtt_client.enable_logger()
     _mqtt_client.on_message = on_message
     # paho will auto-reconnect when loop_start() is in use, but bound the
     # backoff so we don't hammer the broker after a long outage.
