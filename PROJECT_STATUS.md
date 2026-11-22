@@ -50,3 +50,7 @@ DRIFTER demonstrates cross-domain integration: **automotive data + Raspberry Pi/
 ## Fleet reconciliation — 2 November 2026
 
 **Current evidence boundary:** October 29 Peykan hardening PR #97 was merged with host/ARM64 software validation, not verified on the Jaguar. Earlier fleet record `192.168.1.112` is historical; on 2 October the vehicle Pi was intentionally offline. No proof establishes the installed November commit. Issue #67 physical gate is still outstanding despite historical closure: 10/10 cold boots, actual ELM→ECU→fresh supported PID readings, touchscreen and reconnect recovery, and 1,800s continuous real telemetry. RECON/Hailo PR #91 remains open and is not part of the accepted field baseline. The `fleet/mesh` generic deploy path was DRIFTER-specific; it is now gated until identity/deploy flags are verified. See [fleet work queue](https://github.com/thotsl4yer69/fleet/blob/main/WORK_QUEUE.md).
+
+## CI update — 23 November 2026
+
+Hosted GitHub Actions jobs were observed allocating runners and passing on PR #98 (`software-checks` and `lint and test`), so the earlier "fails before runner allocation" note no longer applies to that run. This is software CI only. The issue #67 physical gate is still open and nothing here shows the Jaguar's Pi running current `main`.
